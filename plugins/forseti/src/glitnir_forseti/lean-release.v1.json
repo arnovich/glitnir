@@ -1,0 +1,145 @@
+{
+  "schema": "gimle.forseti.lean-release/v1",
+  "support_version": "gimle.forseti.lean-support/v18",
+  "toolchain": "leanprover/lean4:v4.32.1",
+  "support_source_sha256": "60b318b2003ef526f67e63b2e3f8f967c73e0bb9e619194e3f51c1c577a32c6e",
+  "checker_sha256": "05c258e1788c0a2cc37cff4644f47933ac5f02e0236b09819f0765b31a8b9802",
+  "lockfile_sha256": "cf864f5daff3d43968f81d00c93d13bf8afb0300c86d3f6441d09e34b57981b4",
+  "import": "Gimle.Forseti",
+  "axiom_allowlist": [
+    "Classical.choice",
+    "Quot.sound",
+    "propext"
+  ],
+  "dependencies": [
+    {
+      "name": "asgard",
+      "revision": "a944bf7f3ee4c07accb24dfa0b161db6955c140d"
+    },
+    {
+      "name": "mathlib",
+      "revision": "520045ab14e26149ee970e2e617ca04b09bde5d6"
+    },
+    {
+      "name": "plausible",
+      "revision": "e12c1910fe855cbfc38803cd4e55543906d5fa62"
+    },
+    {
+      "name": "LeanSearchClient",
+      "revision": "c5d5b8fe6e5158def25cd28eb94e4141ad97c843"
+    },
+    {
+      "name": "importGraph",
+      "revision": "7e9612bf0b9ee66db3cb5b9988a35afc706f5a12"
+    },
+    {
+      "name": "proofwidgets",
+      "revision": "6e311e2a844da9b2cc3971187df2fe0066947b93"
+    },
+    {
+      "name": "aesop",
+      "revision": "a7dbf0c63b694e47f425f3dcddbc0e178bb432d3"
+    },
+    {
+      "name": "Qq",
+      "revision": "38d591e778f100aec9762bb582f9c7f55f50e9dc"
+    },
+    {
+      "name": "batteries",
+      "revision": "023ce7d62a0531e22a5331e20b587817a80d49ff"
+    },
+    {
+      "name": "Cli",
+      "revision": "88679d088c9720c27ebdf2ba4dafe17341747f94"
+    }
+  ],
+  "core_sources": [
+    {
+      "package": "forseti",
+      "path": "Gimle/Forseti.lean",
+      "sha256": "60b318b2003ef526f67e63b2e3f8f967c73e0bb9e619194e3f51c1c577a32c6e"
+    },
+    {
+      "package": "forseti",
+      "path": "Executables/Checker.lean",
+      "sha256": "05c258e1788c0a2cc37cff4644f47933ac5f02e0236b09819f0765b31a8b9802"
+    },
+    {
+      "package": "asgard",
+      "path": "Gimle/Asgard.lean",
+      "sha256": "e15651847a49cf9cb8539fffcf3f704b4fff27f735374337fab92e34920bdd55"
+    },
+    {
+      "package": "asgard",
+      "path": "Gimle/Asgard/Circuit.lean",
+      "sha256": "9f6ba54d8f9e971bceeb9fdad2d59ca64b2ac4d63f5a030dfbeb271a73d58cdd"
+    },
+    {
+      "package": "asgard",
+      "path": "Gimle/Asgard/Semantics/Real.lean",
+      "sha256": "529deae667805ac4a8ac8486a704502a43ea5f9c7ca31019ba38a603aad650fb"
+    },
+    {
+      "package": "asgard",
+      "path": "Gimle/Asgard/Rewrite.lean",
+      "sha256": "6394542e7c39664ee827355d6da1a7cfbf1cd9e6e4915705d14f6aaa678b1a5c"
+    }
+  ],
+  "build_configs": [
+    {
+      "package": "forseti",
+      "path": "lakefile.toml",
+      "sha256": "8ca670fbe509541dc1bd7b390aa8f977b634cbe80616614800410ae4dffdeb23"
+    },
+    {
+      "package": "asgard",
+      "path": "lakefile.toml",
+      "sha256": "f0c42d1cf55cd2dd87ebcd53a7918cf4baa84f610e24955bb64ede87c38673fc"
+    },
+    {
+      "package": "mathlib",
+      "path": "lakefile.lean",
+      "sha256": "e3e8ac4d3ea441b062dbd29a2910165e55d8463c8bd9a3feb830cf6fb64a1b7a"
+    },
+    {
+      "package": "plausible",
+      "path": "lakefile.toml",
+      "sha256": "4147957012320a3afe8f041662202b7a3453c8a0df4311c1698da029a3b4834f"
+    },
+    {
+      "package": "LeanSearchClient",
+      "path": "lakefile.toml",
+      "sha256": "cb5d6c80c4ffd4b3be99294a911ebf2f6a2fee4eb9f840d96f0f813bd484c05d"
+    },
+    {
+      "package": "importGraph",
+      "path": "lakefile.toml",
+      "sha256": "fdd58c5f7fa7d1377e7ede7eec3a358a977aaad958705c5b7640659c23e05751"
+    },
+    {
+      "package": "proofwidgets",
+      "path": "lakefile.lean",
+      "sha256": "0a319fffbf511dab4c3307dc105f8e8fdb4f6160020995cef5f442061cc0abca"
+    },
+    {
+      "package": "aesop",
+      "path": "lakefile.toml",
+      "sha256": "1e341b858f1375729626764e6206853896d86876956c30fcf9ebe020dd96afe4"
+    },
+    {
+      "package": "Qq",
+      "path": "lakefile.toml",
+      "sha256": "42826e4e06221f41fcd863e19d937a0a68be7d54df90abd7800a3c09f4557a15"
+    },
+    {
+      "package": "batteries",
+      "path": "lakefile.toml",
+      "sha256": "acadcd8beb13a53a4ac9399e6706c829309d2380f338d13b037886666f978015"
+    },
+    {
+      "package": "Cli",
+      "path": "lakefile.toml",
+      "sha256": "188aaec6ddb57f411c11b95c3ece85ff26ab9ae8085371fee47e1dc855c4e186"
+    }
+  ]
+}

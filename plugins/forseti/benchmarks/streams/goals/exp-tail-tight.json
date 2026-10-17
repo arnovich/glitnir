@@ -1,0 +1,42 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "formal-heat",
+  "interpretation": "analytic-tail",
+  "basis": "ogf",
+  "profile": {
+    "exponentials": [
+      [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    ]
+  },
+  "claim": {
+    "kind": "truncation",
+    "port": "u",
+    "window": [
+      8,
+      16
+    ],
+    "radius": {
+      "t": [
+        1,
+        4
+      ],
+      "x": [
+        1,
+        2
+      ]
+    },
+    "epsilon": [
+      1,
+      20000
+    ]
+  }
+}

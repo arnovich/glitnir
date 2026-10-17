@@ -1,0 +1,86 @@
+{
+  "schema": "gimle.forseti.trajectory-goal/v1",
+  "model": "ns-t3s",
+  "interpretation": "continuous-real",
+  "obligation": "contract",
+  "time": {
+    "axis": "time",
+    "start": [
+      0,
+      1
+    ]
+  },
+  "initial": [
+    [
+      "initial-a10",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a11",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a21",
+      [
+        1,
+        1
+      ]
+    ]
+  ],
+  "observation": {
+    "port": "obs-e",
+    "name": "E"
+  },
+  "quantifier": "always",
+  "post": [
+    "and",
+    [
+      "atom",
+      "ge",
+      [
+        "add",
+        [
+          "var",
+          0
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              0,
+              1
+            ]
+          ]
+        ]
+      ]
+    ],
+    [
+      "atom",
+      "le",
+      [
+        "add",
+        [
+          "var",
+          0
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              17,
+              10
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+}

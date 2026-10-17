@@ -1,0 +1,65 @@
+[project]
+name = "glitnir-forseti"
+version = "0.1.0"
+description = "Forseti circuit, model and dynamics views for Glitnir notebooks"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = ["glitnir>=0.1.0,<0.2", "lark>=1.2.2"]
+
+[project.optional-dependencies]
+z3 = ["z3-solver==5.1.0.0"]
+test = [
+    "hypothesis>=6.0",
+    "pytest>=9.0",
+    "pytest-xdist>=3.8",
+]
+
+[project.entry-points."glitnir.providers"]
+forseti = "glitnir_forseti:providers"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/glitnir_forseti"]
+exclude = ["**/*.lean"]
+
+# Lean programs and pinned data the checks read at run time; they must ship.
+[tool.hatch.build.targets.wheel.force-include]
+"src/glitnir_forseti/ViewDiagram.lean" = "glitnir_forseti/ViewDiagram.lean"
+"src/glitnir_forseti/lean/ImportClosure.lean" = "glitnir_forseti/lean/ImportClosure.lean"
+"src/glitnir_forseti/lean-release.v1.json" = "glitnir_forseti/lean-release.v1.json"
+"src/glitnir_forseti/lean-lockfile.v1.json" = "glitnir_forseti/lean-lockfile.v1.json"
+"src/glitnir_forseti/lean-replay.v1.json" = "glitnir_forseti/lean-replay.v1.json"
+"src/glitnir_forseti/claims/goal.lark" = "glitnir_forseti/claims/goal.lark"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["simulation: requires optional simulation package"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.12"
+explicit_package_bases = true
+mypy_path = "src"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["gimle", "gimle.asgard", "gimle.asgard.*"]
+follow_imports = "skip"
+ignore_missing_imports = true

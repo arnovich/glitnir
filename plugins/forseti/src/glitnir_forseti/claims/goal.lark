@@ -1,0 +1,99 @@
+// The textual form of a closed goal for one of the three deciders.
+//
+// Parsed by `glitnir.claims.text` with LALR and the contextual lexer, so a
+// hyphenated stable ID (`initial-x`) is one token where an ID is expected and
+// `x - 1` is a subtraction where a polynomial is. The tree is converted to the
+// exact goal values by hand in `text.py`; nothing here assigns meaning.
+
+start: entailment | trajectory | short_trajectory | stream
+
+// entailment x, y : x^2 + y^2 <= 1 |- x <= 1
+entailment: "entailment" names ":" formula TURNSTILE formula
+names: NAME ("," NAME)*
+TURNSTILE: "|-" | "⊢"
+
+// trajectory three-state interpretation continuous-real obligation contract
+//   start time = 2 initial initial-x = 1, initial-y = 2, initial-z = -1
+//   observe obs-v as V always : V >= 0 and V <= 6
+// A driven model's goal states its driver precondition after the initial
+// state: `drivers driver-u within 1` reads "the drivers are admitted and
+// |driver-u| <= 1".
+trajectory: "trajectory" ID "interpretation" ID "obligation" ID "start" ID "=" SIGNED "initial" initial ("," initial)* drivers? "observe" ID "as" NAME QUANTIFIER ":" formula
+initial: ID "=" SIGNED
+drivers: "drivers" bound ("," bound)*
+bound: ID "within" SIGNED
+QUANTIFIER: "always" | "at-start" | "eventually"
+
+// trajectory three-state from (1, 2, -1) at 2 observe V always : V <= 6
+// The same goal, read through the model registry: the default interpretation
+// and obligation, the values in the model's state order, the start on its
+// axis, and the observation by its name. `text.py` refuses what the registry
+// does not have. `within B` bounds the model's one bounded driver:
+// trajectory forced-decay from (0) at 0 within 1 observe x always : x <= 2
+short_trajectory: "trajectory" ID "from" "(" SIGNED ("," SIGNED)* ")" "at" SIGNED within? "observe" NAME QUANTIFIER ":" formula
+within: "within" SIGNED
+
+// stream formal-heat interpretation evaluated-field basis ogf profile x*x
+//   field u over t in [0, 1], x in [-1, 1] : u >= 0 and u <= 3
+// stream formal-heat interpretation analytic-tail basis ogf
+//   profile exponentials [1, 1] truncation u window 8, 16 radius 1/4, 1/2
+//   epsilon 1/1000
+// A model with a parameter names it: `stream burgers viscosity 1/2 ...`, and
+// its exponential sum is then the Cole–Hopf potential's profile, written
+// `potential exponentials ...`; `profile` is the output's own t = 0 profile.
+stream: "stream" ID viscosity? "interpretation" ID "basis" ID declared claim
+viscosity: "viscosity" SIGNED
+// A trigonometric stream declares its start as modes, each [k1, k2, c] the
+// term c·e^(i k·x) on the torus: `stream vorticity viscosity 0 interpretation
+// trig-truncation basis ogf start modes [1, 0, 1/2], [-1, 0, 1/2] truncation u
+// window 3 radius 1/6480 epsilon 1/100`, and `band u radius 1/6480 : u <= 4`.
+declared: "profile" profile -> boundary
+        | "potential" profile -> potential
+        | "start" modes -> start
+?profile: poly | exponentials
+modes: "modes" mode ("," mode)*
+mode: "[" SIGNED "," SIGNED "," SIGNED "]"
+// Each [c, a] is the term c·e^(a·x).
+exponentials: "exponentials" exponential ("," exponential)*
+exponential: "[" SIGNED "," SIGNED "]"
+?claim: field | coefficients | full_stream | truncation | trig_truncation | trig_band | mild_truncation | mild_band
+field: "field" NAME "over" NAME "in" interval "," NAME "in" interval ":" formula
+interval: "[" SIGNED "," SIGNED "]"
+coefficients: "coefficients" coefficient ("," coefficient)* ":" formula
+coefficient: NAME "(" INT "," INT ")"
+full_stream: "full-stream" output ("," output)*
+output: NAME "=" poly
+truncation: "truncation" NAME "window" INT "," INT "radius" SIGNED "," SIGNED "epsilon" SIGNED
+trig_truncation: "truncation" NAME "window" INT "radius" SIGNED "epsilon" SIGNED
+trig_band: "band" NAME "radius" SIGNED ":" formula
+
+mild_truncation: "truncation" NAME "window" INT "time" SIGNED "epsilon" SIGNED
+mild_band: "band" NAME "time" SIGNED ":" formula
+
+// Formulas: `not` binds tighter than `and`, which binds tighter than `or`.
+?formula: disjunction
+?disjunction: conjunction | disjunction ("or" | "∨") conjunction -> or_
+?conjunction: negation | conjunction ("and" | "∧") negation -> and_
+?negation: ("not" | "¬") negation -> not_ | literal
+?literal: "true" -> true_ | "false" -> false_ | "(" formula ")" | comparison
+comparison: poly RELATION poly
+RELATION: "<=" | ">=" | "≤" | "≥" | "<" | ">" | "="
+
+// Polynomials: unary minus binds tighter than `*`, `^` tighter than both.
+?poly: sum
+?sum: product | sum "+" product -> add | sum "-" product -> sub
+?product: unary | product "*" unary -> mul
+?unary: "-" unary -> neg | power
+?power: primary | primary "^" INT -> pow
+?primary: NAME -> var | NUMBER -> const | NEGATIVE -> const | "(" poly ")"
+
+// A negative constant is written `(-3/2)`; `-3/2` is the negation of `3/2`.
+NEGATIVE.2: /\(\s*-\s*[0-9]+(\.[0-9]+|\/[0-9]+)?\s*\)/
+NUMBER: /[0-9]+(\.[0-9]+|\/[0-9]+)?/
+SIGNED: /-?[0-9]+(\.[0-9]+|\/[0-9]+)?/
+INT: /[0-9]+/
+NAME: /[A-Za-z][A-Za-z0-9_]*/
+ID: /[A-Za-z][A-Za-z0-9_.-]*/
+
+%import common.WS
+%ignore WS

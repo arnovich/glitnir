@@ -1,0 +1,42 @@
+{
+  "schema": "gimle.forseti.entailment-goal/v1",
+  "context": [
+    "x"
+  ],
+  "antecedent": [
+    "atom",
+    "eq",
+    [
+      "add",
+      [
+        "mul",
+        [
+          "var",
+          0
+        ],
+        [
+          "var",
+          0
+        ]
+      ],
+      [
+        "neg",
+        [
+          "const",
+          [
+            2,
+            1
+          ]
+        ]
+      ]
+    ]
+  ],
+  "consequent": [
+    "atom",
+    "lt",
+    [
+      "var",
+      0
+    ]
+  ]
+}

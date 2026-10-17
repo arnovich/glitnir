@@ -1,0 +1,1524 @@
+"""Saved-source previews with explicitly requested checks, evidence and decisions."""
+
+import hashlib
+import json
+import os
+import re
+import stat
+import threading
+import time
+import unicodedata
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Callable
+
+from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
+from glitnir.lean.lexing import code_tokens, scan
+from glitnir.lean.limits import check_seconds
+from glitnir.lean.project import describe_project, read_regular
+from glitnir.lean.project_checking import (
+    check_candidate,
+    check_project,
+    through_line_end,
+)
+from glitnir.lean.project_inspection import inspect_project
+from glitnir.lean.project_snapshot import SLOT_BUSY, SnapshotError
+from glitnir.lean.project_views import render_project_view
+from glitnir.lean.provider_lean import provider_imports_error, run_provider_lean
+from glitnir.notebook import assets
+from glitnir.notebook.check_records import (
+    MAX_MESSAGE,
+    MAX_TYPE,
+    claim_views,
+    decision_prefix_sha256,
+    decision_status,
+    evidence_prefix_sha256,
+    evidence_status,
+    load_records,
+    non_claim_views,
+    records_from_check,
+    save_records,
+    saved_decisions,
+    saved_evidence,
+    with_decision,
+    with_evidence,
+    without_decision,
+)
+from glitnir.notebook.decision_cards import (
+    checked_decision,
+    decision_cards,
+    decision_directives,
+    decision_request,
+)
+from glitnir.notebook.document import (
+    CellKind,
+    NotebookError,
+    parse_notebook,
+    split_lines,
+)
+from glitnir.notebook.evidence_cards import (
+    checked_evidence,
+    directive_lines,
+    evidence_cards,
+    evidence_directives,
+    evidence_request,
+    provider_failure,
+)
+from glitnir.notebook.proof_steps import ProofSteps
+from glitnir.providers import (
+    DecisionProvider,
+    DecisionRequest,
+    EvidenceProvider,
+    EvidenceRequest,
+    Providers,
+    load_providers,
+)
+
+NOTICE = (
+    "Saved-source preview. Check this file explicitly "
+    "to observe its compiled propositions."
+)
+
+
+_VIEW_DIRECTIVE = re.compile(r"--\s*@view\s+(\w+)\s+(\S+)\s*(?:using\s+(.+))?\s*")
+_VIEW_START = re.compile(r"--\s*@view\b")
+INCOMPLETE_VIEW = (
+    "This view directive is incomplete. Write it at the start of a line as "
+    "`-- @view <kind> <name>`."
+)
+# A view name is a Lean identifier, possibly qualified.
+_VIEW_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
+BAD_VIEW_NAME = "View names must be Lean identifiers."
+MAX_USING = 16
+MAX_CACHED_VIEWS = 64
+RUN_BUSY = "A provider run is already in progress."
+CLOSED = "This preview is closed."
+SOURCE_CHANGED = "Saved source changed; refresh and retry."
+CHANGED_DURING_RUN = "Saved source changed during the run; run again."
+MAX_RUN_ERRORS = 64
+NOTHING_TO_STOP = "No decision is running."
+DECISION_CANCELLED = "Decision run cancelled."
+DECISION_RUNNING = "This decision is running; stop it first."
+NO_DECISION = "This decision is no longer in the saved notebook."
+NOT_DECIDED = "This decision has no saved result; run it first."
+# The editor's text drops a leading byte-order mark that the saved digest keeps.
+BYTE_ORDER_MARK = (
+    "Notebooks starting with a byte-order mark cannot accept decisions yet; "
+    "remove the BOM."
+)
+# Why a saved decision that is not a current candidate cannot be accepted.
+NOT_ACCEPTABLE = {
+    "unknown": "This decision found no block to accept.",
+    "rejected": "The checker rejected this decision's block.",
+    "stale": "This decision is out of date; run it again.",
+    "accepted": "This decision's block is already in the notebook.",
+    "candidate": "This decision's block was not checked.",
+}
+# How long closing waits for every worker together before giving up on them.
+CLOSE_SECONDS = 55
+#: The largest saved notebook the preview reads, the main file or another.
+MAX_SOURCE_BYTES = 16 * 1024 * 1024
+#: The longest link to another notebook the preview resolves.
+MAX_LINK_CHARACTERS = 1024
+# The explicit "inspect" request is answered synchronously and the editor gives up
+# on a request after 130 s, so it keeps this shorter bound. Checks, which run in
+# a worker and report through snapshot polling, use the full check time limit.
+REQUEST_INSPECTION_SECONDS = 120
+
+
+def _directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
+    """Find `-- @view <kind> <name> [using a, b]` lines in source cells.
+
+    As for evidence and decisions, only lines Lean reads as comment lines of
+    `source` count; the same text in a string or block comment does not.
+    """
+    candidates = [
+        index
+        for index, line in enumerate(source.split("\n"))
+        if _VIEW_START.match(line.strip()) is not None
+    ]
+    if not candidates:
+        return []
+    readable = directive_lines(source, candidates)
+    found: list[dict[str, Any]] = []
+    for cell in cells:
+        if cell["kind"] != "source":
+            continue
+        for offset, text in enumerate(cell["text"].split("\n")):
+            if cell["start"] + offset - 1 not in readable:
+                continue
+            match = _VIEW_DIRECTIVE.fullmatch(text)
+            if match is None:
+                start = _VIEW_START.match(text.strip())
+                if start is not None:  # listed so the reader sees the mistake
+                    words = start.string[start.end() :].split()
+                    found.append(
+                        {
+                            "cell": cell["index"],
+                            "line": cell["start"] + offset,
+                            "kind": words[0] if words else "",
+                            "name": words[1] if len(words) > 1 else "",
+                            "using": [],
+                            "error": INCOMPLETE_VIEW,
+                        }
+                    )
+                continue
+            kind, name, tail = match.groups()
+            tail = (tail or "").strip()
+            if tail.startswith("[") and tail.endswith("]"):
+                tail = tail[1:-1]
+            using = [item.strip() for item in tail.split(",") if item.strip()]
+            error = ""
+            if not all(_VIEW_NAME.fullmatch(item) for item in [name, *using]):
+                using, error = [], BAD_VIEW_NAME
+            elif len(using) > MAX_USING:
+                using, error = [], f"Too many `using` names (at most {MAX_USING})."
+            found.append(
+                {
+                    "cell": cell["index"],
+                    "line": cell["start"] + offset,
+                    "kind": kind,
+                    "name": name,
+                    "using": using,
+                    "error": error,
+                }
+            )
+    return found
+
+
+def _with_providers(
+    views: list[dict[str, Any]], providers: Providers
+) -> list[dict[str, Any]]:
+    """Report the view kinds no installed provider draws."""
+    notes = "".join(
+        f" (Provider {name} failed to load: {reason})"
+        for name, reason in providers.errors.items()
+    )
+    return [
+        (
+            view
+            if view["error"] or view["kind"] in providers.views
+            else {
+                **view,
+                "error": f"No installed provider draws `{view['kind']}` views." + notes,
+            }
+        )
+        for view in views
+    ]
+
+
+_MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _plain_file(path: Path) -> bool:
+    return path.is_file() and not path.is_symlink()
+
+
+def unbuilt_sibling_imports(path: Path, imports: dict[str, str | None]) -> list[str]:
+    """Name directly imported sibling notebooks that have no Lake build yet."""
+    return [
+        module
+        for module, trace in imports.items()
+        if trace is None
+        and _MODULE_NAME.fullmatch(module)
+        and _plain_file(path.parent / f"{module}.lean")
+    ]
+
+
+def _source_cell(start: int, end: int, lines: list[str]) -> dict[str, Any]:
+    return {
+        "kind": "source",
+        "start": start,
+        "end": end,
+        "text": "".join(lines[start - 1 : end]),
+    }
+
+
+def _split_at_claims(
+    cells: list[dict[str, Any]], claims: list[dict[str, Any]], lines: list[str]
+) -> list[dict[str, Any]]:
+    """Give each claim's lines their own source cell, keeping all text."""
+    result: list[dict[str, Any]] = []
+    for cell in cells:
+        if cell["kind"] != "source":
+            result.append(cell)
+            continue
+        cursor = cell["start"]
+        for claim in claims:
+            first, last = claim["start_line"], claim["end_line"]
+            if first < cursor or last > cell["end"]:
+                continue
+            if first > cursor:
+                result.append(_source_cell(cursor, first - 1, lines))
+            result.append({**_source_cell(first, last, lines), "claim": claim["name"]})
+            cursor = last + 1
+        if cursor <= cell["end"]:
+            result.append(_source_cell(cursor, cell["end"], lines))
+    return result
+
+
+def _cut_short(message: str) -> bool:
+    """Whether a check stopped before Lean said anything about the notebook."""
+    return message.rstrip().endswith("cancelled.") or message.startswith(SLOT_BUSY)
+
+
+def _failed_fresh_check(observation: dict[str, Any] | None, sha256: str) -> bool:
+    """Whether the latest check of this exact text was unavailable, not cut short."""
+    if observation is None or observation.get("status") != "unavailable":
+        return False
+    if observation.get("source_sha256") != sha256:
+        return False
+    return not _cut_short(str(observation.get("message") or ""))
+
+
+def _withheld(records: dict[str, Any] | None, sha256: str) -> dict[str, Any] | None:
+    """Return where the saved check stopped, flagged stale for other text."""
+    withheld = records.get("withheld") if records else None
+    if not isinstance(withheld, dict):
+        return None
+    if records is not None and records.get("source_sha256") != sha256:
+        return {**withheld, "stale": True}
+    return withheld
+
+
+def _environment(fingerprint: Callable[[], str]) -> str:
+    """Return the fingerprint, or '' (which matches nothing) when it fails."""
+    try:
+        return fingerprint()
+    except Exception:  # noqa: BLE001 - saved results must not break preview
+        return ""  # every saved result then reads as stale
+
+
+def _with_saved_evidence(
+    cards: list[dict[str, Any]],
+    records: dict[str, Any] | None,
+    text: str,
+    fingerprint: Callable[[], str],
+) -> list[dict[str, Any]]:
+    """Show each card's saved snapshot, current or stale; nothing is recomputed."""
+    saved = saved_evidence(records)
+    found = [card for card in cards if card["key"] in saved]
+    if not found:
+        return cards  # no saved evidence, no fingerprint
+    environment = _environment(fingerprint)
+    for card in found:
+        entry = saved[card["key"]]
+        card["status"] = evidence_status(entry, text, card["line"], environment)
+        card["snapshot"] = checked_evidence(entry["snapshot"])
+    return cards
+
+
+def _with_saved_decisions(
+    cards: list[dict[str, Any]],
+    records: dict[str, Any] | None,
+    text: str,
+    fingerprint: Callable[[], str],
+) -> list[dict[str, Any]]:
+    """Show each card's saved outcome and its status; nothing is decided."""
+    saved = saved_decisions(records)
+    found = [card for card in cards if card["key"] in saved]
+    if not found:
+        return cards  # no saved decisions, no fingerprint
+    environment = _environment(fingerprint)
+    for card in found:
+        entry = saved[card["key"]]
+        card["status"] = decision_status(entry, text, card["end_line"], environment)
+        card["outcome"] = checked_decision(entry["outcome"])
+        verification = entry["verification"]
+        card["verification"] = (
+            None
+            if verification is None
+            else {**verification, "axioms": list(verification["axioms"])}
+        )
+    return cards
+
+
+def _with_runs(
+    cards: list[dict[str, Any]], running: str | None, run_errors: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Mark the card being run and show each card's last run error."""
+    for card in cards:
+        if card["key"] == running:
+            card["status"] = "running"
+        card["run_error"] = run_errors.get(card["key"])
+    return cards
+
+
+def sibling_references(path: Path) -> list[dict[str, str]]:
+    """List sibling notebooks that prose links may open, never following links."""
+    siblings = sorted(
+        candidate
+        for candidate in path.parent.glob("*.lean")
+        if _MODULE_NAME.fullmatch(candidate.stem) and _plain_file(candidate)
+    )
+    return [{"module": item.stem, "file": item.name} for item in siblings]
+
+
+_LEAN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*")
+
+
+def _module_link(directory: Path, module: str) -> str | None:
+    """Return a module's `.lean` file relative to ``directory``, if it is there.
+
+    Only a regular file reached through no symbolic link counts; the link is
+    checked again when it is read (`read_linked_notebook`).
+    """
+    parts = module.split(".")
+    if not all(_LEAN_NAME.fullmatch(part) for part in parts):
+        return None
+    relative = [*parts[:-1], parts[-1] + ".lean"]
+    current = directory
+    try:
+        for index, part in enumerate(relative):
+            current = current / part
+            mode = os.lstat(current).st_mode
+            last = index == len(relative) - 1
+            if not (stat.S_ISREG(mode) if last else stat.S_ISDIR(mode)):
+                return None
+    except OSError:
+        return None
+    return "/".join(relative)
+
+
+def _with_use_links(claims: list[dict[str, Any]], notebook: Path) -> None:
+    """Link each use of another notebook's claim to that notebook, if readable.
+
+    The link is relative to ``notebook``, as `/api/linked` reads it; a use
+    without one is shown as text.
+    """
+    links: dict[str, str | None] = {}
+    for claim in claims:
+        for use in claim.get("uses", []):
+            if use["in_notebook"]:
+                continue
+            if use["module"] not in links:
+                links[use["module"]] = _module_link(notebook.parent, use["module"])
+            link = links[use["module"]]
+            if link is not None:
+                use["path"] = link
+
+
+class NotebookLinkError(NotebookError):
+    """A link to another notebook that the preview refuses to read.
+
+    Attributes:
+        status: The HTTP status that describes the refusal: 400 for a link
+            that is not a plain relative ``.lean`` path, 404 for a file that
+            is missing, a symbolic link, not regular or outside the project,
+            and 413 for a file above the preview's size limit.
+    """
+
+    def __init__(self, message: str, status: int) -> None:
+        """Keep the refusal's message and HTTP status."""
+        super().__init__(message)
+        self.status = status
+
+
+def _link_parts(link: str) -> list[str]:
+    """Split a relative ``.lean`` link; refuse anything that could leave it."""
+    parts = link.split("/")
+    if (
+        not link
+        or len(link) > MAX_LINK_CHARACTERS
+        or link.startswith("/")
+        or any(character in link for character in "\\\0")
+        or any(part in ("", ".", "..") for part in parts)
+        or not link.endswith(".lean")
+        or parts[-1] == ".lean"
+    ):
+        raise NotebookLinkError(
+            "Send a .lean path relative to this notebook, without '.' or '..'.", 400
+        )
+    return parts
+
+
+def _named_exactly(descriptor: int, part: str) -> bool:
+    """Whether the directory open at `descriptor` has an entry spelled `part`.
+
+    A case-insensitive file system opens ``MAIN.lean`` as ``Main.lean``; the
+    link must use the entry's own case. Unicode normalization is not case,
+    so both sides are compared in NFC.
+    """
+    wanted = unicodedata.normalize("NFC", part)
+    return any(
+        unicodedata.normalize("NFC", entry) == wanted
+        for entry in os.listdir(descriptor)
+    )
+
+
+def _read_below(directory: Path, parts: list[str], notebook: os.stat_result) -> bytes:
+    """Read ``directory/parts`` without following any link below `directory`.
+
+    Each directory and the file are opened relative to the one before with
+    ``O_NOFOLLOW``, so a link swapped in after a check is refused too. Each
+    part must match its directory entry exactly, and the file must not be
+    `notebook`, the previewed notebook itself.
+    """
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for depth, part in enumerate(parts):
+            if not _named_exactly(descriptor, part):
+                raise FileNotFoundError("no entry with exactly this name")
+            if depth == len(parts) - 1:
+                break
+            child = os.open(part, flags | os.O_DIRECTORY, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        file = os.open(parts[-1], flags | os.O_NONBLOCK, dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    with os.fdopen(file, "rb") as stream:
+        found = os.fstat(stream.fileno())
+        if not stat.S_ISREG(found.st_mode):
+            raise IsADirectoryError("not a regular file")
+        if (found.st_dev, found.st_ino) == (notebook.st_dev, notebook.st_ino):
+            raise NotebookLinkError("That link names this notebook itself.", 404)
+        data = stream.read(MAX_SOURCE_BYTES + 1)
+    if len(data) > MAX_SOURCE_BYTES:
+        raise NotebookLinkError(
+            "That notebook is larger than the 16 MiB preview limit.", 413
+        )
+    return data
+
+
+def read_linked_notebook(notebook: Path, link: str) -> tuple[Path, str]:
+    """Resolve and read another notebook that `notebook`'s prose links to.
+
+    The link is relative to `notebook`'s directory. It must name a regular
+    ``.lean`` file reached through no symbolic link and lying under the
+    notebook's resolved project root: its Lake root, a loose file's
+    toolchain directory, or else its own directory.
+
+    Returns:
+        The linked file's path and its saved text with LF line endings.
+
+    Raises:
+        NotebookLinkError: When the link or the file is refused.
+    """
+    parts = _link_parts(link)
+    directory = notebook.absolute().parent
+    root = Path(describe_project(notebook)["root"] or directory).resolve()
+    target = directory.joinpath(*parts)
+    try:
+        # A symbolic link loop raises RuntimeError here; never report a path.
+        inside = target.resolve().is_relative_to(root)
+    except (OSError, RuntimeError):
+        inside = False
+    if not inside:
+        raise NotebookLinkError("That notebook is outside this project.", 404)
+    try:
+        data = _read_below(directory, parts, os.stat(notebook))
+        text = data.decode("utf-8")
+    except FileNotFoundError:
+        raise NotebookLinkError("There is no such notebook.", 404) from None
+    except (OSError, UnicodeDecodeError):
+        raise NotebookLinkError(
+            "That notebook is not a readable regular file; links are not followed.",
+            404,
+        ) from None
+    return target, text.replace("\r\n", "\n")
+
+
+def _project_root(notebook: Path) -> tuple[str, str | None]:
+    """Name the project a notebook belongs to: its kind and resolved root."""
+    project = describe_project(notebook)
+    root = project["root"]
+    return project["kind"], str(Path(root).resolve()) if root else None
+
+
+def _uncompared(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Mark saved results that were not compared with any environment.
+
+    Their status is the saved one; whether it is still current is unknown,
+    so claims have no currency and saved evidence and decisions read as
+    uncompared rather than out of date.
+    """
+    for claim in snapshot["project_claims"]:
+        claim["current"] = None
+    for card in [*snapshot["evidence"], *snapshot["decisions"]]:
+        if card.get("snapshot") is not None or card.get("outcome") is not None:
+            if card["status"] != "running":
+                card["status"] = "uncompared"
+    return snapshot
+
+
+def _lines(text: str) -> list[str]:
+    """Split `text` at LF only, keeping each line's ending."""
+    parts = text.split("\n")
+    lines = [line + "\n" for line in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
+def _confirmed_prose(lines: list[str], start: int, end: int) -> bool:
+    """Whether Lean reads ``lines[start:end]`` as one comment, as the parser does.
+
+    The source before the block must end outside any literal or comment, and
+    the block must hold no code: nothing before it opens a string the block
+    sits in, and the block's comment closes at its end. An unsettled scan
+    confirms nothing.
+    """
+    if not scan("".join(lines[:start])).settled:
+        return False
+    return code_tokens("".join(lines[start:end])) == []
+
+
+def _cells(text: str, lines: list[str]) -> list[dict[str, Any]]:
+    """Split saved text into prose and source cells, keeping all of it."""
+    cells: list[dict[str, Any]] = []
+    try:
+        notebook = parse_notebook(text)
+        cursor = 0
+        for cell in notebook.cells:
+            start, end = cell.start_line - 1, cell.end_line
+            # The line parser does not read strings. Keep the entire file raw
+            # unless Lean's own tokenizer reads each prose block as one.
+            if cell.kind is CellKind.PROSE and not _confirmed_prose(lines, start, end):
+                raise NotebookError("unconfirmed lexical boundary")
+            if start > cursor:
+                cells.append(
+                    {
+                        "kind": "source",
+                        "start": cursor + 1,
+                        "end": start,
+                        "text": "".join(lines[cursor:start]),
+                    }
+                )
+            prose = cell.kind is CellKind.PROSE
+            cells.append(
+                {
+                    "kind": "prose" if prose else "source",
+                    "start": start + 1,
+                    "end": end,
+                    "text": "".join(lines[start:end]),
+                    "markdown": (
+                        cell.text.strip().removeprefix("/-!").removesuffix("-/").strip()
+                        if prose
+                        else ""
+                    ),
+                }
+            )
+            cursor = end
+        if cursor < len(lines):
+            cells.append(
+                {
+                    "kind": "source",
+                    "start": cursor + 1,
+                    "end": len(lines),
+                    "text": "".join(lines[cursor:]),
+                }
+            )
+    except NotebookError:
+        cells = []
+    if not cells and text:
+        cells = [
+            {
+                "id": "cell-0",
+                "index": 0,
+                "kind": "source",
+                "start": 1,
+                "end": len(split_lines(text)),
+                "text": text,
+            }
+        ]
+    return cells
+
+
+def _prose(cells: list[dict[str, Any]]) -> list[str]:
+    return [cell["markdown"] for cell in cells if cell["kind"] == "prose"]
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class _EvidenceJob:
+    """One requested evidence run: the saved text, its directive and provider."""
+
+    text: str
+    sha256: str
+    line: int
+    key: str
+    keep: frozenset[str]
+    provider: EvidenceProvider
+    request: EvidenceRequest
+
+
+@dataclass(frozen=True)
+class _DecisionJob:
+    """One requested decision: the saved text, its directive and provider."""
+
+    text: str
+    sha256: str
+    name: str
+    end_line: int
+    key: str
+    keep: frozenset[str]
+    provider: DecisionProvider
+    request: DecisionRequest
+
+
+def _indexed_cells(text: str) -> list[dict[str, Any]]:
+    """Split `text` into cells numbered as the snapshot numbers them."""
+    cells = _cells(text, _lines(text))
+    for index, entry in enumerate(cells):
+        entry.update(id=f"cell-{index}", index=index)
+    return cells
+
+
+def _expected_theorem(name: str, status: str) -> str:
+    """Name the theorem a proven or refuted decision of `name` must declare."""
+    return name if status == "proven" else f"{name}_refuted"
+
+
+class SourcePreviewService:
+    """Preview source; inspect and check confined projects only on request."""
+
+    def __init__(
+        self, path: Path, *, providers: Callable[[], Providers] | None = None
+    ) -> None:
+        """Keep only the file location; no workers or processes are started.
+
+        Args:
+            path: The notebook to preview.
+            providers: Where to get installed providers; this service loads
+                them itself when None.
+        """
+        self.path = path
+        self._shared_providers = providers
+        self.proof_steps = ProofSteps(path)
+        self._cancel = threading.Event()
+        self._inspection_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._check: dict[str, Any] | None = None
+        self._worker: threading.Thread | None = None
+        self._view_lock = threading.Lock()
+        self._drawings: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self._providers_lock = threading.Lock()
+        self._loaded_providers: Providers | None = None
+        # Held for a whole provider run, evidence or decision: one at a time
+        # per server.
+        self._run_lock = threading.Lock()
+        self._evidence_worker: threading.Thread | None = None
+        self._decision_worker: threading.Thread | None = None
+        # Set by Stop or close; present only while a decision runs.
+        self._decision_cancel: threading.Event | None = None
+        self._running: str | None = None
+        self._run_errors: dict[str, str] = {}
+        # Every read-modify-write of the records file, so none drops another's.
+        self._records_lock = threading.Lock()
+
+    def _providers(self) -> Providers:
+        """Load installed providers once, when a directive first needs them."""
+        if self._shared_providers is not None:
+            return self._shared_providers()
+        with self._providers_lock:
+            if self._loaded_providers is None:
+                self._loaded_providers = load_providers()
+            return self._loaded_providers
+
+    def close(self) -> None:
+        """Cancel requested work and wait briefly for worker cleanup."""
+        self.proof_steps.close()
+        with self._state_lock:
+            self._cancel.set()
+            if self._decision_cancel is not None:
+                self._decision_cancel.set()
+            workers = [self._worker, self._evidence_worker, self._decision_worker]
+        deadline = time.monotonic() + CLOSE_SECONDS
+        for worker in workers:
+            if worker is not None:
+                worker.join(timeout=max(0.0, deadline - time.monotonic()))
+
+    def inspect(self, sha256: str) -> dict[str, Any]:
+        """Inspect saved source once at a time, without retaining proof state."""
+        if not self._inspection_lock.acquire(blocking=False):
+            raise NotebookError("Project inspection is already running.")
+        try:
+            return inspect_project(
+                self.path,
+                expected_sha256=sha256,
+                cancel=self._cancel,
+                timeout_seconds=min(REQUEST_INSPECTION_SECONDS, check_seconds()),
+            )
+        finally:
+            self._inspection_lock.release()
+
+    def check(self, sha256: str, through_line: int | None = None) -> None:
+        """Queue an explicit check, retaining historical results in memory.
+
+        With ``through_line``, only the saved file's lines 1 through
+        ``through_line`` are checked (`check_project`); the saved results of
+        later claims are kept, not rechecked.
+        """
+        if self._cancel.is_set():
+            raise NotebookError("This preview is closed.")
+        if through_line is not None:
+            try:
+                data = self._text().encode()
+            except (OSError, ValueError):
+                data = b""
+            if through_line_end(data, through_line) >= len(data):
+                through_line = None  # nothing after it: a check of the whole file
+        if not self._inspection_lock.acquire(blocking=False):
+            raise NotebookError("Project inspection or checking is already running.")
+        with self._state_lock:
+            if self._cancel.is_set():
+                self._inspection_lock.release()
+                raise NotebookError("This preview is closed.")
+            self._check = {
+                "status": "running",
+                "source_sha256": sha256,
+                "through_line": through_line,
+                "message": "Preparing check",
+                "theorems": [],
+            }
+            self._worker = threading.Thread(
+                target=self._work, args=(sha256, through_line), daemon=False
+            )
+            try:
+                self._worker.start()
+            except RuntimeError as error:
+                self._check = {
+                    "status": "unavailable",
+                    "source_sha256": sha256,
+                    "through_line": through_line,
+                    "message": str(error),
+                    "theorems": [],
+                }
+                self._worker = None
+                self._inspection_lock.release()
+
+    def _with_import_hint(
+        self, result: dict[str, Any], environment: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Explain unbuilt sibling imports, unless the check was cut short."""
+        message = str(result.get("message", ""))
+        if (
+            self._cancel.is_set()
+            or _cut_short(message)
+            or "Saved source changed" in message
+        ):
+            return result
+        missing = unbuilt_sibling_imports(self.path, environment.get("imports", {}))
+        if not missing:
+            return result
+        if describe_project(self.path)["kind"] == "lake":
+            commands = ", ".join(f"`lake build {name}`" for name in missing)
+            hint = (
+                f"If {', '.join(missing)} are modules of this project, build "
+                f"them first ({commands}), then check again."
+            )
+        else:
+            hint = "Imports of other notebooks need a Lake project; see the README."
+        return {**result, "message": " ".join(filter(None, [message, hint]))}
+
+    def _work(self, sha256: str, through_line: int | None = None) -> None:
+        """Publish phases and a complete result; never touch the notebook source."""
+
+        def progress(message: str) -> None:
+            with self._state_lock:
+                if self._check is not None:
+                    self._check = {**self._check, "message": message}
+
+        try:
+            text = read_regular(self.path, 16 * 1024 * 1024).decode()
+            # Taken before the check so an environment change during it
+            # leaves the saved results out of date.
+            progress("Reading dependency state")
+            environment = environment_fingerprint(self.path, text)
+            fingerprint = environment["sha256"]
+            unknown = unknown_git_note(environment)
+            result = check_project(
+                self.path,
+                expected_sha256=sha256,
+                cancel=self._cancel,
+                progress=progress,
+                through_line=through_line,
+            )
+            if result.get("status") == "unavailable":
+                result = self._with_import_hint(result, environment)
+            if (
+                result.get("status") == "checked_snapshot"
+                and result.get("source_sha256") == sha256
+                and hashlib.sha256(
+                    text.replace("\r\n", "\n").encode("utf-8")
+                ).hexdigest()
+                == sha256
+            ):
+                try:
+                    with self._records_lock:
+                        previous = load_records(self.path)
+                        records = records_from_check(
+                            text, result, fingerprint, previous
+                        )
+                        save_records(self.path, records)
+                    if unknown:
+                        result = {
+                            **result,
+                            "message": f"{result.get('message', '')} "
+                            f"{unknown}".strip(),
+                        }
+                except (OSError, ValueError) as error:
+                    result = {
+                        **result,
+                        "message": f"{result.get('message', '')} "
+                        f"Results could not be saved: {error}.".strip(),
+                    }
+            # The lines a finished check covered (a cut inside a command moves
+            # back); for a check that could not run, the lines asked for.
+            withheld = result.get("withheld")
+            if isinstance(withheld, dict):
+                covered = withheld.get("through_line")
+            elif result.get("status") == "checked_snapshot":
+                covered = None
+            else:
+                covered = through_line
+            with self._state_lock:
+                self._check = {
+                    "source_sha256": sha256,
+                    "through_line": covered,
+                    **result,
+                }
+        except Exception as error:
+            # A background failure must always unblock the editor controls.
+            with self._state_lock:
+                self._check = {
+                    "status": "unavailable",
+                    "source_sha256": sha256,
+                    "through_line": through_line,
+                    "message": f"Project check failed: {error}",
+                    "theorems": [],
+                }
+        finally:
+            self._inspection_lock.release()
+
+    def _text(self) -> str:
+        text = read_regular(self.path, MAX_SOURCE_BYTES).decode("utf-8")
+        return text.replace("\r\n", "\n")
+
+    def _fingerprint(self, text: str) -> Callable[[], str]:
+        """Compute the environment fingerprint of `text` at most once.
+
+        A failure is remembered too, so every later call raises it again
+        without recomputing.
+        """
+        found: list[str] = []
+        failed: list[Exception] = []
+
+        def fingerprint() -> str:
+            if failed:
+                raise failed[0]
+            if not found:
+                try:
+                    found.append(environment_fingerprint(self.path, text)["sha256"])
+                except Exception as error:
+                    failed.append(error)
+                    raise
+            return found[0]
+
+        return fingerprint
+
+    def snapshot(self) -> dict[str, Any]:
+        """Preserve all source, using prose cells only when parsing is lossless."""
+        text = self._text()
+        return self._snapshot(text, self._fingerprint(text))
+
+    def _snapshot(self, text: str, fingerprint: Callable[[], str]) -> dict[str, Any]:
+        """Build the snapshot of `text`; `fingerprint` is called only if needed."""
+        lines = _lines(text)
+        cells = _cells(text, lines)
+        sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        with self._state_lock:
+            observation = self._check
+            running, run_errors = self._running, dict(self._run_errors)
+        records = load_records(self.path)
+        project_claims: list[dict[str, Any]] = []
+        project_non_claims: list[dict[str, int]] = []
+        if records is not None:
+            try:
+                project_claims = claim_views(text, records, fingerprint())
+                project_non_claims = non_claim_views(text, records, fingerprint())
+            except Exception:  # noqa: BLE001 - saved results must not break preview
+                project_claims, project_non_claims = [], []
+        _with_use_links(project_claims, self.path)
+        if _failed_fresh_check(observation, sha256):
+            # A fresh check of this exact file could not run, so no saved
+            # result for it can be what a fresh check would report.
+            for claim in project_claims:
+                claim["current"] = False
+            project_non_claims = []
+        if project_claims:
+            cells = _split_at_claims(cells, project_claims, lines)
+        for index, entry in enumerate(cells):
+            entry.update(id=f"cell-{index}", index=index)
+        views = _directives(cells, text)
+        evidence = evidence_directives(cells, text)
+        decisions = decision_directives(cells, text)
+        # Providers load only when a directive needs them.
+        providers = self._providers() if views or evidence or decisions else None
+        return {
+            "file": self.path.name,
+            "sha256": sha256,
+            "preview": {
+                "mode": "project",
+                "notice": NOTICE,
+                "check": observation,
+                "project": describe_project(self.path),
+            },
+            "cells": cells,
+            "claims": [],
+            "project_claims": project_claims,
+            "project_non_claims": project_non_claims,
+            "project_withheld": _withheld(records, sha256),
+            "checking": [],
+            "check_errors": {},
+            "reading": False,
+            "views": [] if providers is None else _with_providers(views, providers),
+            "evidence": (
+                []
+                if providers is None
+                else _with_runs(
+                    _with_saved_evidence(
+                        evidence_cards(evidence, providers), records, text, fingerprint
+                    ),
+                    running,
+                    run_errors,
+                )
+            ),
+            "decisions": (
+                []
+                if providers is None
+                else _with_runs(
+                    _with_saved_decisions(
+                        decision_cards(decisions, providers), records, text, fingerprint
+                    ),
+                    running,
+                    run_errors,
+                )
+            ),
+            "directive_providers": {
+                "evidence": [] if providers is None else sorted(providers.evidence),
+                "decide": [] if providers is None else sorted(providers.decisions),
+            },
+            "links": [],
+            "references": sibling_references(self.path),
+            "revisions": [],
+            "assets": assets.statuses(self.path, assets.references(_prose(cells))),
+        }
+
+    def linked(self, link: str) -> dict[str, Any]:
+        """Return a read-only snapshot of another notebook of this project.
+
+        The snapshot shows the linked notebook's saved source and its own
+        saved results, as its own preview would before any request. Nothing
+        is checked, observed, drawn or run for it here.
+
+        Raises:
+            NotebookLinkError: See `read_linked_notebook`.
+        """
+        target, text = read_linked_notebook(self.path, link)
+        other = SourcePreviewService(target, providers=self._providers)
+        # Saved results are compared with the environment only inside this
+        # notebook's own project. A nested project would be fingerprinted
+        # from its own manifest, running git outside this project on every
+        # poll, so its results are shown as saved, not compared.
+        compared = _project_root(target) == _project_root(self.path)
+        if compared:
+            snapshot = other._snapshot(text, other._fingerprint(text))
+        else:
+            snapshot = _uncompared(other._snapshot(text, lambda: ""))
+        snapshot["preview"]["linked"] = {
+            "path": link,
+            "file": target.name,
+            "compared": compared,
+        }
+        return snapshot
+
+    def asset(self, reference: str, sha256: str) -> tuple[bytes, str]:
+        """Return an image the saved prose shows, only at the expected hash.
+
+        Raises:
+            assets.AssetError: See `assets.read`.
+        """
+        text = self._text()
+        found = assets.references(_prose(_cells(text, _lines(text))))
+        return assets.read(self.path, found, reference, sha256)
+
+    def view(self, cell: int, line: int) -> dict[str, Any]:
+        """Draw one listed directive, one at a time; raise KeyError if unlisted."""
+        text = self._text()
+        fingerprint = self._fingerprint(text)
+        snapshot = self._snapshot(text, fingerprint)
+        entry = next(
+            (v for v in snapshot["views"] if v["cell"] == cell and v["line"] == line),
+            None,
+        )
+        if entry is None:
+            raise KeyError(f"no view directive at cell {cell}, line {line}")
+        if entry["error"]:
+            return {"error": entry["error"]}
+        key = (snapshot["sha256"], fingerprint(), line)
+        cached = self._drawings.get(key)
+        if cached is not None:  # a cache hit never waits for a running render
+            return cached
+        with self._view_lock:
+            if key not in self._drawings:
+                drawing = render_project_view(
+                    self.path,
+                    expected_sha256=snapshot["sha256"],
+                    line=line,
+                    provider=self._providers().views[entry["kind"]],
+                    kind=entry["kind"],
+                    name=entry["name"],
+                    using=tuple(entry["using"]),
+                    cancel=self._cancel,
+                )
+                if "error" in drawing:  # failures may be transient; retry later
+                    return drawing
+                self._drawings[key] = drawing
+                while len(self._drawings) > MAX_CACHED_VIEWS:
+                    del self._drawings[next(iter(self._drawings))]
+            return self._drawings[key]
+
+    def run_evidence(self, sha256: str, line: int) -> str:
+        """Start running the evidence directive at `line`; return its card key.
+
+        Raises:
+            SnapshotError: The preview is closed, a run is already active, the
+                saved source is not `sha256`, or the directive at `line` is
+                missing, in error or unavailable.
+        """
+        if self._cancel.is_set():
+            raise SnapshotError(CLOSED)
+        if not self._run_lock.acquire(blocking=False):
+            raise SnapshotError(RUN_BUSY)
+        try:
+            job = self._evidence_job(sha256, line)
+            with self._state_lock:
+                if self._cancel.is_set():
+                    raise SnapshotError(CLOSED)
+                self._run_errors.pop(job.key, None)
+                self._running = job.key
+                worker = threading.Thread(
+                    target=self._run_evidence_work, args=(job,), daemon=False
+                )
+                self._evidence_worker = worker
+                try:
+                    worker.start()
+                except RuntimeError as error:
+                    self._running = None
+                    self._evidence_worker = None
+                    raise SnapshotError(
+                        f"Evidence run could not start: {error}"
+                    ) from error
+        except BaseException:
+            self._run_lock.release()
+            raise
+        return job.key
+
+    def _evidence_job(self, sha256: str, line: int) -> _EvidenceJob:
+        """Find the runnable directive at `line` in the saved text `sha256`."""
+        text = self._text()
+        if _sha256(text) != sha256:
+            raise SnapshotError(SOURCE_CHANGED)
+        directives = evidence_directives(_indexed_cells(text), text)
+        directive = next((d for d in directives if d["line"] == line), None)
+        if directive is None:
+            raise SnapshotError(f"No evidence directive at line {line}.")
+        providers = self._providers()
+        [card] = evidence_cards([directive], providers)
+        if card["error"]:
+            raise SnapshotError(card["error"])
+        if card["unavailable"]:
+            raise SnapshotError(card["unavailable"])
+        provider = providers.evidence[directive["verb"]]
+        request, error = evidence_request(provider, directive)
+        if request is None:
+            raise SnapshotError(error)
+        return _EvidenceJob(
+            text=text,
+            sha256=sha256,
+            line=line,
+            key=directive["key"],
+            keep=frozenset(d["key"] for d in directives),
+            provider=provider,
+            request=request,
+        )
+
+    def _run_evidence_work(self, job: _EvidenceJob) -> None:
+        """Run one job, keeping its error for the card; always end the run."""
+        error: str | None = None
+        try:
+            error = self._evidence_run(job)
+        except Exception as failure:  # the run must always end
+            error = f"Evidence run failed: {failure}"
+        finally:
+            self._end_run(job.key, error)
+
+    def _end_run(self, key: str, error: str | None) -> None:
+        """Keep a run's error for its card and open the gate for the next run."""
+        with self._state_lock:
+            self._running = None
+            self._decision_cancel = None
+            if error is not None:
+                self._run_errors[key] = error
+                while len(self._run_errors) > MAX_RUN_ERRORS:
+                    del self._run_errors[next(iter(self._run_errors))]
+        self._run_lock.release()
+
+    def _evidence_run(self, job: _EvidenceJob) -> str | None:
+        """Elaborate, compute, validate and save; return the error, if any."""
+        provider, request = job.provider, job.request
+        try:  # provider code must never break the preview
+            imports = tuple(provider.imports)
+            preamble = provider.preamble
+            marker = provider.marker
+            command = provider.command(request)
+        except BaseException as failure:
+            return provider_failure(provider, failure)
+        # Taken before the run so an environment change during it leaves the
+        # saved evidence out of date.
+        environment = environment_fingerprint(self.path, job.text)
+        fingerprint = environment["sha256"]
+        result = run_provider_lean(
+            self.path,
+            expected_sha256=job.sha256,
+            line=job.line,
+            provider_name=provider.name,
+            imports=imports,
+            preamble=preamble,
+            command=command,
+            marker=marker,
+            needs="evidence",
+            cancel=self._cancel,
+        )
+        if "payload" not in result:
+            return str(result["error"])
+        try:
+            payload = json.loads(result["payload"])
+        except (ValueError, RecursionError):
+            return f"Provider {provider.name} printed evidence that is not JSON."
+        try:
+            body = provider.compute(request, payload)
+        except ValueError as failure:
+            # A provider's way of saying it cannot serve this request: its
+            # message is meant for the reader, not a crash report.
+            return str(failure) or provider_failure(provider, failure)
+        except BaseException as failure:
+            return provider_failure(provider, failure)
+        try:
+            snapshot = checked_evidence(body)
+        except ValueError as failure:
+            return f"Provider {provider.name} returned invalid evidence: {failure}"
+        entry = {
+            "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
+            "fingerprint": fingerprint,
+            "provider": provider.name,
+            "created": datetime.now(UTC).isoformat(timespec="seconds"),
+            "snapshot": snapshot,
+        }
+        with self._records_lock:
+            try:
+                unchanged = _sha256(self._text()) == job.sha256
+            except (OSError, ValueError):
+                unchanged = False
+            if not unchanged:
+                return CHANGED_DURING_RUN
+            try:
+                records = with_evidence(
+                    load_records(self.path),
+                    job.key,
+                    entry,
+                    keep=job.keep,
+                    notebook=self.path,
+                )
+                save_records(self.path, records)
+            except ValueError as failure:
+                return str(failure)
+            except OSError as failure:
+                return f"Evidence could not be saved: {failure}."
+        # Saved, but under a fingerprint that matches nothing: say why.
+        return unknown_git_note(environment)
+
+    def run_decision(self, sha256: str, line: int) -> str:
+        """Start deciding the directive at `line`; return its card key.
+
+        Shares the evidence runs' gate: one provider run at a time.
+
+        Raises:
+            SnapshotError: The preview is closed, a run is already active, the
+                saved source is not `sha256`, or the directive at `line` is
+                missing, in error or unavailable.
+        """
+        if self._cancel.is_set():
+            raise SnapshotError(CLOSED)
+        if not self._run_lock.acquire(blocking=False):
+            raise SnapshotError(RUN_BUSY)
+        try:
+            job = self._decision_job(sha256, line)
+            with self._state_lock:
+                if self._cancel.is_set():
+                    raise SnapshotError(CLOSED)
+                cancel = threading.Event()
+                self._run_errors.pop(job.key, None)
+                self._running = job.key
+                self._decision_cancel = cancel
+                worker = threading.Thread(
+                    target=self._run_decision_work, args=(job, cancel), daemon=False
+                )
+                self._decision_worker = worker
+                try:
+                    worker.start()
+                except RuntimeError as error:
+                    self._running = None
+                    self._decision_cancel = None
+                    self._decision_worker = None
+                    raise SnapshotError(
+                        f"Decision run could not start: {error}"
+                    ) from error
+        except BaseException:
+            self._run_lock.release()
+            raise
+        return job.key
+
+    def stop_decision(self) -> None:
+        """Ask the running decision to stop; it then saves nothing.
+
+        Raises:
+            SnapshotError: No decision is running.
+        """
+        with self._state_lock:
+            if self._decision_cancel is None:
+                raise SnapshotError(NOTHING_TO_STOP)
+            self._decision_cancel.set()
+
+    def discard_decision(self, sha256: str, line: int) -> str:
+        """Remove the decision saved for the directive at `line`; return its key.
+
+        Raises:
+            SnapshotError: The preview is closed, the saved source is not
+                `sha256`, there is no decision directive at `line`, it is
+                running, nothing is saved for it, or the records file cannot
+                be read.
+        """
+        if self._cancel.is_set():
+            raise SnapshotError(CLOSED)
+        with self._records_lock:
+            text, directive, _keys = self._decision_directive(sha256, line)
+            with self._state_lock:
+                # A run that has not yet saved would race the discard.
+                if (
+                    self._decision_cancel is not None
+                    and self._running == directive["key"]
+                ):
+                    raise SnapshotError(DECISION_RUNNING)
+            try:
+                records = without_decision(
+                    load_records(self.path), directive["key"], self.path
+                )
+            except ValueError as failure:
+                raise SnapshotError(str(failure)) from failure
+            save_records(self.path, records)
+        with self._state_lock:
+            self._run_errors.pop(directive["key"], None)
+        return str(directive["key"])
+
+    def decision_candidate(self, key: str) -> dict[str, Any]:
+        """Return the checked block the editor may insert for the decision `key`.
+
+        The backend never writes the notebook: the editor inserts `block` right
+        after the one-based `insert_after_line`, and only into the saved text
+        whose digest is `sha256`.
+
+        Raises:
+            SnapshotError: The decision is not in the saved text, the saved
+                text starts with a byte-order mark (the editor's text drops
+                it, so no digest could match), the decision is running, or its
+                saved outcome is not a current candidate.
+        """
+        text = self._text()
+        directives = decision_directives(_indexed_cells(text), text)
+        directive = next((d for d in directives if d["key"] == key), None)
+        if directive is None:
+            raise SnapshotError(NO_DECISION)
+        if text.startswith("\ufeff"):
+            raise SnapshotError(BYTE_ORDER_MARK)
+        with self._state_lock:
+            if self._decision_cancel is not None and self._running == key:
+                raise SnapshotError(DECISION_RUNNING)
+        entry = saved_decisions(load_records(self.path)).get(key)
+        if entry is None:
+            raise SnapshotError(NOT_DECIDED)
+        end_line = directive["end_line"]
+        status = decision_status(
+            entry, text, end_line, _environment(self._fingerprint(text))
+        )
+        verification = entry["verification"]
+        if status != "candidate" or verification["status"] != "checked":
+            raise SnapshotError(NOT_ACCEPTABLE[status])
+        return {
+            "sha256": _sha256(text),
+            "insert_after_line": end_line,
+            "block": checked_decision(entry["outcome"])["block"],
+        }
+
+    def _decision_directive(
+        self, sha256: str, line: int
+    ) -> tuple[str, dict[str, Any], frozenset[str]]:
+        """Return the saved text, its decision directive at `line` and all keys."""
+        text = self._text()
+        if _sha256(text) != sha256:
+            raise SnapshotError(SOURCE_CHANGED)
+        directives = decision_directives(_indexed_cells(text), text)
+        directive = next((d for d in directives if d["line"] == line), None)
+        if directive is None:
+            raise SnapshotError(f"No decision directive at line {line}.")
+        return text, directive, frozenset(d["key"] for d in directives)
+
+    def _decision_job(self, sha256: str, line: int) -> _DecisionJob:
+        """Find the decidable directive at `line` in the saved text `sha256`."""
+        text, directive, keys = self._decision_directive(sha256, line)
+        providers = self._providers()
+        [card] = decision_cards([directive], providers)
+        if card["error"]:
+            raise SnapshotError(card["error"])
+        if card["unavailable"]:
+            raise SnapshotError(card["unavailable"])
+        provider = providers.decisions[directive["kind"]]
+        request, error = decision_request(provider, directive)
+        if request is None:
+            raise SnapshotError(error)
+        return _DecisionJob(
+            text=text,
+            sha256=sha256,
+            name=directive["name"],
+            end_line=directive["end_line"],
+            key=directive["key"],
+            keep=keys,
+            provider=provider,
+            request=request,
+        )
+
+    def _run_decision_work(self, job: _DecisionJob, cancel: threading.Event) -> None:
+        """Run one decision, keeping its error for the card; always end the run."""
+        error: str | None = None
+        try:
+            error = self._decision_run(job, cancel)
+        except Exception as failure:  # the run must always end
+            error = f"Decision run failed: {failure}"
+        finally:
+            self._end_run(job.key, error)
+
+    def _decision_run(self, job: _DecisionJob, cancel: threading.Event) -> str | None:
+        """Decide, validate, check the candidate and save; return the error, if any.
+
+        Nothing is saved once `cancel` is set. Failures that say nothing about
+        the block (a busy slot, a timeout, a changed file) are run errors, never
+        saved verdicts.
+        """
+        provider = job.provider
+        try:  # provider code must never break the preview
+            imports = tuple(provider.imports)
+        except BaseException as failure:
+            return provider_failure(provider, failure)
+        # Taken before the run so an environment change during it leaves the
+        # saved decision out of date.
+        environment = environment_fingerprint(self.path, job.text)
+        fingerprint = environment["sha256"]
+        # The block is inserted into the notebook, so the notebook must already
+        # import what it needs.
+        refused = provider_imports_error(
+            self.path,
+            expected_sha256=job.sha256,
+            imports=imports,
+            needs="decision",
+            cancel=cancel,
+        )
+        if refused is not None:
+            return DECISION_CANCELLED if cancel.is_set() else str(refused["error"])
+        try:
+            answer = provider.decide(job.request, cancel)
+        except ValueError as failure:
+            if cancel.is_set():  # how a provider may honour the cancel
+                return DECISION_CANCELLED
+            return str(failure) or provider_failure(provider, failure)
+        except BaseException as failure:
+            if cancel.is_set() and isinstance(failure, Exception):
+                return DECISION_CANCELLED
+            return provider_failure(provider, failure)
+        if cancel.is_set():
+            return DECISION_CANCELLED
+        try:
+            outcome = checked_decision(answer)
+        except ValueError as failure:
+            return f"Provider {provider.name} returned an invalid decision: {failure}"
+        verification: dict[str, Any] | None = None
+        if outcome["status"] != "unknown":
+            expected = _expected_theorem(job.name, outcome["status"])
+            if outcome["theorem"].split(".")[-1] != expected:
+                return (
+                    f"The provider proposed `{outcome['theorem']}`, "
+                    f"expected `{expected}`."
+                )
+            try:
+                verdict = check_candidate(
+                    self.path,
+                    expected_sha256=job.sha256,
+                    insert_after_line=job.end_line,
+                    block=outcome["block"],
+                    theorem=outcome["theorem"],
+                    cancel=cancel,
+                )
+            except SnapshotError as failure:
+                return DECISION_CANCELLED if cancel.is_set() else str(failure)
+            kind = verdict["type"]
+            if kind is not None and len(kind) > MAX_TYPE:
+                kind = kind[: MAX_TYPE - 1] + "…"
+            verification = {
+                **verdict,
+                "message": verdict["message"][:MAX_MESSAGE],
+                "type": kind,
+            }
+        entry = {
+            "prefix_sha256": decision_prefix_sha256(job.text, job.end_line),
+            "fingerprint": fingerprint,
+            "provider": provider.name,
+            "created": datetime.now(UTC).isoformat(timespec="seconds"),
+            "outcome": outcome,
+            "verification": verification,
+        }
+        with self._records_lock:
+            # Stop sets `cancel` under the state lock, so this is atomic with
+            # it: past here Stop finds nothing to stop rather than a run that
+            # would save anyway. The lock order (records, then state) is the
+            # one discarding uses too.
+            with self._state_lock:
+                if cancel.is_set():
+                    return DECISION_CANCELLED
+                self._decision_cancel = None
+            try:
+                unchanged = _sha256(self._text()) == job.sha256
+            except (OSError, ValueError):
+                unchanged = False
+            if not unchanged:
+                return CHANGED_DURING_RUN
+            try:
+                records = with_decision(
+                    load_records(self.path),
+                    job.key,
+                    entry,
+                    keep=job.keep,
+                    notebook=self.path,
+                )
+                save_records(self.path, records)
+            except ValueError as failure:
+                return str(failure)
+            except OSError as failure:
+                return f"The decision could not be saved: {failure}."
+        # Saved, but under a fingerprint that matches nothing: say why.
+        return unknown_git_note(environment)

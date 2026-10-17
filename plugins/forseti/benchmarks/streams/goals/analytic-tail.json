@@ -1,0 +1,88 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "formal-heat",
+  "interpretation": "analytic-tail",
+  "basis": "ogf",
+  "profile": [
+    "mul",
+    [
+      "var",
+      0
+    ],
+    [
+      "var",
+      0
+    ]
+  ],
+  "claim": {
+    "kind": "coefficients",
+    "observed": [
+      [
+        "u",
+        [
+          1,
+          0
+        ]
+      ],
+      [
+        "u",
+        [
+          0,
+          2
+        ]
+      ],
+      [
+        "u_xx",
+        [
+          0,
+          0
+        ]
+      ]
+    ],
+    "post": [
+      "and",
+      [
+        "atom",
+        "ge",
+        [
+          "add",
+          [
+            "var",
+            2
+          ],
+          [
+            "neg",
+            [
+              "const",
+              [
+                2,
+                1
+              ]
+            ]
+          ]
+        ]
+      ],
+      [
+        "atom",
+        "le",
+        [
+          "add",
+          [
+            "var",
+            2
+          ],
+          [
+            "neg",
+            [
+              "const",
+              [
+                2,
+                1
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  }
+}

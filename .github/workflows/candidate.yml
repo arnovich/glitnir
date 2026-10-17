@@ -1,0 +1,123 @@
+name: Prepare thin release candidate
+on:
+  workflow_call:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: thin-candidate-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  tag:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      version: ${{ steps.candidate.outputs.version }}
+      tag: ${{ steps.candidate.outputs.tag }}
+      skip: ${{ steps.candidate.outputs.skip }}
+      reuse: ${{ steps.candidate.outputs.reuse }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Tag the exact checked commit
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node extension/scripts/release-candidate.cjs prepare
+  package:
+    needs: tag
+    if: needs.tag.outputs.skip != 'true' && needs.tag.outputs.reuse != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: astral-sh/setup-uv@v4
+      - name: Retrieve the backend wheel that passed main checks
+        uses: actions/download-artifact@v4
+        with:
+          name: glitnir-tested-backend
+          path: backend/dist
+      - name: Retrieve the plugin wheel that passed main checks
+        uses: actions/download-artifact@v4
+        with:
+          name: glitnir-tested-plugin
+          path: plugins/forseti/dist
+      - name: Install the existing-interpreter backend and packaging tools
+        run: |
+          uv venv --python 3.12 .venv-core
+          uv pip install --python .venv-core/bin/python -c backend/requirements-dev.lock backend/dist/*.whl
+          echo "GLITNIR_BUILD_PYTHON=$GITHUB_WORKSPACE/.venv-core/bin/python" >> "$GITHUB_ENV"
+          npm ci
+          sudo apt-get update -qq
+          sudo apt-get install --yes xvfb
+      - name: Build the versioned universal thin extension
+        env:
+          GLITNIR_PACKAGE_VERSION: ${{ needs.tag.outputs.version }}
+          GLITNIR_BACKEND_RELEASE_TAG: ${{ needs.tag.outputs.tag }}
+        run: npm run package
+      - name: Verify fresh uv setup and reuse from the actual candidate
+        env:
+          CANDIDATE_VERSION: ${{ needs.tag.outputs.version }}
+        run: |
+          # setup-uv puts uv in the tool cache; GUI setup searches installed locations.
+          mkdir -p "$HOME/.local/bin"
+          if [ ! -x "$HOME/.local/bin/uv" ]; then
+            ln -s "$(command -v uv)" "$HOME/.local/bin/uv"
+          fi
+          unzip -q "glitnir-$CANDIDATE_VERSION.vsix" -d "$RUNNER_TEMP/candidate-vsix"
+          python=$(node extension/scripts/check-thin-install.cjs "$RUNNER_TEMP/candidate-vsix/extension" backend/dist/glitnir-0.1.0-py3-none-any.whl "$RUNNER_TEMP/candidate-backends")
+          echo "GLITNIR_TEST_PYTHON=$python" >> "$GITHUB_ENV"
+      - name: Test the actual installed VSIX with the separate core backend
+        env:
+          CANDIDATE_VERSION: ${{ needs.tag.outputs.version }}
+        run: GLITNIR_TEST_VSIX="$PWD/glitnir-$CANDIDATE_VERSION.vsix" xvfb-run -a npm run test:host
+      - name: Bind the validated packages to their source and checksums
+        run: node extension/scripts/release-candidate.cjs collect release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glitnir-thin-candidate
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+  draft:
+    needs: [tag, package]
+    if: always() && needs.tag.result == 'success' && needs.tag.outputs.skip != 'true' && (needs.tag.outputs.reuse == 'true' || needs.package.result == 'success')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: glitnir-thin-candidate
+          path: release
+      - name: Verify and attach existing packages to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node extension/scripts/release-candidate.cjs upload release

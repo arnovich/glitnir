@@ -1,0 +1,56 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "burgers",
+  "interpretation": "analytic-tail",
+  "basis": "ogf",
+  "profile": {
+    "exponentials": [
+      [
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          -1,
+          1
+        ]
+      ]
+    ]
+  },
+  "claim": {
+    "kind": "truncation",
+    "port": "u",
+    "window": [
+      16,
+      16
+    ],
+    "radius": {
+      "t": [
+        1,
+        6
+      ],
+      "x": [
+        1,
+        8
+      ]
+    },
+    "epsilon": [
+      1,
+      10000
+    ]
+  },
+  "viscosity": [
+    1,
+    2
+  ]
+}

@@ -1,0 +1,12 @@
+diff --git a/REPL/Snapshots.lean b/REPL/Snapshots.lean
+index 97b2961..04a9314 100644
+--- a/REPL/Snapshots.lean
++++ b/REPL/Snapshots.lean
+@@ -182,4 +182,6 @@ and run it in the current `ProofSnapshot`.
+ def runString (p : ProofSnapshot) (t : String) : IO ProofSnapshot :=
+   match Parser.runParserCategory p.coreState.env `tactic t with
+   | .error e => throw (IO.userError e)
+-  | .ok stx => p.runSyntax stx
++  | .ok stx =>
++    let p := { p with coreContext := { p.coreContext with fileMap := FileMap.ofString t } }
++    p.runSyntax stx

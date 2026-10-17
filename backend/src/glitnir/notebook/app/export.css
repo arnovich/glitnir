@@ -1,0 +1,19 @@
+/* Static pages are documents: no fixed panes, selection or hover affordances. */
+/* Pages read in a full browser window, not a side pane: a 974px column plus
+   32px padding on either side and borders, centred on wider screens. */
+.static-notebook .app{max-width:1040px}
+.static-notebook .document{border:0;overflow:visible;padding:0}
+.static-notebook .doc-inner{max-width:none;padding:24px 32px}
+.static-notebook .heading{padding:24px 32px;border-bottom:1px solid var(--border)}
+.static-notebook .snapshot{color:var(--muted);overflow-wrap:anywhere;font-size:12px}
+.static-notebook .claim{cursor:default}
+.static-notebook .claim:hover{border-color:var(--border);box-shadow:none}
+.static-notebook .export-fold>h3{font:500 12px var(--sans);padding:10px 14px;margin:0;background:var(--chrome)}
+.static-notebook .uses a{color:var(--blue)}
+.static-notebook .footer{display:block;padding:16px 32px}
+@media(max-width:600px){.static-notebook{padding:0}.static-notebook .app{border:0;border-radius:0}.static-notebook .doc-inner,.static-notebook .heading{padding:16px}}
+@media print{.static-notebook{padding:0;background:white}.static-notebook .app{border:0;max-width:none}.static-notebook .claim,.static-notebook figure{break-inside:avoid}}
+
+.static-notebook .cell+.cell{margin-top:20px}
+.static-notebook .export-source{padding:12px 14px;background:var(--sunk);border-top:1px solid var(--rule)}
+.static-notebook .export-source .box-head{padding:0 0 8px}

@@ -1,0 +1,57 @@
+{
+  "schema": "gimle.forseti.trajectory-goal/v1",
+  "model": "forced-decay",
+  "interpretation": "continuous-real",
+  "obligation": "contract",
+  "time": {
+    "axis": "time",
+    "start": [
+      0,
+      1
+    ]
+  },
+  "initial": [
+    [
+      "initial-x",
+      [
+        0,
+        1
+      ]
+    ]
+  ],
+  "observation": {
+    "port": "obs-x",
+    "name": "x"
+  },
+  "quantifier": "always",
+  "post": [
+    "atom",
+    "le",
+    [
+      "add",
+      [
+        "var",
+        0
+      ],
+      [
+        "neg",
+        [
+          "const",
+          [
+            1,
+            1
+          ]
+        ]
+      ]
+    ]
+  ],
+  "drivers": [
+    [
+      "driver-u",
+      [
+        1,
+        1
+      ]
+    ]
+  ]
+}

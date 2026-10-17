@@ -1,0 +1,81 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "burgers",
+  "interpretation": "analytic-field",
+  "basis": "ogf",
+  "profile": {
+    "exponentials": [
+      [
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          -1,
+          1
+        ]
+      ]
+    ]
+  },
+  "claim": {
+    "kind": "field",
+    "port": "u",
+    "domain": {
+      "t": [
+        [
+          -1,
+          6
+        ],
+        [
+          1,
+          6
+        ]
+      ],
+      "x": [
+        [
+          -1,
+          8
+        ],
+        [
+          1,
+          8
+        ]
+      ]
+    },
+    "post": [
+      "atom",
+      "le",
+      [
+        "add",
+        [
+          "var",
+          2
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              3,
+              5
+            ]
+          ]
+        ]
+      ]
+    ]
+  },
+  "viscosity": [
+    1,
+    2
+  ]
+}

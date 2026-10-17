@@ -1,0 +1,86 @@
+{
+  "schema": "gimle.forseti.trajectory-goal/v1",
+  "model": "lorenz",
+  "interpretation": "continuous-real",
+  "obligation": "contract",
+  "time": {
+    "axis": "time",
+    "start": [
+      0,
+      1
+    ]
+  },
+  "initial": [
+    [
+      "initial-x",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-y",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-z",
+      [
+        1,
+        1
+      ]
+    ]
+  ],
+  "observation": {
+    "port": "obs-v",
+    "name": "V"
+  },
+  "quantifier": "always",
+  "post": [
+    "and",
+    [
+      "atom",
+      "ge",
+      [
+        "add",
+        [
+          "var",
+          0
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              0,
+              1
+            ]
+          ]
+        ]
+      ]
+    ],
+    [
+      "atom",
+      "le",
+      [
+        "add",
+        [
+          "var",
+          0
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              1600,
+              1
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+}

@@ -1,0 +1,86 @@
+[project]
+name = "glitnir"
+version = "0.1.0"
+description = "Glitnir notebook backend, rendering and Lean checking services"
+readme = "README.md"
+license = "MIT AND OFL-1.1"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "src/glitnir/notebook/app/katex/LICENSE", "src/glitnir/notebook/app/katex/OFL.txt"]
+requires-python = ">=3.12"
+dependencies = []
+
+
+[project.optional-dependencies]
+test = [
+    "hypothesis>=6.0",
+    "pytest>=9.0",
+    "pytest-cov>=6.0",
+    "pytest-xdist>=3.8",
+]
+dev = [
+    "black>=25.0",
+    "flake8>=7.0",
+    "flake8-docstrings>=1.7",
+    "hypothesis>=6.0",
+    "isort>=6.0",
+    "markdown>=3.6",
+    "mypy>=1.16",
+    "pytest>=9.0",
+    "pytest-cov>=6.0",
+    "pytest-xdist>=3.8",
+    "types-Markdown>=3.6",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/glitnir"]
+exclude = ["**/*.lean", "**/*.lean.template"]
+
+# The out-of-process axiom check runs this fixed program; it must ship.
+[tool.hatch.build.targets.wheel.force-include]
+"src/glitnir/lean/ProofTrace.lean" = "glitnir/lean/ProofTrace.lean"
+"src/glitnir/lean/ProjectReplay.lean" = "glitnir/lean/ProjectReplay.lean"
+"src/glitnir/lean/ProjectRead.lean" = "glitnir/lean/ProjectRead.lean"
+"src/glitnir/lean/ProjectReport.lean" = "glitnir/lean/ProjectReport.lean"
+"src/glitnir/lean/PreparedProject.lean" = "glitnir/lean/PreparedProject.lean"
+"src/glitnir/lean/AxiomReport.lean" = "glitnir/lean/AxiomReport.lean"
+"src/glitnir/lean/ViewElab.lean" = "glitnir/lean/ViewElab.lean"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: runs Lean (every test_live_ test); CI runs these in their own job",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["glitnir"]
+
+[tool.coverage.report]
+# Provisional. The core is a subprocess adapter whose main paths need a live
+# Lean toolchain, so they skip locally. CI runs them, with
+# GLITNIR_REQUIRE_PROJECT_INSPECTION=1 and GLITNIR_TEST_PROOF_TRACE=1, in a
+# separate job; this bound applies to the other tests alone (`-m "not live"`).
+fail_under = 85
+show_missing = true
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.12"
+explicit_package_bases = true
+mypy_path = "src"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = true

@@ -1,0 +1,149 @@
+{
+  "schema": "gimle.forseti.trajectory-goal/v1",
+  "model": "ns-b2",
+  "interpretation": "continuous-real",
+  "obligation": "contract",
+  "time": {
+    "axis": "time",
+    "start": [
+      0,
+      1
+    ]
+  },
+  "initial": [
+    [
+      "initial-a01",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a02",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a10",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a11",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a12",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a1m1",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a1m2",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a20",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a21",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a22",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a2m1",
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      "initial-a2m2",
+      [
+        1,
+        1
+      ]
+    ]
+  ],
+  "observation": {
+    "port": "obs-z",
+    "name": "Z"
+  },
+  "quantifier": "always",
+  "post": [
+    "and",
+    [
+      "atom",
+      "ge",
+      [
+        "add",
+        [
+          "var",
+          0
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              0,
+              1
+            ]
+          ]
+        ]
+      ]
+    ],
+    [
+      "atom",
+      "le",
+      [
+        "add",
+        [
+          "var",
+          0
+        ],
+        [
+          "neg",
+          [
+            "const",
+            [
+              626,
+              1
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+}

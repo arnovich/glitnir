@@ -1,0 +1,209 @@
+name: Glitnir
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Both test jobs install these exact wheels, and the extension job retains
+      # the backend and plugin ones for a candidate, so a retry of any job in this
+      # run tests the same bytes rather than a rebuild.
+      - name: Reuse this run's wheels when retrying
+        id: wheels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          counts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=glitnir-wheels" \
+            --jq '[([.artifacts[] | select(.expired | not)] | length), ([.artifacts[] | select(.expired)] | length)] | @tsv')
+          read -r kept expired <<< "$counts"
+          if [ "$expired" != 0 ]; then
+            echo "::error::This run's wheels have expired; start a new run instead of retrying it."
+            exit 1
+          fi
+          echo "exists=$([ "$kept" != 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@v4
+        if: steps.wheels.outputs.exists != 'true'
+      - name: Build the backend and plugin wheels
+        if: steps.wheels.outputs.exists != 'true'
+        run: |
+          uv build backend --wheel --out-dir backend/dist
+          uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
+      - name: Share the wheels with both test jobs
+        if: steps.wheels.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: glitnir-wheels
+          path: |
+            backend/dist/*.whl
+            plugins/forseti/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+  extension:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: astral-sh/setup-uv@v4
+      - name: Retrieve this run's wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: glitnir-wheels
+      - name: Install runtime and extension dependencies
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.0-py3-none-any.whl[dev]'
+          # glitnir is not on an index, so the plugin's own dependencies are named here.
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
+          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.0-py3-none-any.whl
+          uv venv --python 3.12 .venv-core
+          uv pip install --python .venv-core/bin/python -c backend/requirements-dev.lock \
+            backend/dist/glitnir-0.1.0-py3-none-any.whl
+          npm ci
+          npm audit --audit-level=high
+          echo "GLITNIR_BUILD_PYTHON=$GITHUB_WORKSPACE/.venv/bin/python" >> "$GITHUB_ENV"
+      - name: Prepare the sandbox and a display for the host test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes bubblewrap apparmor apparmor-profiles xvfb
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
+      - name: Check owned backend
+        working-directory: backend
+        run: |
+          # The live job runs the rest: every test_live_ test (marked live).
+          ../.venv/bin/python -m pytest -m "not live" --cov --cov-report=term-missing
+          ../.venv/bin/black --check src tests
+          ../.venv/bin/isort --check-only src tests
+          ../.venv/bin/flake8 src tests
+          ../.venv/bin/mypy src
+      - name: Check the Forseti extension package
+        working-directory: plugins/forseti
+        run: |
+          # Tests needing the audited Forseti release skip unless FORSETI_LEAN_PROJECT is set.
+          ../../.venv/bin/python -m pytest -q
+          ../../.venv/bin/black --check src tests tools
+          ../../.venv/bin/isort --check-only src tests tools
+          ../../.venv/bin/flake8 src tests tools
+          ../../.venv/bin/mypy src
+      - run: npm test
+      - name: Check minimal runtime HTTP bridge
+        run: GLITNIR_BUILD_PYTHON="$PWD/.venv-core/bin/python" node --test extension/test/installed-backend.test.cjs
+      - name: Package the version-tagged extension
+        run: GLITNIR_BACKEND_RELEASE_TAG="v$(node -p 'require("./package.json").version')" npm run package
+      - name: Verify fresh setup with the packaged extension
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          if [ ! -x "$HOME/.local/bin/uv" ]; then
+            ln -s "$(command -v uv)" "$HOME/.local/bin/uv"
+          fi
+          version=$(node -p 'require("./package.json").version')
+          unzip -q "glitnir-$version.vsix" -d "$RUNNER_TEMP/checked-vsix"
+          python=$(node extension/scripts/check-thin-install.cjs "$RUNNER_TEMP/checked-vsix/extension" backend/dist/glitnir-0.1.0-py3-none-any.whl "$RUNNER_TEMP/checked-backends")
+          echo "GLITNIR_TEST_PYTHON=$python" >> "$GITHUB_ENV"
+          echo "GLITNIR_TEST_VSIX=$PWD/glitnir-$version.vsix" >> "$GITHUB_ENV"
+      - name: Check the installed extension in an isolated VS Code host
+        run: xvfb-run -a npm run test:host
+      - name: Preserve the originally tested wheel when retrying this run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: backend-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node extension/scripts/release-candidate.cjs artifact glitnir-tested-backend
+      - name: Retain the tested backend for this main candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.backend-artifact.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: glitnir-tested-backend
+          path: backend/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve the originally tested plugin wheel when retrying this run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: plugin-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node extension/scripts/release-candidate.cjs artifact glitnir-tested-plugin
+      - name: Retain the tested plugin wheel for this main candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.plugin-artifact.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: glitnir-tested-plugin
+          path: plugins/forseti/dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve the originally tested VSIX when retrying this run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: vsix-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node extension/scripts/release-candidate.cjs artifact glitnir-tested-vsix
+      - name: Retain the tested extension for release verification
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.vsix-artifact.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: glitnir-tested-vsix
+          path: glitnir-*.vsix
+          if-no-files-found: error
+          retention-days: 7
+  live:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v4
+      - name: Retrieve this run's wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: glitnir-wheels
+      - name: Install the backend as the extension job does
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.0-py3-none-any.whl[dev]'
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
+          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.0-py3-none-any.whl
+      - name: Install Lean and the sandbox
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes bubblewrap apparmor apparmor-profiles elan
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
+          elan toolchain install leanprover/lean4:v4.32.1
+      - name: Check the backend against live Lean
+        working-directory: backend
+        env:
+          # Under these, a live test missing Lean or the sandbox fails, and one
+          # that skips for any other reason fails too (tests/conftest.py).
+          GLITNIR_REQUIRE_PROJECT_INSPECTION: '1'
+          GLITNIR_TEST_PROOF_TRACE: '1'
+        run: ../.venv/bin/python -m pytest -m live -rs --durations=30
+  candidate:
+    needs: [extension, live]
+    # Release candidates are created only once RELEASE_CANDIDATES is set to true.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RELEASE_CANDIDATES == 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/candidate.yml

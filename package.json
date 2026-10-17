@@ -1,0 +1,172 @@
+{
+  "name": "glitnir",
+  "displayName": "Glitnir \u2014 Lean Notebooks",
+  "description": "Read, explore and check Lean notebooks beside their source.",
+  "version": "0.1.0",
+  "publisher": "gimle",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arnovich/glitnir.git"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "glitnir.openPreview",
+        "title": "Open in Glitnir",
+        "category": "Glitnir",
+        "icon": {
+          "light": "dist/media/glitnir-light.svg",
+          "dark": "dist/media/glitnir-dark.svg"
+        }
+      },
+      {
+        "command": "glitnir.setup",
+        "title": "Set Up Environment",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.installExtensionPackage",
+        "title": "Install Extension Package\u2026",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.revealCell",
+        "title": "Reveal in Glitnir",
+        "category": "Glitnir",
+        "icon": {
+          "light": "dist/media/glitnir-light.svg",
+          "dark": "dist/media/glitnir-dark.svg"
+        }
+      },
+      {
+        "command": "glitnir.setupAgent",
+        "title": "Set Up Coding Agent",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.copyValidationCommand",
+        "title": "Copy Validation Command",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.reviewNext",
+        "title": "Next Review Item",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.reviewPrevious",
+        "title": "Previous Review Item",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.reviewClaims",
+        "title": "Review Claims",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.reviewProof",
+        "title": "Explore Proof Steps",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.reviewHelp",
+        "title": "Keyboard Shortcuts",
+        "category": "Glitnir"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "glitnir.revealCell",
+          "when": "resourceExtname == .lean && resourceScheme == file",
+          "group": "navigation@20"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "glitnir.openPreview",
+          "when": "resourceExtname == .lean",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "glitnir.revealCell",
+          "when": "resourceExtname == .lean && resourceScheme == file",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Glitnir",
+      "properties": {
+        "glitnir.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Python interpreter with the matching Glitnir backend installed. Empty discovers an existing environment; thin packages do not install Python."
+        },
+        "glitnir.elaborationTimeoutMs": {
+          "type": "number",
+          "default": 600000,
+          "minimum": 1000,
+          "maximum": 1800000,
+          "scope": "resource",
+          "description": "Time limit in milliseconds for Lean checks and proof-step recording, capped at 30 minutes. Applies to saved-file checks and proof-step observations."
+        },
+        "glitnir.memoryLimitMb": {
+          "type": "integer",
+          "default": 8192,
+          "minimum": 1024,
+          "maximum": 32768,
+          "scope": "resource",
+          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Applies to previews opened after the change."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "glitnir.revealCell",
+        "key": "ctrl+k g",
+        "mac": "cmd+k g",
+        "when": "editorTextFocus && resourceExtname == .lean && resourceScheme == file"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p . && node extension/scripts/copy-ui.cjs",
+    "test": "npm run compile && node --test extension/test/*.test.cjs",
+    "test:host": "npm run compile && node extension/test/run-host.cjs",
+    "vscode:prepublish": "npm run compile",
+    "package": "node extension/scripts/package-thin.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.96.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^4.0.0",
+    "jsdom": "^30.1.1",
+    "typescript": "^5.9.2",
+    "yazl": "2.5.1"
+  },
+  "dependencies": {
+    "yauzl": "3.4.0"
+  }
+}

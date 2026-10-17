@@ -1,0 +1,75 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "burgers",
+  "interpretation": "evaluated-field",
+  "basis": "ogf",
+  "profile": [
+    "mul",
+    [
+      "var",
+      0
+    ],
+    [
+      "var",
+      0
+    ]
+  ],
+  "claim": {
+    "kind": "field",
+    "port": "u",
+    "domain": {
+      "t": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "x": [
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    "post": [
+      "and",
+      [
+        "atom",
+        "ge",
+        [
+          "var",
+          2
+        ]
+      ],
+      [
+        "atom",
+        "le",
+        [
+          "add",
+          [
+            "var",
+            2
+          ],
+          [
+            "neg",
+            [
+              "const",
+              [
+                3,
+                1
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  }
+}

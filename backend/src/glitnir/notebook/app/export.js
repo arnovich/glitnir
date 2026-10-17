@@ -1,0 +1,72 @@
+// Serialize the shared renderer's document as an inert, self-contained page.
+// No notebook data or scripts are bootstrapped into the exported HTML.
+(() => {
+  'use strict';
+  window.glitnirExport = async ({content, title, file, sha256, preview, css}) => {
+    const page = document.implementation.createHTMLDocument(title);
+    page.documentElement.lang = 'en';
+    const meta = (name, value, attribute = 'name') => {
+      const node = page.createElement('meta');
+      node.setAttribute(attribute, name); node.content = value; page.head.append(node);
+    };
+    const charset = page.createElement('meta'); charset.setAttribute('charset', 'utf-8'); page.head.prepend(charset);
+    meta('viewport', 'width=device-width, initial-scale=1');
+    meta('Content-Security-Policy', "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'", 'http-equiv');
+    const style = page.createElement('style'); style.textContent = css; page.head.append(style);
+    page.body.className = 'static-notebook';
+    const app = page.createElement('div'); app.className = 'app'; page.body.append(app);
+    const heading = page.createElement('header'); heading.className = 'heading'; app.append(heading);
+    const h1 = page.createElement('h1'); h1.textContent = title; heading.append(h1);
+    const snapshot = page.createElement('p'); snapshot.className = 'snapshot';
+    snapshot.textContent = `Static snapshot of ${file} · exported ${new Date().toISOString()} · source SHA-256 ${sha256}. ${preview?.mode === 'project' ? 'Saved source and any historical compiled observations shown below. This static page does not check or update results.' : 'Statuses describe recorded Lean observations at export time; this page does not re-check them.'}`;
+    heading.append(snapshot);
+    const main = page.createElement('main'); main.className = 'document'; app.append(main);
+    const body = page.importNode(content, true); body.className = 'doc-inner'; main.append(body);
+
+    // Drop actions with their contextual instructions, keeping claim references.
+    body.querySelectorAll('.diagram-toolbar,.claim-actions,.copy-result,.cell-tools,.section-tools,.lean-tabs,.lean-pane,script,style,link,meta,iframe,object,embed,form,input,textarea,select').forEach(el => el.remove());
+    for (const scene of body.querySelectorAll('.circuit-scene')) { scene.classList.add('diagram-fit'); scene.setAttribute('width', scene.getAttribute('viewBox').split(' ')[2]); }
+    // The static page has no Source view; retain location labels as text.
+    for (const link of body.querySelectorAll('[data-act="source-lines"]')) {
+      const label = page.createElement('span'); label.className = 'lines';
+      label.textContent = link.textContent; link.replaceWith(label);
+    }
+    for (const button of body.querySelectorAll('button')) {
+      if (button.dataset.act === 'goto') {
+        const link = page.createElement('a'); link.href = '#cell-' + button.dataset.id;
+        link.append(...button.childNodes); button.replaceWith(link);
+      } else button.remove();
+    }
+    // Keep per-card source optional; expand supporting replay information.
+    for (const details of body.querySelectorAll('details')) {
+      if (details.matches('.proof-section')) { details.open = true; continue; }
+      if (details.matches('.def-lean,.export-source')) { details.open = false; continue; }
+      const section = page.createElement('section'); section.className = details.className + ' export-fold';
+      section.append(...details.childNodes); details.replaceWith(section);
+    }
+    for (const summary of body.querySelectorAll('summary')) {
+      if (summary.parentElement.tagName === 'DETAILS') continue;
+      const label = page.createElement('h3'); label.append(...summary.childNodes); summary.replaceWith(label);
+    }
+    for (const img of body.querySelectorAll('img')) {
+      if (!/^data:image\/(png|jpeg|gif|webp|svg\+xml)[;,]/i.test(img.getAttribute('src') || '')) img.remove();
+      img.removeAttribute('srcset');
+      img.loading = 'eager';
+    }
+    for (const a of body.querySelectorAll('a')) {
+      if (!/^(#|https?:\/\/|mailto:)/i.test(a.getAttribute('href') || '')) {
+        const span = page.createElement('span'); span.append(...a.childNodes); a.replaceWith(span);
+      } else { a.removeAttribute('target'); a.rel = 'noopener noreferrer'; }
+    }
+    for (const el of body.querySelectorAll('*')) {
+      for (const attr of [...el.attributes]) {
+        if (/^on/i.test(attr.name) || (attr.name.startsWith('data-') && attr.name !== 'data-tone') || ['tabindex', 'contenteditable', 'autofocus'].includes(attr.name)) el.removeAttribute(attr.name);
+        // SVG icons may refer to this file's symbols, never an external resource.
+        if (el.namespaceURI === 'http://www.w3.org/2000/svg' && ['href', 'xlink:href'].includes(attr.name) && !attr.value.startsWith('#')) el.removeAttribute(attr.name);
+      }
+    }
+    const footer = page.createElement('footer'); footer.className = 'footer';
+    footer.textContent = 'Exported from Glitnir. Evidence and figures are not proof.'; app.append(footer);
+    return '<!doctype html>\n' + page.documentElement.outerHTML;
+  };
+})();

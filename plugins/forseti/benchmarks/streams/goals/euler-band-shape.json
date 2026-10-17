@@ -1,0 +1,88 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "vorticity",
+  "interpretation": "trig-band",
+  "basis": "ogf",
+  "profile": {
+    "modes": [
+      [
+        1,
+        0,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        -1,
+        0,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        1,
+        1,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        -1,
+        -1,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        2,
+        1,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        -2,
+        -1,
+        [
+          1,
+          2
+        ]
+      ]
+    ]
+  },
+  "claim": {
+    "kind": "trig-band",
+    "port": "u",
+    "radius": [
+      1,
+      6480
+    ],
+    "post": [
+      "atom",
+      "le",
+      [
+        "add",
+        [
+          "var",
+          2
+        ],
+        [
+          "neg",
+          [
+            "var",
+            0
+          ]
+        ]
+      ]
+    ]
+  },
+  "viscosity": [
+    0,
+    1
+  ]
+}

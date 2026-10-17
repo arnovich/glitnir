@@ -1,0 +1,65 @@
+/* Keep the notebook paper and controls light independently of the editor theme. */
+:root { color-scheme: light; }
+#editor-state {
+  padding: 10px 18px;
+  color: var(--muted);
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  font: 13px var(--sans);
+}
+.unsaved-lean #editor-state { color: var(--amber); }
+#editor-state[hidden], .glitnir-preview #preview-footer { display: none; }
+#open-source { white-space: nowrap; }
+
+/* Keep navigation feedback brief; the inspector and outline retain selection. */
+.glitnir-preview .claim[data-selected=true] { box-shadow: none; }
+.glitnir-preview .document-target:not(:focus-visible) { outline: none; }
+.glitnir-preview .source-selected {
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+  animation: glitnir-reveal 1.4s ease-out;
+}
+@keyframes glitnir-reveal {
+  from { outline-color: var(--blue); }
+  to { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glitnir-preview .source-selected { animation-timing-function: steps(1, end); }
+}
+
+/* Reserve a compact toolbar row instead of floating it over the first card. */
+.glitnir-preview .cellwrap > .cell-tools {
+  position: static;
+  justify-content: flex-end;
+  min-height: 20px;
+  margin-bottom: 4px;
+}
+
+.review-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.review-nav label { color: var(--muted); font-size: 12px; }
+.review-nav select { padding: 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--paper); }
+.review-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.review-nav .review-controls { margin-left: auto; }
+#review-position { color: var(--muted); font-variant-numeric: tabular-nums; }
+#proof-review { padding: 22px 26px; }
+.proof-heading { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 12px; }
+.proof-heading h2 { margin: 0; font-size: 20px; }
+#proof-status { color: var(--muted); }
+.proof-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; }
+.proof-grid pre { padding: 12px; background: var(--chrome); border: 1px solid var(--border); border-radius: 5px; }
+.proof-goals { border-left: 1px solid var(--border); padding-left: 24px; min-width: 0; }
+.proof-goals h3 { margin-top: 0; }
+.proof-goals details { margin-bottom: 12px; }
+#proof-tactics { margin-top: 14px; }
+.proof-tactic { display: block; width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; font-weight: 400; margin-bottom: 4px; }
+.proof-tactic[aria-current=true] { border-color: var(--blue); background: var(--blue-soft); }
+.glitnir-proof-mode .workspace, .glitnir-proof-mode .heading { display: none; }
+@media(max-width: 800px) {
+  .proof-grid { grid-template-columns: minmax(0, 1fr); }
+  .proof-goals { border-left: 0; border-top: 1px solid var(--border); padding: 18px 0 0; }
+}
+
+/* A linked notebook is read-only: its review, proof steps and editing stay with its own preview. */
+.glitnir-linked-view .review-nav,
+.glitnir-linked-view #proof-review,
+.glitnir-linked-view #open-source { display: none; }

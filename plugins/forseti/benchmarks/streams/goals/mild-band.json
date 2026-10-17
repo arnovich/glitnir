@@ -1,0 +1,115 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "vorticity",
+  "interpretation": "mild-band",
+  "basis": "interaction",
+  "profile": {
+    "modes": [
+      [
+        1,
+        0,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        -1,
+        0,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        1,
+        1,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        -1,
+        -1,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        2,
+        1,
+        [
+          1,
+          2
+        ]
+      ],
+      [
+        -2,
+        -1,
+        [
+          1,
+          2
+        ]
+      ]
+    ]
+  },
+  "claim": {
+    "kind": "mild-band",
+    "port": "u",
+    "time": [
+      1,
+      5760
+    ],
+    "post": [
+      "and",
+      [
+        "atom",
+        "ge",
+        [
+          "add",
+          [
+            "var",
+            2
+          ],
+          [
+            "neg",
+            [
+              "const",
+              [
+                -3519,
+                1000
+              ]
+            ]
+          ]
+        ]
+      ],
+      [
+        "atom",
+        "le",
+        [
+          "add",
+          [
+            "var",
+            2
+          ],
+          [
+            "neg",
+            [
+              "const",
+              [
+                3519,
+                1000
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  },
+  "viscosity": [
+    1,
+    10
+  ]
+}

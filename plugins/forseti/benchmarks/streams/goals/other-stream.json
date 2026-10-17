@@ -1,0 +1,47 @@
+{
+  "schema": "gimle.forseti.stream-goal/v2",
+  "model": "formal-heat",
+  "interpretation": "formal-stream",
+  "basis": "ogf",
+  "profile": [
+    "mul",
+    [
+      "var",
+      0
+    ],
+    [
+      "var",
+      0
+    ]
+  ],
+  "claim": {
+    "kind": "full-stream",
+    "outputs": [
+      [
+        "u_xx",
+        [
+          "const",
+          [
+            2,
+            1
+          ]
+        ]
+      ],
+      [
+        "u",
+        [
+          "mul",
+          [
+            "var",
+            1
+          ],
+          [
+            "var",
+            1
+          ]
+        ]
+      ]
+    ],
+    "boundary": "kept"
+  }
+}

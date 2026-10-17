@@ -1,0 +1,278 @@
+"""Inspect prepared Lake module setup explicitly; never grant proof status.
+
+The version-specific adapter runs read-only, without network access. Returned
+setup is a historical description, not a transitive proof-environment identity.
+"""
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from functools import partial
+from pathlib import Path
+from typing import Any
+
+from glitnir.lean.environment import bind_to_parent, kill_and_reap
+from glitnir.lean.limits import check_seconds
+from glitnir.lean.prepared_packages import PROGRAM, validate_resolution
+from glitnir.lean.project import describe_project, read_regular
+from glitnir.lean.sandbox import SandboxUnavailable, confine
+
+TOOLCHAIN = "leanprover/lean4:v4.32.1"
+# `lake setup-file` lists every module in the import closure; for `import
+# Mathlib` that is over 5 MB, so leave room for the library to grow.
+MAX_OUTPUT_BYTES = 32 * 1024 * 1024
+
+
+def _source_digest(source: Path) -> str:
+    """Use the same normalized saved-source binding as the source preview."""
+    text = read_regular(source, 16 * 1024 * 1024).decode("utf-8")
+    return hashlib.sha256(text.replace("\r\n", "\n").encode()).hexdigest()
+
+
+def _toolchain() -> Path:
+    """Locate the supported installed toolchain without invoking elan."""
+    home = Path(os.environ.get("ELAN_HOME", Path.home() / ".elan"))
+    root = (home / "toolchains" / "leanprover--lean4---v4.32.1").resolve()
+    if not all((root / "bin" / name).is_file() for name in ("lake", "lean")):
+        raise ValueError(
+            f"Install {TOOLCHAIN} with elan before inspecting this project."
+        )
+    return root
+
+
+def _run(
+    arguments: list[str],
+    root: Path,
+    toolchain: Path,
+    cancel: threading.Event,
+    *,
+    program: Path | None = None,
+    timeout_seconds: float | None = None,
+) -> str:
+    """Run Lake with no writable roots and bounded lifetime/output files.
+
+    The lifetime defaults to the configured check time limit: `lake setup-file`
+    for a notebook importing all of Mathlib takes minutes, even when warm.
+    """
+    if cancel.is_set():
+        raise ValueError("Project inspection cancelled.")
+    executable = (
+        [
+            str(toolchain / "bin/lean"),
+            "-M2048",
+            "--plugin",
+            str(
+                toolchain
+                / "lib/lean"
+                / (
+                    "libLake_shared.dylib"
+                    if sys.platform == "darwin"
+                    else "libLake_shared.so"
+                )
+            ),
+            "--run",
+            str(program),
+        ]
+        if program is not None
+        else [str(toolchain / "bin/lake")]
+    )
+    command = confine(
+        [*executable, *arguments],
+        readable=[root, toolchain, *([program] if program is not None else [])],
+        cwd=root,
+        required=True,
+    )
+    # Never inherit Lean/Lake search-path, package-server, shell or loader overrides.
+    environment = {
+        "PATH": f"{toolchain / 'bin'}:/usr/bin:/bin",
+        "LEAN_SYSROOT": str(toolchain),
+        "LEAN_PATH": "",
+        "LAKE_HOME": str(toolchain),
+        "HOME": "/nonexistent",
+        "LANG": "C.UTF-8",
+    }
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        process = subprocess.Popen(
+            command,
+            cwd=root,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=err,
+            start_new_session=True,
+            preexec_fn=partial(bind_to_parent, os.getpid(), MAX_OUTPUT_BYTES),
+        )
+        try:
+            deadline = time.monotonic() + (
+                check_seconds() if timeout_seconds is None else timeout_seconds
+            )
+            while process.poll() is None:
+                if cancel.is_set():
+                    raise ValueError("Project inspection cancelled.")
+                if time.monotonic() >= deadline:
+                    raise ValueError("Project inspection timed out.")
+                try:
+                    process.wait(timeout=0.05)
+                except subprocess.TimeoutExpired:
+                    pass
+            texts = []
+            for stream in (out, err):
+                if os.fstat(stream.fileno()).st_size > MAX_OUTPUT_BYTES:
+                    raise ValueError("Project inspection exceeded its output limit.")
+                stream.seek(0)
+                texts.append(stream.read(MAX_OUTPUT_BYTES + 1).decode("utf-8"))
+            if process.returncode != 0:
+                raise ValueError(
+                    "Lake could not inspect this prepared project. Build its "
+                    "dependencies with its declared toolchain, then retry. "
+                    "Configuration needing writes, subprocesses on macOS, or paths "
+                    "outside the project is not supported by this inspection.\n"
+                    + (texts[1] + texts[0])[-4000:]
+                )
+            return texts[0]
+        finally:
+            # Also reap descendant processes if the Lake parent exited first.
+            kill_and_reap(process)
+
+
+def validate_setup(value: Any, root: Path, toolchain: Path) -> dict[str, Any]:
+    """Validate the supported Lake schema and all returned artifact locations."""
+    if not isinstance(value, dict):
+        raise ValueError("Lake returned an invalid module setup.")
+    required = {"name", "isModule", "importArts", "options", "plugins", "dynlibs"}
+    if not required <= value.keys() or value.keys() - required - {"package"}:
+        raise ValueError("Lake returned an unsupported module setup schema.")
+    if not isinstance(value["name"], str) or not value["name"]:
+        raise ValueError("Lake returned an invalid module name.")
+    if type(value["isModule"]) is not bool or (
+        "package" in value and not isinstance(value["package"], str)
+    ):
+        raise ValueError("Lake returned invalid module properties.")
+    options, imports = value["options"], value["importArts"]
+    if not isinstance(options, dict) or not all(
+        isinstance(k, str) and (type(v) in (str, bool) or (type(v) is int and v >= 0))
+        for k, v in options.items()
+    ):
+        raise ValueError("Lake returned invalid Lean options.")
+    if not isinstance(imports, dict) or not all(
+        isinstance(k, str) and isinstance(v, list) and 1 <= len(v) <= 4
+        for k, v in imports.items()
+    ):
+        raise ValueError("Lake returned invalid import artifacts.")
+
+    def artifact(name: Any) -> None:
+        if not isinstance(name, str) or not name or "\x00" in name:
+            raise ValueError("Lake returned an invalid artifact path.")
+        path = (root / name).resolve()
+        if not any(path.is_relative_to(base) for base in (root, toolchain)):
+            raise ValueError("Lake returned an artifact outside the inspection roots.")
+        if not path.is_file():
+            raise ValueError("Lake artifact is missing or is not a regular file.")
+
+    for paths in imports.values():
+        for path in paths:
+            artifact(path)
+    for field in ("plugins", "dynlibs"):
+        if not isinstance(value[field], list):
+            raise ValueError(f"Lake returned invalid {field}.")
+        for entry in value[field]:
+            if field == "plugins" and isinstance(entry, dict):
+                if set(entry) != {"path", "initFn"} or not (
+                    entry["initFn"] is None or isinstance(entry["initFn"], str)
+                ):
+                    raise ValueError("Lake returned an invalid plugin.")
+                artifact(entry["path"])
+            else:
+                artifact(entry)
+    return value
+
+
+def inspect_project(
+    source: Path,
+    *,
+    expected_sha256: str | None = None,
+    cancel: threading.Event | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Resolve prepared module setup on explicit request, without proof metadata.
+
+    `timeout_seconds` bounds each Lake run; by default it is the configured
+    check time limit. A caller that answers a quick request passes a shorter one.
+    """
+    try:
+        source = source.absolute()
+        digest = _source_digest(source)
+        if expected_sha256 is not None and digest != expected_sha256:
+            raise ValueError("Saved source changed; refresh the preview and retry.")
+        project = describe_project(source)
+        if project["kind"] != "lake":
+            raise ValueError(
+                "Inspection needs a prepared Lake project; loose files still preview."
+            )
+        files = project["files"]
+        for name, info in files.items():
+            if "error" in info and not (
+                name in ("lakefile.lean", "lakefile.toml")
+                and info["error"] == "missing"
+            ):
+                raise ValueError(f"Prepare the project's {name}: {info['error']}.")
+        if project["toolchain"] != TOOLCHAIN:
+            raise ValueError(f"Project inspection currently supports only {TOOLCHAIN}.")
+        root = Path(project["root"]).resolve()
+        if not source.resolve().is_relative_to(root):
+            raise ValueError("Source is outside the project root.")
+        toolchain = _toolchain()
+        cancellation = cancel if cancel is not None else threading.Event()
+        version = _run(
+            ["--version"],
+            root,
+            toolchain,
+            cancellation,
+            timeout_seconds=timeout_seconds,
+        ).strip()
+        if (
+            not version.startswith("Lake version 5.0.0-src+")
+            or "(Lean version 4.32.1)" not in version
+        ):
+            raise ValueError(
+                "Installed Lake does not match the supported Lean 4.32.1 adapter."
+            )
+        output = _run(
+            ["setup-file", str(source)],
+            root,
+            toolchain,
+            cancellation,
+            program=PROGRAM,
+            timeout_seconds=timeout_seconds,
+        )
+        report = json.loads(output)
+        if not isinstance(report, dict) or set(report) != {"setup", "resolution"}:
+            raise ValueError("Invalid prepared project inspection report.")
+        setup = validate_setup(report["setup"], root, toolchain)
+        resolution = validate_resolution(report["resolution"], root)
+        if _source_digest(source) != digest or describe_project(source) != project:
+            raise ValueError(
+                "Source or project configuration changed; retry inspection."
+            )
+        return {
+            "status": "resolved",
+            "message": (
+                f"Module setup resolved for {setup['name']}. "
+                "Setup only; use Check saved file for independent observations. "
+                "Prepared local dependency contents; "
+                "Git revision and cleanliness are not verified."
+            ),
+            "source_sha256": digest,
+            "project": project,
+            "toolchain_root": str(toolchain),
+            "lake_version": version,
+            "setup": setup,
+            "resolution": resolution,
+        }
+    except (OSError, ValueError, RecursionError, SandboxUnavailable) as error:
+        return {"status": "unavailable", "message": str(error)}

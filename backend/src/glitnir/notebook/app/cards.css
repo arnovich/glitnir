@@ -1,0 +1,68 @@
+/* Reading-card component. Override these tokens on .card-<kind> to restyle it.
+   Accents identify content kinds; they never encode checked/failed status. */
+.reading-card, .claim {
+  --card-accent: var(--muted);
+  --card-tint: var(--chrome);
+  --card-border: var(--border);
+  --card-radius: 7px;
+  --card-padding: 14px;
+}
+.reading-card {
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  background: var(--paper);
+  padding: 0;
+  min-width: 0;
+}
+.card-definition { --card-accent: var(--blue); --card-tint: var(--blue-soft); }
+.card-example { --card-accent: var(--violet); --card-tint: var(--violet-soft); }
+.card-type, .card-instance { --card-accent: var(--blue); --card-tint: var(--blue-soft); }
+.card-assumption { --card-accent: var(--amber); --card-tint: var(--amber-soft); }
+.card-proposition { --card-accent: var(--violet); --card-tint: var(--violet-soft); }
+.card-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px var(--card-padding);
+  border-top: 3px solid var(--card-accent);
+  border-bottom: 1px solid var(--card-border);
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
+  background: var(--card-tint);
+  font: 500 15px/1.5 var(--sans);
+}
+.card-header .def-kind {
+  color: var(--card-accent);
+  font: 600 10.5px/1.6 var(--sans);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.card-header dfn { font-style: normal; min-width: 0; overflow-wrap: anywhere; }
+.card-header code { font-size: 13px; }
+.card-header .source-controls { margin-left: auto; white-space: nowrap; }
+.card-body { padding: 10px var(--card-padding); }
+.card-body > :first-child { margin-top: 0; }
+.card-body > :last-child { margin-bottom: 0; }
+.card-source { border-top: 1px solid var(--card-border); padding: 0 var(--card-padding); }
+.card-source .def-lean > summary { padding: 8px 0; color: var(--card-accent); font: 500 11px/1.6 var(--sans); }
+.card-source .def-lean[open] > summary { border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.card-source .def-lean > pre { margin: 0 0 12px; }
+.def-body p { font: 400 17px/1.75 var(--sans); margin: 4px 0 12px; }
+.def-body code { font-size: .85em; background: var(--sunk); padding: 1px 4px; border-radius: 3px; }
+.def-body pre { margin: 4px 0 8px; padding: 8px 12px; background: var(--sunk); border-radius: 6px; }
+@media (max-width: 600px) { .reading-card { --card-padding: 10px; } }
+@media print { .reading-card { break-inside: avoid; } }
+
+.claim-notice { padding: 0 var(--card-padding); }
+
+/* Definitions emphasize their value; supporting context stays available. */
+.card-signature { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+.card-header .card-signature code { font-size: 11.5px; font-weight: 400; white-space: pre-wrap; }
+.card-description { flex-basis: 100%; min-width: 0; font: 400 12px/1.5 var(--sans); color: var(--muted); overflow-wrap: anywhere; }
+.compact-definition .card-header { padding-top: 7px; padding-bottom: 7px; gap: 4px 10px; }
+.compact-definition .card-body { padding-top: 8px; padding-bottom: 8px; }
+.compact-definition .card-source { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.compact-definition .card-source > details { min-width: 0; }
+.compact-definition .card-source > details[open] { flex-basis: 100%; }
+.definition-details .def-body p { font-size: 14px; line-height: 1.6; }

@@ -1,0 +1,39 @@
+/* Circuit data is supplied by Lean; these colours describe structure, not proof status. */
+.view-cell { --card-accent: var(--blue); --card-tint: var(--blue-soft); --card-border: var(--border); --card-padding: 14px; --card-radius: 7px; }
+.diagram-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:9px 12px; border-bottom:1px solid var(--border); background:var(--chrome); }
+.diagram-toolbar button { font-size:11px; padding:4px 8px; }
+.diagram-toolbar label { display:flex; align-items:center; gap:6px; font-size:11px; margin-left:auto; min-width:0; }
+.diagram-toolbar select { min-width:0; max-width:280px; background:var(--paper); border:1px solid var(--border); border-radius:4px; padding:4px; }
+.diagram-viewport { overflow:auto; max-height:650px; background:var(--paper); overscroll-behavior:contain; }
+.circuit-scene { display:block; max-width:none; height:auto; color:var(--ink); font:13px var(--sans); }
+.circuit-scene.diagram-fit { max-width:100%; margin-inline:auto; }
+.circuit-scene text { fill:var(--ink); }
+.circuit-wire { stroke:var(--muted); stroke-width:1.6; fill:none; }
+.circuit-crossing { stroke:var(--paper); stroke-width:7; fill:none; }
+.circuit-operator { fill:var(--blue-soft); stroke:var(--blue); stroke-width:1.2; }
+.circuit-operator.integrator { fill:var(--violet-soft); stroke:var(--violet); }
+.circuit-operation { font-size:15px; }
+.circuit-pin,.circuit-junction { fill:var(--muted); }
+.circuit-heading { font-size:12px; font-weight:600; }
+.circuit-equation { font-family:var(--serif); font-size:15px; }
+.circuit-scene .circuit-port { font-size:11px; fill:var(--muted); }
+.circuit-feedback { stroke:var(--amber); }
+.circuit-junction.feedback { fill:var(--amber); }
+.circuit-scene .circuit-feedback-label { fill:var(--amber); font-size:11px; }
+.circuit-boundary,.circuit-highlight { stroke:var(--violet); stroke-width:2; fill:none; }
+.circuit-boundary { stroke-dasharray:3 3; stroke-width:1.3; }
+.circuit-node.selected .circuit-operator { stroke:var(--violet); stroke-width:2; }
+.circuit-condition text { fill:var(--violet); font:italic 14px var(--serif); paint-order:stroke; stroke:var(--paper); stroke-width:5; stroke-linejoin:round; }
+.circuit-condition:hover text { text-decoration:underline; }
+.diagram-proof { margin:0; padding:8px 14px; border-top:1px solid var(--border); }
+.diagram-proof p { margin:7px 0; overflow-wrap:anywhere; }
+.diagram-observations { display:flex; flex-wrap:wrap; gap:8px 14px; padding:8px 14px; border-top:1px solid var(--border); }
+.diagram-observations > span:not(:first-child) { font-family:var(--mono); font-size:12px; }
+.diagram-error { padding:14px; color:var(--muted); }
+.diagram-dialog { width:calc(100vw - 48px); max-width:1600px; height:calc(100vh - 48px); max-height:none; border:1px solid var(--border); border-radius:9px; background:var(--paper); color:var(--ink); padding:0; }
+.diagram-dialog::backdrop { background:#0008; }
+.diagram-dialog-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border); }
+.diagram-dialog .diagram-viewport { max-height:calc(100vh - 200px); }
+.diagram-dialog [data-command=expand] { display:none; }
+@media(max-width:600px) { .diagram-toolbar label { margin-left:0; flex-basis:100%; } .diagram-toolbar select { flex:1; } }
+@media print { .diagram-toolbar { display:none; } .diagram-viewport { overflow:visible; max-height:none; } .circuit-scene { width:100% !important; } }

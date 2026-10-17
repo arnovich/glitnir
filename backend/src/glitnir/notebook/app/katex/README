@@ -1,0 +1,5 @@
+KaTeX 0.16.47 (https://katex.org), vendored from the npm package.
+The unmodified dist/katex.min.js and dist/katex.min.css use the MIT licence
+in LICENSE. The unmodified woff2 fonts use SIL OFL 1.1; see OFL.txt for
+copyrights, reserved font names and the full licence.
+The workbench and VS Code webview load no scripts from a CDN.
