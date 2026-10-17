@@ -24,8 +24,6 @@ export function previewHtml(webview: vscode.Webview, media: vscode.Uri): string 
   html = html.replace('<div class="bar-right">', `<div class="bar-right">
       <button id="open-source" class="secondary" type="button" title="Edit the selected section in the VS Code source editor">Edit in VS Code <svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7"/></svg></button>
       <button id="next-unresolved" class="secondary" type="button" hidden>Next unresolved <span aria-hidden="true">↓</span></button>`);
-  html = html.replace("Edit the selected claim's cell", 'Open the Lean source in VS Code');
-  html = html.replace(/<dt><kbd>Ctrl<\/kbd>\+<kbd>Enter<\/kbd><\/dt><dd>Save the cell you are editing<\/dd>/, '');
   html = html.replace('<script src="/app.js"></script>', `<script nonce="${nonce}" src="${resource('bridge.js')}"></script><script nonce="${nonce}" src="${resource('review.js')}"></script><script nonce="${nonce}" src="${resource('app.js')}"></script>`);
   return html;
 }

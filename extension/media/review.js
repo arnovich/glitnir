@@ -15,7 +15,7 @@
     <label id="review-filter-label">Show <select id="review-filter" aria-label="Claims to review"><option value="attention">Needs attention</option><option value="all">All claims</option></select></label>
     <span id="review-position" class="small" role="status"></span><div class="review-controls"><button class="secondary" id="review-previous">Previous <kbd>p</kbd></button></div>`;
   const next = $('next-unresolved') || document.createElement('button');
-  next.id = 'next-unresolved'; next.className = 'secondary'; next.innerHTML = 'Next <kbd>n</kbd>';
+  next.id = 'next-unresolved'; next.className = 'secondary'; next.innerHTML = 'Next <kbd>n</kbd>'; next.hidden = false;
   nav.querySelector('.review-controls').append(next);
   app.querySelector('.bar').after(nav);
   const proof = document.createElement('section');
@@ -23,32 +23,35 @@
   proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-title"></h2><p id="proof-status" class="small"></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-cancel" class="secondary" hidden>Cancel</button><button id="proof-back" class="secondary">Back to claims <kbd>Esc</kbd></button></div></div>
     <p id="proof-message" role="status"></p><div class="proof-grid"><div><pre id="proof-statement"></pre><div id="proof-tactics" role="group" aria-label="Recorded tactics"></div></div><div class="proof-goals"><h3 id="proof-goal-title"></h3><details id="proof-before"><summary>Goals before this tactic</summary><pre id="proof-before-text"></pre></details><pre id="proof-after"></pre><p class="small" id="proof-scope"></p><details id="proof-diagnostics" hidden><summary>Lean messages</summary><pre></pre></details><p id="proof-provenance" class="small muted"></p></div></div>`;
   nav.after(proof);
-  const shortcuts = [
-    ['n / p', 'Next / previous in the active mode'], ['c / t', 'Claims / Proof steps'],
-    ['j / k', 'Next / previous of all claims (returns to Claims)'],
-    ['e', 'Edit the selected claim or tactic in VS Code'], ['r', 'Check the saved file through the selected claim (in Proof steps: all of it)'],
-    ['s', 'Switch document / source (returns to Claims)'], ['i', 'Show or hide the claim inspector'],
-    ['Esc', 'Close the top dialog; otherwise return to Claims'], ['?', 'Keyboard shortcuts'],
-    ['⌘K, then G (Mac) / Ctrl+K, then G (Windows/Linux)', 'From Lean source: reveal this location in Glitnir. Release the first combination before pressing G.'],
-  ];
+  // The renderer draws the shortcut list (one source for every listing); this
+  // layer adds only its own setting.
   const help = $('keys');
-  const list = help.querySelector('dl'); list.replaceChildren();
-  for (const [key, description] of shortcuts) {
-    const term = document.createElement('dt'), desc = document.createElement('dd'), kbd = document.createElement('kbd');
-    kbd.textContent = key; term.append(kbd); desc.textContent = description; list.append(term, desc);
-  }
   const setting = document.createElement('label');
   setting.innerHTML = '<input id="review-letter-keys" type="checkbox" checked> Enable single-letter shortcuts in this notebook';
-  list.after(setting);
-  const explanation = document.createElement('p');
-  explanation.textContent = 'These keys work only while Glitnir has focus, outside text fields and dialogs. Navigation does not run checks. Review → explore steps → edit → return → check. Live view follows saved edits from any editor or agent; unsaved drafts are not shown. Changed sections are highlighted briefly. Enable Follow edits to scroll to them without moving keyboard focus. Checking and proof-step refresh remain explicit.';
-  list.before(explanation);
+  $('keys-foot').prepend(setting);
   help.querySelector('.dialog').setAttribute('aria-labelledby', 'keys-title');
   const labels = {checked: 'Checked', refuted: 'Refuted', conditional: 'Conditional', stale: 'Out of date', unknown: 'Unknown', failed: 'Failed', open: 'Open goal'};
   function currentCell() { return snapshot?.cells?.find(c => c.index === selected); }
   function currentClaim() { return snapshot?.claims?.find(c => c.name === currentCell()?.id); }
   function project() { return snapshot?.preview?.mode === 'project'; }
+  // A saved project result needs attention unless it is kernel checked and
+  // current: out of date, not compared, not rechecked, containing sorry or
+  // resting on additional assumptions.
+  const needsAttention = saved => saved.status !== 'checked' || saved.current !== true || saved.not_rechecked === true;
+  // Where the last check of this saved file stopped at a failing command
+  // (not a requested check through a claim), as a place to review.
+  function stoppedCell() {
+    const withheld = snapshot?.project_withheld;
+    if (!withheld || withheld.stale || !Number.isSafeInteger(withheld.from_line)) return null;
+    if (Number.isSafeInteger(withheld.through_line) && withheld.from_line === withheld.through_line + 1) return null;
+    return (snapshot.cells || []).find(c => c.start <= withheld.from_line && withheld.from_line <= c.end) || null;
+  }
   function cells() {
+    if (project()) {
+      const saved = new Map((snapshot.project_claims || []).map(c => [c.name, c]));
+      const stopped = stoppedCell();
+      return (snapshot.cells || []).filter(c => c === stopped || (c.claim && saved.has(c.claim) && needsAttention(saved.get(c.claim))));
+    }
     const claims = snapshot?.claims || [];
     const names = new Set(claims.filter(c => $('review-filter').value === 'all' || !['checked', 'refuted'].includes(c.status) || snapshot.check_errors?.[c.name]).map(c => c.name));
     return (snapshot?.cells || []).filter(c => c.kind === 'claim' && names.has(c.id));
@@ -79,13 +82,21 @@
     $('review-proof').title = dirty ? 'Save or revert edits before viewing proof steps' : 'Explore saved tactics (t)';
     $('review-filter-label').hidden = inProof || project();
     const previous = $('review-previous');
-    next.hidden = previous.hidden = !inProof && project();
     previous.disabled = dirty || (inProof ? step < 0 : !queue.some(c => selected === null || c.index < selected));
     next.disabled = dirty || (inProof ? !nodeList.length || step >= nodeList.length - 1 : !queue.some(c => selected === null || c.index > selected));
-    previous.title = inProof ? 'Previous recorded proof state (p)' : 'Previous matching claim (p)';
-    next.title = inProof ? 'Next recorded proof state (n)' : queue.length ? `${queue.length} matching claims; next in source order (n)` : 'No matching claims';
     const index = queue.findIndex(c => c.index === selected);
-    $('review-position').textContent = inProof ? nodeList.length ? step < 0 ? 'Initial goals' : `Step ${step + 1} of ${nodeList.length}` : 'No recorded steps' : project() ? 'Project source · whole-file checking' : index >= 0 ? `Claim ${index + 1} of ${queue.length}` : `${queue.length} matching claims`;
+    if (inProof) {
+      previous.title = 'Previous recorded proof state (p)'; next.title = 'Next recorded proof state (n)';
+      $('review-position').textContent = nodeList.length ? step < 0 ? 'Initial goals' : `Step ${step + 1} of ${nodeList.length}` : 'No recorded steps';
+    } else if (project()) {
+      previous.title = 'Previous claim that needs attention (p)';
+      next.title = queue.length ? `${queue.length} need attention; next in source order (n)` : 'Nothing needs attention';
+      $('review-position').textContent = !queue.length ? 'Nothing needs attention' : index >= 0 ? `${index + 1} of ${queue.length} needing attention` : `${queue.length} need attention`;
+    } else {
+      previous.title = 'Previous matching claim (p)';
+      next.title = queue.length ? `${queue.length} matching claims; next in source order (n)` : 'No matching claims';
+      $('review-position').textContent = index >= 0 ? `Claim ${index + 1} of ${queue.length}` : `${queue.length} matching claims`;
+    }
     if (!inProof) { focusAfterRender(focused); return; }
     $('proof-title').textContent = claim?.name || currentCell()?.id || snapshot?.file || 'Saved source unavailable';
     $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : 'Project observation · use Check saved file for proof checking';
@@ -124,7 +135,7 @@
     update();
   }
   function move(direction) {
-    if (dirty) return;
+    if (dirty || linkedView()) return;
     if (mode === 'proof') { step = Math.max(-1, Math.min(nodes().length - 1, step + direction)); remember(); update(); return; }
     const queue = cells();
     const cell = direction > 0 ? queue.find(c => selected === null || c.index > selected) : queue.findLast(c => selected === null || c.index < selected);

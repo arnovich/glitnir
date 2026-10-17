@@ -56,7 +56,7 @@
       <h4 class="label" id="graph-label">Claim graph</h4>
       <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
       <p class="small muted" id="graph-note">Arcs come from Lean: the earlier claims a proof's axioms name.</p>
-      <div class="keys"><span><kbd>j</kbd> <kbd>k</kbd> next / previous claim</span><span><span id="key-edit" hidden><kbd>e</kbd> edit · </span><kbd>s</kbd> source</span></div>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"></dl>
     </nav>
 
     <main class="document">
@@ -85,16 +85,11 @@
 </div>
 
 <div class="overlay" id="keys" hidden>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
     <h3 id="keys-title">Keyboard shortcuts</h3>
-    <dl>
-      <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous claim</dd>
-      <dt><kbd>s</kbd></dt><dd>Switch document / Lean source</dd>
-      <dt><kbd>i</kbd></dt><dd>Show or hide the inspector</dd>
-      <dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd>
-      <dt><kbd>Esc</kbd></dt><dd>Close dialogs</dd>
-    </dl>
-    <button type="button" class="secondary" id="keys-close">Close</button>
+    <p class="keys-intro" id="keys-intro"></p>
+    <div class="keys-groups" id="keys-groups"></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
   </div>
 </div>
 

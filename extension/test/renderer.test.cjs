@@ -2026,7 +2026,9 @@ test('review navigation visits unresolved claims without checking and resets aft
     assert.equal(requests.filter(r => r.method === 'POST').length, 0, 'stepping never starts a check or changes a proof');
     snapshot.preview = {mode: 'project', project: {kind: 'loose'}};
     await window.glitnirPoll();
-    assert.equal(button.hidden, true, 'project snapshots have no per-claim replay queue');
+    assert.equal(button.hidden, false, 'project snapshots review their saved results');
+    assert.equal(button.disabled, true);
+    assert.equal(button.title, 'Nothing needs attention', 'a project without saved results has nothing to step through');
   } finally { window.close(); }
 });
 
@@ -2063,9 +2065,8 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     key('Escape'); key('t'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1);
     key('?'); key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    assert.match($('keys').textContent, /⌘K, then G/);
-    assert.match($('keys').textContent, /Ctrl\+K, then G/);
-    assert.match($('keys').textContent, /Switch document/);
+    assert.match($('keys').textContent, /Ctrl\+K then G/, 'the reveal chord, outside macOS');
+    assert.match($('keys').textContent, /Switch between document and Lean source/);
     key('Escape', $('keys-close'));
     $('review-letter-keys').checked = false; key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     $('review-letter-keys').checked = true;
@@ -2196,7 +2197,7 @@ test('live saved edits coalesce, highlight changes, and follow only by choice', 
     $('keys-open').click();
     snapshot = liveSnapshot('While help is open', 'd'); changed(); await pause();
     assert.equal(scrolled.length, 1, 'no scrolling behind a dialog');
-    assert.match($('keys').textContent, /Follow edits/);
+    assert.equal($('keys').hidden, false);
     assert.equal(messages.filter(m => m.method === 'POST').length, 0, 'live rendering never starts checks');
     await new Promise(resolve => setTimeout(resolve, 2500));
     assert.equal($('doc').querySelectorAll('.live-changed').length, 0, 'highlights fade without another update');
@@ -2727,7 +2728,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.deepEqual([...d.querySelectorAll('#outline .o-claim + .dot')].map(o => o.dataset.tone), ['green', 'amber']);
     assert.deepEqual([...d.querySelectorAll('#chips-row button')].map(b => b.textContent.trim()), ['k_pos', 'floor']);
     for (const id of ['graph', 'graph-label', 'graph-note']) assert.equal(d.getElementById(id).hidden, true, 'no uses: no claim graph');
-    assert.equal(d.getElementById('key-edit').hidden, true, 'no edit key outside the editor');
+    assert.deepEqual([...d.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 's', 'i', 'r', '?'], 'no editor-only keys outside the editor');
     assert.deepEqual([...d.querySelectorAll('.proof-section .section-statuses .pill')].map(p => p.textContent), ['1 Kernel checked', '1 Contains sorry', '1 Out of date']);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
@@ -2742,7 +2743,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.equal(d.getElementById('source-L18').dataset.tone, undefined);
   } finally { window.close(); }
   const host = await renderSnapshot(projectNotebook());
-  try { assert.equal(host.document.getElementById('key-edit').hidden, false, 'the editor preview handles e'); } finally { host.close(); }
+  try { assert.deepEqual([...host.document.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 'n p', 'c t', 's', 'i', 'r', 'e', '?'], 'the editor preview handles e, n/p and c/t'); } finally { host.close(); }
 });
 
 test('the project banner is amber only when a result needs attention', async () => {
@@ -3354,5 +3355,180 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     assert.equal(messages.filter(m => m.path === '/api/proof/cancel').length, 1, 'a joined run is not cancelled');
     assert.match(insp.querySelector('.goal-section').textContent, /Stopped following the proof observation Proof steps started/);
     assert.equal(trace.status, 'running');
+  } finally { window.close(); }
+});
+
+// The shortcut rows of a help dialog: the chips of each key column and its description.
+const shortcutRows = d => [...d.querySelectorAll('#keys-groups dt')].map(dt => ({keys: [...dt.querySelectorAll('kbd')].map(k => k.textContent), text: dt.nextElementSibling.textContent}));
+// The keys a page acts on: each handled key is default-prevented.
+function handledKeys(window) {
+  const app = window.document.querySelector('.app');
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  return [...'abcdefghijklmnopqrstuvwxyz?'].filter(key => {
+    const event = new window.KeyboardEvent('keydown', {key, bubbles: true, cancelable: true});
+    app.dispatchEvent(event);
+    if (!window.document.getElementById('keys').hidden) window.document.getElementById('keys-close').click();
+    return event.defaultPrevented;
+  });
+}
+
+test('every shortcut listing comes from one list that matches the keys that work', async () => {
+  const media = path.resolve(__dirname, '../../dist/media');
+  assert.doesNotMatch(readFileSync(path.join(media, 'index.html'), 'utf8'), /<kbd>[a-z]<\/kbd>/, 'no hand-written key list in the page');
+  assert.doesNotMatch(readFileSync(path.join(media, 'review.js'), 'utf8'), /shortcuts\s*=\s*\[/, 'the review layer keeps no list of its own');
+  const readme = readFileSync(path.resolve(__dirname, '../../README.md'), 'utf8');
+  const table = readme.slice(readme.indexOf('<!-- shortcuts:start'), readme.indexOf('<!-- shortcuts:end -->'));
+  const documented = table.split('\n').filter(line => line.startsWith('| `')).map(line => {
+    const [keys, text] = line.slice(2, -2).split(' | ');
+    return {keys: [...keys.matchAll(/`([^`]+)`/g)].map(m => m[1]), text};
+  });
+  const host = await renderSnapshot(projectNotebook());
+  try {
+    const d = host.document;
+    // Unsaved source keeps the keys from checking or recording anything.
+    host.dispatchEvent(new host.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
+    const rows = shortcutRows(d);
+    assert.deepEqual(rows.map(r => r.text), documented.map(r => r.text), 'the README table says what the preview says');
+    rows.forEach((row, i) => assert.ok(documented[i].keys.join(' ').includes(row.keys.join(' ')), `README keys for ${row.keys}`));
+    const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
+    assert.deepEqual(listed, ['?', 'c', 'e', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
+    assert.deepEqual(handledKeys(host).sort(), listed, 'the editor preview acts on exactly the listed keys');
+    const hinted = [...d.querySelectorAll('#key-hints kbd')].map(k => k.textContent);
+    assert.ok(hinted.length && hinted.every(k => listed.includes(k)), 'the contents hint is drawn from the same list');
+  } finally { host.close(); }
+  const browser = await renderSnapshot(projectNotebook(), {browser: (url, options) => options?.method === 'POST' ? {ok: false, status: 409, json: async () => ({error: 'test'})} : {ok: true, json: async () => projectNotebook()}});
+  try {
+    const rows = shortcutRows(browser.document);
+    const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
+    assert.deepEqual(listed, ['?', 'i', 'j', 'k', 'r', 's'], 'outside the editor only the renderer’s own keys are listed');
+    assert.deepEqual(handledKeys(browser).sort(), listed);
+    assert.equal(rows.find(r => r.keys[0] === 'r').text, 'Check the saved file through the selected claim');
+  } finally { browser.close(); }
+});
+
+test('the shortcuts dialog is a two-column list of key chips and descriptions, in groups', async () => {
+  const window = await renderSnapshot(projectNotebook());
+  const d = window.document;
+  try {
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'reviewCommand', action: 'help'}}));
+    assert.equal(d.getElementById('keys').hidden, false);
+    assert.deepEqual([...d.querySelectorAll('.keys-group .label')].map(h => h.textContent), ['Navigate', 'View', 'Check and edit', 'General']);
+    assert.ok(d.getElementById('keys-intro').textContent.length < 120, 'a short introduction');
+    for (const dt of d.querySelectorAll('.keys-group dt')) {
+      assert.ok(dt.querySelector('kbd'));
+      for (const kbd of dt.querySelectorAll('kbd')) assert.doesNotMatch(kbd.textContent, /\s|\//, 'one key per chip');
+      assert.equal(dt.textContent.replace(/\s+/g, ' ').trim(), [...dt.querySelectorAll('kbd')].map(k => k.textContent).join(dt.textContent.includes('then') ? ' then ' : ' '), 'only chips in the key column');
+    }
+    assert.ok(d.querySelector('#keys-foot #review-letter-keys'), 'the editor’s setting sits in the footer');
+    assert.ok(d.querySelector('#keys-foot #keys-close'));
+  } finally { window.close(); }
+  const css = readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8');
+  assert.match(css, /\.keys-dialog\{width:min\(600px,100%\)/, 'a sensible width that shrinks on a phone');
+  assert.match(css, /\.keys-group dl\{display:grid;grid-template-columns:minmax\(92px,max-content\) minmax\(0,1fr\)/, 'keys sized to content, descriptions take the rest');
+  assert.match(css, /\.keys-group dt\{white-space:nowrap\}/);
+  assert.match(css, /\.dialog\{[^}]*max-height:100%;overflow:auto\}/, 'a tall dialog scrolls instead of leaving the screen');
+  const rules = css.match(/\.keys-[^{]*\{[^}]*\}/g).join('');
+  assert.doesNotMatch(rules, /#[0-9a-f]{3,6}\b|rgb\(/i, 'dialog colours come from the theme tokens, light and dark');
+});
+
+test('the contents keep long claim names inside the rail and their status dots in one column', async () => {
+  const snapshot = projectNotebook({current: false});
+  snapshot.cells[4] = {...snapshot.cells[4], text: snapshot.cells[4].text.replace('theorem floor', 'theorem energy_rate_nonpositive'), claim: 'Demo.energy_rate_nonpositive'};
+  snapshot.project_claims[1].name = 'Demo.energy_rate_nonpositive';
+  const window = await renderSnapshot(snapshot);
+  try {
+    const entries = [...window.document.querySelectorAll('#outline button[data-act="goto"]')];
+    assert.deepEqual(entries.map(b => b.title), ['Demo.k_pos', 'Demo.energy_rate_nonpositive'], 'the full name on hover');
+    const name = entries[1].querySelector('.o-claim');
+    assert.equal(name.textContent, 'energy_rate_nonpositive');
+    assert.equal(name.innerHTML, 'energy_<wbr>rate_<wbr>nonpositive', 'a long name wraps at its parts');
+    assert.ok(entries.every(b => b.lastElementChild.matches('.dot')), 'the dot ends each entry');
+  } finally { window.close(); }
+  const css = readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8');
+  assert.match(css, /\.rail li button\{width:100%;display:grid;grid-template-columns:minmax\(0,1fr\) 8px;/, 'names shrink, dots keep a column');
+  assert.match(css, /\.rail \.o-claim\{[^}]*min-width:0;overflow-wrap:anywhere\}/);
+  assert.match(css, /\.rail\{[^}]*padding:18px 14px 18px 14px;/, 'the same space on both sides of the contents');
+});
+
+test('n and p step through the project claims that need attention, and steps in Proof steps', async () => {
+  const sha = 'a'.repeat(64);
+  const names = ['fine', 'stale', 'sorry', 'axioms', 'carried', 'later'];
+  const cells = [{index: 0, kind: 'source', start: 1, end: 1, text: 'import Mathlib\n'}];
+  names.forEach((name, i) => cells.push({index: i + 1, kind: 'source', start: i * 3 + 2, end: i * 3 + 4, text: `theorem ${name} : True := by\n  trivial\n\n`, claim: name}));
+  cells.push({index: 7, kind: 'source', start: 20, end: 21, text: 'theorem broken : False := by\n  simp\n'});
+  const saved = (name, i, fields) => ({name, start_line: i * 3 + 2, end_line: i * 3 + 3, status: 'checked', current: true, axioms: [], ...fields});
+  const snapshot = {file: 'Review.lean', sha256: sha, checking: [], check_errors: {}, claims: [], links: [], revisions: [], assets: [], cells, views: [], evidence: [], decisions: [],
+    project_claims: [saved('fine', 0), saved('stale', 1, {current: false}), saved('sorry', 2, {status: 'admitted'}), saved('axioms', 3, {status: 'assumptions'}), saved('carried', 4, {not_rechecked: true}), saved('later', 5)],
+    project_non_claims: [], project_withheld: {from_line: 20, message: 'unsolved goals'}, references: [],
+    preview: {mode: 'project', notice: 'Saved-source preview.', check: null, project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+  const node = (id, line, text) => ({id, parent: null, text, range: {start: {line, character: 2}, end: {line, character: 9}}, before: ['⊢ True'], after: []});
+  const messages = [];
+  const window = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: message => ['/api/proof/start', '/api/proof/trace'].includes(message.path)
+    ? {id: 'steps', status: 'ready', source_sha256: sha, nodes: [node(0, 6, 'trivial'), node(1, 9, 'trivial'), node(2, 10, 'simp')]} : {}});
+  const d = window.document, $ = id => d.getElementById(id), app = d.querySelector('.app');
+  const key = k => app.dispatchEvent(new window.KeyboardEvent('keydown', {key: k, bubbles: true, cancelable: true}));
+  const revealed = () => d.querySelector('.source-selected')?.dataset.index;
+  const settle = () => new Promise(resolve => setTimeout(resolve, 30));
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  try {
+    assert.equal($('next-unresolved').hidden, false, 'Next and Previous show in Claims');
+    assert.equal($('review-position').textContent, '5 need attention');
+    const visited = [];
+    for (let i = 0; i < 6; i++) { key('n'); await settle(); visited.push(revealed()); }
+    assert.deepEqual(visited, ['2', '3', '4', '5', '7', '7'], 'out of date, sorry, assumptions, not rechecked, then where checking stopped; no wrap');
+    assert.equal($('review-position').textContent, '5 of 5 needing attention');
+    key('p'); await settle();
+    assert.equal(revealed(), '5');
+    assert.equal($('insp-title').textContent, 'carried', 'the renderer selects the claim n and p reach');
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'reviewCommand', action: 'previous'}})); await settle();
+    assert.equal(revealed(), '4', 'the Previous Review Item command steps too');
+    $('review-previous').click(); await settle();
+    assert.equal(revealed(), '3');
+    // Proof steps: n and p walk the recorded steps of the selected claim's cell.
+    key('t'); await settle();
+    assert.equal($('proof-review').hidden, false);
+    assert.equal($('review-position').textContent, 'Initial goals');
+    key('n'); assert.equal($('review-position').textContent, 'Step 1 of 2');
+    key('n'); assert.equal($('review-position').textContent, 'Step 2 of 2');
+    key('p'); assert.equal($('review-position').textContent, 'Step 1 of 2');
+    key('c'); await settle();
+    key('n'); await settle();
+    assert.equal(revealed(), '4', 'back in Claims, n continues from the claim');
+    assert.equal(messages.filter(m => m.method === 'POST' && m.path !== '/api/proof/start').length, 0, 'stepping never starts a check');
+    // A check stopped on request, or an older file's stop, is not a failure to review.
+    snapshot.project_withheld = {from_line: 20, through_line: 19, message: 'Checked through line 19 on request'};
+    await window.glitnirPoll(); await settle();
+    assert.equal($('review-position').textContent, '3 of 4 needing attention');
+    snapshot.project_withheld = {from_line: 20, message: 'unsolved goals', stale: true};
+    snapshot.project_claims.forEach(c => { c.status = 'checked'; c.current = true; delete c.not_rechecked; });
+    await window.glitnirPoll(); await settle();
+    assert.equal($('review-position').textContent, 'Nothing needs attention');
+    assert.equal($('next-unresolved').disabled, true);
+  } finally { window.close(); }
+});
+
+test('n and p never act in a linked, read-only notebook', async () => {
+  const {main, linked} = linkedNotebooks();
+  const messages = [];
+  const window = await renderSnapshot(main, {onMessage: m => messages.push(m), onLinked: () => ({json: linked})});
+  const d = window.document, $ = id => d.getElementById(id), app = d.querySelector('.app');
+  const key = k => app.dispatchEvent(new window.KeyboardEvent('keydown', {key: k, bubbles: true, cancelable: true}));
+  const settle = () => new Promise(resolve => setTimeout(resolve, 30));
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.scrollTo = () => {};
+  try {
+    key('n'); await settle();
+    assert.equal(d.querySelector('.source-selected')?.dataset.index, '4', 'n reaches the claim containing sorry in the previewed notebook');
+    d.querySelector('#doc a.notebook-reference').click(); await settle();
+    assert.equal($('title').textContent, 'Three states');
+    const sent = messages.length;
+    key('n'); key('p');
+    $('review-previous').click(); $('next-unresolved').click();
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'reviewCommand', action: 'next'}}));
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'reviewCommand', action: 'previous'}}));
+    await settle();
+    assert.equal($('title').textContent, 'Three states', 'still the linked notebook');
+    assert.ok(d.body.classList.contains('glitnir-linked-view'));
+    assert.deepEqual(messages.slice(sent).filter(m => m.type !== 'request' || !m.path.startsWith('/api/linked')), []);
   } finally { window.close(); }
 });

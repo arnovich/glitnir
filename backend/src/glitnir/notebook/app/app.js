@@ -527,6 +527,8 @@
   const claims = () => (!UI.data ? [] : projectMode() ? projectClaims(UI.data) : UI.data.claims);
   const claim = name => claims().find(c => c.name === name);
   const claimLabel = c => c.label || c.name;
+  // A long Lean name in the narrow contents wraps after its `_` and `.` parts.
+  const breakableName = name => esc(name).replace(/[_.]/g, '$&<wbr>');
   const checking = name => UI.data && UI.data.checking.includes(name);
   function statusOf(c, staticPage = false) {
     if (c.project) {
@@ -2053,11 +2055,11 @@
     $('outline').innerHTML = d.cells.flatMap(cell => {
       if (cell.kind === 'claim') {
         const c = claim(cell.id);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}"><span class="o-claim">${esc(c.name)}</span><span class="dot" data-tone="${statusOf(c).tone}" title="${statusOf(c).label}"></span></button></li>`] : [];
+        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(c.name)}</span><span class="dot" data-tone="${statusOf(c).tone}" title="${statusOf(c).label}"></span></button></li>`] : [];
       }
       if (cell.kind === 'source' && cell.claim) {
         const c = claim(cell.claim);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}"><span class="o-claim">${esc(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${c.project.current ? '' : ` · ${currencyText(c.project)}`}"></span></button></li>`] : [];
+        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${c.project.current ? '' : ` · ${currencyText(c.project)}`}"></span></button></li>`] : [];
       }
       if (cell.kind === 'prose') {
         return [...cell.markdown.matchAll(/^\s*(#{2,6}) (.+)$/gm)].map((m, i) => `<li class="outline-level-${m[1].length}"><button type="button" data-act="scroll" data-id="notebook-heading-${cell.index}-${i}">${inlineHTML(m[2].trim().replace(/\s+\{fold\}$/, ''))}</button></li>`);
@@ -2186,8 +2188,38 @@
   }
 
   $('export-html').onclick = exportHTML;
-  // Only the editor's preview handles `e` (edit the claim in the editor).
-  $('key-edit').hidden = !HOST;
+
+  // ----- keyboard shortcuts ------------------------------------------------------
+  // The one list of shortcuts: the help dialog and the contents hint are drawn
+  // from it, and the README's table must match it (a test compares them).
+  // `editor` keys exist only in the VS Code preview, whose review layer
+  // (review.js) handles n/p, c/t and e; `editorText` is their wording there.
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+  const SHORTCUTS = [
+    {group: 'Navigate', keys: ['j', 'k'], hint: 'claims', text: 'Next / previous claim'},
+    {group: 'Navigate', keys: ['n', 'p'], hint: 'needs attention', editor: true,
+      text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
+    {group: 'Navigate', keys: ['c', 't'], hint: 'claims / proof steps', editor: true, text: 'Claims / Proof steps'},
+    {group: 'View', keys: ['s'], hint: 'document / source', text: 'Switch between document and Lean source'},
+    {group: 'View', keys: ['i'], hint: 'inspector', text: 'Show or hide the claim inspector'},
+    {group: 'Check and edit', keys: ['r'], hint: 'check through claim', text: 'Check the saved file through the selected claim',
+      editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
+    {group: 'Check and edit', keys: ['e'], hint: 'edit in VS Code', editor: true, text: 'Edit the selected claim or proof step in VS Code'},
+    {group: 'General', keys: ['?'], hint: 'all shortcuts', text: 'Show these shortcuts'},
+    {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel',
+      editorText: 'Close the dialog; in Proof steps, return to Claims'},
+    {group: 'General', keys: MAC ? ['⌘K', 'G'] : ['Ctrl+K', 'G'], chord: true, editor: true,
+      text: 'In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G'},
+  ].filter(s => HOST || !s.editor);
+  const chipsHTML = s => s.keys.map(k => `<kbd>${esc(k)}</kbd>`).join(s.chord ? ' <span class="muted">then</span> ' : ' ');
+  function renderShortcuts() {
+    $('keys-intro').textContent = 'Single keys work while the notebook has focus, outside text fields. Moving never starts a check.';
+    const groups = [...new Set(SHORTCUTS.map(s => s.group))];
+    $('keys-groups').innerHTML = groups.map(group => `<section class="keys-group"><h4 class="label">${esc(group)}</h4><dl>${SHORTCUTS.filter(s => s.group === group)
+      .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc((HOST && s.editorText) || s.text)}</dd>`).join('')}</dl></section>`).join('');
+    $('key-hints').innerHTML = SHORTCUTS.filter(s => s.hint).map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc(s.hint)}</dd>`).join('');
+  }
+  renderShortcuts();
 
   // ----- interaction -------------------------------------------------------------------
   function select(name, scroll) {
