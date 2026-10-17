@@ -251,8 +251,9 @@ The extension opens any `.lean` file as a rendered notebook beside your editor. 
 - **Live updates:** the preview refreshes whenever the file is saved, from VS Code
   or a coding agent, and briefly highlights changed sections. **Follow edits**
   scrolls to them.
-- **Claim review:** **Review Claims** steps through claims in source order and can
-  filter to those that need attention.
+- **Claim review:** **Next** and **Previous** step through the claims that need
+  attention, in source order: out of date, not rechecked, containing `sorry`,
+  resting on additional assumptions, or where checking stopped.
 - **Proof steps:** **Explore Proof Steps** records a proof's tactic tree once, then
   lets you walk it with the goals before and after each step.
   **Inspect proof goals** in the claim inspector shows the goals after each tactic
@@ -273,9 +274,28 @@ The extension opens any `.lean` file as a rendered notebook beside your editor. 
 - **Coding agents:** **Set Up Coding Agent** installs the authoring skill for
   Claude Code or Codex.
 
-Press **?** in the preview for keyboard shortcuts. Checking, proof-step
-recording and evidence runs happen only when you ask. Lean runs in the sandbox;
-an evidence provider computes from its output.
+Checking, proof-step recording and evidence runs happen only when you ask. Lean
+runs in the sandbox; an evidence provider computes from its output.
+
+### Keyboard shortcuts
+
+Single keys work while the preview has focus, outside text fields; press **?** in
+the preview for this list. Moving never starts a check.
+
+<!-- shortcuts:start (a test keeps this table equal to the preview's list) -->
+| Keys | Action |
+|---|---|
+| `j` `k` | Next / previous claim |
+| `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
+| `c` `t` | Claims / Proof steps |
+| `s` | Switch between document and Lean source |
+| `i` | Show or hide the claim inspector |
+| `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
+| `e` | Edit the selected claim or proof step in VS Code |
+| `?` | Show these shortcuts |
+| `Esc` | Close the dialog; in Proof steps, return to Claims |
+| `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
+<!-- shortcuts:end -->
 
 ## Settings
 
