@@ -3,15 +3,15 @@ import {readFile} from 'node:fs/promises';
 import * as path from 'node:path';
 import {BackendDescriptor} from './backend-install';
 import {DownloadOptions, downloadRuntime, RELEASE_REPOSITORY} from './runtime-download';
-import {fileDigest} from './runtime-store';
 
 /** The candidate manifest every Glitnir release carries, and its schema. */
 export const MANIFEST = 'glitnir-candidate.json';
 export const MANIFEST_SCHEMA = 'glitnir-thin-candidate/v2';
 export const SUMS = 'SHA256SUMS';
-const MAX_MANIFEST_BYTES = 1024 ** 2, MAX_SUMS_BYTES = 64 * 1024;
+const MAX_MANIFEST_BYTES = 1024 ** 2, MAX_SUMS_BYTES = 64 * 1024, MAX_PLUGIN_BYTES = 50 * 1024 ** 2;
 const DIGEST = /^[a-f0-9]{64}$/;
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const DISTRIBUTION = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 /** A release plugin wheel: `<distribution>-<version>-py3-none-any.whl`. */
 const PLUGIN_WHEEL = /^([A-Za-z0-9](?:[A-Za-z0-9._]*[A-Za-z0-9])?)-((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-py3-none-any\.whl$/;
 const BACKEND_WHEEL = /^glitnir-([\w.]+)-py3-none-any\.whl$/;
@@ -19,12 +19,35 @@ const BACKEND_WHEEL = /^glitnir-([\w.]+)-py3-none-any\.whl$/;
 /** Where to go when a release file cannot be downloaded or verified. */
 export const RELEASE_FALLBACK = 'download the wheel and SHA256SUMS from the release yourself, verify them, and choose it with Glitnir: Install Extension Package… → Choose downloaded wheel';
 
-/** A provider wheel the release binds to its backend, by its normalized distribution name. */
+/**
+ * A provider wheel this VSIX pins, like its backend: `glitnirPlugins` in its
+ * package.json, written at packaging time from the plugin wheel built with it.
+ * Only a pinned wheel is ever downloaded from a release; the release's own
+ * manifest and checksums must agree with the pin, never replace it.
+ */
+export interface PluginPin {distribution: string; asset: string; size: number; sha256: string}
+/** A pinned plugin wheel, verified to be the one the release binds. */
 export interface ReleasePlugin {name: string; asset: string; version: string; size: number; sha256: string}
 export interface VerifiedRelease {tag: string; version: string; plugins: ReleasePlugin[]}
 
 /** PEP 503 name normalization. */
 export const normalizedName = (name: string): string => name.replace(/[-_.]+/g, '-').toLowerCase();
+
+/** The plugin pins of this VSIX; none for a build packaged without a plugin wheel. A malformed pin is refused. */
+export function pluginPins(value: unknown): PluginPin[] {
+  if (value === undefined) return [];
+  const invalid = (): never => { throw new Error('This extension has an invalid plugin pin. Install an official VSIX, or install extension packages from a wheel file.'); };
+  if (!Array.isArray(value)) return invalid();
+  const pins = value.map(item => {
+    const pin = item as PluginPin;
+    const file = typeof pin?.asset === 'string' ? PLUGIN_WHEEL.exec(pin.asset) : null;
+    if (!file || typeof pin.distribution !== 'string' || !DISTRIBUTION.test(pin.distribution) || normalizedName(file[1]) !== pin.distribution ||
+      !Number.isSafeInteger(pin.size) || pin.size <= 0 || pin.size > MAX_PLUGIN_BYTES || typeof pin.sha256 !== 'string' || !DIGEST.test(pin.sha256)) invalid();
+    return {distribution: pin.distribution, asset: pin.asset, size: pin.size, sha256: pin.sha256};
+  });
+  if (new Set(pins.map(pin => pin.distribution)).size !== pins.length) invalid();
+  return pins;
+}
 
 /** `SHA256SUMS` as written by the release: one `<sha256>  <name>` line per file, each name once. */
 export function parseSums(text: string): Map<string, string> {
@@ -41,13 +64,13 @@ export function parseSums(text: string): Map<string, string> {
 const refuse = (detail: string): never => { throw new Error(`The release ${MANIFEST} does not match this Glitnir build: ${detail}. Nothing was installed from it.`); };
 
 /**
- * Check a release's manifest and checksums against this VSIX's backend pin:
- * the same repository, tag and version, the pinned backend wheel among its
- * assets, every asset (and the manifest itself) listed in `SHA256SUMS` with the
- * same digest, and a plugin binding to one of those assets at the same version.
- * Returns the bound plugin wheels; anything that does not match is refused.
+ * Check a release's manifest and checksums against this VSIX's pins: the same
+ * repository, tag and version, the pinned backend wheel among its assets,
+ * every asset (and the manifest itself) listed in `SHA256SUMS` with the same
+ * digest, and a plugin binding equal to each plugin wheel the VSIX pins.
+ * Returns the pinned plugin wheels; anything that does not match is refused.
  */
-export function verifyRelease(manifestBytes: Buffer, sumsText: string, pin: BackendDescriptor, version: string): VerifiedRelease {
+export function verifyRelease(manifestBytes: Buffer, sumsText: string, pin: BackendDescriptor, version: string, pins: PluginPin[]): VerifiedRelease {
   let manifest: Record<string, unknown>;
   try { manifest = JSON.parse(manifestBytes.toString('utf8')); } catch { return refuse('it is not JSON'); }
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) refuse('it is not an object');
@@ -71,14 +94,19 @@ export function verifyRelease(manifestBytes: Buffer, sumsText: string, pin: Back
   const expected = new Map([...[...byName].map(([name, asset]) => [name, asset.sha256] as const), [MANIFEST, createHash('sha256').update(manifestBytes).digest('hex')]]);
   if (sums.size !== expected.size || [...expected].some(([name, digest]) => sums.get(name) !== digest)) refuse(`it differs from the release ${SUMS}`);
   const plugin = manifest.plugin as Record<string, unknown> | undefined;
-  const plugins: ReleasePlugin[] = [];
+  let bound: PluginPin | undefined;
   if (plugin !== undefined) {
     const file = typeof plugin?.asset === 'string' ? PLUGIN_WHEEL.exec(plugin.asset) : null;
-    const bound = file ? byName.get(plugin.asset as string) : undefined;
-    if (!file || !bound || plugin.version !== version || file[2] !== version || plugin.size !== bound.size || plugin.sha256 !== bound.sha256) refuse('its plugin binding differs from its assets or version');
-    plugins.push({name: normalizedName(file![1]), asset: plugin.asset as string, version, size: bound!.size, sha256: bound!.sha256});
+    const asset = file ? byName.get(plugin.asset as string) : undefined;
+    if (!file || !asset || plugin.version !== version || file[2] !== version || plugin.size !== asset.size || plugin.sha256 !== asset.sha256) refuse('its plugin binding differs from its assets or version');
+    bound = {distribution: normalizedName(file![1]), asset: plugin.asset as string, size: asset!.size, sha256: asset!.sha256};
   }
-  return {tag: pin.tag!, version, plugins};
+  // The VSIX pin is the authority: the release must bind exactly the pinned bytes.
+  for (const pinned of pins) {
+    if (!bound || bound.distribution !== pinned.distribution) refuse(`it does not bind ${pinned.asset}, which this build pins`);
+    if (bound!.asset !== pinned.asset || bound!.size !== pinned.size || bound!.sha256 !== pinned.sha256) refuse(`its ${pinned.asset} differs from the one this build pins`);
+  }
+  return {tag: pin.tag!, version, plugins: pins.map(p => ({name: p.distribution, asset: p.asset, version, size: p.size, sha256: p.sha256}))};
 }
 
 export interface ReleaseFetch extends Omit<DownloadOptions, 'fallback'> {
@@ -89,7 +117,7 @@ export interface ReleaseFetch extends Omit<DownloadOptions, 'fallback'> {
 const source = (pin: BackendDescriptor, asset: string) => ({repository: RELEASE_REPOSITORY, tag: pin.tag!, asset});
 
 /** Download and verify the manifest and checksums of the release this VSIX's backend comes from, into `directory`. */
-export async function fetchRelease(pin: BackendDescriptor, version: string, directory: string, options: ReleaseFetch): Promise<VerifiedRelease> {
+export async function fetchRelease(pin: BackendDescriptor, version: string, pins: PluginPin[], directory: string, options: ReleaseFetch): Promise<VerifiedRelease> {
   if (!pin.tag) throw new Error('This Glitnir build names no release to download from. Use a wheel you downloaded instead.');
   const download = options.download ?? downloadRuntime;
   const files: Buffer[] = [];
@@ -98,13 +126,20 @@ export async function fetchRelease(pin: BackendDescriptor, version: string, dire
     await download(file, {source: source(pin, name), archive: {maxSize}}, {...options, fallback: RELEASE_FALLBACK});
     files.push(await readFile(file));
   }
-  return verifyRelease(files[0], files[1].toString('utf8'), pin, version);
+  return verifyRelease(files[0], files[1].toString('utf8'), pin, version, pins);
 }
 
-/** Download one plugin wheel the verified release binds and check its size and SHA-256; returns its path. */
-export async function fetchPlugin(pin: BackendDescriptor, plugin: ReleasePlugin, directory: string, options: ReleaseFetch): Promise<string> {
+/** The SHA-256 of `bytes`, hex. */
+export const digest = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * Download one pinned plugin wheel and return its bytes, read once: the same
+ * buffer is checked against the pinned size and SHA-256 and then installed.
+ */
+export async function fetchPlugin(pin: BackendDescriptor, plugin: ReleasePlugin, directory: string, options: ReleaseFetch): Promise<Buffer> {
   const file = path.join(directory, plugin.asset);
   await (options.download ?? downloadRuntime)(file, {source: source(pin, plugin.asset), archive: {size: plugin.size}}, {...options, fallback: RELEASE_FALLBACK});
-  if (await fileDigest(file, options.signal, plugin.size) !== plugin.sha256) throw new Error(`${plugin.asset} does not match the release ${SUMS}. Nothing was installed from it.`);
-  return file;
+  const bytes = await readFile(file);
+  if (bytes.length !== plugin.size || digest(bytes) !== plugin.sha256) throw new Error(`${plugin.asset} does not match the SHA-256 this extension records for it. Nothing was installed from it.`);
+  return bytes;
 }

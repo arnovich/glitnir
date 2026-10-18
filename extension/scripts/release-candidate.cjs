@@ -5,7 +5,7 @@ const {execFileSync} = require('node:child_process');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {openPromise} = require('yauzl');
-const {checkThin, checkBackendWheel, backendPin} = require('./package-thin.cjs');
+const {checkThin, checkBackendWheel, backendPin, pluginPin} = require('./package-thin.cjs');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const MANIFEST = 'glitnir-candidate.json';
 const SCHEMA = 'glitnir-thin-candidate/v2';
@@ -80,9 +80,9 @@ async function checkPluginWheel(file, version, backendVersion) {
 async function collectCandidate(identity, vsix, wheel, plugin, guide, output) {
   assert.equal(path.basename(vsix), `glitnir-${identity.version}.vsix`);
   assert.match(path.basename(wheel), BACKEND_WHEEL);
-  const editor = await checkThin(vsix, identity.version, undefined, await backendPin(wheel, identity.tag));
   await checkBackendWheel(wheel);
   await checkPluginWheel(plugin, identity.version, path.basename(wheel).match(BACKEND_WHEEL)[1]);
+  const editor = await checkThin(vsix, identity.version, undefined, await backendPin(wheel, identity.tag), [await pluginPin(plugin, identity.version)]);
   await fs.mkdir(output); // A fresh directory prevents mixing candidate builds.
   const assets = [];
   for (const [file, name] of [[vsix, path.basename(vsix)], [wheel, path.basename(wheel)], [plugin, path.basename(plugin)], [guide, 'INSTALL.md']]) {
@@ -124,9 +124,11 @@ async function verifyCandidate(directory, identity) {
   verified.push({name: 'SHA256SUMS', size: sums.length, sha256: digest(sums)});
   const plugin = manifest.assets.find(a => a.name === pluginName);
   assert.deepEqual(manifest.plugin, {asset: pluginName, version: identity.version, size: plugin.size, sha256: plugin.sha256}, 'Candidate plugin binding differs');
-  await checkThin(path.join(directory, vsixName), identity.version, manifest.editor, await backendPin(path.join(directory, backendName), identity.tag));
   await checkBackendWheel(path.join(directory, backendName));
   await checkPluginWheel(path.join(directory, pluginName), identity.version, backendName.match(BACKEND_WHEEL)[1]);
+  // The VSIX must pin exactly the attached plugin wheel, which is what it will download.
+  await checkThin(path.join(directory, vsixName), identity.version, manifest.editor, await backendPin(path.join(directory, backendName), identity.tag),
+    [await pluginPin(path.join(directory, pluginName), identity.version)]);
   return verified;
 }
 async function ensureTag(api, identity) {

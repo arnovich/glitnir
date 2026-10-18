@@ -207,16 +207,28 @@ extras whose packages Glitnir knows to be published on PyPI are offered (for now
 The package picker's entries come from `extension/src/known-packages.ts`, which
 is data only: an entry names a distribution, its release asset, the questions
 for its extras and notes, and adds no trust. Release downloads, used by the
-picker and by the backend upgrade, go through `extension/src/release-assets.ts`:
-it fetches `glitnir-candidate.json` and `SHA256SUMS` from the release the VSIX's
-backend pin names and refuses a manifest whose schema, repository, tag, version,
-backend asset, asset digests or plugin binding differ from the pin or from
-`SHA256SUMS`. A new provider asset needs a binding there (today the manifest's
-single `plugin` field) before the picker or the upgrade can download it.
+picker and by the backend upgrade, go through `extension/src/release-assets.ts`.
+Only a plugin wheel the VSIX pins is downloaded: `npm run package` writes
+`glitnirPlugins` (`[{distribution, asset, size, sha256}]`) into the VSIX's
+`package.json` from the one wheel in `plugins/forseti/dist`, like
+`glitnirBackend`, and pins none when there is none (such a build offers wheel
+files only). The extension fetches `glitnir-candidate.json` and `SHA256SUMS`
+from the release the backend pin names, refuses a manifest whose schema,
+repository, tag, version, backend asset, asset digests or plugin binding differ
+from the VSIX pins or from `SHA256SUMS`, and installs the downloaded bytes only
+if they equal the pin. `release-candidate.cjs` refuses a candidate whose VSIX
+plugin pin differs from the attached plugin wheel, at collection and
+verification. A new provider asset needs a pin and a binding (today the
+manifest's single `plugin` field) before the picker or the upgrade can
+download it. Release requests are anonymous; only GitHub's anonymous rate limit
+(`X-RateLimit-Remaining: 0`) offers a sign-in, with no scopes.
 `extension/scripts/providers.py packages` reports each provider's installed
 extras (those whose requirements are all installed), which the upgrade carries
-over. **Install uv** runs Homebrew or the official installer of `UV_VERSION` in
-`extension/src/backend-install.ts`; bump it, and the version shown in the README
+over, filtered through the registry's extras. **Install uv** runs Homebrew or the
+official installer of `UV_VERSION` in `extension/src/backend-install.ts`, in a
+terminal created with an explicit environment and `strictEnv: true` (the host
+test checks that neither the editor's environment nor `terminal.integrated.env`
+reaches it); bump it, and the version shown in the README
 and `extension/media/setup.md`, to a uv release at least two weeks old.
 
 ## Static export (galleries)

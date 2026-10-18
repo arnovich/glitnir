@@ -35,9 +35,11 @@ async function fixture(t) {
   await zip(wheel, {'glitnir/notebook/server.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
   const bytes = await fs.readFile(wheel);
   metadata.glitnirBackend = {asset:path.basename(wheel),size:bytes.length,sha256:require('node:crypto').createHash('sha256').update(bytes).digest('hex'),tag:identity.tag};
-  await zip(vsix, entries);
   const plugin = path.join(root, 'glitnir_forseti-0.1.0-py3-none-any.whl');
   await zip(plugin, pluginEntries);
+  const pluginBytes = await fs.readFile(plugin);
+  metadata.glitnirPlugins = [{distribution: 'glitnir-forseti', asset: path.basename(plugin), size: pluginBytes.length, sha256: require('node:crypto').createHash('sha256').update(pluginBytes).digest('hex')}];
+  await zip(vsix, entries);
   const guide = path.join(root, 'setup.md'); await fs.writeFile(guide, '# Install prerequisites\n');
   const output = path.join(root, 'release');
   return {root, vsix, wheel, plugin, guide, output, entries};
@@ -456,4 +458,32 @@ test('verification rechecks the attached plugin wheel and its exact candidate na
   const g = await fixture(t); await collectCandidate(identity, g.vsix, g.wheel, g.plugin, g.guide, g.output);
   await replaceAsset(g.output, name, 'glitnir_forseti-0.1.1-py3-none-any.whl', await fs.readFile(g.plugin));
   await assert.rejects(verifyCandidate(g.output, identity), /Invalid candidate asset inventory/);
+});
+
+test('the VSIX plugin pin must equal the attached plugin wheel at collection and verification', async t => {
+  const {pluginPin} = require('../scripts/package-thin.cjs');
+  for (const change of [pins => pins.map(pin => ({...pin, sha256: '0'.repeat(64)})), pins => pins.map(pin => ({...pin, size: pin.size + 1})), () => undefined, () => []]) {
+    const f = await fixture(t);
+    const metadata = f.entries['extension/package.json'];
+    const changed = change(metadata.glitnirPlugins);
+    await zip(f.vsix, {...f.entries, 'extension/package.json': {...metadata, glitnirPlugins: changed}});
+    await assert.rejects(collectCandidate(identity, f.vsix, f.wheel, f.plugin, f.guide, f.output), /plugin pin differs/, JSON.stringify(changed));
+    await assert.rejects(fs.stat(f.output), /ENOENT/, 'a refused candidate writes nothing');
+  }
+  const f = await fixture(t);
+  await collectCandidate(identity, f.vsix, f.wheel, f.plugin, f.guide, f.output);
+  assert.deepEqual(f.entries['extension/package.json'].glitnirPlugins, [await pluginPin(f.plugin, identity.version)]);
+  // A coherent release whose attached plugin wheel is not the pinned one is refused too.
+  const other = path.join(f.root, 'other.whl');
+  await zip(other, {...pluginEntries, 'glitnir_forseti/extra.py': 'x = 1'});
+  await fs.copyFile(other, path.join(f.output, path.basename(f.plugin)));
+  await rebind(f.output, manifest => {
+    const bytes = require('node:fs').readFileSync(other), sha256 = require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+    manifest.plugin = {...manifest.plugin, size: bytes.length, sha256};
+    manifest.assets = manifest.assets.map(a => a.name === path.basename(f.plugin) ? {...a, size: bytes.length, sha256} : a);
+  });
+  const sumsFile = path.join(f.output, 'SHA256SUMS'), otherSha = require('node:crypto').createHash('sha256').update(await fs.readFile(other)).digest('hex');
+  await fs.writeFile(sumsFile, (await fs.readFile(sumsFile, 'utf8')).replace(/^[a-f0-9]{64}(?=  glitnir_forseti-)/m, otherSha));
+  await assert.rejects(verifyCandidate(f.output, identity), /plugin pin differs/, 'only the VSIX pin tells the coherent tampered release apart');
+  await assert.rejects(pluginPin(f.plugin, '0.2.0'), /version differs/);
 });

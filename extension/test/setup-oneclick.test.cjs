@@ -118,13 +118,17 @@ test('without uv, Install uv is offered with its command and nothing runs withou
   const [message, detail, actions] = h.state.modals[1];
   assert.equal(message, 'Glitnir needs uv to install its backend.');
   assert.deepEqual(actions, ['Install uv', 'Retry', 'Read Setup Guide']);
-  assert.match(detail, new RegExp(`curl -LsSf https://astral\\.sh/uv/${h.modules.UV_VERSION.replace(/\./g, '\\.')}/install\\.sh \\| sh`), 'the command is shown before the click');
+  assert.ok(detail.includes(`/usr/bin/curl -LsSf https://astral.sh/uv/${h.modules.UV_VERSION}/install.sh | /bin/sh`), 'the command is shown before the click, with absolute paths');
+  assert.ok(detail.includes(`with only these environment variables: HOME=${require('node:os').homedir()} LANG=en_US.UTF-8 PATH=/usr/bin:/bin:/usr/sbin:/sbin UV_NO_MODIFY_PATH=1.`), detail);
+  assert.match(detail, /leaves your shell profiles unchanged; to use uv in your own terminals, add ~\/\.local\/bin to PATH/);
   assert.equal(h.state.terminals.length + h.state.installs.length, 0, 'dismissing runs nothing');
   const clicked = harness({uv: false});
   clicked.state.answers.push('Set Up', 'Install uv');
   assert.deepEqual(await clicked.setup.resolve(clicked.uri), {python: NEW_PYTHON}, 'setup continues after the terminal closes');
   const [terminal] = clicked.state.terminals;
-  assert.deepEqual(terminal.options, {name: 'Install uv', shellPath: '/bin/sh', shellArgs: ['-c', clicked.modules.uvInstallCommand()]});
+  const installer = clicked.modules.uvInstaller();
+  assert.deepEqual(terminal.options, {name: 'Install uv', shellPath: '/bin/sh', shellArgs: ['-c', installer.command], env: installer.env, strictEnv: true},
+    'the terminal gets exactly the environment shown, inheriting nothing');
   assert.ok(terminal.shown, 'the command runs where the user can see it');
   assert.equal(clicked.state.uvLookups, 2, 'uv is detected again after the terminal');
   assert.equal(clicked.state.installs[0].uv, '/installed/uv');
@@ -133,6 +137,8 @@ test('without uv, Install uv is offered with its command and nothing runs withou
   await brew.setup.resolve(brew.uri);
   assert.match(brew.state.modals[1][1], /\/opt\/homebrew\/bin\/brew install uv/);
   assert.deepEqual(brew.state.terminals[0].options.shellArgs, ['-c', '/opt/homebrew/bin/brew install uv'], 'Homebrew is preferred when installed');
+  assert.equal(brew.state.terminals[0].options.env.PATH, '/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'PATH adds only Homebrew\'s own directory');
+  assert.ok(!Object.keys(brew.state.terminals[0].options.env).some(name => name.startsWith('HOMEBREW_')));
   const retried = harness({uv: false});
   retried.state.answers.push('Set Up', 'Retry', () => { retried.state.uvInstalled = true; return 'Retry'; });
   assert.deepEqual(await retried.setup.resolve(retried.uri), {python: NEW_PYTHON});
@@ -150,7 +156,14 @@ test('the uv installer command is Homebrew or a pinned official installer, never
   assert.equal(modules.UV_VERSION, '0.12.23', 'the pinned uv release; bump it with the docs');
   const docs = ['../../README.md', '../media/setup.md'].map(file => require('node:fs').readFileSync(path.join(__dirname, file), 'utf8'));
   for (const text of docs) assert.ok(text.includes(`https://astral.sh/uv/${modules.UV_VERSION}/install.sh`), 'the docs show the pinned installer');
-  assert.equal(modules.uvInstallCommand('/usr/local/bin/brew'), '/usr/local/bin/brew install uv');
-  assert.equal(modules.uvInstallCommand(), `curl -LsSf https://astral.sh/uv/${modules.UV_VERSION}/install.sh | sh`);
-  assert.doesNotMatch(modules.uvInstallCommand(), /astral\.sh\/uv\/install\.sh/);
+  process.env.HOMEBREW_PREFIX = '/evil'; process.env.UV_INSTALL_DIR = '/evil';
+  try {
+    assert.deepEqual(modules.uvInstaller('/usr/local/bin/brew', '/home/me'), {command: '/usr/local/bin/brew install uv',
+      env: {HOME: '/home/me', LANG: 'en_US.UTF-8', PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'}}, 'nothing from the parent environment');
+    assert.deepEqual(modules.uvInstaller(undefined, '/home/me'), {command: `/usr/bin/curl -LsSf https://astral.sh/uv/${modules.UV_VERSION}/install.sh | /bin/sh`,
+      env: {HOME: '/home/me', LANG: 'en_US.UTF-8', PATH: '/usr/bin:/bin:/usr/sbin:/sbin', UV_NO_MODIFY_PATH: '1'}});
+  } finally { delete process.env.HOMEBREW_PREFIX; delete process.env.UV_INSTALL_DIR; }
+  assert.doesNotMatch(modules.uvInstaller().command, /astral\.sh\/uv\/install\.sh/);
+  assert.throws(() => modules.uvInstaller('brew'), /absolute path/);
+  assert.equal(modules.uvInstallerTerminal(modules.uvInstaller()).strictEnv, true);
 });

@@ -10,7 +10,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const file = fsPath => ({fsPath, scheme: 'file', path: fsPath, toString: () => `file://${fsPath}`});
 
 function fakeVscode() {
-  const state = {infos: [], warnings: [], errors: [], errorActions: [], infoAction: undefined, config: {}, updates: [], inspect: {}, progress: 0};
+  const state = {infos: [], warnings: [], errors: [], errorActions: [], infoAction: undefined, config: {}, updates: [], inspect: {}, progress: 0, confirms: [], confirm: 'Set Up'};
   const fake = {
     env: {}, ProgressLocation: {Notification: 15}, ConfigurationTarget: {Global: 1, Workspace: 2, WorkspaceFolder: 3},
     Uri: {file, joinPath: (uri, ...parts) => file(path.join(uri.fsPath, ...parts))},
@@ -27,7 +27,12 @@ function fakeVscode() {
       }),
     },
     window: {
-      showInformationMessage: async (message, ...rest) => { state.infos.push([message, ...rest]); return typeof state.infoAction === 'function' ? state.infoAction(message, ...rest) : state.infoAction; },
+      showInformationMessage: async (message, ...rest) => {
+        // The upgrade's own confirmation, listing what it will do.
+        if (message.startsWith('Set up the Glitnir')) { state.confirms.push([message, rest[0]?.detail, rest.slice(1)]); return state.confirm; }
+        state.infos.push([message, ...rest]);
+        return typeof state.infoAction === 'function' ? state.infoAction(message, ...rest) : state.infoAction;
+      },
       showWarningMessage: async message => { state.warnings.push(message); },
       showErrorMessage: async (message, ...actions) => { state.errors.push([message, ...actions]); return state.errorActions.shift(); },
       withProgress: async (options, work) => {
@@ -53,7 +58,9 @@ const plain = load({}, 'backend-upgrade', 'release-assets');
 
 /** A release like the candidate script writes: backend, plugin, manifest and SHA256SUMS, with this VSIX's pin. */
 function release(overrides = {}) {
-  const backend = Buffer.from('backend wheel'), plugin = Buffer.from(overrides.pluginBytes ?? 'plugin wheel');
+  const backend = Buffer.from('backend wheel'), pinned = Buffer.from('plugin wheel');
+  // A coherent tampered release binds other plugin bytes in its manifest and SHA256SUMS alike.
+  const plugin = Buffer.from(overrides.releasePlugin ?? pinned);
   const version = '0.1.1', tag = 'v0.1.1';
   const pin = {asset: `glitnir-${version}-py3-none-any.whl`, size: backend.length, sha256: sha(backend), tag};
   const pluginAsset = `glitnir_forseti-${version}-py3-none-any.whl`;
@@ -76,7 +83,8 @@ function release(overrides = {}) {
     if (!bytes) throw new Error(`Pinned runtime asset is missing (${descriptor.source.asset})`);
     await fs.writeFile(destination, bytes, {flag: 'wx'});
   };
-  return {pin, version, manifest, manifestBytes, sums, pluginAsset, plugin, download, requests};
+  const plugins = [{distribution: 'glitnir-forseti', asset: pluginAsset, size: pinned.length, sha256: sha(pinned)}];
+  return {pin, plugins, version, manifest, manifestBytes, sums, pluginAsset, plugin: pinned, download, requests};
 }
 
 async function store(t, shas) {
@@ -147,7 +155,8 @@ async function upgradeFlow(t, options = {}) {
       await fs.writeFile(path.join(root, r.pin.sha256, '.glitnir-backend'), r.pin.sha256);
       return newPython;
     },
-    adopt: async python => { calls.adopted.push(python); return options.settings ?? []; },
+    pendingOverrides: () => options.overrides ?? [],
+    adopt: async python => { calls.adopted.push(python); return (options.overrides ?? []).map(o => o.file); },
     requireUv: async () => options.noUv ? undefined : '/installed/uv',
   };
   const earlierPackages = options.earlier ?? [
@@ -166,11 +175,11 @@ async function upgradeFlow(t, options = {}) {
       signal.throwIfAborted();
       if (options.installFails?.()) throw new Error('uv could not install glitnir-forseti.');
       installedNew.push({name: 'glitnir-forseti', version: r.version, entryPoints: ['forseti'], extras});
-      return {info: {name: 'glitnir-forseti', version: r.version}, extras: extras.filter(e => e !== 'gone'), dropped: extras.filter(e => e === 'gone'), after: {}};
+      return {info: {name: 'glitnir-forseti', version: r.version}, extras, dropped: [], after: {}};
     },
   };
   const context = {
-    extension: {packageJSON: {version: r.version, glitnirBackend: r.pin}},
+    extension: {packageJSON: {version: r.version, glitnirBackend: r.pin, ...(options.noPluginPin ? {} : {glitnirPlugins: r.plugins})}},
     globalState: {get: key => global.get(key), update: async (key, value) => { global.set(key, value); }},
   };
   const upgrade = new BackendUpgrade(context, {appendLine: text => calls.log.push(text)}, setup, packages, {
@@ -224,8 +233,16 @@ test('the startup offer asks once per version, and nothing is downloaded without
 test('set up installs the pinned backend, carries over release packages with extras, lists the rest and then switches', async t => {
   const f = await upgradeFlow(t);
   const before = await snapshot(f.old);
-  assert.equal(await f.upgrade.available(), f.old);
+  assert.equal((await f.upgrade.prepare()).earlier, f.old);
+  assert.equal(f.r.requests.length + f.calls.installPinned, 0, 'preparing downloads and installs nothing');
   assert.equal(await f.upgrade.run(), f.newPython);
+  const [[title, detail, actions]] = f.state.confirms;
+  assert.equal(title, 'Set up the Glitnir 0.1.1 backend?');
+  assert.deepEqual(actions, ['Set Up']);
+  assert.match(detail, /Downloads glitnir-0\.1\.1-py3-none-any\.whl from GitHub release v0\.1\.1, checks it against the SHA-256 this extension records/);
+  assert.match(detail, /Installs glitnir-forseti 0\.1\.1 \[z3\] from glitnir_forseti-0\.1\.1-py3-none-any\.whl in the same release, checked against the SHA-256 this extension records for it\. z3-solver and its own dependencies come from PyPI/);
+  assert.match(detail, /reinstall yourself with Glitnir: Install Extension Package…: acme-views 2\.0/);
+  assert.match(detail, new RegExp(`earlier environment at ${f.old} is kept`));
   assert.equal(f.calls.installPinned, 1);
   assert.deepEqual(f.r.requests.map(r => [r.asset, r.repository, r.tag]), [
     ['glitnir-candidate.json', 'arnovich/glitnir', 'v0.1.1'], ['SHA256SUMS', 'arnovich/glitnir', 'v0.1.1'], [f.r.pluginAsset, 'arnovich/glitnir', 'v0.1.1'],
@@ -241,6 +258,21 @@ test('set up installs the pinned backend, carries over release packages with ext
   assert.deepEqual(f.state.errors, []);
   assert.equal(await f.upgrade.run(), f.newPython, 'running again is idempotent');
   assert.equal(f.calls.installs.length, 1, 'a package already carried over is not installed again');
+  const declined = await upgradeFlow(t);
+  declined.state.confirm = undefined;
+  assert.equal(await declined.upgrade.run(), undefined);
+  assert.equal(declined.r.requests.length + declined.calls.installPinned + declined.state.progress, 0, 'declining the confirmation runs nothing');
+  const settings = await upgradeFlow(t, {overrides: [{file: '/work/.vscode/settings.json'}]});
+  await settings.upgrade.run();
+  assert.match(settings.state.confirms[0][1], /Changes glitnir\.pythonPath in \/work\/\.vscode\/settings\.json to the new environment\./, 'a settings rewrite is named before the click');
+  assert.match(settings.state.infos.at(-1)?.[0] ?? settings.state.warnings[0], /glitnir\.pythonPath now names it in \/work\/\.vscode\/settings\.json/);
+});
+
+test('a build that pins no plugin wheel downloads none and lists packages for manual reinstall', async t => {
+  const f = await upgradeFlow(t, {noPluginPin: true});
+  assert.equal(await f.upgrade.run(), f.newPython);
+  assert.equal(f.r.requests.length + f.calls.installs.length, 0, 'only the backend is downloaded');
+  assert.match(f.state.confirms[0][1], /reinstall yourself.*glitnir-forseti 0\.1\.0, acme-views 2\.0/);
 });
 
 test('third-party packages never fail the upgrade, and an unreadable earlier environment is reported', async t => {
@@ -257,8 +289,9 @@ test('third-party packages never fail the upgrade, and an unreadable earlier env
   assert.match(unreadable.state.warnings[0], /could not be listed/);
   const dropped = await upgradeFlow(t, {earlier: [{name: 'Glitnir_Forseti', version: '0.1.0', entryPoints: ['forseti'], extras: ['z3', 'gone']}]});
   assert.equal(await dropped.upgrade.run(), dropped.newPython);
-  assert.deepEqual(dropped.calls.installs[0].extras, ['z3', 'gone'], 'names match after normalization; the installer applies the allowlist');
-  assert.match(dropped.state.warnings[0], /no longer offer: glitnir-forseti\[gone\]/);
+  assert.deepEqual(dropped.calls.installs[0].extras, ['z3'], 'names match after normalization; only extras the registry allows are carried over');
+  assert.match(dropped.state.confirms[0][1], /Extras not carried over \(Glitnir does not install them\): glitnir-forseti\[gone\]/);
+  assert.match(dropped.state.warnings[0], /Extras not carried over: glitnir-forseti\[gone\]/);
 });
 
 test('a manifest or checksum that does not match this build is refused before anything is installed', async t => {
@@ -277,8 +310,14 @@ test('a manifest or checksum that does not match this build is refused before an
   const tampered = await upgradeFlow(t, {release: {servedPlugin: 'other bytes!'}});
   tampered.state.errorActions.push(undefined);
   assert.equal(await tampered.upgrade.run(), undefined);
-  assert.equal(tampered.calls.installs.length, 0, 'a plugin wheel that differs from SHA256SUMS is never installed');
+  assert.equal(tampered.calls.installs.length, 0, 'a plugin wheel whose bytes differ from the VSIX pin is never installed');
+  assert.match(tampered.state.errors[0][0], /does not match the SHA-256 this extension records/);
   assert.deepEqual(tampered.calls.adopted, []);
+  const coherent = await upgradeFlow(t, {release: {releasePlugin: 'evil plugin!', servedPlugin: 'evil plugin!'}});
+  coherent.state.errorActions.push(undefined);
+  assert.equal(await coherent.upgrade.run(), undefined);
+  assert.equal(coherent.calls.installPinned + coherent.calls.installs.length, 0, 'a release whose manifest and SHA256SUMS agree on other bytes is refused');
+  assert.match(coherent.state.errors[0][0], /glitnir_forseti-0\.1\.1-py3-none-any\.whl differs from the one this build pins/);
 });
 
 test('failure and cancellation leave the earlier environment intact and switch nothing; Retry runs again', async t => {
@@ -321,9 +360,9 @@ test('declining to install uv stops the upgrade quietly before any download', as
 
 test('release verification binds tag, version, backend and plugin to SHA256SUMS', () => {
   const r = release();
-  const verified = plain.verifyRelease(r.manifestBytes, r.sums, r.pin, r.version);
+  const verified = plain.verifyRelease(r.manifestBytes, r.sums, r.pin, r.version, r.plugins);
   assert.deepEqual(verified, {tag: 'v0.1.1', version: '0.1.1', plugins: [{name: 'glitnir-forseti', asset: r.pluginAsset, version: '0.1.1', size: r.plugin.length, sha256: sha(r.plugin)}]});
-  const refuse = (bytes, sums, pin = r.pin, version = r.version) => assert.throws(() => plain.verifyRelease(bytes, sums, pin, version), /does not match this Glitnir build|SHA256SUMS/);
+  const refuse = (bytes, sums, pin = r.pin, version = r.version, pins = r.plugins) => assert.throws(() => plain.verifyRelease(bytes, sums, pin, version, pins), /does not match this Glitnir build|SHA256SUMS/);
   const edited = change => Buffer.from(JSON.stringify({...r.manifest, ...change}));
   const resum = bytes => r.sums.replace(/^[a-f0-9]{64}(?=  glitnir-candidate\.json$)/m, sha(bytes));
   for (const change of [
@@ -337,6 +376,14 @@ test('release verification binds tag, version, backend and plugin to SHA256SUMS'
   refuse(edited({}), r.sums, r.pin);
   refuse(r.manifestBytes, r.sums.replace(sha(r.plugin), '0'.repeat(64)));
   refuse(r.manifestBytes, r.sums + `${'0'.repeat(64)}  extra.txt\n`);
+  const evil = release({releasePlugin: 'evil plugin!'});
+  assert.doesNotThrow(() => plain.verifyRelease(evil.manifestBytes, evil.sums, evil.pin, evil.version, []), 'the release is coherent in itself');
+  refuse(evil.manifestBytes, evil.sums, evil.pin, evil.version, evil.plugins);
+  const unbound = Buffer.from(JSON.stringify({...r.manifest, plugin: undefined}));
+  refuse(unbound, resum(unbound), r.pin, r.version, r.plugins);
+  assert.deepEqual(plain.verifyRelease(r.manifestBytes, r.sums, r.pin, r.version, []).plugins, [], 'without a VSIX pin nothing is offered for download');
+  assert.deepEqual(plain.pluginPins(undefined), []);
+  for (const bad of ['x', [{...r.plugins[0], sha256: 'x'}], [{...r.plugins[0], distribution: 'other'}], [r.plugins[0], r.plugins[0]]]) assert.throws(() => plain.pluginPins(bad), /invalid plugin pin/);
   assert.throws(() => plain.parseSums('nonsense\n'), /malformed/);
   assert.throws(() => plain.parseSums(`${'0'.repeat(64)}  a\n${'1'.repeat(64)}  a\n`), /malformed/);
 });
@@ -346,26 +393,27 @@ test('release fetches name only this build\'s release and check the plugin diges
   t.after(() => fs.rm(directory, {recursive: true, force: true}));
   const r = release();
   const signal = new AbortController().signal;
-  const verified = await plain.fetchRelease(r.pin, r.version, directory, {signal, download: r.download});
+  const verified = await plain.fetchRelease(r.pin, r.version, r.plugins, directory, {signal, download: r.download});
   assert.deepEqual(r.requests.map(q => q.archive), [{maxSize: 1024 ** 2}, {maxSize: 64 * 1024}], 'text files are bounded by size before their digest is known');
   assert.ok(r.requests.every(q => /Install Extension Package/.test(q.fallback)));
-  const wheel = await plain.fetchPlugin(r.pin, verified.plugins[0], directory, {signal, download: r.download});
-  assert.equal(await fs.readFile(wheel, 'utf8'), 'plugin wheel');
+  const bytes = await plain.fetchPlugin(r.pin, verified.plugins[0], directory, {signal, download: r.download});
+  assert.ok(Buffer.isBuffer(bytes) && bytes.toString() === 'plugin wheel', 'the checked buffer itself is returned for installing');
   const bad = release({servedPlugin: 'other bytes!'});
   const other = await fs.mkdtemp(path.join(os.tmpdir(), 'glitnir-release-'));
   t.after(() => fs.rm(other, {recursive: true, force: true}));
-  await assert.rejects(plain.fetchPlugin(bad.pin, plain.verifyRelease(bad.manifestBytes, bad.sums, bad.pin, bad.version).plugins[0], other, {signal, download: bad.download}), /does not match the release SHA256SUMS/);
-  await assert.rejects(plain.fetchRelease({...r.pin, tag: undefined}, r.version, directory, {signal, download: r.download}), /names no release/);
+  await assert.rejects(plain.fetchPlugin(bad.pin, plain.verifyRelease(bad.manifestBytes, bad.sums, bad.pin, bad.version, bad.plugins).plugins[0], other, {signal, download: bad.download}), /does not match the SHA-256 this extension records/);
+  await assert.rejects(plain.fetchRelease({...r.pin, tag: undefined}, r.version, r.plugins, directory, {signal, download: r.download}), /names no release/);
 });
 
 test('the carry-over plan fetches release packages with their extras and lists the rest', () => {
   const plugins = [{name: 'glitnir-forseti', asset: 'glitnir_forseti-0.1.1-py3-none-any.whl', version: '0.1.1', size: 1, sha256: 'a'.repeat(64)}];
   const previous = [
-    {name: 'glitnir_forseti', version: '0.1.0', entryPoints: ['forseti'], extras: ['z3']},
+    {name: 'glitnir_forseti', version: '0.1.0', entryPoints: ['forseti'], extras: ['z3', 'simulation']},
     {name: 'acme-views', version: '2.0', entryPoints: ['acme']},
   ];
   const plan = plain.planCarryOver(previous, plugins);
-  assert.deepEqual(plan.fetch.map(item => [item.plugin.asset, item.extras]), [['glitnir_forseti-0.1.1-py3-none-any.whl', ['z3']]]);
+  assert.deepEqual(plan.fetch.map(item => [item.plugin.asset, item.extras, item.dropped]), [['glitnir_forseti-0.1.1-py3-none-any.whl', ['z3'], ['simulation']]],
+    'only extras the known-package registry allows are carried over');
   assert.deepEqual(plan.manual.map(p => p.name), ['acme-views']);
   assert.deepEqual(plain.planCarryOver(previous, []).manual.length, 2, 'without a release binding everything is manual');
   const done = plain.planCarryOver(previous, plugins, [{name: 'glitnir-forseti', version: '0.1.1', entryPoints: ['forseti'], extras: ['z3']}]);
@@ -389,7 +437,8 @@ test('discovery prefers this build\'s backend over a remembered earlier one, and
   assert.equal((await setup.resolve(file('/work/A.lean'))).python, managed('1'.repeat(64)), 'before the upgrade the remembered environment is used');
   state.inspect.top = {pythonPath: {globalValue: managed('1'.repeat(64)), workspaceValue: '/my/own/python'}};
   await assert.rejects(setup.adopt('/elsewhere/bin/python'), /managed backend/);
-  assert.deepEqual(await setup.adopt(managed(pin.sha256)), ['user settings']);
+  assert.deepEqual(setup.pendingOverrides().map(o => o.file), ['your user settings.json'], 'the confirmation can name the file before anything changes');
+  assert.deepEqual(await setup.adopt(managed(pin.sha256)), ['your user settings.json']);
   assert.deepEqual(state.updates, [['pythonPath', managed(pin.sha256), 1]], 'only the override naming an earlier managed backend changes');
   assert.equal(global.get(`backend:${pin.sha256}`), managed(pin.sha256));
   probed.length = 0;
@@ -405,12 +454,13 @@ test('opening a notebook without a backend offers the upgrade when an earlier on
   const setup = new EnvironmentSetup({extensionUri: file('/extension'), extension: {packageJSON: {version: '0.1.1', glitnirBackend: pin}}, workspaceState: map(), globalState: map()}, {append() {}, appendLine() {}});
   setup.probe = async () => { throw new Error('The installed Glitnir runtime is incompatible with this Glitnir build.'); };
   let runs = 0;
-  setup.upgrade = {available: async () => '/store/old', run: async () => { runs++; return '/store/new/bin/python'; }};
+  const prepared = {earlier: '/store/old', detail: 'PLAN: downloads, installs and changes'};
+  setup.upgrade = {prepare: async () => prepared, run: async plan => { assert.equal(plan, prepared, 'the shown plan is the one run'); runs++; return '/store/new/bin/python'; }};
   state.infoAction = message => message.startsWith('Glitnir was updated') ? 'Set Up' : undefined;
   assert.deepEqual(await setup.resolve(file('/work/A.lean')), {python: '/store/new/bin/python'});
   assert.equal(runs, 1);
   assert.match(state.infos[0][0], /^Glitnir was updated to 0\.1\.1\. Set up its backend to open this notebook\.$/);
-  assert.match(state.infos[0][1].detail, /\/store\/old belongs to an earlier Glitnir build/);
+  assert.match(state.infos[0][1].detail, /\/store\/old belongs to an earlier Glitnir build\.\n\nPLAN: downloads, installs and changes$/, 'the plan is listed before the click');
   state.infoAction = undefined; state.infos.length = 0;
   assert.equal(await setup.resolve(file('/work/A.lean')), undefined);
   assert.equal(runs, 1, 'dismissing runs nothing');

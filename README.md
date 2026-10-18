@@ -116,12 +116,17 @@ a GitHub release:
   link to.
 
 If uv is not installed, setup says so and offers **Install uv**, showing the
-command first: `brew install uv` (by Homebrew's full path) when Homebrew is
-installed, otherwise the official installer of the uv version this release pins,
-`curl -LsSf https://astral.sh/uv/0.12.23/install.sh | sh` (it puts uv in
-`~/.local/bin`). Nothing runs until you click
-**Install uv**; the command then runs in a VS Code terminal named "Install uv",
-where you can watch it. When that terminal closes, or when you choose **Retry**
+command and its environment first: Homebrew's `install uv`, by Homebrew's full
+path, when Homebrew is installed, otherwise the official installer of the uv
+version this release pins,
+`/usr/bin/curl -LsSf https://astral.sh/uv/0.12.23/install.sh | /bin/sh`. It runs
+with only `HOME`, `LANG` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin` (plus
+Homebrew's own directory), nothing inherited from VS Code, your shell or
+`terminal.integrated.env` settings. The official installer puts uv in
+`~/.local/bin`, where Glitnir looks, and is told (`UV_NO_MODIFY_PATH=1`) to leave
+your shell profiles alone; add `~/.local/bin` to `PATH` yourself to use uv in
+your own terminals. Nothing runs until you click **Install uv**; the command then
+runs in a VS Code terminal named "Install uv", where you can watch it. When that terminal closes, or when you choose **Retry**
 (for example after installing uv yourself), Glitnir looks for uv again and
 continues the setup.
 
@@ -153,8 +158,9 @@ built from the same commit and tested with that release's backend.
 1. Run **Glitnir: Install Extension Package… → Forseti → Download from this
    release** (also offered in **Glitnir: Set Up Environment**), and answer Yes to
    "Install z3 for decision procedures?" for decisions. Glitnir downloads the
-   wheel from the same release as the backend and verifies it against that
-   release's `SHA256SUMS` and `glitnir-candidate.json`.
+   wheel from the same release as the backend and installs it only if its
+   SHA-256 equals the one the extension records for it (and the release's
+   `SHA256SUMS` and `glitnir-candidate.json` bind the same bytes).
 2. To use a file instead, download `glitnir_forseti-VERSION-py3-none-any.whl` and
    `SHA256SUMS` from the same release as the VSIX, verify it with
    `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
@@ -170,26 +176,30 @@ Each release pins its own backend wheel, and each backend lives in its own
 environment, `~/.local/share/glitnir/backends/<wheel SHA-256>`. When the
 extension updates (from the Marketplace, or a new VSIX) and finds an environment
 from an earlier Glitnir build but none for its own backend, it shows one
-notification: "Glitnir was updated to X. Set up its backend?". Nothing is
-downloaded until you click **Set Up**, which:
+notification: "Glitnir was updated to X. Set up its backend?". **Set Up** first
+lists what it will do: the backend and package wheels it downloads, the extras
+and the PyPI packages they add, the packages you must reinstall yourself, and
+any settings file whose `glitnir.pythonPath` it changes. Nothing is downloaded
+or installed until you confirm, after which it:
 
 1. downloads this release's backend wheel, checks it against the size and
    SHA-256 the extension records, and installs it with uv into a new
    environment, exactly as **Glitnir: Set Up Environment → Set Up** does;
-2. lists the extension packages of the earlier environment, with the extras
-   installed there, such as `glitnir-forseti[z3]`;
-3. for each package the same release publishes, downloads the release's
-   `glitnir-candidate.json` and `SHA256SUMS`, refuses a manifest whose tag,
-   version, backend or plugin binding differs from this extension or from
-   `SHA256SUMS`, downloads the wheel, checks its SHA-256, and installs it with
-   the same checks as **Install Extension Package…**, keeping the extras it
-   still offers;
-4. switches to the new environment only once all of that has succeeded. A
+2. for each package of the earlier environment whose wheel the extension pins
+   (like its backend, the extension records the release's `glitnir-forseti`
+   wheel by size and SHA-256), downloads the release's `glitnir-candidate.json`
+   and `SHA256SUMS`, refuses a release that does not bind exactly the pinned
+   wheel and backend, downloads the wheel, installs it only if its SHA-256
+   equals the recorded one, with the same checks as **Install Extension
+   Package…**, and keeps only the installed extras Glitnir knows (for Forseti,
+   `z3`);
+3. switches to the new environment only once all of that has succeeded. A
    `glitnir.pythonPath` that named the earlier managed environment is changed to
    the new one; other overrides are left alone.
 
-Packages that are not assets of the release (third-party or local wheels, and
-packages you installed yourself such as `gimle-asgard`) are listed at the end to
+Packages whose wheel the extension does not pin (third-party or local wheels,
+packages you installed yourself such as `gimle-asgard`, and every package in a
+build packaged without a plugin wheel) are listed to
 reinstall with **Glitnir: Install Extension Package…**; they never fail the
 upgrade. If anything fails or you cancel, the earlier environment is unchanged,
 nothing is switched, and the message offers **Retry**; opening a notebook offers
@@ -569,20 +579,22 @@ To install one, run **Glitnir: Install Extension Package…** (also offered in
    decision procedures), marked "installed (version)" when they are, and last
    **Other wheel file…** for third-party or development wheels.
 2. **Choose the source** of a known package. **Download from this release
-   (recommended)** fetches its wheel from the GitHub release the extension's
-   backend comes from and verifies it against that release's `SHA256SUMS` and
-   the plugin binding in `glitnir-candidate.json`, whose tag, version and backend
-   must match the extension (a mismatch is refused). **Choose downloaded wheel**
-   selects a file, which must be that package's wheel. For an installed package
-   this reinstalls or updates it.
+   (recommended)** fetches the wheel the extension pins from the GitHub release
+   its backend comes from and installs it only if its SHA-256 equals the one the
+   extension records; the release's `SHA256SUMS` and the plugin binding in
+   `glitnir-candidate.json` must bind the same bytes, or it is refused. A build
+   packaged without the plugin wheel does not offer it. **Choose downloaded
+   wheel** selects a file, which must be that package's wheel; the confirmation
+   says whether it is identical to the release's or a local wheel. For an
+   installed package this reinstalls or updates it.
 3. **Answer its questions**, such as "Install z3 for decision procedures? (adds
    the z3-solver package from PyPI)", asked only for extras the wheel offers.
    Notes say what cannot be installed from here.
 4. **Confirm**, and Glitnir installs it and lists the providers now available.
 
 The list of known packages is data only and grants no trust: every wheel goes
-through the same checks, and a downloaded one is verified against the release
-first. With **Other wheel file…**, select the package's `.whl` file. Glitnir reads the wheel's metadata without
+through the same checks, and a downloaded one must be the wheel the extension
+pins. With **Other wheel file…**, select the package's `.whl` file. Glitnir reads the wheel's metadata without
 running it and refuses a file that declares no `glitnir.providers` entry point or
 is the backend itself. Pick any optional extras (none are preselected), confirm,
 and uv installs the wheel into the backend's Python. Its dependencies, and those

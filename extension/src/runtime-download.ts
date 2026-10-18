@@ -59,7 +59,32 @@ async function credential(getToken: () => Promise<string>, signal: AbortSignal):
   } finally { signal.removeEventListener('abort', abort); }
 }
 
-async function githubAsset(d: AssetDownload, options: DownloadOptions): Promise<{url: URL; headers: Record<string, string>; size: number}> {
+/** GitHub's answer to an anonymous client that used up its hourly request limit. */
+function rateLimited(result: IncomingMessage): boolean {
+  return (result.statusCode === 403 || result.statusCode === 429) && result.headers['x-ratelimit-remaining'] === '0';
+}
+
+/**
+ * GET a GitHub API URL anonymously, as the release is public. Only when GitHub
+ * reports its anonymous rate limit is a sign-in offered (no scopes), and the
+ * request repeated with it; a missing release never asks for credentials.
+ */
+async function githubGet(url: URL, base: Record<string, string>, options: DownloadOptions): Promise<{result: IncomingMessage; headers: Record<string, string>}> {
+  let headers = base;
+  let result = await response(url, options.signal, headers);
+  if (rateLimited(result)) {
+    result.destroy();
+    if (headers.Authorization) throw new Error(`Runtime download hit GitHub's rate limit even when signed in. Retry later, or ${options.fallback ?? DOWNLOADED_WHEEL}.`);
+    if (!options.githubToken) throw new Error(`Runtime download hit GitHub's anonymous rate limit. Retry in an hour, or ${options.fallback ?? DOWNLOADED_WHEEL}.`);
+    headers = {...headers, Authorization: `Bearer ${await credential(options.githubToken, options.signal)}`};
+    options.signal.throwIfAborted();
+    result = await response(url, options.signal, headers);
+    if (rateLimited(result)) { result.destroy(); throw new Error(`Runtime download hit GitHub's rate limit even when signed in. Retry later, or ${options.fallback ?? DOWNLOADED_WHEEL}.`); }
+  }
+  return {result, headers};
+}
+
+async function githubAsset(d: AssetDownload, options: DownloadOptions): Promise<{url: URL; headers: Record<string, string>; size: number; github?: boolean}> {
   const fallback = options.fallback ?? DOWNLOADED_WHEEL;
   if ('url' in d.source) {
     if (!('size' in d.archive)) throw new Error('Runtime download needs a pinned size.');
@@ -67,17 +92,11 @@ async function githubAsset(d: AssetDownload, options: DownloadOptions): Promise<
   }
   const source = d.source;
   const url = new URL(`https://api.github.com/repos/${source.repository}/releases/tags/${encodeURIComponent(source.tag)}`);
-  let headers: Record<string, string> = {Accept: 'application/vnd.github+json'};
-  let result = await response(url, options.signal, headers);
-  if ([401, 403, 404].includes(result.statusCode ?? 0) && options.githubToken) {
-    result.destroy();
-    headers = {...headers, Authorization: `Bearer ${await credential(options.githubToken, options.signal)}`};
-    options.signal.throwIfAborted();
-    result = await response(url, options.signal, headers);
-  }
+  const {result, headers} = await githubGet(url, {Accept: 'application/vnd.github+json'}, options);
   if (result.statusCode !== 200) {
     const status = result.statusCode; result.destroy();
-    throw new Error(`Runtime release is unavailable (HTTP ${status}). Check GitHub access, or ${fallback}.`);
+    if (status === 404) throw new Error(`Runtime release ${source.tag} is not published in ${source.repository} (HTTP 404). Retry later, or ${fallback}.`);
+    throw new Error(`Runtime release is unavailable (HTTP ${status}). Check your connection, or ${fallback}.`);
   }
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of result) {
@@ -91,7 +110,7 @@ async function githubAsset(d: AssetDownload, options: DownloadOptions): Promise<
   const sized = 'size' in d.archive ? asset?.size === d.archive.size
     : Number.isSafeInteger(asset?.size) && asset.size > 0 && asset.size <= d.archive.maxSize;
   if (matches.length !== 1 || !Number.isSafeInteger(asset.id) || asset.id <= 0 || !sized) throw new Error(`Pinned runtime asset is missing or has an unexpected size. Download the matching ${options.fallback ? 'file' : 'wheel'} from the release and ${fallback}.`);
-  return {url: new URL(`https://api.github.com/repos/${source.repository}/releases/assets/${asset.id}`), headers: {...headers, Accept: 'application/octet-stream'}, size: asset.size};
+  return {url: new URL(`https://api.github.com/repos/${source.repository}/releases/assets/${asset.id}`), headers: {...headers, Accept: 'application/octet-stream'}, size: asset.size, github: !('url' in d.source)};
 }
 
 /** Stream a bounded download; the installer verifies its pinned SHA-256 before extraction. */
@@ -103,7 +122,7 @@ export async function downloadRuntime(destination: string, descriptor: AssetDown
     const source = await githubAsset(descriptor, {...options, signal});
     let bytes = 0, lastPercent = -1;
     async function* chunks(): AsyncGenerator<Buffer> {
-      input = await response(source.url, signal, source.headers);
+      input = source.github ? (await githubGet(source.url, source.headers, {...options, signal})).result : await response(source.url, signal, source.headers);
       try {
         if (input.statusCode !== 200) throw new Error(`Runtime download failed (HTTP ${input.statusCode}). Retry, or ${fallback}.`);
         if (input.headers['content-length'] && Number(input.headers['content-length']) !== source.size) throw new Error(`Runtime download size does not match the pinned archive. Retry, or ${fallback}.`);

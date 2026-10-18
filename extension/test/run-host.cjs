@@ -5,6 +5,8 @@ const {mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, r
 const {tmpdir} = require('node:os');
 const path = require('node:path');
 const python = process.env.GLITNIR_TEST_PYTHON || process.env.GLITNIR_BUILD_PYTHON;
+// The editor inherits this; Install uv's terminal must not (see host.cjs).
+process.env.HOMEBREW_GLITNIR_PARENT = 'inherited';
 if (!python) throw new Error('Set GLITNIR_TEST_PYTHON to the installed compatible runtime.');
 const root = mkdtempSync(path.join(tmpdir(), 'glitnir-vscode-host-'));
 const workspace = path.join(root, 'workspace');

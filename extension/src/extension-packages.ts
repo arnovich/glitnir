@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
 import {BackendDescriptor, backendDescriptor, backendStore, findUv, runUv, UvNotStartedError} from './backend-install';
 import {Environment} from './discovery';
 import {KNOWN_PACKAGES, KnownPackage} from './known-packages';
-import {fetchPlugin, fetchRelease, ReleaseFetch} from './release-assets';
+import {digest, fetchPlugin, fetchRelease, pluginPins, ReleaseFetch} from './release-assets';
 import {githubToken} from './setup';
 
 export interface WheelLimits {wheelBytes: number; expandedBytes: number; entries: number; metadataBytes: number; recordBytes: number}
@@ -895,33 +895,37 @@ export class ExtensionPackages {
     const version: string = this.context.extension?.packageJSON.version;
     let pin: BackendDescriptor | undefined;
     try { pin = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend); } catch { /* A build without a pin has no release. */ }
+    // Only a wheel this VSIX pins is downloaded; a build packaged without one offers files only.
+    const pinned = pluginPins(this.context.extension?.packageJSON.glitnirPlugins).find(p => p.distribution === known.distribution);
     const installed = before.packages.find(p => normalized(p.name) === known.distribution);
-    const asset = known.asset(version);
     const action = !installed ? `Install ${version}` : installed.version === version ? `Reinstall ${version}` : `Update ${installed.version} → ${version}`;
     const source = await vscode.window.showQuickPick([
-      ...(pin?.tag ? [{label: 'Download from this release (recommended)', description: action, detail: `${asset} from GitHub release ${pin.tag}, verified against its SHA256SUMS and glitnir-candidate.json.`, download: true}] : []),
+      ...(pin?.tag && pinned ? [{label: 'Download from this release (recommended)', description: action, download: true,
+        detail: `Downloads ${pinned.asset} from GitHub release ${pin.tag} and installs it only if its SHA-256 equals the one this extension records for it.`}] : []),
       {label: 'Choose downloaded wheel', description: '', detail: `Select a ${known.distribution} .whl file you downloaded or built.`, download: false},
     ], {title: `Install ${known.label}`});
     if (!source) return undefined;
     this.check();
     if (!source.download) {
       const selected = await this.chooseWheel();
-      const name = selected && WHEEL_FILE.exec(selected.fileName)?.[1];
-      if (selected && (!name || normalized(name) !== known.distribution)) throw new Error(`Cannot install ${selected.fileName}: select a ${known.distribution} wheel for ${known.label}.`);
-      return selected;
+      if (!selected) return undefined;
+      const name = WHEEL_FILE.exec(selected.fileName)?.[1];
+      if (!name || normalized(name) !== known.distribution) throw new Error(`Cannot install ${selected.fileName}: select a ${known.distribution} wheel for ${known.label}.`);
+      const same = pinned && selected.fileName === pinned.asset && selected.bytes.length === pinned.size && digest(selected.bytes) === pinned.sha256;
+      return {...selected, source: same
+        ? `Source: ${selected.fileName}, identical to this release's (its SHA-256 equals the one this extension records).`
+        : `Source: ${selected.fileName}, a local wheel, not the release's${pinned ? ' (its SHA-256 differs from the one this extension records)' : ''}. Only the checks below apply.`};
     }
-    const tag = pin!.tag!;
+    const tag = pin!.tag!, plugin = {name: pinned!.distribution, asset: pinned!.asset, version, size: pinned!.size, sha256: pinned!.sha256};
     return this.progress(`Downloading ${known.label}`, async (signal, report) => {
       const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-release-'));
       try {
         const download: ReleaseFetch = {signal, githubToken, download: this.dependencies.download};
         report('Verifying the release');
-        const release = await fetchRelease(pin!, version, scratch, download);
-        const plugin = release.plugins.find(p => p.name === known.distribution && p.asset === asset);
-        if (!plugin) throw new Error(`Release ${tag} does not publish ${asset}. Choose a downloaded wheel instead.`);
-        report(`Downloading ${asset}`);
-        const file = await fetchPlugin(pin!, plugin, scratch, download);
-        return {fileName: asset, bytes: await readWheel(file), source: `Source: ${asset} from release ${tag}, verified against its SHA256SUMS and glitnir-candidate.json.`};
+        await fetchRelease(pin!, version, [pinned!], scratch, download);
+        report(`Downloading ${plugin.asset}`);
+        const bytes = await fetchPlugin(pin!, plugin, scratch, download);
+        return {fileName: plugin.asset, bytes, source: `Source: ${plugin.asset} from release ${tag}; its SHA-256 equals the one this extension records, and the release's SHA256SUMS and glitnir-candidate.json bind the same bytes.`};
       } finally { await rm(scratch, {recursive: true, force: true}); }
     });
   }

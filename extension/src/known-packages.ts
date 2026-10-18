@@ -9,6 +9,8 @@ export interface KnownExtra {
   name: string;
   /** The yes/no question asked before installing it. */
   prompt: string;
+  /** The PyPI packages it adds, named before anything is installed. */
+  packages: string[];
 }
 export interface KnownPackage {
   label: string;
@@ -27,6 +29,11 @@ export const KNOWN_PACKAGES: readonly KnownPackage[] = [{
   description: 'circuit, model and dynamics diagrams, simulation evidence and decision procedures',
   distribution: 'glitnir-forseti',
   asset: version => `glitnir_forseti-${version}-py3-none-any.whl`,
-  extras: [{name: 'z3', prompt: 'Install z3 for decision procedures? (adds the z3-solver package from PyPI)'}],
+  extras: [{name: 'z3', prompt: 'Install z3 for decision procedures? (adds the z3-solver package from PyPI)', packages: ['z3-solver']}],
   notes: ['iterate evidence also needs Python Asgard (gimle-asgard), which is not on PyPI and cannot be installed here; install it into the backend yourself.'],
 }];
+
+/** The registry entry for a distribution, by normalized name. */
+export function knownPackage(distribution: string): KnownPackage | undefined {
+  return KNOWN_PACKAGES.find(known => known.distribution === distribution);
+}

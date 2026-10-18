@@ -17,12 +17,17 @@ install `bubblewrap apparmor apparmor-profiles` and run
 3. Run **Glitnir: Open in Glitnir**.
 
 If uv is not installed, setup says so and offers **Install uv**, showing the
-command first: `brew install uv` (by Homebrew's full path) when Homebrew is
-installed, otherwise the official installer of the uv version this release pins,
-`curl -LsSf https://astral.sh/uv/0.12.23/install.sh | sh` (it puts uv in
-`~/.local/bin`). Nothing runs until you
-click **Install uv**; the command then runs in a VS Code terminal named
-"Install uv", where you can watch it. When that terminal closes, or when you
+command and its environment first: Homebrew's `install uv`, by Homebrew's full
+path, when Homebrew is installed, otherwise the official installer of the uv
+version this release pins,
+`/usr/bin/curl -LsSf https://astral.sh/uv/0.12.23/install.sh | /bin/sh`. It runs
+with only `HOME`, `LANG` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin` (plus
+Homebrew's own directory), nothing inherited from VS Code, your shell or
+`terminal.integrated.env` settings. The official installer puts uv in
+`~/.local/bin`, where Glitnir looks, and is told (`UV_NO_MODIFY_PATH=1`) to leave
+your shell profiles alone; add `~/.local/bin` to `PATH` yourself to use uv in
+your own terminals. Nothing runs until you click **Install uv**; the command then
+runs in a VS Code terminal named "Install uv", where you can watch it. When that terminal closes, or when you
 choose **Retry** (for example after installing uv yourself), Glitnir looks for
 uv again and continues the setup.
 
@@ -43,10 +48,11 @@ Optional views, evidence and decisions come from provider packages such as
 **Glitnir: Install Extension Package…** (also offered in **Glitnir: Set Up
 Environment**) and pick a package: **Forseti** (marked "installed (version)" when
 it is) or **Other wheel file…** for any other wheel. For Forseti, **Download from
-this release (recommended)** fetches its wheel from the same GitHub release as
-the backend and verifies it against `SHA256SUMS` and `glitnir-candidate.json`
-(which must match this VSIX); **Choose downloaded wheel** takes a Forseti wheel
-you downloaded or built. Glitnir then asks "Install z3 for decision procedures?".
+this release (recommended)** fetches the wheel this VSIX pins from the same
+GitHub release as the backend and installs it only if its SHA-256 equals the
+recorded one (the release's `SHA256SUMS` and `glitnir-candidate.json` must bind
+the same bytes); **Choose downloaded wheel** takes a Forseti wheel you downloaded
+or built, and says whether it is the release's or a local wheel. Glitnir then asks "Install z3 for decision procedures?".
 The list of known packages grants no trust: every wheel gets the same checks.
 For any wheel, Glitnir checks that the
 wheel declares a `glitnir.providers` entry point, offers the optional extras
@@ -101,13 +107,13 @@ Each VSIX pins its own backend, installed in its own environment under
 `~/.local/share/glitnir/backends/`. After an extension update, Glitnir shows
 "Glitnir was updated to X. Set up its backend?" once if it finds an environment
 from an earlier build but none for the new one. Nothing downloads until you
-click **Set Up**. It then downloads and verifies the new backend as **Download
-Set Up** does, into a new environment, and carries over the earlier
-environment's extension packages that the same release publishes (such as
-`glitnir-forseti`, with extras such as `z3`): each is checked against the
-release's `SHA256SUMS` and `glitnir-candidate.json`, which must match this
-VSIX's tag, version and backend, and installed with the same checks as
-**Install Extension Package…**. Other packages are listed to reinstall with
+click **Set Up** and confirm the list of what it will download, install and
+change. It then downloads and verifies the new backend as **Set Up** does, into
+a new environment, and carries over the earlier environment's extension
+packages whose wheel this VSIX pins (such as `glitnir-forseti`, with the extras
+Glitnir knows, such as `z3`): each must have the SHA-256 this VSIX records, the
+release's `SHA256SUMS` and `glitnir-candidate.json` must bind the same bytes,
+and it is installed with the same checks as **Install Extension Package…**. Other packages are listed to reinstall with
 **Install Extension Package…**. Glitnir switches to the new environment only
 when everything succeeded; if something fails or you cancel, the earlier
 environment is unchanged and **Retry** runs it again. **Glitnir: Set Up Backend
