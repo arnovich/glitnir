@@ -111,7 +111,7 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
       Promise.resolve(onNotebook()).then(reply => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: reply.status ?? 200, json: structuredClone(reply.json)}})));
       return;
     }
-    const json = message.path === '/api/notebook' ? snapshot : message.path.startsWith('/api/proof/') ? onProof?.(message) || {} : message.path === '/api/export/styles' ? {css: '.static-notebook{color:black}'} : message.path.startsWith('/api/view?') ? onView?.(message.path) || {} : {queued: []};
+    const json = message.path === '/api/notebook' ? snapshot : message.path.startsWith('/api/proof/') ? onProof?.(message) || {} : message.path === '/api/export/styles' ? {css: '.static-notebook{color:black}'} : message.path.startsWith('/api/view?') || message.path.startsWith('/api/view/job?') ? onView?.(message.path) || {} : {queued: []};
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: structuredClone(json)}})));
   }});
   if (katex) window.eval(readFileSync(path.join(media, 'katex/katex.min.js'), 'utf8'));
@@ -1935,6 +1935,102 @@ test('project inspection runs only on click and unsaved files stay off the wire'
     assert.deepEqual(JSON.parse(sent[0].body), {sha256: snapshot.sha256});
     assert.equal(window.document.getElementById('replay-all'), null);
     assert.match(window.document.getElementById('preview-footer').textContent, /Checks are explicit/);
+  } finally { window.close(); }
+});
+
+test('project inspection is reported from snapshots for the saved source it read', async () => {
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/project', toolchain: 't'},
+    inspection: {status: 'running', source_sha256: 'a'.repeat(64), message: 'Inspecting the saved project setup'}}};
+  const requests = [];
+  const window = await renderSnapshot(snapshot, {onMessage: message => requests.push(message)});
+  const $ = id => window.document.getElementById(id);
+  try {
+    assert.equal($('inspect-project').disabled, true, 'one inspection or check at a time');
+    assert.equal($('inspect-project').textContent, 'Inspecting…');
+    assert.equal($('check-project').disabled, true);
+    assert.match($('project-inspection').textContent, /Inspecting the saved project setup…/);
+    $('project-inspection').querySelector('[data-act="inspect-cancel"]').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(requests.filter(r => r.path === '/api/project/inspect/cancel').map(r => [r.method, r.body]), [['POST', '{}']], 'Stop cancels the inspection');
+    snapshot.preview.inspection = {status: 'resolved', source_sha256: 'a'.repeat(64), message: 'Module setup resolved for <A>.', resolution: {kind: 'prepared_local', packages: [{name: 'dep', path: 'p', entry: {}}]}};
+    await window.glitnirPoll();
+    assert.equal($('inspect-project').disabled, false);
+    assert.match($('project-inspection').textContent, /^Last inspection: Module setup resolved for <A>\./);
+    assert.match($('project-inspection').innerHTML, /&lt;A&gt;/, 'the message is escaped');
+    snapshot.preview.inspection.source_sha256 = 'b'.repeat(64);
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, true, 'an inspection of another saved source is not shown');
+  } finally { window.close(); }
+});
+
+test('a running check, also one waiting for another Lean run, can be stopped', async () => {
+  const requests = [];
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'},
+    check: {status: 'running', source_sha256: 'a'.repeat(64), message: 'Waiting for another Lean run to finish.', theorems: []}}};
+  const window = await renderSnapshot(snapshot, {onMessage: message => requests.push(message)});
+  try {
+    const panel = window.document.getElementById('project-check');
+    assert.match(panel.textContent, /Waiting for another Lean run to finish/);
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
+    panel.querySelector('[data-act="check-cancel"]').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(requests.filter(r => r.path === '/api/project/check/cancel').map(r => [r.method, r.body]), [['POST', '{}']], 'sent even with unsaved Lean files');
+  } finally { window.close(); }
+});
+
+test('views are drawn in the background: progress, Stop and Draw again', async () => {
+  const requests = [];
+  const job = 'a1'.repeat(16), other = 'b2'.repeat(16), next = 'c3'.repeat(16);
+  const answers = {
+    view: [
+      {status: 'drawing', message: 'Preparing the view.', job},
+      {status: 'queued', message: 'Waiting for another view to finish drawing.', job: other},
+      {status: 'drawing', message: 'Lean is drawing it.', job: next},
+    ],
+    [job]: [{status: 'drawing', message: 'Waiting for another Lean run to finish.', job}, {error: 'View drawing cancelled.'}],
+    [other]: [{status: 'drawing', message: 'Lean is drawing it.', job: other}, {svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'}],
+    [next]: [{svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', uncertain: true}],
+  };
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
+    cells: [{index: 0, kind: 'source', start: 1, end: 1, text: '-- @view circuit c'}], views: [{cell: 0, line: 1, kind: 'circuit', name: 'c', using: [], error: ''}],
+    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+  const onView = path => {
+    const id = /^\/api\/view\/job\?id=([0-9a-f]{32})$/.exec(path)?.[1];
+    return (id ? answers[id] : answers.view).shift();
+  };
+  const window = await renderSnapshot(snapshot, {onMessage: message => requests.push(message), onView});
+  const view = () => window.document.querySelector('#doc .view-cell');
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const asked = () => requests.filter(r => r.path?.startsWith('/api/view')).map(r => r.path.replace(/[0-9a-f]{32}/, id => ({[job]: 'job', [other]: 'other', [next]: 'next'})[id]));
+  try {
+    assert.equal(view().querySelector('.view-wait').textContent, 'Preparing the view.');
+    await wait(2100);
+    assert.equal(view().querySelector('.view-wait').textContent, 'Waiting for another Lean run to finish.');
+    const stop = view().querySelector('[data-act="view-cancel"]');
+    assert.ok(stop, 'a drawing in progress can be stopped');
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
+    stop.click();
+    await wait(30);
+    const cancel = requests.filter(r => r.path === '/api/view/cancel');
+    assert.equal(cancel.length, 1, 'stopping is sent even with unsaved Lean files');
+    assert.deepEqual([cancel[0].method, JSON.parse(cancel[0].body)], ['POST', {sha256: snapshot.sha256, line: 1}], 'Stop names this card only');
+    await wait(2100);
+    assert.match(view().textContent, /No drawing: View drawing cancelled\./);
+    assert.equal(view().querySelector('[data-act="view-cancel"]'), null);
+    await window.glitnirPoll();
+    assert.match(view().textContent, /cancelled/, 'a cancelled drawing is not asked again unasked');
+    view().querySelector('[data-act="view-retry"]').click();
+    await wait(30);
+    assert.equal(view().querySelector('.view-wait').textContent, 'Waiting for another view to finish drawing.');
+    assert.equal(view().querySelector('[data-act="view-cancel"]'), null, 'a queued view has nothing to stop');
+    await wait(2100);
+    assert.equal(view().querySelector('.view-wait').textContent, 'Waiting for another view to finish drawing.', 'the card keeps its own state');
+    await wait(6300);
+    assert.match(view().querySelector('img').getAttribute('src'), /^data:image\/svg\+xml/);
+    assert.match(view().textContent, /May be out of date: the state of a dependency could not be read/);
+    // Polls go to the job's own route; the notebook route is asked only to start.
+    assert.deepEqual(asked(), ['/api/view?cell=0&line=1', '/api/view/job?id=job', '/api/view/cancel', '/api/view/job?id=job',
+      '/api/view?cell=0&line=1', '/api/view/job?id=other', '/api/view/job?id=other', '/api/view?cell=0&line=1', '/api/view/job?id=next']);
   } finally { window.close(); }
 });
 

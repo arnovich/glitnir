@@ -27,7 +27,7 @@ def _lake(tmp_path, monkeypatch, import_arts):
     monkeypatch.setattr(
         provider_lean,
         "inspect_project",
-        lambda path, *, expected_sha256, cancel: {
+        lambda path, *, expected_sha256, cancel, imports=(): {
             "status": "resolved",
             "setup": {
                 "name": "Note",
@@ -182,14 +182,14 @@ def test_runner_returns_the_payload_for_the_caller_to_validate(tmp_path, monkeyp
 @pytest.mark.parametrize(
     "needs, message",
     [
-        ("view", "This view needs `import Demo.View` in the notebook."),
-        ("evidence", "This evidence needs `import Demo.View` in the notebook."),
+        ("view", "This view needs the module `Demo.View`, which no package"),
+        ("evidence", "This evidence needs the module `Demo.View`, which no package"),
     ],
 )
 def test_missing_import_is_worded_for_the_caller(tmp_path, monkeypatch, needs, message):
     source = _lake(tmp_path, monkeypatch, {})
     _forbid_lean(monkeypatch)
-    assert _run(source, needs=needs) == {"error": message}
+    assert _run(source, needs=needs)["error"].startswith(message)
 
 
 @pytest.mark.parametrize(
@@ -206,7 +206,7 @@ def test_loose_files_need_a_lake_project(tmp_path, monkeypatch, needs, message):
     source.write_text(NOTEBOOK)
     monkeypatch.setattr(provider_lean, "_toolchain", lambda: tmp_path)
     _forbid_lean(monkeypatch)
-    assert _run(source, needs=needs) == {"error": message}
+    assert _run(source, needs=needs)["error"].startswith(message)
 
 
 def test_composing_failures_name_the_provider(tmp_path, monkeypatch):
@@ -300,7 +300,7 @@ def test_import_checks_need_a_lake_project_and_a_resolved_setup(tmp_path, monkey
 
     source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
 
-    def inspect(path, *, expected_sha256, cancel):
+    def inspect(path, *, expected_sha256, cancel, imports=()):
         return {"status": "unavailable", "message": "Prepare the project."}
 
     monkeypatch.setattr(provider_lean, "inspect_project", inspect)

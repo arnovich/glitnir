@@ -157,10 +157,23 @@ test('ordinary Lean source opens without Lean tools and offers no pinned checkin
     assert.deepEqual(await backend.request('/api/decide/stop', 'POST', '{}'), {status: 409, json: {error: 'No decision is running.'}});
     // Views are drawn in project mode; an unlisted directive is simply absent.
     assert.equal((await backend.request('/api/view?cell=0&line=1')).status, 404);
+    assert.deepEqual(await backend.request('/api/view/cancel', 'POST', JSON.stringify({sha256: snapshot.sha256, line: 1})), {status: 409, json: {error: 'That view is not being drawn.'}});
+    assert.deepEqual(await backend.request('/api/project/inspect/cancel', 'POST', '{}'), {status: 409, json: {error: 'No inspection is running.'}});
+    assert.deepEqual(await backend.request('/api/project/check/cancel', 'POST', '{}'), {status: 409, json: {error: 'No check is running.'}});
+    assert.deepEqual(await backend.request(`/api/view/job?id=${'0'.repeat(32)}`), {status: 200, json: {error: 'This drawing is no longer known; draw it again.', transient: true}});
+    // An inspection starts in the background and is reported in snapshots.
     const inspection = await backend.request('/api/project/inspect', 'POST', JSON.stringify({sha256: snapshot.sha256}));
-    assert.equal(inspection.status, 200);
-    assert.equal(inspection.json.status, 'unavailable');
-    assert.match(inspection.json.message, /Prepare/);
+    assert.equal(inspection.status, 202);
+    assert.equal(inspection.json.status, 'running');
+    let inspected;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      inspected = (await backend.request('/api/notebook')).json.preview.inspection;
+      if (inspected.status !== 'running') break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.equal(inspected.status, 'unavailable');
+    assert.equal(inspected.source_sha256, snapshot.sha256);
+    assert.match(inspected.message, /Prepare/);
     assert.equal((await backend.request('/api/export/styles')).status, 200);
     assert.equal(readFileSync(notebook, 'utf8'), source);
     assert.equal(readFileSync(path.join(root, 'Term.forseti.json'), 'utf8'), 'malformed proof metadata');

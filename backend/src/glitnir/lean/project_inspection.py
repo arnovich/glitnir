@@ -7,6 +7,7 @@ setup is a historical description, not a transitive proof-environment identity.
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,13 @@ TOOLCHAIN = "leanprover/lean4:v4.32.1"
 # `lake setup-file` lists every module in the import closure; for `import
 # Mathlib` that is over 5 MB, so leave room for the library to grow.
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
+#: Lake's exit status when a `--no-build` run finds a target out of date.
+NO_BUILD_EXIT = 3
+MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*")
+
+
+class NeedsBuild(ValueError):
+    """Lake found an import that is not built, or is out of date; nothing was built."""
 
 
 def _source_digest(source: Path) -> str:
@@ -127,7 +135,12 @@ def _run(
                 stream.seek(0)
                 texts.append(stream.read(MAX_OUTPUT_BYTES + 1).decode("utf-8"))
             if process.returncode != 0:
-                raise ValueError(
+                failure = (
+                    NeedsBuild
+                    if program is not None and process.returncode == NO_BUILD_EXIT
+                    else ValueError
+                )
+                raise failure(
                     "Lake could not inspect this prepared project. Build its "
                     "dependencies with its declared toolchain, then retry. "
                     "Configuration needing writes, subprocesses on macOS, or paths "
@@ -198,13 +211,22 @@ def inspect_project(
     expected_sha256: str | None = None,
     cancel: threading.Event | None = None,
     timeout_seconds: float | None = None,
+    imports: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Resolve prepared module setup on explicit request, without proof metadata.
 
-    `timeout_seconds` bounds each Lake run; by default it is the configured
-    check time limit. A caller that answers a quick request passes a shorter one.
+    `timeout_seconds` bounds the whole inspection, every Lake run together;
+    by default it is the configured check time limit. A caller that answers a
+    quick request passes a shorter one.
+    `imports` are modules set up as if the source's header imported them too,
+    from the project's existing build. A module no package provides is left
+    out of the setup; a missing or out-of-date build of one, as of any import,
+    makes the inspection unavailable, with `needs_build` set: nothing is built.
     """
     try:
+        for module in imports:
+            if not MODULE_NAME.fullmatch(module):
+                raise ValueError(f"Invalid module name `{module}`.")
         source = source.absolute()
         digest = _source_digest(source)
         if expected_sha256 is not None and digest != expected_sha256:
@@ -228,12 +250,22 @@ def inspect_project(
             raise ValueError("Source is outside the project root.")
         toolchain = _toolchain()
         cancellation = cancel if cancel is not None else threading.Event()
+        deadline = time.monotonic() + (
+            check_seconds() if timeout_seconds is None else timeout_seconds
+        )
+
+        def remaining() -> float:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise ValueError("Project inspection timed out.")
+            return left
+
         version = _run(
             ["--version"],
             root,
             toolchain,
             cancellation,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=remaining(),
         ).strip()
         if (
             not version.startswith("Lake version 5.0.0-src+")
@@ -243,12 +275,12 @@ def inspect_project(
                 "Installed Lake does not match the supported Lean 4.32.1 adapter."
             )
         output = _run(
-            ["setup-file", str(source)],
+            ["setup-file", str(source), *imports],
             root,
             toolchain,
             cancellation,
             program=PROGRAM,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=remaining(),
         )
         report = json.loads(output)
         if not isinstance(report, dict) or set(report) != {"setup", "resolution"}:
@@ -274,5 +306,7 @@ def inspect_project(
             "setup": setup,
             "resolution": resolution,
         }
+    except NeedsBuild as error:
+        return {"status": "unavailable", "message": str(error), "needs_build": True}
     except (OSError, ValueError, RecursionError, SandboxUnavailable) as error:
         return {"status": "unavailable", "message": str(error)}

@@ -2,17 +2,21 @@
 
 import hashlib
 import json
-import re
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import OUTPUT_BYTES, check_seconds, run_observer
-from glitnir.lean.project_inspection import _toolchain, inspect_project
-from glitnir.lean.project_snapshot import SLOT_BUSY, SnapshotError, snapshot_slot
+from glitnir.lean.project_inspection import MODULE_NAME, _toolchain, inspect_project
+from glitnir.lean.project_snapshot import (
+    SLOT_BUSY,
+    SLOT_WAITING,
+    SnapshotError,
+    snapshot_slot,
+)
 from glitnir.lean.proof_trace import _absolute_setup, _check_configuration
 from glitnir.lean.sandbox import SandboxUnavailable
 from glitnir.lean.scratch import scratch_directory
@@ -33,6 +37,10 @@ CANCELLED = {
     "view": "View drawing cancelled.",
     "evidence": "Evidence run cancelled.",
 }
+#: What a provider run reports while it waits for, prepares and runs Lean.
+WAITING = SLOT_WAITING
+PREPARING = "Reading the project's setup with Lake."
+RUNNING = {"view": "Lean is drawing it.", "evidence": "Lean is running it."}
 # Lake lists only workspace modules in `importArts`; the toolchain's own
 # libraries are always found through the sysroot search path.
 TOOLCHAIN_LIBRARIES = frozenset({"Init", "Std", "Lean", "Lake"})
@@ -50,9 +58,6 @@ def _failure(error: Exception) -> dict[str, Any]:
     ):
         return {"error": message, "transient": True}
     return {"error": message}
-
-
-MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*")
 
 
 def _available(module: str, setup: dict[str, Any]) -> bool:
@@ -76,6 +81,41 @@ def _missing_import(
         if not _available(module, setup):
             return {"error": f"This {needs} needs `import {module}` in the notebook."}
     return None
+
+
+def _unprovided(
+    imports: tuple[str, ...], setup: dict[str, Any], needs: str
+) -> dict[str, Any] | None:
+    """Name the first provider module that no package of the project provides.
+
+    `setup` was prepared with `imports` added to the notebook's own, so a
+    module missing from it is one Lake found in no package.
+    """
+    for module in imports:
+        if not _available(module, setup):
+            return {
+                "error": f"This {needs} needs the module `{module}`, which no "
+                "package of this Lake project provides. Add the package that "
+                "provides it to the project's dependencies."
+            }
+    return None
+
+
+def _unbuilt(
+    imports: tuple[str, ...], setup: dict[str, Any], root: Path, needs: str
+) -> str:
+    """Say which provider modules to build; `setup` is the notebook's own."""
+    modules = [m for m in imports if not _available(m, setup)] or list(imports)
+    return (
+        f"This {needs} needs {', '.join(f'`{m}`' for m in modules)}, which this "
+        f"project has not built or has out of date. Run "
+        f"`lake build {' '.join(modules)}` in {root}, then try again."
+    )
+
+
+def _project_modules(imports: tuple[str, ...]) -> tuple[str, ...]:
+    """Leave out toolchain libraries, which Lean finds without Lake's setup."""
+    return tuple(m for m in imports if m.split(".")[0] not in TOOLCHAIN_LIBRARIES)
 
 
 def compose_provider_source(
@@ -104,20 +144,37 @@ def _saved(source: Path) -> str:
 
 
 def _setup(
-    source: Path, expected_sha256: str, cancel: threading.Event, needs: str
+    source: Path,
+    expected_sha256: str,
+    cancel: threading.Event,
+    needs: str,
+    imports: tuple[str, ...] = (),
 ) -> tuple[dict[str, Any], dict[str, Any], Path]:
-    """Prepare the notebook's Lake environment exactly as project tracing does."""
+    """Prepare the notebook's Lake environment exactly as project tracing does.
+
+    With `imports`, the setup also loads those modules from the project's
+    existing build, as if the notebook imported them. If Lake then finds an
+    import out of date while the notebook's own setup is fine, the error names
+    the provider modules to build.
+    """
     project = describe_project(source)
     if project["kind"] != "lake":
         raise SnapshotError(LAKE_NEEDED[needs])
-    inspected = inspect_project(source, expected_sha256=expected_sha256, cancel=cancel)
-    if inspected["status"] != "resolved":
-        raise SnapshotError(inspected["message"])
-    return (
-        inspected["setup"],
-        inspected["resolution"],
-        Path(project["root"]).resolve(),
+    root = Path(project["root"]).resolve()
+    extra = _project_modules(imports)
+    inspected = inspect_project(
+        source, expected_sha256=expected_sha256, cancel=cancel, imports=extra
     )
+    if inspected["status"] != "resolved":
+        if extra and inspected.get("needs_build") and not cancel.is_set():
+            # Tell an unbuilt provider module from an unbuilt notebook import.
+            own = inspect_project(
+                source, expected_sha256=expected_sha256, cancel=cancel
+            )
+            if own["status"] == "resolved":
+                raise SnapshotError(_unbuilt(extra, own["setup"], root, needs))
+        raise SnapshotError(inspected["message"])
+    return inspected["setup"], inspected["resolution"], root
 
 
 def _messages(value: Any, key: str, needs: str) -> list[str]:
@@ -187,13 +244,19 @@ def run_provider_lean(
     marker: str,
     needs: str,
     cancel: threading.Event,
+    progress: Callable[[str], None] | None = None,
+    wait: bool = False,
 ) -> dict[str, Any]:
     """Elaborate the notebook prefix and a provider command in the sandbox.
 
     Returns the text after `marker` in the last message that carries it, as
     `{"payload": text}`, or `{"error": message}`. `needs` is `"view"` or
-    `"evidence"` and words the messages.
+    `"evidence"` and words the messages. The provider's `imports` are loaded
+    from the project's existing build, whether or not the notebook imports
+    them. With `wait`, a busy Lean slot is waited for, up to the check time
+    limit, rather than refused. `progress` is told what the run is doing.
     """
+    report = progress or (lambda _message: None)
     try:
         if describe_project(source)["kind"] != "lake":
             return {"error": LAKE_NEEDED[needs]}
@@ -214,17 +277,23 @@ def run_provider_lean(
                 "error": f"Provider {provider_name} failed: "
                 f"{type(error).__name__}: {error}"
             }
+        slot = (
+            snapshot_slot(cancel=cancel, waiting=lambda: report(WAITING))
+            if wait
+            else snapshot_slot()
+        )
         with (
-            snapshot_slot(),
+            slot,
             scratch_directory("glitnir-view-") as temporary,
         ):
             root = Path(temporary).resolve()
             toolchain = _toolchain()
+            report(PREPARING)
             setup, resolution, project_root = _setup(
-                source, expected_sha256, cancel, needs
+                source, expected_sha256, cancel, needs, imports
             )
-            # Lean only sees modules the notebook already imports.
-            missing = _missing_import(imports, setup, needs)
+            # The setup loads the provider's modules from the project's build.
+            missing = _unprovided(imports, setup, needs)
             if missing is not None:
                 return missing
             setup = _absolute_setup(setup, project_root)
@@ -239,7 +308,8 @@ def run_provider_lean(
             input_path.write_text(composed)
             output = root / "output"
             output.mkdir()
-            report = output / "view.json"
+            report_path = output / "view.json"
+            report(RUNNING[needs])
             run_observer(
                 toolchain,
                 [
@@ -249,7 +319,7 @@ def run_provider_lean(
                     str(helper),
                     str(input_path),
                     str(setup_path),
-                    str(report),
+                    str(report_path),
                 ],
                 cwd=output,
                 readable=[programs, toolchain, project_root],
@@ -260,7 +330,7 @@ def run_provider_lean(
             if cancel.is_set():
                 raise SnapshotError(CANCELLED[needs])
             result = _marker_payload(
-                json.loads(read_regular(report, OUTPUT_BYTES)),
+                json.loads(read_regular(report_path, OUTPUT_BYTES)),
                 marker,
                 len(imports),
                 line,

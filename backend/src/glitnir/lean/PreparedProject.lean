@@ -1,11 +1,14 @@
 /- Inspect existing package contents without invoking Git or changing the workspace.
-The dependency traversal and module setup are Lake's; Git provenance is not checked. -/
+The dependency traversal and module setup are Lake's; Git provenance is not checked.
+Modules named after the source are set up as if its header imported them too, from
+the workspace's existing build: nothing is built, so an out-of-date one fails. -/
 module
 import all Lake.Load.Resolve
 import Lake.Load.Workspace
 import Lake.Build.Module
 import Lake.Build.Run
 import Lake.Config.InstallPath
+import Lean.Elab.ParseImportsFast
 
 open Lean Lake System
 
@@ -40,7 +43,12 @@ private def parseManifest (path : FilePath) (text : Option String) : Except IO.E
   | none => .error (.noFileOrDirectory path.toString 0 "")
   | some text => (Manifest.parse text).mapError (IO.userError ∘ (s!"{path}: " ++ ·))
 
-private def inspect (source : FilePath) : LoggerIO Json := do
+/-- `header` with `extra` appended to its imports, skipping those it already has. -/
+private def withImports (header : ModuleHeader) (extra : List Name) : ModuleHeader :=
+  let added := extra.filter fun name => !header.imports.any (·.module == name)
+  { header with imports := header.imports ++ (added.map fun module => ({ module } : Import)).toArray }
+
+private def inspect (source : FilePath) (extra : List Name) : LoggerIO Json := do
   let root ← IO.FS.realPath (← IO.currentDir)
   let (_, some lean, some lake) ← findInstall?
     | error "supported Lean/Lake installation is missing"
@@ -90,7 +98,11 @@ private def inspect (source : FilePath) : LoggerIO Json := do
     ws.packages.size ws.wsIdx_root_lt {} false
   let build : BuildConfig := {noBuild := true}
   let setup ← ws.runBuild (cfg := build) do
-    setupServerModule source.toString (← IO.FS.realPath source) none
+    let path ← IO.FS.realPath source
+    let header? ← if extra.isEmpty then pure none else do
+      let header ← Lean.parseImports' (← IO.FS.readFile path) source.toString
+      pure (some (withImports header extra))
+    setupServerModule source.toString path header?
   return Json.mkObj [
     ("setup", toJson setup),
     ("resolution", Json.mkObj [
@@ -98,9 +110,10 @@ private def inspect (source : FilePath) : LoggerIO Json := do
       ("packages", toJson (← packages.get)), ("inputs", toJson (← inputs.get))])]
 
 public def main (args : List String) : IO UInt32 := do
-  let ["setup-file", source] := args | IO.eprintln "usage: PreparedProject SOURCE"; return 2
+  let "setup-file" :: source :: extra := args
+    | IO.eprintln "usage: PreparedProject setup-file SOURCE [MODULE...]"; return 2
   initSearchPath (← findSysroot)
-  let some result ← (inspect ⟨source⟩).toBaseIO {}
+  let some result ← (inspect ⟨source⟩ (extra.map String.toName)).toBaseIO {}
     | IO.eprintln "Glitnir: inspection failed"; return 1
   IO.println result.compress
   return 0

@@ -4,7 +4,8 @@ The server reads the saved Lean file on every request, so the preview always
 reflects the file on disk. It runs Lean only when asked: a project check
 elaborates the saved file in its Lake project (or, on request, only its lines
 through a chosen claim), proof steps observe one saved
-proof, a view request draws one listed directive, an evidence run computes
+proof, a view request starts or reports drawing one listed directive in a
+worker, an inspection reads the project's setup in a worker, an evidence run computes
 one listed directive's evidence and saves it beside the notebook, and a decision
 run asks a provider for a Lean block, checks it and saves the outcome beside the
 notebook. Source editing belongs to the editor, which inserts a checked block it
@@ -46,6 +47,7 @@ MAX_BODY_BYTES = 65_536
 #: Header the workbench sends on every API request; see the module docstring.
 API_HEADER = "X-Glitnir"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_JOB = re.compile(r"[0-9a-f]{32}")
 
 
 def make_server(
@@ -97,6 +99,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"css": export_styles()})
             elif url.path == "/api/view":
                 self._view(parse_qs(url.query))
+            elif url.path == "/api/view/job":
+                self._view_job(parse_qs(url.query))
             elif url.path == "/asset":
                 self._asset(parse_qs(url.query))
             elif url.path == "/api/decide/candidate":
@@ -116,6 +120,9 @@ class _Handler(BaseHTTPRequestHandler):
             "/api/project/check": self._check_project,
             "/api/proof/start": self._start_proof,
             "/api/proof/cancel": self._cancel_proof,
+            "/api/view/cancel": self._cancel_view,
+            "/api/project/inspect/cancel": self._cancel_inspection,
+            "/api/project/check/cancel": self._cancel_check,
             "/api/evidence/run": self._run_evidence,
             "/api/decide/run": self._run_decision,
             "/api/decide/stop": self._stop_decision,
@@ -154,7 +161,11 @@ class _Handler(BaseHTTPRequestHandler):
         self._json(status, answer)
 
     def _view(self, query: dict[str, list[str]]) -> None:
-        """Draw the view directive at one cell and line."""
+        """Report the drawing of the view directive at one cell and line.
+
+        It never waits for Lean: a drawing in progress answers with its
+        status, and the workbench asks again (`SourcePreviewService.view`).
+        """
         try:
             cell = int(query.get("cell", [""])[0])
             line = int(query.get("line", [""])[0])
@@ -165,6 +176,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, self.notebook.view(cell, line))
         except (KeyError, NotebookError) as error:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(error)})
+
+    def _view_job(self, query: dict[str, list[str]]) -> None:
+        """Answer a poll for one view job; the notebook is not read."""
+        ids = query.get("id", [])
+        if set(query) != {"id"} or len(ids) != 1 or not _JOB.fullmatch(ids[0]):
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "send one view job id"})
+            return
+        self._json(HTTPStatus.OK, self.notebook.view_job(ids[0]))
 
     def _linked(self, query: dict[str, list[str]]) -> None:
         """Serve another notebook of this project, read-only, by its link."""
@@ -223,12 +242,44 @@ class _Handler(BaseHTTPRequestHandler):
         self.notebook.proof_steps.cancel()
         return HTTPStatus.ACCEPTED, {"status": "cancelling"}
 
+    def _cancel_view(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
+        """Stop drawing the view at one directive line of the saved source."""
+        digest, line = _directive(body)
+        try:
+            self.notebook.cancel_view(digest, line)
+        except SnapshotError as error:
+            return HTTPStatus.CONFLICT, {"error": str(error)}
+        return HTTPStatus.ACCEPTED, {"status": "cancelling"}
+
+    def _cancel_check(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
+        """Stop the running check, also while it waits for the Lean slot."""
+        if body:
+            raise ValueError("send an empty object")
+        try:
+            self.notebook.cancel_check()
+        except SnapshotError as error:
+            return HTTPStatus.CONFLICT, {"error": str(error)}
+        return HTTPStatus.ACCEPTED, {"status": "cancelling"}
+
+    def _cancel_inspection(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
+        """Stop the running project inspection."""
+        if body:
+            raise ValueError("send an empty object")
+        try:
+            self.notebook.cancel_inspection()
+        except SnapshotError as error:
+            return HTTPStatus.CONFLICT, {"error": str(error)}
+        return HTTPStatus.ACCEPTED, {"status": "cancelling"}
+
     def _inspect_project(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
-        """Resolve project setup only on an explicit saved-source request."""
+        """Start resolving project setup on an explicit saved-source request.
+
+        The result is reported through snapshot polling, as a check's is.
+        """
         digest = body.get("sha256")
         if not isinstance(digest, str) or len(digest) != 64:
             raise ValueError("send the preview source sha256")
-        return HTTPStatus.OK, self.notebook.inspect(digest)
+        return HTTPStatus.ACCEPTED, self.notebook.inspect(digest)
 
     def _check_project(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
         """Queue a saved-file check, reported through ordinary snapshot polling.

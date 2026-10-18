@@ -694,7 +694,7 @@ def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch
     monkeypatch.setattr(
         provider_lean,
         "inspect_project",
-        lambda path, *, expected_sha256, cancel: {
+        lambda path, *, expected_sha256, cancel, imports=(): {
             "status": "resolved",
             "setup": {
                 "name": "A",

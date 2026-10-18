@@ -19,11 +19,12 @@ of the same Lake project and build it first.
 
 Standalone Lean comment lines can request views. Views come from optional
 provider packages found through the `glitnir.providers` entry point.
-`glitnir-forseti` draws `circuit`, `model` and `dynamics` views when the notebook
-imports `Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`, the package is
-installed in the same Python environment as the Glitnir backend, and the notebook
-is in a Lake project with built imports. Without these, the view reports an error
-instead of drawing.
+`glitnir-forseti` draws `circuit`, `model` and `dynamics` views when the package
+is installed in the same Python environment as the Glitnir backend and the
+notebook is in a Lake project whose packages build `Gimle.Forseti` and
+`Gimle.Asgard.Visualization.Model`. The notebook need not import the
+visualization module: the view loads it from the project's build. Without these,
+the view reports an error instead of drawing, naming any `lake build` to run.
 
 ```lean
 -- @view model myModel
@@ -48,8 +49,10 @@ and goes out of date when anything above the directive or the environment change
 If the file would exceed 16 MiB or the existing file cannot be read, the run still
 happens but its result is not saved; the card shows why. Never hand-edit it.
 
-`glitnir-forseti` provides two verbs. The notebook must import
-`Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`.
+`glitnir-forseti` provides two verbs. They load
+`Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
+from the project's build; the notebook need not import them. Without Python
+Asgard, `iterate` cards say it is unavailable and cannot run.
 
 ```lean
 -- @evidence simulate dissipative (h := 1/100) (steps := 400) (solver := rk4) (plane := x, z)

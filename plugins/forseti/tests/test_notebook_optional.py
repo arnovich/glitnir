@@ -3,8 +3,6 @@
 import subprocess
 import sys
 
-import pytest
-
 
 def test_editor_imports_do_not_load_decision_producers() -> None:
     code = """
@@ -40,11 +38,28 @@ def test_only_iterate_needs_the_simulator(monkeypatch) -> None:
     from glitnir_forseti import evidence_provider
 
     monkeypatch.setattr(evidence_provider, "asgard_installed", lambda: False)
-    assert evidence_provider.unavailable() is None
+    simulate, iterate = evidence_provider.evidence_providers()
+    assert simulate.unavailable() is None
+    assert iterate.unavailable() == evidence_provider.NEEDS_ASGARD
+    assert "needs Python Asgard" in evidence_provider.NEEDS_ASGARD
     assert evidence_provider.parse("simulate", "model", "(h := 1/10)").target
-    with pytest.raises(ValueError) as refused:
-        evidence_provider.parse("iterate", "update", "(state := 1)")
-    assert str(refused.value) == evidence_provider.NEEDS_ASGARD
+    # The card shows the missing dependency, not a directive error.
+    assert evidence_provider.parse("iterate", "update", "(state := 1)").target
+
+
+def test_asgard_without_its_decoder_is_not_enough(tmp_path, monkeypatch) -> None:
+    """An Asgard without the wire decoder cannot iterate; nothing is imported."""
+    import importlib.machinery
+
+    from glitnir_forseti import evidence_provider
+
+    (tmp_path / "asgard").mkdir()
+    spec = importlib.machinery.ModuleSpec("gimle.asgard", None, is_package=True)
+    spec.submodule_search_locations = [str(tmp_path / "asgard")]
+    monkeypatch.setattr(evidence_provider.importlib.util, "find_spec", lambda n: spec)
+    assert evidence_provider.asgard_installed() is False
+    (tmp_path / "asgard" / "rational_interchange.py").write_text("")
+    assert evidence_provider.asgard_installed() is True
 
 
 def test_missing_namespace_parent_means_no_simulator(monkeypatch) -> None:

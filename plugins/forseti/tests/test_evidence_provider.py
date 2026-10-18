@@ -48,16 +48,17 @@ def _simulated(options: str = "(h := 1/100) (steps := 400)", payload=None):
 # ----- the provider -----------------------------------------------------------------
 
 
-def test_the_provider_runs_simulate_and_iterate() -> None:
-    provider = forseti.evidence_provider()
-    assert isinstance(provider, EvidenceProvider) and provider.name == "forseti"
-    assert provider.verbs == {"simulate", "iterate"}
-    assert provider.imports == (
-        "Gimle.Asgard.Compile.RationalInterchange",
-        "Gimle.Asgard.Model.Continuous",
-    )
-    assert provider.marker == "forsetiEvidence:" and provider.preamble == ""
-    assert provider in providers()
+def test_the_providers_run_simulate_and_iterate() -> None:
+    simulate, iterate = forseti.evidence_providers()
+    assert (simulate.verbs, iterate.verbs) == ({"simulate"}, {"iterate"})
+    for provider in (simulate, iterate):
+        assert isinstance(provider, EvidenceProvider) and provider.name == "forseti"
+        assert provider.imports == (
+            "Gimle.Asgard.Compile.RationalInterchange",
+            "Gimle.Asgard.Model.Continuous",
+        )
+        assert provider.marker == "forsetiEvidence:" and provider.preamble == ""
+        assert provider in providers()
 
 
 def test_glitnir_finds_it_through_the_entry_point() -> None:
@@ -194,13 +195,13 @@ def test_iterate_needs_asgard_and_simulate_does_not(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "gimle.asgard", None)
     assert forseti.asgard_installed() is False
     assert forseti.unavailable() is None
+    assert forseti.iterate_unavailable() == forseti.NEEDS_ASGARD
     assert forseti.parse("simulate", "m", "").verb == "simulate"
-    with pytest.raises(ValueError) as refused:
-        forseti.parse("iterate", "update", "(state := 1)")
-    assert str(refused.value) == (
-        "Install Python Asgard (gimle-asgard) into the backend's environment to "
-        "run `iterate`."
-    )
+    # Without Asgard the card cannot run; a run that gets here anyway fails
+    # with the reason, never with an import error.
+    with pytest.raises(EvidenceError) as refused:
+        forseti.compute(forseti.parse("iterate", "update", HALVING), UPDATE)
+    assert str(refused.value).startswith(forseti.NEEDS_ASGARD)
 
 
 def test_iterate_shows_at_most_sixteen_states(fake_asgard) -> None:
@@ -473,11 +474,11 @@ def _service(tmp_path, monkeypatch, payload: str):
     """A preview of `NOTEBOOK` whose Lean runner prints `payload`."""
     from glitnir.notebook import source_preview
 
-    provider = forseti.evidence_provider()
+    simulate, iterate = forseti.evidence_providers()
     monkeypatch.setattr(
         source_preview,
         "load_providers",
-        lambda: Providers({}, {"simulate": provider, "iterate": provider}, {}, {}),
+        lambda: Providers({}, {"simulate": simulate, "iterate": iterate}, {}, {}),
     )
     monkeypatch.setattr(
         source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
@@ -496,6 +497,38 @@ def _run_card(service, line: int) -> dict:
     service._evidence_worker.join(timeout=30)
     assert not service._evidence_worker.is_alive()
     return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
+
+
+def test_without_asgard_iterate_is_unavailable_and_never_runs(
+    tmp_path, monkeypatch
+) -> None:
+    """The card names what is missing, the run is refused, simulate still runs."""
+    from glitnir.lean.project_snapshot import SnapshotError
+
+    monkeypatch.setattr(forseti, "asgard_installed", lambda: False)
+    service = _service(tmp_path, monkeypatch, json.dumps(FIELD))
+    try:
+        snapshot = service.snapshot()
+        iterate, simulate = snapshot["evidence"]
+        assert (iterate["error"], iterate["unavailable"]) == ("", forseti.NEEDS_ASGARD)
+        assert (simulate["error"], simulate["unavailable"]) == ("", None)
+        assert snapshot["directive_unavailable"]["evidence"] == {
+            "iterate": forseti.NEEDS_ASGARD
+        }
+        sha = hashlib.sha256(NOTEBOOK.encode()).hexdigest()
+        with pytest.raises(SnapshotError, match="needs Python Asgard"):
+            service.run_evidence(sha, 2)
+        assert _run_card(service, 3)["status"] == "current"
+    finally:
+        service.close()
+
+
+def test_glitnir_reports_iterate_as_unavailable_without_asgard(monkeypatch) -> None:
+    """The provider report the editor shows lists iterate with its reason."""
+    monkeypatch.setattr(forseti, "asgard_installed", lambda: False)
+    found = load_providers()
+    assert found.evidence["simulate"].unavailable() is None
+    assert found.evidence["iterate"].unavailable() == forseti.NEEDS_ASGARD
 
 
 def test_a_decode_rational_error_becomes_the_card_run_error(

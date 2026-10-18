@@ -61,6 +61,96 @@ def test_snapshot_slot_serializes_checks() -> None:
     assert str(raised.value) == SLOT_BUSY
 
 
+def test_a_waiting_caller_takes_the_slot_once_it_is_free() -> None:
+    """With a cancel, a busy slot is waited for and the wait is announced once."""
+    import threading
+
+    told: list[int] = []
+    taken = threading.Event()
+    held = snapshot_slot()
+    held.__enter__()
+    waiter = threading.Thread(
+        target=lambda: _take(threading.Event(), told, taken), daemon=True
+    )
+    waiter.start()
+    try:
+        assert not taken.wait(0.6)
+        assert told == [1]
+    finally:
+        held.__exit__(None, None, None)
+    assert taken.wait(5)
+    waiter.join(5)
+    assert told == [1]
+
+
+def test_a_check_waits_for_a_view_holding_the_slot(tmp_path, monkeypatch) -> None:
+    """Views drawn one after another never keep a check out: it waits its turn."""
+    import hashlib
+    import threading
+
+    from glitnir.lean import project_checking
+    from glitnir.lean.project_checking import check_project
+    from glitnir.lean.project_snapshot import SLOT_WAITING
+
+    source = tmp_path / "A.lean"
+    source.write_text("theorem t : True := trivial\n")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    reached = threading.Event()
+
+    def toolchain():
+        reached.set()
+        raise ValueError("reached the check")
+
+    monkeypatch.setattr(project_checking, "_toolchain", toolchain)
+    messages: list[str] = []
+    results: list[dict] = []
+    held = snapshot_slot()
+    held.__enter__()
+    try:
+        worker = threading.Thread(
+            target=lambda: results.append(
+                check_project(source, expected_sha256=digest, progress=messages.append)
+            ),
+            daemon=True,
+        )
+        worker.start()
+        assert not reached.wait(0.6), "the check started beside the view"
+        assert SLOT_WAITING in messages
+    finally:
+        held.__exit__(None, None, None)
+    worker.join(10)
+    assert reached.is_set()
+    assert results[0]["message"].startswith("reached the check")
+
+
+def _take(cancel, told, taken) -> None:
+    with snapshot_slot(cancel=cancel, waiting=lambda: told.append(1)):
+        taken.set()
+
+
+@pytest.mark.parametrize("cancelled", [True, False])
+def test_waiting_for_the_slot_ends_on_cancel_or_deadline(cancelled) -> None:
+    import threading
+    import time
+
+    from glitnir.lean.project_snapshot import (
+        SLOT_WAIT_CANCELLED,
+        SLOT_WAIT_TIMED_OUT,
+    )
+
+    cancel = threading.Event()
+    if cancelled:
+        cancel.set()
+    with snapshot_slot():
+        with pytest.raises(SnapshotError) as raised:
+            with snapshot_slot(cancel=cancel, deadline=time.monotonic() + 0.3):
+                pytest.fail("took a busy slot")
+    expected = SLOT_WAIT_CANCELLED if cancelled else SLOT_WAIT_TIMED_OUT
+    assert str(raised.value) == expected
+    # Both end in words the provider runner reads as transient.
+    assert expected.endswith(("cancelled.", "timed out."))
+
+
 def test_live_project_check_preserves_names_and_axiom_policy(prepared_lean_project):
     """Custom roots and a transitive import retain exact names and all assumptions."""
     import hashlib

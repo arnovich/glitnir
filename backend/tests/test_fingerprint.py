@@ -5,10 +5,13 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from glitnir.lean.fingerprint import (
     direct_imports,
     environment_fingerprint,
     git_state,
+    header_imports,
     trace_digest,
 )
 
@@ -195,11 +198,94 @@ def test_root_project_source_edit_changes_the_fingerprint(tmp_path):
 
 def test_new_transitive_project_module_changes_the_fingerprint(tmp_path):
     source = _project(tmp_path)
+    module = tmp_path / "Demo/Base.lean"
+    module.parent.mkdir()
+    module.write_text("import Demo.Deep.Leaf\ndef x : Nat := 1\n")
     text = source.read_text()
     before = environment_fingerprint(source, text)
     (tmp_path / "Demo/Deep").mkdir(parents=True)
     (tmp_path / "Demo/Deep/Leaf.lean").write_text("def y := 1\n")
+    after = environment_fingerprint(source, text)
+    assert after["sha256"] != before["sha256"]
+    assert [name for name, _ in after["sources"]["files"]] == [
+        "Demo/Base.lean",
+        "Demo/Deep/Leaf.lean",
+    ]
+    (tmp_path / "Demo/Deep/Leaf.lean").write_text("def y := 2\n")
+    assert environment_fingerprint(source, text)["sha256"] != after["sha256"]
+
+
+def test_a_module_in_a_source_directory_is_found_by_its_path(tmp_path):
+    """A lean_lib's srcDir is not read: any path ending in the module's counts."""
+    source = _project(tmp_path)
+    module = tmp_path / "src/lib/Demo/Base.lean"
+    module.parent.mkdir(parents=True)
+    module.write_text("def x : Nat := 1\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    assert [name for name, _ in before["sources"]["files"]] == [
+        "src/lib/Demo/Base.lean"
+    ]
+    module.write_text("def x : Nat := 2\n")
     assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
+
+
+def test_quoted_module_names_find_their_files(tmp_path):
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/odd-name.lean").write_text("def q := 1\n")
+    source.write_text("import Demo.«odd-name»\n")
+    found = environment_fingerprint(source, source.read_text())["sources"]
+    assert [name for name, _ in found["files"]] == ["Demo/odd-name.lean"]
+
+
+def test_reopening_after_unrelated_or_identical_writes_keeps_the_fingerprint(
+    tmp_path,
+):
+    """Saved results stay current unless an imported source's bytes change.
+
+    Before 0.1.1 every project source counted by size and modification time,
+    so another notebook's edit, or a rewrite with the same bytes (a re-save, a
+    branch switched back), made every saved result read as out of date.
+    """
+    source = _project(tmp_path)
+    module = tmp_path / "Demo/Base.lean"
+    module.parent.mkdir()
+    module.write_text("def x : Nat := 1\n")
+    sibling = tmp_path / "Other.lean"
+    sibling.write_text("def unrelated := 1\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    os.utime(module, ns=(10**18, 10**18))
+    module.write_bytes(module.read_bytes())
+    sibling.write_text("def unrelated := 2\n")
+    os.utime(sibling, ns=(10**18, 10**18))
+    after = environment_fingerprint(source, text)
+    assert after["sha256"] == before["sha256"]
+    assert after["sources"] == before["sources"]
+
+
+def test_a_sibling_notebook_the_notebook_imports_counts(tmp_path):
+    source = _project(tmp_path)
+    sibling = tmp_path / "Other.lean"
+    sibling.write_text("def used := 1\n")
+    source.write_text("import Other\ntheorem t : True := True.intro\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    sibling.write_text("def used := 2\n")
+    assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
+
+
+def test_import_cycles_end(tmp_path):
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/Base.lean").write_text("import Demo.Loop\n")
+    (tmp_path / "Demo/Loop.lean").write_text("import Demo.Base\n")
+    found = environment_fingerprint(source, source.read_text())["sources"]
+    assert [name for name, _ in found["files"]] == [
+        "Demo/Base.lean",
+        "Demo/Loop.lean",
+    ]
 
 
 def test_saving_the_notebook_itself_keeps_the_fingerprint(tmp_path):
@@ -254,6 +340,7 @@ def test_source_walk_is_bounded(tmp_path, monkeypatch):
     source = _project(tmp_path)
     for index in range(5):
         (tmp_path / f"M{index}.lean").write_text("def a := 1\n")
+    source.write_text("".join(f"import M{index}\n" for index in range(5)))
     monkeypatch.setattr(fingerprint, "_MAX_SOURCES", 3)
     result = environment_fingerprint(source, source.read_text())
     assert len(result["sources"]["files"]) == 3
@@ -527,3 +614,257 @@ def test_git_runs_in_one_checkout_do_not_overlap(tmp_path, monkeypatch):
     second.join(10)
     assert overlapped == []
     assert [r["clean"] for r in results] == [True, True]
+
+
+# ----- reading the header with the lexer --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, imports",
+    [
+        ("module import Foo\n", ["Foo"]),
+        ("prelude import Foo\n", ["Foo"]),
+        ("module /- c -/ import Foo\n", ["Foo"]),
+        ("module\nprelude\nimport Foo.Bar\n", ["Foo.Bar"]),
+        ("public meta import A\nprivate import all B.c\n\ndef x := 1\n", ["A", "B.c"]),
+        ("import «Foo Bar».X\nimport Y\n", ["«Foo Bar».X", "Y"]),
+        ("/- a\n long\n comment -/\nimport A -- note\n\ntheorem t := 1\n", ["A"]),
+        ("module\nimport A\npublic section\n", ["A"]),
+        ("import A\n/-! prose that says\nimport B\n-/\n", ["A"]),
+        ("", []),
+        ("theorem t : True := trivial\n", []),
+        ("import A", ["A"]),
+    ],
+)
+def test_the_header_is_read_as_lean_reads_it(text, imports):
+    assert header_imports(text) == imports
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "foo import Bar\n",  # an unknown word before the imports end
+        "import Foo\nfoo\nimport Bar\n",  # an import after the header
+        "import 3\n",  # not a module name
+        "import A.\n",
+        "import A . B\n",
+        "module module import A\n",
+        'import A\ndef s := s!"{x}"\n',  # the lexer cannot settle the header's end
+        "/- never closed\nimport A\n",
+    ],
+)
+def test_a_header_not_fully_understood_is_none(text):
+    assert header_imports(text) is None
+
+
+def _sources(result):
+    return [name for name, _ in result["sources"]["files"]]
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "foo import Demo.Base\n",
+        "import 3\n",
+        'import Demo.Base\ndef s := s!"{x}"\n',
+    ],
+)
+def test_a_misread_header_hashes_every_project_source(tmp_path, header):
+    """Fail safe: what a header might import is every source of the project."""
+    source = _project(tmp_path)
+    (tmp_path / "Other.lean").write_text("def unrelated := 1\n")
+    source.write_text(header)
+    result = environment_fingerprint(source, header)
+    assert result["sources"]["closure"] is False
+    assert _sources(result) == ["Other.lean"]
+    before = result["sha256"]
+    (tmp_path / "Other.lean").write_text("def unrelated := 2\n")
+    assert environment_fingerprint(source, header)["sha256"] != before
+
+
+def test_module_and_prelude_headers_keep_their_closure(tmp_path):
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/Base.lean").write_text("def x := 1\n")
+    for header in ("module import Demo.Base\n", "prelude import Demo.Base\n"):
+        result = environment_fingerprint(source, header)
+        assert result["sources"]["closure"] is True
+        assert _sources(result) == ["Demo/Base.lean"]
+
+
+def test_a_misread_header_in_the_closure_hashes_every_source(tmp_path):
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/Base.lean").write_text("weird import Demo.Hidden\n")
+    (tmp_path / "Demo/Hidden.lean").write_text("def h := 1\n")
+    result = environment_fingerprint(source, source.read_text())
+    assert result["sources"]["closure"] is False
+    assert _sources(result) == ["Demo/Base.lean", "Demo/Hidden.lean"]
+
+
+def test_a_large_source_is_hashed_by_streaming_and_never_raises(tmp_path):
+    """A generated module past any read limit still counts, by its bytes."""
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    large = tmp_path / "Demo/Base.lean"
+    body = "import Demo.Leaf\n" + "-- generated\n" * (6 * 1024 * 1024 // 13)
+    large.write_text(body)
+    assert large.stat().st_size > 4 * 1024 * 1024
+    (tmp_path / "Demo/Leaf.lean").write_text("def leaf := 1\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    assert before["unknown"] is False
+    assert _sources(before) == ["Demo/Base.lean", "Demo/Leaf.lean"]
+    large.write_text(body + "-- one more\n")
+    assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
+
+
+def test_an_unreadable_source_is_unknown_and_matches_nothing(tmp_path, monkeypatch):
+    from glitnir.lean import fingerprint
+
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/Base.lean").write_text("def x := 1\n")
+    text = source.read_text()
+    monkeypatch.setattr(fingerprint, "_read_source", lambda path: (None, None, None))
+    monkeypatch.setattr(fingerprint, "_DIGESTS", {})
+    first = environment_fingerprint(source, text)
+    second = environment_fingerprint(source, text)
+    assert first["unknown"] is True and first["sha256"] != second["sha256"]
+    assert first["stable_sha256"] == second["stable_sha256"]
+    assert first["sources"]["unknown"] == ["Demo/Base.lean"]
+    note = fingerprint.unknown_git_note(first)
+    assert "Could not read the project sources (Demo/Base.lean)" in note
+
+
+def test_a_source_written_while_read_is_unknown_and_not_cached(tmp_path, monkeypatch):
+    from glitnir.lean import fingerprint
+
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    module = tmp_path / "Demo/Base.lean"
+    module.write_text("def x := 1\n")
+    real = os.read
+
+    def writing(descriptor, size):
+        data = real(descriptor, size)
+        if data and os.fstat(descriptor).st_ino == module.stat().st_ino:
+            # Another write lands while the module is being read.
+            later = module.stat().st_mtime_ns + 10**9
+            os.utime(module, ns=(later, later))
+        return data
+
+    monkeypatch.setattr(fingerprint, "_DIGESTS", {})
+    monkeypatch.setattr(fingerprint.os, "read", writing)
+    result = environment_fingerprint(source, source.read_text())
+    assert result["unknown"] is True
+    assert fingerprint._DIGESTS == {}
+
+
+def test_the_digest_cache_key_includes_the_change_time(tmp_path, monkeypatch):
+    from glitnir.lean import fingerprint
+
+    monkeypatch.setattr(fingerprint, "_DIGESTS", {})
+    module = tmp_path / "Base.lean"
+    module.write_text("def x := 1\n")
+    fingerprint._source_digest(str(module), os.lstat(module))
+    [key] = fingerprint._DIGESTS
+    info = os.lstat(module)
+    assert key[-2:] == (info.st_mtime_ns, info.st_ctime_ns)
+
+
+def test_a_truncated_walk_matches_nothing(tmp_path, monkeypatch):
+    from glitnir.lean import fingerprint
+
+    source = _project(tmp_path)
+    for index in range(4):
+        (tmp_path / f"M{index}.lean").write_text("def a := 1\n")
+    monkeypatch.setattr(fingerprint, "_MAX_SOURCES", 2)
+    text = source.read_text()
+    first = environment_fingerprint(source, text)
+    assert first["unknown"] is True
+    assert first["sha256"] != environment_fingerprint(source, text)["sha256"]
+
+
+def test_provider_modules_count_like_the_notebooks_imports(tmp_path):
+    """A view's or evidence's provider modules are part of its environment."""
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    provided = tmp_path / "Demo/View.lean"
+    provided.write_text("def drawn := 1\n")
+    trace = tmp_path / ".lake/build/lib/lean/Demo/View.trace"
+    trace.write_text(json.dumps({"depHash": "v1"}))
+    text = source.read_text()
+    plain = environment_fingerprint(source, text)
+    with_provider = environment_fingerprint(source, text, ("Demo.View",))
+    assert "Demo/View.lean" not in _sources(plain)
+    assert _sources(with_provider) == ["Demo/View.lean"]
+    assert with_provider["imports"]["Demo.View"] is not None
+    assert plain["sha256"] != with_provider["sha256"]
+    provided.write_text("def drawn := 2\n")
+    assert environment_fingerprint(source, text) == plain
+    changed = environment_fingerprint(source, text, ("Demo.View",))
+    assert changed["sha256"] != with_provider["sha256"]
+    trace.write_text(json.dumps({"depHash": "v2"}))
+    rebuilt = environment_fingerprint(source, text, ("Demo.View",))
+    assert rebuilt["sha256"] != changed["sha256"]
+
+
+def test_the_stable_digest_ignores_only_the_unknown_marker(tmp_path, monkeypatch):
+    from glitnir.lean import fingerprint
+
+    source = _project(tmp_path)
+    (tmp_path / "lake-manifest.json").write_text(
+        json.dumps({"packages": [{"name": "dep", "type": "git", "rev": "r"}]})
+    )
+    (tmp_path / ".lake/packages/dep/.git").mkdir(parents=True)
+    reasons = iter(["git status did not answer in time", "git was not read"])
+    monkeypatch.setattr(
+        fingerprint,
+        "git_state",
+        lambda *a: {
+            "head": None,
+            "at_manifest": False,
+            "clean": None,
+            "reason": next(reasons),
+        },
+    )
+    text = source.read_text()
+    first = environment_fingerprint(source, text)
+    second = environment_fingerprint(source, text)
+    assert first["sha256"] != second["sha256"]
+    assert first["stable_sha256"] == second["stable_sha256"]
+    monkeypatch.setattr(
+        fingerprint,
+        "git_state",
+        lambda *a: {"head": "r", "at_manifest": True, "clean": True},
+    )
+    known = environment_fingerprint(source, text)
+    assert known["unknown"] is False
+    assert known["stable_sha256"] != first["stable_sha256"]
+    assert environment_fingerprint(source, text)["sha256"] == known["sha256"]
+
+
+def test_headers_are_kept_by_digest_never_by_text(monkeypatch):
+    """Polls reread the same texts; the cache holds digests, not 16 MB texts."""
+    from glitnir.lean import fingerprint
+
+    monkeypatch.setattr(fingerprint, "_HEADERS", {})
+    monkeypatch.setattr(fingerprint, "_MAX_HEADERS", 2)
+    reads = []
+    real = fingerprint._header_imports
+    monkeypatch.setattr(
+        fingerprint,
+        "_header_imports",
+        lambda text, complete: reads.append(text) or real(text, complete),
+    )
+    text = "import A\n" + "-- body\n" * 1000
+    assert header_imports(text) == ["A"]
+    assert header_imports(text) == ["A"]
+    assert len(reads) == 1
+    assert all(
+        isinstance(key[0], bytes) and len(key[0]) == 32 for key in fingerprint._HEADERS
+    )
+    header_imports("import B\n")
+    header_imports("import C\n")
+    assert len(fingerprint._HEADERS) == 2

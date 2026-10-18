@@ -30,6 +30,7 @@ from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import TOOLCHAIN, _toolchain, inspect_project
 from glitnir.lean.project_snapshot import (
+    SLOT_WAITING,
     ProjectSnapshot,
     SnapshotError,
     artifact_lease,
@@ -960,6 +961,7 @@ def _check_text(
     cancel: threading.Event,
     progress: Callable[[str], None],
     rest: str | None = None,
+    acquired: Callable[[], None] = lambda: None,
 ) -> dict[str, Any]:
     """Check one LF-normalised source text under a private project snapshot.
 
@@ -967,6 +969,7 @@ def _check_text(
     environment resolution is bound to the saved file, the snapshot to ``text``.
     With ``rest``, the saved text after that prefix, the reader also refuses a
     prefix whose last command Lean would read further into ``rest``.
+    ``acquired`` is called once the Lean slot is held, before anything is read.
     """
     cancellation = cancel
     if "\r" in text:
@@ -974,13 +977,16 @@ def _check_text(
         # end would move every position Lean reports against these bytes.
         raise SnapshotError(CARRIAGE_RETURN)
     expected_sha256 = hashlib.sha256(text.encode()).hexdigest()
+    # A check waits for another Lean run, a view say, rather than failing at
+    # once, so views drawn one after another never keep it out.
     with (
-        snapshot_slot(),
+        snapshot_slot(cancel=cancellation, waiting=lambda: progress(SLOT_WAITING)),
         scratch_directory("glitnir-check-") as temporary,
         artifact_lease(temporary) as store,
     ):
         if cancellation.is_set():
             raise SnapshotError("Project check cancelled.")
+        acquired()
         project = describe_project(source)
         toolchain = _toolchain()
         resolution = None
@@ -1467,8 +1473,13 @@ def check_project(
     cancel: threading.Event | None = None,
     progress: Callable[[str], None] = lambda _: None,
     through_line: int | None = None,
+    acquired: Callable[[], None] = lambda: None,
 ) -> dict[str, Any]:
     """Check a saved file; on a later failure, check only the commands before it.
+
+    ``acquired`` is called each time the check holds the Lean slot, before it
+    reads anything: a caller takes the environment's fingerprint there, so
+    the fingerprint describes the environment the check compiled in.
 
     With ``through_line``, check only the saved file's lines 1 through
     ``through_line``: the same sandboxed check of that prefix, never a weaker
@@ -1527,6 +1538,7 @@ def check_project(
                     cancel=cancellation,
                     progress=progress,
                     rest=rest,
+                    acquired=acquired,
                 ),
                 checked_lines,
             )
@@ -1562,6 +1574,7 @@ def check_project(
                     cancel=cancellation,
                     progress=progress,
                     rest=text[len(prefix) :] if requested else None,
+                    acquired=acquired,
                 ),
                 line,
             )
