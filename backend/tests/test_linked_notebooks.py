@@ -253,7 +253,7 @@ def test_a_nested_project_is_shown_as_saved_and_never_fingerprinted(
     (root / "Main.lean").write_text(MAIN, encoding="utf-8")
     linked = nested / "ThreeState.lean"
     linked.write_text(LINKED, encoding="utf-8")
-    save_records(linked, records_from_check(LINKED, RESULT, "saved-elsewhere"))
+    save_records(linked, records_from_check(LINKED, RESULT, "5" * 64))
     from glitnir.notebook import source_preview
 
     def refuse(*args, **kwargs):

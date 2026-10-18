@@ -11,6 +11,9 @@ from glitnir.lean.project import describe_project, read_regular
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.providers import Providers
 
+# Environment fingerprints are SHA-256 digests; any other string matches nothing.
+FP = "f" * 64
+
 
 def test_nearest_project_and_loose_toolchain(tmp_path: Path) -> None:
     """A malformed nested project still owns its file, without parent fallback."""
@@ -300,16 +303,17 @@ def test_a_check_saves_the_environment_it_compiled_in(tmp_path, monkeypatch):
     path = tmp_path / "A.lean"
     path.write_text("/-! # Title -/\ntheorem result : True := by\n  trivial\n")
     service = SourcePreviewService(path)
-    environment = {"sha256": "A"}
+    first, second = "a" * 64, "b" * 64  # environments A and B
+    environment = {"sha256": first}
     monkeypatch.setattr(
         source_preview, "environment_fingerprint", lambda *a: dict(environment)
     )
 
     def check(source, *, expected_sha256, cancel, progress, through_line, acquired):
-        environment["sha256"] = "B"  # changed while the check waited
+        environment["sha256"] = second  # changed while the check waited
         acquired()
         result = _fake_result(expected_sha256)
-        environment["sha256"] = "A"  # and back, after it compiled
+        environment["sha256"] = first  # and back, after it compiled
         return result
 
     monkeypatch.setattr(source_preview, "check_project", check)
@@ -317,7 +321,7 @@ def test_a_check_saves_the_environment_it_compiled_in(tmp_path, monkeypatch):
     service.check(sha)
     service._worker.join(5)
     saved = load_records(path)
-    assert saved["environment"]["fingerprint"] == "B"
+    assert saved["environment"]["fingerprint"] == second
     [claim] = service.snapshot()["project_claims"]
     assert claim["current"] is False, "a result compiled in B is not current in A"
     service.close()
@@ -331,7 +335,7 @@ def test_stop_cancels_a_check_waiting_for_the_slot(tmp_path, monkeypatch):
     from glitnir.notebook import source_preview
 
     monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
     )
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
@@ -650,7 +654,7 @@ def test_snapshot_skips_the_fingerprint_without_a_sidecar(tmp_path, monkeypatch)
 
 
 def test_snapshot_survives_a_fingerprint_failure(tmp_path, monkeypatch):
-    """An unexpected error while judging saved claims yields no claims."""
+    """A failed fingerprint matches nothing: saved claims show, out of date."""
     import hashlib
 
     from glitnir.notebook import source_preview
@@ -672,7 +676,7 @@ def test_snapshot_survives_a_fingerprint_failure(tmp_path, monkeypatch):
         snapshot = service.snapshot()
     finally:
         service.close()
-    assert snapshot["project_claims"] == []
+    assert [claim["current"] for claim in snapshot["project_claims"]] == [False]
     assert snapshot["project_withheld"] is None
 
 
@@ -724,7 +728,7 @@ def test_a_check_too_large_to_save_with_saved_evidence_keeps_everything(
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
     entry = {
         "prefix_sha256": "p",
-        "fingerprint": "f",
+        "fingerprint": FP,
         "provider": "demo",
         "created": "2026-10-14T00:00:00Z",
         "snapshot": {
@@ -736,9 +740,10 @@ def test_a_check_too_large_to_save_with_saved_evidence_keeps_everything(
     }
     save_records(path, with_evidence(None, "k", entry, ["k"]))
     before = records_path(path).read_bytes()
-    # Room for the claims (the fingerprint is a SHA-256), not for the evidence.
+    # Room for the claims (the fingerprint is a SHA-256) or for the saved
+    # evidence, so both load, but not for both together.
     claims = records_from_check(path.read_text(), _fake_result(sha), "0" * 64)
-    room = len(_serialised(claims).encode()) + 10
+    room = max(len(_serialised(claims).encode()), len(before)) + 10
     monkeypatch.setattr(check_records, "_MAX_RECORDS", room)
     monkeypatch.setattr(
         source_preview, "check_project", lambda *a, **k: _fake_result(sha)
@@ -1618,7 +1623,7 @@ def _evidence_service(tmp_path, monkeypatch, provider=None, runner=None):
         lambda: Providers({}, {"simulate": provider}, {}, {}),
     )
     monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
     )
     monkeypatch.setattr(source_preview, "run_provider_lean", runner or run)
     path = tmp_path / "A.lean"
@@ -1657,7 +1662,8 @@ def test_an_evidence_run_waits_for_the_slot_and_counts_its_modules(
 
     def fingerprint(path, text, extra=(), packages=None):
         asked.append(extra)
-        return {"sha256": f"env-{'+'.join(extra)}", "packages": []}
+        named = f"env-{'+'.join(extra)}".encode()
+        return {"sha256": hashlib.sha256(named).hexdigest(), "packages": []}
 
     monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
     _run_evidence(service)
@@ -1699,7 +1705,7 @@ def test_an_evidence_run_saves_a_current_snapshot(tmp_path, monkeypatch):
     assert lean[1]["cancel"] is service._cancel
     assert compute[1].target == "M" and compute[2] == {"x": 1}
     saved = json.loads(records_path(service.path).read_text())["evidence"][key]
-    assert saved["provider"] == "demo" and saved["fingerprint"] == "f"
+    assert saved["provider"] == "demo" and saved["fingerprint"] == FP
     assert saved["created"].endswith("+00:00")
     assert service.path.read_text() == EVIDENCE_TEXT
 
@@ -2022,7 +2028,7 @@ def test_close_cancels_the_run_and_refuses_new_ones(tmp_path, monkeypatch):
 
 
 _UNKNOWN_GIT = {
-    "sha256": "f",
+    "sha256": FP,
     "packages": [{"name": "mathlib", "reason": "fatal: detected dubious ownership"}],
 }
 _UNKNOWN_NOTE = (

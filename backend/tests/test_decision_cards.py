@@ -17,6 +17,9 @@ from glitnir.notebook.decision_cards import (
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
 
+# Environment fingerprints are SHA-256 digests; any other string matches nothing.
+FP = "f" * 64
+
 HEAD = "-- @decide band : entailment x : x > 0"
 MORE = "--   |- x >= 0"
 
@@ -539,7 +542,7 @@ def _saved_decision(path: Path, verification=None, **changes):
         }
     entry = {
         "prefix_sha256": decision_prefix_sha256(DECIDING, 4),
-        "fingerprint": "f",
+        "fingerprint": FP,
         "provider": "demo",
         "created": "2026-10-14T12:00:00+00:00",
         "outcome": outcome,
@@ -556,7 +559,7 @@ def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
     def fingerprint(*args):
         if fingerprints is not None:
             fingerprints.append(1)
-        return {"sha256": "f"}
+        return {"sha256": FP}
 
     monkeypatch.setattr(source_preview, "load_providers", lambda: _loaded(_provider()))
     monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)

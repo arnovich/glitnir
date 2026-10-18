@@ -32,6 +32,9 @@ from glitnir.providers import (
     Providers,
 )
 
+# Environment fingerprints are SHA-256 digests; any other string matches nothing.
+FP = "f" * 64
+
 TEXT = (
     "import Demo.Decide\n\ndef x := 1\n"
     "-- @decide band : entailment x : x > 0\n--   |- x >= 0\n"
@@ -117,7 +120,7 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
     )
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
     monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
     )
     monkeypatch.setattr(source_preview, "check_candidate", check or checked)
     monkeypatch.setattr(source_preview, "provider_imports_error", imports_ok)
@@ -178,7 +181,7 @@ def test_a_proven_decision_is_checked_and_saved_as_a_candidate(tmp_path, monkeyp
         "cancel": cancel,
     }
     saved = json.loads(records_path(service.path).read_text())["decisions"][key]
-    assert (saved["provider"], saved["fingerprint"]) == ("demo", "f")
+    assert (saved["provider"], saved["fingerprint"]) == ("demo", FP)
     assert saved["created"].endswith("+00:00")
     assert service.path.read_text() == TEXT
 
@@ -1015,7 +1018,7 @@ def test_live_decision_run_saves_a_checked_candidate(
 
 
 _UNKNOWN_GIT = {
-    "sha256": "f",
+    "sha256": FP,
     "packages": [{"name": "mathlib", "reason": "fatal: detected dubious ownership"}],
 }
 _UNKNOWN_NOTE = (

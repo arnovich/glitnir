@@ -102,6 +102,33 @@ MAX_MESSAGE = 2000
 # A checked statement's kernel form; a run saves a longer one shortened.
 MAX_TYPE = 20_000
 DecisionStatus = Literal["accepted", "stale", "unknown", "rejected", "candidate"]
+# An environment fingerprint is a SHA-256 digest; anything else, '' included
+# (what a failed fingerprint reads as), matches nothing and is never saved.
+_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
+UNKNOWN_FINGERPRINT = (
+    "the environment fingerprint is unknown, so no result can be saved for it"
+)
+
+
+def fingerprint_ok(fingerprint: Any) -> bool:
+    """Whether `fingerprint` is an environment digest a result can match."""
+    return (
+        isinstance(fingerprint, str) and _FINGERPRINT.fullmatch(fingerprint) is not None
+    )
+
+
+def _matches(saved: Any, fingerprint: str, compare_environment: bool) -> bool:
+    """Whether a result saved under `saved` may be current under `fingerprint`.
+
+    A saved fingerprint that is not a digest is never current. Without
+    `compare_environment` the result is compared as recorded: only its source
+    is compared, with the environment it was saved in.
+    """
+    if not fingerprint_ok(saved):
+        return False
+    if not compare_environment:
+        return True
+    return fingerprint_ok(fingerprint) and saved == fingerprint
 
 
 def _normal(text: str) -> str:
@@ -371,10 +398,13 @@ def records_from_check(
     Saved evidence and decisions in the ``previous`` records are carried over
     unchanged: a check neither makes nor judges them.
     Raises:
-        ValueError: the records, with the saved evidence and decisions they
-            keep, would be too large to load again. Nothing is then saved, so
-            nothing saved before is lost.
+        ValueError: ``fingerprint`` is not an environment digest (see
+            `fingerprint_ok`), or the records, with the saved evidence and
+            decisions they keep, would be too large to load again. Nothing is
+            then saved, so nothing saved before is lost.
     """
+    if not fingerprint_ok(fingerprint):
+        raise ValueError(UNKNOWN_FINGERPRINT)
     lines = _normal(text).split("\n")
     claims = []
     for theorem in result["theorems"]:
@@ -495,9 +525,19 @@ def _located(
 
 
 def claim_views(
-    text: str, records: dict[str, Any] | None, fingerprint: str
+    text: str,
+    records: dict[str, Any] | None,
+    fingerprint: str,
+    *,
+    compare_environment: bool = True,
 ) -> list[dict[str, Any]]:
-    """Locate saved claims in the current text and mark each current or stale."""
+    """Locate saved claims in the current text and mark each current or stale.
+
+    A claim saved under a fingerprint that is not a digest is never current.
+    Without ``compare_environment``, each claim is compared only with its
+    saved source, in the environment it was recorded in: it is shown as
+    recorded (`glitnir.notebook.static_export`) and ``fingerprint`` is unused.
+    """
     if records is None:
         return []
     normal = _normal(text)
@@ -513,7 +553,7 @@ def claim_views(
         ends = boundaries.ends_at(last)
         current = (
             ends
-            and checked_in == fingerprint
+            and _matches(checked_in, fingerprint, compare_environment)
             and _sha("\n".join(lines[:last])) == claim["prefix_sha256"]
         )
         if not ends:
@@ -547,10 +587,19 @@ def claim_views(
 
 
 def non_claim_views(
-    text: str, records: dict[str, Any] | None, fingerprint: str
+    text: str,
+    records: dict[str, Any] | None,
+    fingerprint: str,
+    *,
+    compare_environment: bool = True,
 ) -> list[dict[str, int]]:
-    """Locate the saved examples that claim nothing, while still current."""
-    if records is None or records["environment"]["fingerprint"] != fingerprint:
+    """Locate the saved examples that claim nothing, while still current.
+
+    ``compare_environment`` is as in `claim_views`.
+    """
+    if records is None or not _matches(
+        records["environment"]["fingerprint"], fingerprint, compare_environment
+    ):
         return []
     normal = _normal(text)
     lines = normal.split("\n")
@@ -648,6 +697,8 @@ def with_evidence(
     """
     if not _evidence_entry_ok(entry):
         raise ValueError("The evidence entry is malformed.")
+    if not fingerprint_ok(entry["fingerprint"]):
+        raise ValueError(f"The evidence cannot be saved: {UNKNOWN_FINGERPRINT}.")
     return _with_entry(
         records,
         "evidence",
@@ -679,6 +730,8 @@ def with_decision(
     """
     if not _decision_entry_ok(entry):
         raise ValueError("The decision entry is malformed.")
+    if not fingerprint_ok(entry["fingerprint"]):
+        raise ValueError(f"The decision cannot be saved: {UNKNOWN_FINGERPRINT}.")
     return _with_entry(
         records,
         "decisions",
@@ -721,10 +774,18 @@ def decision_prefix_sha256(text: str, end_line: int) -> str:
 
 
 def evidence_status(
-    entry: dict[str, Any], text: str, line: int, fingerprint: str
+    entry: dict[str, Any],
+    text: str,
+    line: int,
+    fingerprint: str,
+    *,
+    compare_environment: bool = True,
 ) -> Literal["current", "stale"]:
-    """Say whether saved evidence still describes the directive at ``line``."""
-    if entry["fingerprint"] == fingerprint and entry[
+    """Say whether saved evidence still describes the directive at ``line``.
+
+    ``compare_environment`` is as in `claim_views`.
+    """
+    if _matches(entry["fingerprint"], fingerprint, compare_environment) and entry[
         "prefix_sha256"
     ] == evidence_prefix_sha256(text, line):
         return "current"
@@ -739,13 +800,19 @@ def block_follows(text: str, end_line: int, block: str) -> bool:
 
 
 def decision_status(
-    entry: dict[str, Any], text: str, end_line: int, fingerprint: str
+    entry: dict[str, Any],
+    text: str,
+    end_line: int,
+    fingerprint: str,
+    *,
+    compare_environment: bool = True,
 ) -> DecisionStatus:
     """Say what a saved decision means for the directive ending at ``end_line``.
 
     A checked block that follows the directive is accepted before anything
     else is compared. Otherwise any change to the environment or to the text
-    through the directive makes the decision stale.
+    through the directive makes the decision stale; ``compare_environment``
+    is as in `claim_views`.
     """
     outcome, verification = entry["outcome"], entry["verification"]
     if (
@@ -754,7 +821,7 @@ def decision_status(
         and block_follows(text, end_line, outcome["block"])
     ):
         return "accepted"
-    if entry["fingerprint"] != fingerprint or entry[
+    if not _matches(entry["fingerprint"], fingerprint, compare_environment) or entry[
         "prefix_sha256"
     ] != decision_prefix_sha256(text, end_line):
         return "stale"

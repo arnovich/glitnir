@@ -677,7 +677,7 @@ def test_decision_http_runs_stops_and_discards_listed_directives(tmp_path, monke
         lambda: Providers({}, {}, {"sum": provider}, {}),
     )
     monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f" * 64}
     )
     monkeypatch.setattr(
         source_preview, "provider_imports_error", lambda source, **options: None

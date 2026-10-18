@@ -3628,3 +3628,58 @@ test('n and p never act in a linked, read-only notebook', async () => {
     assert.deepEqual(messages.slice(sent).filter(m => m.type !== 'request' || !m.path.startsWith('/api/linked')), []);
   } finally { window.close(); }
 });
+
+test('saved results shown as recorded get their own banner state and never read as current', async () => {
+  const claimText = 'theorem t : True := by\n  trivial\n';
+  const recordedSnapshot = recorded => evidenceSnapshot(claimText + EVIDENCE_TEXT, [evidenceEntry({cell: 1, line: 4, status: 'current', unavailable: null, snapshot: evidenceBody()})], {
+    cells: [{index: 0, kind: 'source', start: 1, end: 2, text: claimText, claim: 't'}, {index: 1, kind: 'source', start: 3, end: 4, text: EVIDENCE_TEXT}],
+    project_claims: [{name: 't', status: 'checked', current: true, axioms: [], start_line: 1, end_line: 2}],
+    preview: {mode: 'project', project: {kind: 'lake', root: '/p', toolchain: 't'}, ...(recorded
+      ? {recorded: true, notice: 'Saved results, shown as recorded. Each result is shown as its check last saved it, compared only with this saved source and not with the reader\'s Lean environment. Nothing was checked or run to show it.'}
+      : {notice: 'Saved-source preview.'})}});
+  let window = await renderSnapshot(recordedSnapshot(true), {katex: true});
+  try {
+    const $ = id => window.document.getElementById(id);
+    assert.ok($('banner').classList.contains('recorded'));
+    assert.equal($('banner').dataset.state, 'recorded');
+    assert.match($('banner-text').textContent, /^Saved results, shown as recorded\. .*not with the reader's Lean environment/);
+    assert.equal($('check-project').hidden, true, 'nothing checks saved results shown as recorded');
+    assert.equal($('inspect-project').hidden, true);
+    const card = window.document.querySelector('#doc .evidence');
+    assert.deepEqual([card.querySelector('.pill').textContent, card.querySelector('.pill').dataset.tone], ['As recorded', 'muted']);
+    assert.equal(window.document.querySelector('[data-act="evidence-run"], [data-act="check-through"]'), null);
+    assert.doesNotMatch($('doc').textContent, /\bCurrent\b|Out of date/);
+    assert.match($('insp').textContent, /as recorded/);
+    assert.doesNotMatch($('insp').textContent, /\bcurrent\b/);
+    // Each current-as-recorded claim says so: card, inspector and contents.
+    const claimCard = window.document.querySelector('#doc .project-claim .claim');
+    assert.equal(claimCard.dataset.tone, 'muted');
+    assert.deepEqual([...claimCard.querySelectorAll('.claim-head .pill')].map(pill => [pill.textContent, pill.dataset.tone]).at(-1), ['As recorded', 'muted']);
+    assert.match($('insp-sub').textContent, / · as recorded$/);
+    const dot = $('outline').querySelector('.dot');
+    assert.equal(dot.dataset.tone, 'muted');
+    assert.match(dot.title, / · as recorded$/);
+    let html;
+    window.glitnirHost.saveHTML = async value => { html = value; };
+    await $('export-html').onclick();
+    assert.ok(html, $('load-error').textContent);
+    const page = new JSDOM(html);
+    try {
+      const heading = page.window.document.querySelector('.snapshot');
+      assert.ok(heading.classList.contains('recorded'));
+      assert.match(heading.textContent, /Saved results, shown as recorded\. .* This static page does not check or update results\.$/);
+      assert.equal(page.window.document.querySelector('.evidence .pill').textContent, 'As recorded');
+    } finally { page.window.close(); }
+  } finally { window.close(); }
+  window = await renderSnapshot(recordedSnapshot(false));
+  try {
+    assert.equal(window.document.getElementById('banner').classList.contains('recorded'), false);
+    assert.equal(window.document.getElementById('banner').dataset.state, '');
+    assert.equal(window.document.querySelector('#doc .evidence .pill').textContent, 'Current');
+    assert.ok(window.document.querySelector('[data-act="evidence-run"]'), 'the editor preview can run it');
+    const claimCard = window.document.querySelector('#doc .project-claim .claim');
+    assert.notEqual(claimCard.dataset.tone, 'muted');
+    assert.doesNotMatch(claimCard.querySelector('.claim-head').textContent, /As recorded/);
+    assert.doesNotMatch(window.document.getElementById('insp-sub').textContent, /recorded/);
+  } finally { window.close(); }
+});

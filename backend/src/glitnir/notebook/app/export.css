@@ -6,6 +6,8 @@
 .static-notebook .doc-inner{max-width:none;padding:24px 32px}
 .static-notebook .heading{padding:24px 32px;border-bottom:1px solid var(--border)}
 .static-notebook .snapshot{color:var(--muted);overflow-wrap:anywhere;font-size:12px}
+/* Saved results shown as recorded: said in the heading, as the banner says it. */
+.static-notebook .snapshot.recorded{border-left:3px solid var(--blue);padding-left:9px}
 .static-notebook .claim{cursor:default}
 .static-notebook .claim:hover{border-color:var(--border);box-shadow:none}
 .static-notebook .export-fold>h3{font:500 12px var(--sans);padding:10px 14px;margin:0;background:var(--chrome)}

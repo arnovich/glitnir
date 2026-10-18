@@ -452,6 +452,59 @@ uv pip install --python <backend python> \
 
 The core backend has no runtime dependencies.
 
+## Static export (galleries)
+
+A gallery can publish notebooks from their committed `<Notebook>.glitnir.json`
+without running any checks. `glitnir.notebook.static_export.SavedNotebook`
+reads a saved notebook and its saved results for the canonical renderer:
+
+- `snapshot(run_prompts=False)` returns the snapshot the renderer reads from
+  `GET /api/notebook`. Each saved result is compared only with the saved source:
+  one whose source changed since its check is out of date, and every other one
+  is shown as recorded. It is never compared with the reader's Lean environment,
+  so the snapshot sets `preview.recorded` and the renderer shows "Saved results,
+  shown as recorded", never "current". By default, evidence and decision cards
+  show their saved results without what running them would need, such as an
+  extra to install; `run_prompts=True` keeps those prompts. A result saved
+  without a known environment fingerprint is never shown as recorded, and
+  `preview.project` gives the project's root relative to the notebook, so the
+  snapshot holds no local absolute path.
+- `asset(path, sha256)` returns an image the prose shows.
+- `view_imports()` lists the modules to build before drawing views.
+- `draw_view(cell, line)` draws one listed view and waits for it, as the editor
+  does: with Lean in the sandbox, from the project's own build. Drawing checks
+  nothing.
+
+The module's `export_styles()` returns the CSS that **Export HTML** embeds
+(`GET /api/export/styles`). Reading a snapshot or an image runs no Lean, git or
+provider run and writes no file.
+Nothing here checks the notebook or writes its source or results; drawing a view
+writes only Glitnir's own temporary and cache files, never the project. Saved
+results are matched to the saved source result by result, so a gallery that
+must publish only complete results should also compare the results file's
+`source_sha256` with the snapshot's `sha256`.
+
+Render the snapshot with the packaged renderer (`glitnir/notebook/app`), and
+export it with its **Export HTML**, through the same `window.glitnirHost`
+interface the editor uses (`fetch`, `asset` and `saveHTML`). Answer `fetch` from
+the prepared data and refuse anything else:
+
+```python
+import json
+from pathlib import Path
+
+from glitnir.notebook.static_export import SavedNotebook, export_styles
+
+with SavedNotebook(Path("examples/Decay.lean")) as notebook:
+    snapshot = notebook.snapshot()  # GET /api/notebook
+    views = {  # GET /api/view?cell=C&line=L: a drawing, or {"error": ...}
+        f"{view['cell']}:{view['line']}": notebook.draw_view(view["cell"], view["line"])
+        for view in snapshot["views"]
+    }
+page = {"snapshot": snapshot, "views": views, "css": export_styles()}
+Path("decay.json").write_text(json.dumps(page))  # read by your renderer driver
+```
+
 ## Coding agents
 
 Run **Glitnir: Set Up Coding Agent**, choose your workspace and agent, then start

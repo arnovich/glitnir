@@ -481,7 +481,7 @@ def _service(tmp_path, monkeypatch, payload: str):
         lambda: Providers({}, {"simulate": simulate, "iterate": iterate}, {}, {}),
     )
     monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f" * 64}
     )
     monkeypatch.setattr(
         source_preview, "run_provider_lean", lambda source, **o: {"payload": payload}

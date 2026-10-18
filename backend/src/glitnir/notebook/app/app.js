@@ -48,6 +48,10 @@
   let loadTimer, inFlight, reloadPending = false, sourceEpoch = 0, opening = false;
   let environmentEpoch = 0, mainChanged = false;
   const linkedPath = () => UI.trail[UI.at];
+  // A snapshot from saved results (a static export) compares each result
+  // with its saved source only, never with an environment: its results are
+  // shown as recorded, never called current, and nothing checks or runs them.
+  const recorded = () => UI.data?.preview?.recorded === true;
   const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
   let readableSnapshot, heldRendering = false, highlightTimer;
   let highlighted = new Set(), highlightUntil = 0;
@@ -239,7 +243,7 @@
   }
   const inspecting = () => Boolean(UI.inspecting || inspection()?.status === 'running');
   async function inspectProject() {
-    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath()) return;
+    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath() || recorded()) return;
     UI.inspecting = true;
     const sha256 = UI.data.sha256;
     renderChrome();
@@ -254,7 +258,7 @@
   // A check of the whole saved file, or, with `throughLine`, of its lines 1
   // through that line only: the end of a chosen claim.
   async function checkProject(throughLine = null) {
-    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath()) return;
+    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded()) return;
     UI.checkRequested = true;
     render();
     const body = {sha256: UI.data.sha256};
@@ -268,7 +272,7 @@
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note) {
-    if (linkedPath() || !projectMode()) return '';
+    if (linkedPath() || recorded() || !projectMode()) return '';
     return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button><span class="small muted">${note}</span>`;
   }
   // Where a check stopped because it was asked to, not at a failing command.
@@ -337,7 +341,7 @@
     const through = UI.data.project_withheld?.through_line;
     const notRechecked = saved.not_rechecked ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>Not rechecked: ${Number.isSafeInteger(through) ? `the last check covered lines 1–${esc(through)} only, so this` : 'this'} is the result of an earlier check.</span></div>` : '';
     const note = notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
-      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: the saved source above this claim or its environment changed since it was checked. Check the saved file to update it.</span></div>`);
+      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : 'the saved source above this claim or its environment changed since it was checked. Check the saved file to update it.'}</span></div>`);
     const actions = staticPage ? '' : checkThroughHTML(saved, 'Check through here', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
@@ -553,13 +557,17 @@
   // A linked notebook of another Lake project shows its saved results without
   // comparing them with any environment: their currency is unknown (null).
   const NOT_COMPARED = 'Saved result, not compared with this project’s environment: this notebook belongs to another Lake project. Open it in its own preview to check it.';
-  const currencyPillHTML = saved => saved.current === null ? '<span class="pill" data-tone="muted">Not compared</span>' : saved.current ? '' : '<span class="pill" data-tone="amber">Out of date</span>';
-  const currencyText = saved => (saved.current === null ? 'not compared' : saved.current ? 'current' : 'out of date') + (saved.not_rechecked ? ' · not rechecked by the last check' : '');
-  const toneOf = c => (c.project && !c.project.current ? 'amber' : statusOf(c).tone);
+  // A result current only as recorded says so wherever a current one says nothing.
+  const asRecorded = saved => recorded() && saved.current === true;
+  const currencyPillHTML = saved => saved.current === null ? '<span class="pill" data-tone="muted">Not compared</span>' : asRecorded(saved) ? '<span class="pill" data-tone="muted">As recorded</span>' : saved.current ? '' : '<span class="pill" data-tone="amber">Out of date</span>';
+  const currencyNoted = saved => saved.current !== true || recorded();
+  const currencyText = saved => (saved.current === null ? 'not compared' : saved.current ? (recorded() ? 'as recorded' : 'current') : 'out of date') + (saved.not_rechecked ? ' · not rechecked by the last check' : '');
+  const toneOf = c => (c.project && !c.project.current ? 'amber' : c.project && asRecorded(c.project) ? 'muted' : statusOf(c).tone);
   // Section summaries count a project result's status and, apart, whether it
   // is out of date.
   const summariesOf = (c, staticPage) => [statusOf(c, staticPage), ...(c.project && c.project.current === false ? [{key: 'out-of-date', label: 'Out of date', tone: 'amber'}] : []),
     ...(c.project && c.project.current === null ? [{key: 'not-compared', label: 'Not compared', tone: 'muted'}] : []),
+    ...(c.project && asRecorded(c.project) ? [{key: 'as-recorded', label: 'As recorded', tone: 'muted'}] : []),
     ...(c.project?.not_rechecked ? [{key: 'not-rechecked', label: 'Not rechecked', tone: 'muted'}] : [])];
   // Colour only: the text is the exact source. Comments are matched first so
   // words inside them are never shown as keywords.
@@ -843,7 +851,7 @@
     const running = entry.status === 'running';
     // Without a provider nothing can run it, so current saved evidence is
     // only saved; out-of-date evidence still says so.
-    const [tone, label] = staticPage && running ? ['amber', 'Running at export'] : !entry.provider && snap && entry.status === 'current' ? ['muted', 'Saved'] : Object.hasOwn(EVIDENCE_STATUS, entry.status) ? EVIDENCE_STATUS[entry.status] : ['muted', entry.status];
+    const [tone, label] = staticPage && running ? ['amber', 'Running at export'] : recorded() && entry.status === 'current' ? ['muted', 'As recorded'] : !entry.provider && snap && entry.status === 'current' ? ['muted', 'Saved'] : Object.hasOwn(EVIDENCE_STATUS, entry.status) ? EVIDENCE_STATUS[entry.status] : ['muted', entry.status];
     const what = `${esc(entry.verb || '?')} <code>${esc(entry.target || '?')}</code>${entry.provider ? ` · ${esc(entry.provider)}` : ''}`;
     const pill = entry.error && !snap ? '' : `<span class="pill" data-tone="${tone}">${esc(label)}</span>`;
     const head = `<div class="box-head"><span class="tag">Evidence · not proof</span><span class="small">${what}</span><span class="evidence-state">${pill}${lineLinkHTML(line, line)}</span></div>`;
@@ -870,11 +878,11 @@
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any chart below is the previous saved evidence; its currency is not established here.</p>' + body;
     // An errored card shows its error, then at most the last run's failure;
     // a card errored only by its missing provider still says it is out of date.
-    if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: the source or its environment changed since this run.${entry.provider ? ' Run it again to update it.' : ''}`) + body;
+    if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() ? ' Run it again to update it.' : ''}`) + body;
     if (entry.run_error) body = note('red', `The last run failed: ${esc(entry.run_error)}`) + body;
     if (entry.unavailable && !entry.error) body = note('amber', `${esc(entry.unavailable)} Saved evidence remains viewable.`) + body;
     if (entry.error) body = note('red', esc(entry.error) + (snap ? ' Saved evidence remains viewable.' : '')) + body;
-    if (!staticPage && runnable && !running && !linkedPath()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
+    if (!staticPage && runnable && !running && !linkedPath() && !recorded()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
     return `<section data-document-start="${line}" data-document-end="${line}" class="cell box evidence">${head}${body}${action}</section>`;
   }
 
@@ -907,13 +915,13 @@
     }
     if (outcome && (!running || staticPage)) body = decisionOutcomeHTML(entry, note);
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any outcome below is the previous saved one; its currency is not established here.</p>' + body;
-    if (entry.status === 'stale') body = note('amber', 'Out of date: the source through this directive or its environment changed since this run. Run it again to update it.') + body;
+    if (entry.status === 'stale') body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : 'Out of date: the source through this directive or its environment changed since this run. Run it again to update it.') + body;
     if (entry.missing_imports?.length) body = note('amber', `Add ${entry.missing_imports.map(m => `<code>import ${esc(m)}</code>`).join(', ')} to the file's header before accepting.`) + body;
     if (entry.run_error) body = note('red', `The last run failed: ${esc(entry.run_error)}`) + body;
     if (entry.unavailable) body = note('amber', esc(entry.unavailable) + kept) + body;
     if (entry.error) body = note('red', esc(entry.error) + kept) + body;
     const goal = entry.goal ? `<pre class="decision-goal">${esc(entry.goal)}</pre>` : '';
-    return `<section data-document-start="${line}" data-document-end="${end}" class="cell box decision">${head}${goal}${body}${staticPage || linkedPath() ? '' : decisionActionsHTML(entry)}</section>`;
+    return `<section data-document-start="${line}" data-document-end="${end}" class="cell box decision">${head}${goal}${body}${staticPage || linkedPath() || recorded() ? '' : decisionActionsHTML(entry)}</section>`;
   }
 
   // The saved outcome as text: the provider's reason and stages, the checker's
@@ -1926,7 +1934,7 @@
     }
     if (c.project) {
       $('insp-title').textContent = c.label;
-      $('insp-sub').textContent = `${c.keyword || 'claim'} · ${statusOf(c).label.toLowerCase()}${c.project.current ? '' : ` · ${currencyText(c.project)}`}`;
+      $('insp-sub').textContent = `${c.keyword || 'claim'} · ${statusOf(c).label.toLowerCase()}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}`;
       $('insp').innerHTML = projectInspectorHTML(c);
       return;
     }
@@ -1957,7 +1965,7 @@
     const H = Math.max(28, 14 + (cs.length - 1) * rowH + 14);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('height', H);
-    const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)'})[t] || 'var(--blue)';
+    const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', muted: 'var(--faint)'})[t] || 'var(--blue)';
     const arcs = cs.flatMap(c => c.uses.filter(u => pos.has(u) && u !== c.name).map(u => {
       const y1 = pos.get(u), y2 = pos.get(c.name), bend = x - 10 - (y2 - y1) / 5;
       return `<path d="M${x - 7} ${y1}C${bend} ${y1} ${bend} ${y2} ${x - 9} ${y2}" fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#g-arr)"/>`;
@@ -1965,7 +1973,7 @@
     svg.innerHTML = `<defs><marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8" fill="var(--faint)"/></marker></defs>${arcs}` +
       cs.map(c => {
         const tone = toneOf(c), y = pos.get(c.name), sel = UI.selected === c.name;
-        return `<g class="node" data-act="goto" data-id="${esc(c.name)}"><title>${esc(claimLabel(c))}: ${esc(statusOf(c).label)}${c.project && c.project.current !== true ? ` · ${currencyText(c.project)}` : ''}</title><rect x="0" y="${y - 12}" width="${W}" height="24" fill="transparent"/><circle cx="${x}" cy="${y}" r="${sel ? 6.5 : 5.5}" fill="${tone === 'blue' ? 'var(--paper)' : color(tone)}" stroke="${color(tone)}" stroke-width="${sel ? 3 : 1.8}"/><text x="${x + 13}" y="${y + 3.5}" font-size="10.5" font-family="var(--mono)" fill="${sel ? 'var(--ink)' : 'var(--muted)'}">${esc(claimLabel(c))}</text></g>`;
+        return `<g class="node" data-act="goto" data-id="${esc(c.name)}"><title>${esc(claimLabel(c))}: ${esc(statusOf(c).label)}${c.project && currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}</title><rect x="0" y="${y - 12}" width="${W}" height="24" fill="transparent"/><circle cx="${x}" cy="${y}" r="${sel ? 6.5 : 5.5}" fill="${tone === 'blue' ? 'var(--paper)' : color(tone)}" stroke="${color(tone)}" stroke-width="${sel ? 3 : 1.8}"/><text x="${x + 13}" y="${y + 3.5}" font-size="10.5" font-family="var(--mono)" fill="${sel ? 'var(--ink)' : 'var(--muted)'}">${esc(claimLabel(c))}</text></g>`;
       }).join('');
   }
 
@@ -2089,11 +2097,15 @@
         unavailable ? 'The last check could not run.' : '',
       ].filter(Boolean);
       $('banner').classList.toggle('quiet', !attention.length);
+      // Saved results shown as recorded: nothing here checks or compares them.
+      $('banner').classList.toggle('recorded', recorded());
+      $('banner').dataset.state = recorded() ? 'recorded' : '';
+      if (recorded()) { $('check-project').hidden = true; $('inspect-project').hidden = true; $('project-check').hidden = true; }
       const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : d.preview.notice;
       // A check through one claim is deliberate: said, not flagged.
       const scope = covered ? `The last check covered lines 1–${covered} only.` : '';
       $('banner-text').textContent = [...attention, scope, notice, where].filter(Boolean).join(' ');
-    } else $('banner').classList.remove('quiet');
+    } else { $('banner').classList.remove('quiet', 'recorded'); $('banner').dataset.state = ''; }
     $('export-html').disabled = linked || Boolean(UI.exporting);
     $('export-html').title = linked ? `Go back to ${UI.main?.file || 'the notebook'} to export it` : '';
     $('preview-footer').textContent = project ? 'Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.' : 'Statuses describe saved files checked by sandboxed Lean.';
@@ -2111,7 +2123,7 @@
       }
       if (cell.kind === 'source' && cell.claim) {
         const c = claim(cell.claim);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${c.project.current ? '' : ` · ${currencyText(c.project)}`}"></span></button></li>`] : [];
+        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}"></span></button></li>`] : [];
       }
       if (cell.kind === 'prose') {
         return [...cell.markdown.matchAll(/^\s*(#{2,6}) (.+)$/gm)].map((m, i) => `<li class="outline-level-${m[1].length}"><button type="button" data-act="scroll" data-id="notebook-heading-${cell.index}-${i}">${inlineHTML(m[2].trim().replace(/\s+\{fold\}$/, ''))}</button></li>`);

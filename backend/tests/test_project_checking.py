@@ -255,7 +255,7 @@ def test_live_claim_uses_name_their_notebook_module(prepared_lean_project):
             ("Example.Helper", "helper_one", False),
         ],
     }
-    save_records(source, records_from_check(text, result, "fingerprint"))
+    save_records(source, records_from_check(text, result, "0" * 64))
     service = SourcePreviewService(source)
     try:
         claims = {c["name"]: c for c in service.snapshot()["project_claims"]}

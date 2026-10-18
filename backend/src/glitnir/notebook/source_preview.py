@@ -325,22 +325,32 @@ def _with_saved_evidence(
     text: str,
     fingerprint: Fingerprint,
     providers: Providers | None = None,
+    compare_environment: bool = True,
 ) -> list[dict[str, Any]]:
     """Show each card's saved snapshot, current or stale; nothing is recomputed.
 
     A run's environment includes its provider's modules, so each card is
-    compared with the fingerprint taken with them.
+    compared with the fingerprint taken with them. Without
+    `compare_environment` no fingerprint is taken: cards are shown as recorded.
     """
     saved = saved_evidence(records)
     found = [card for card in cards if card["key"] in saved]
     if not found:
         return cards  # no saved evidence, no fingerprint
     for card in found:
-        provider = providers.evidence.get(card["verb"]) if providers else None
-        imports = _provider_imports(provider) if provider is not None else ()
-        environment = _environment(fingerprint, imports)
+        environment = ""
+        if compare_environment:
+            provider = providers.evidence.get(card["verb"]) if providers else None
+            imports = _provider_imports(provider) if provider is not None else ()
+            environment = _environment(fingerprint, imports)
         entry = saved[card["key"]]
-        card["status"] = evidence_status(entry, text, card["line"], environment)
+        card["status"] = evidence_status(
+            entry,
+            text,
+            card["line"],
+            environment,
+            compare_environment=compare_environment,
+        )
         card["snapshot"] = checked_evidence(entry["snapshot"])
     return cards
 
@@ -350,16 +360,26 @@ def _with_saved_decisions(
     records: dict[str, Any] | None,
     text: str,
     fingerprint: Fingerprint,
+    compare_environment: bool = True,
 ) -> list[dict[str, Any]]:
-    """Show each card's saved outcome and its status; nothing is decided."""
+    """Show each card's saved outcome and its status; nothing is decided.
+
+    Without `compare_environment` no fingerprint is taken, as for evidence.
+    """
     saved = saved_decisions(records)
     found = [card for card in cards if card["key"] in saved]
     if not found:
         return cards  # no saved decisions, no fingerprint
-    environment = _environment(fingerprint)
+    environment = _environment(fingerprint) if compare_environment else ""
     for card in found:
         entry = saved[card["key"]]
-        card["status"] = decision_status(entry, text, card["end_line"], environment)
+        card["status"] = decision_status(
+            entry,
+            text,
+            card["end_line"],
+            environment,
+            compare_environment=compare_environment,
+        )
         card["outcome"] = checked_decision(entry["outcome"])
         verification = entry["verification"]
         card["verification"] = (
@@ -1158,8 +1178,15 @@ class SourcePreviewService:
         text = self._text()
         return self._snapshot(text, self._fingerprint(text))
 
-    def _snapshot(self, text: str, fingerprint: Fingerprint) -> dict[str, Any]:
-        """Build the snapshot of `text`; `fingerprint` is called only if needed."""
+    def _snapshot(
+        self, text: str, fingerprint: Fingerprint, *, compare_environment: bool = True
+    ) -> dict[str, Any]:
+        """Build the snapshot of `text`; `fingerprint` is called only if needed.
+
+        Without `compare_environment` (only `static_export.SavedNotebook`),
+        `fingerprint` is never called: saved results are compared with their
+        saved source only, as recorded.
+        """
         lines = _lines(text)
         cells = _cells(text, lines)
         sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -1172,8 +1199,21 @@ class SourcePreviewService:
         project_non_claims: list[dict[str, int]] = []
         if records is not None:
             try:
-                project_claims = claim_views(text, records, fingerprint())
-                project_non_claims = non_claim_views(text, records, fingerprint())
+                # A failed fingerprint is '', which matches nothing: the saved
+                # results are then shown, all out of date.
+                environment = _environment(fingerprint) if compare_environment else ""
+                project_claims = claim_views(
+                    text,
+                    records,
+                    environment,
+                    compare_environment=compare_environment,
+                )
+                project_non_claims = non_claim_views(
+                    text,
+                    records,
+                    environment,
+                    compare_environment=compare_environment,
+                )
             except Exception:  # noqa: BLE001 - saved results must not break preview
                 project_claims, project_non_claims = [], []
         _with_use_links(project_claims, self.path)
@@ -1221,6 +1261,7 @@ class SourcePreviewService:
                         text,
                         fingerprint,
                         providers,
+                        compare_environment,
                     ),
                     running,
                     run_errors,
@@ -1231,7 +1272,11 @@ class SourcePreviewService:
                 if providers is None
                 else _with_runs(
                     _with_saved_decisions(
-                        decision_cards(decisions, providers), records, text, fingerprint
+                        decision_cards(decisions, providers),
+                        records,
+                        text,
+                        fingerprint,
+                        compare_environment,
                     ),
                     running,
                     run_errors,
