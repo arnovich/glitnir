@@ -237,6 +237,8 @@ function github(repository, run = (args, input) => execFileSync('gh', args, {inp
       }
       throw new Error('Release lookup exceeded its page limit');
     },
+    // The by-tag endpoint never returns drafts, which marketplace publication refuses.
+    async publishedRelease(tag) { return optional(`releases/tags/${tag}`); },
     async createDraft(tag, body) { return api('releases', 'POST', {tag_name: tag, name: `Glitnir ${tag}`, body, draft: true, prerelease: true}); },
     async upload(tag, file) { gh(['release', 'upload', tag, file, '--repo', repository]); },
     async getReleaseById(id) { return api(`releases/${id}`); },

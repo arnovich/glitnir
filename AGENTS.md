@@ -100,7 +100,8 @@ To validate and publish a candidate:
 3. Install those exact assets with a fresh profile on macOS and Linux. Exercise
    uv setup, environment reuse and failure/cancellation recovery.
 4. Review release notes and obtain the owner's publication approval. Publish the
-   existing draft without rebuilding or changing its tag or assets.
+   existing draft without rebuilding or changing its tag or assets. This starts
+   Marketplace publication of the same VSIX (below), which waits for approval.
 5. Verify anonymous discovery, matching-backend download and fresh installation.
    Confirm the private vulnerability-reporting channel advertised in `SECURITY.md`.
 
@@ -109,5 +110,41 @@ release assets are kept independently. Retrying a build reuses its original whee
 and candidate. Conflicting bytes, moved tags, an expired original artifact or
 edited release notes fail rather than overwrite. Uploads reject published
 versions. Additional integration evidence must identify its tested source and
-inputs and never replaces validation of the published package. Marketplace
-publication and automatic updates are separate follow-ups.
+inputs and never replaces validation of the published package. Automatic
+updates are a separate follow-up.
+
+### Marketplace publication
+
+Publishing a GitHub release triggers `.github/workflows/marketplace.yml`, which
+publishes that release's VSIX to the VS Code Marketplace as `gimle.glitnir`. It
+never builds: it downloads the release's assets and, with
+`extension/scripts/marketplace-release.cjs`, runs the candidate verification
+(`SHA256SUMS`, the manifest's source, tag, version, backend and plugin bindings)
+and checks every byte against the asset digests GitHub reports. It refuses a draft,
+a tag that moved off the manifest's commit and a VSIX whose channel differs from
+the release. Only then does the `marketplace` environment job run
+`vsce publish --packagePath` with the `vsce` locked in `package-lock.json`,
+adding `--pre-release` for a GitHub pre-release. A version the Marketplace already
+lists is reported and skipped, so a retry is safe: run the workflow manually with
+the release's `tag`. A release event runs the workflow from the tag's commit;
+releases made before it existed are published, if at all, by a manual run.
+
+The channel is fixed when the VSIX is packaged, and candidates are packaged as
+releases, so a GitHub release meant for the Marketplace is published as a full
+release: clear the draft's pre-release flag first. A pre-release with such a VSIX
+is refused, never repackaged. The
+listing's `"preview": true` marks it as a preview. The Marketplace accepts each
+version once, as either a pre-release or a release, and no semver pre-release
+suffixes: a pre-release cannot be promoted, so a release needs a new version.
+
+The owner sets up, once: the `marketplace` environment with required reviewers
+(Marketplace publication is its own approval gate) and deployment limited to `v*`
+tags and `main`; the `VSCE_PAT` secret in that environment, an Azure DevOps token
+for all accessible organizations with Marketplace (Manage) scope for publisher
+`Gimle`. The extension ID stays `gimle.glitnir` (IDs are case-insensitive); keep
+`"publisher": "gimle"`. Before the first publication, with the token in the
+`VSCE_PAT` environment variable, confirm it with `npx @vscode/vsce@4.0.0
+verify-pat gimle` (fall back to `Gimle`). The optional `open-vsx` job publishes the
+same VSIX to Open VSX with an `OVSX_PAT` secret in the same environment (so it
+waits for the same approval), and is skipped without one; the `gimle` namespace must exist there first. Never pass a
+token on a command line or print it.

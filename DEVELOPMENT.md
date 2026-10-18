@@ -172,9 +172,15 @@ independent tests in the same module.
 
 ## Releases
 
-Release instructions for maintainers are in [AGENTS.md](AGENTS.md#releases).
-Package versions are explicit in `package.json` and `package-lock.json`; bump
-`plugins/forseti/pyproject.toml` with them.
+Release instructions for maintainers are in [AGENTS.md](AGENTS.md#releases),
+including [Marketplace publication](AGENTS.md#marketplace-publication): publishing
+a GitHub release publishes its exact VSIX after verification and the owner's
+approval. Package versions are explicit in `package.json` and `package-lock.json`;
+bump `plugins/forseti/pyproject.toml` with them.
+
+The Marketplace icon `extension/icon/glitnir-128.png` is rendered from
+`extension/icon/glitnir-icon.svg` by `extension/icon/render-icon.sh` (needs
+`rsvg-convert`); commit both after a change.
 
 ## Extension packages
 
