@@ -21,8 +21,9 @@ command and its environment first: Homebrew's `install uv`, by Homebrew's full
 path, when Homebrew is installed, otherwise the official installer of the uv
 version this release pins,
 `/usr/bin/curl -LsSf https://astral.sh/uv/0.12.23/install.sh | /bin/sh`. It runs
-with only `HOME`, `LANG` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin` (plus
-Homebrew's own directory), nothing inherited from VS Code, your shell or
+in a minimal environment: `PATH=/usr/bin:/bin:/usr/sbin:/sbin` (plus Homebrew's
+own directory), `HOME`, `USER`, `TMPDIR` and `LANG`; VS Code adds its own
+terminal variables, and nothing else comes from VS Code, your shell or
 `terminal.integrated.env` settings. The official installer puts uv in
 `~/.local/bin`, where Glitnir looks, and is told (`UV_NO_MODIFY_PATH=1`) to leave
 your shell profiles alone; add `~/.local/bin` to `PATH` yourself to use uv in

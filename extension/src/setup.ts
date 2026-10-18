@@ -39,7 +39,14 @@ export async function openSetupGuide(context: vscode.ExtensionContext): Promise<
 }
 
 /** A `glitnir.pythonPath` value that switching to this build's backend rewrites, and the file it lives in. */
-export interface Override {target: vscode.ConfigurationTarget; folder?: vscode.Uri; file: string}
+export interface Override {
+  target: vscode.ConfigurationTarget;
+  folder?: vscode.Uri;
+  /** The settings file it is written to, as shown to the user. */
+  file: string;
+  /** The earlier managed backend's Python it named when planned. */
+  value: string;
+}
 
 /** Offered when no backend is found but an earlier build's managed backend exists. */
 export interface UpgradeOffer {
@@ -144,11 +151,11 @@ export class EnvironmentSetup {
       this.check();
       try { return await (this.dependencies.findUv ?? findUv)(); } catch { /* Offer to install it. */ }
       const installer = uvInstaller(await (this.dependencies.findBrew ?? findBrew)());
-      const variables = Object.entries(installer.env).map(([name, value]) => `${name}=${value}`).join(' ');
+      const variables = Object.keys(installer.env).map(name => name === 'PATH' || name === 'UV_NO_MODIFY_PATH' ? `${name}=${installer.env[name]}` : name).join(', ');
       const profiles = installer.env.UV_NO_MODIFY_PATH ? ' It leaves your shell profiles unchanged; to use uv in your own terminals, add ~/.local/bin to PATH.' : '';
       const choice = await vscode.window.showInformationMessage('Glitnir needs uv to install its backend.', {
         modal: true,
-        detail: `uv creates the backend environment from your installed Python. Install uv runs this command in a VS Code terminal, where you can watch it:\n\n${installer.command}\n\nwith only these environment variables: ${variables}.${profiles}\n\nSetup continues when the terminal closes. Choose Retry once uv is installed some other way.`,
+        detail: `uv creates the backend environment from your installed Python. Install uv runs this command in a VS Code terminal, where you can watch it:\n\n${installer.command}\n\nin a minimal environment: ${variables} (VS Code adds its own terminal variables).${profiles}\n\nSetup continues when the terminal closes. Choose Retry once uv is installed some other way.`,
       }, INSTALL_UV, 'Retry', 'Read Setup Guide');
       this.check();
       if (choice === 'Read Setup Guide') { await openSetupGuide(this.context); return undefined; }
@@ -192,40 +199,48 @@ export class EnvironmentSetup {
    */
   pendingOverrides(): Override[] {
     const d = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend);
-    const earlier = (value: string | undefined): boolean => { const sha = managedBackendSha(value); return !!sha && sha !== d.sha256; };
+    const earlier = (value: string | undefined): value is string => { const sha = managedBackendSha(value); return !!sha && sha !== d.sha256; };
     const overrides: Override[] = [];
     const top = vscode.workspace.getConfiguration('glitnir').inspect<string>('pythonPath');
-    if (earlier(top?.globalValue)) overrides.push({target: vscode.ConfigurationTarget.Global, file: 'your user settings.json'});
+    if (earlier(top?.globalValue)) overrides.push({target: vscode.ConfigurationTarget.Global, file: 'your user settings.json', value: top!.globalValue!});
     if (earlier(top?.workspaceValue)) {
       const file = vscode.workspace.workspaceFile?.scheme === 'file' ? vscode.workspace.workspaceFile.fsPath
         : vscode.workspace.workspaceFolders?.[0] ? path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '.vscode', 'settings.json') : 'the workspace settings';
-      overrides.push({target: vscode.ConfigurationTarget.Workspace, file});
+      overrides.push({target: vscode.ConfigurationTarget.Workspace, file, value: top!.workspaceValue!});
     }
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
-      if (earlier(vscode.workspace.getConfiguration('glitnir', folder.uri).inspect<string>('pythonPath')?.workspaceFolderValue)) {
-        overrides.push({target: vscode.ConfigurationTarget.WorkspaceFolder, folder: folder.uri, file: path.join(folder.uri.fsPath, '.vscode', 'settings.json')});
-      }
+      const value = vscode.workspace.getConfiguration('glitnir', folder.uri).inspect<string>('pythonPath')?.workspaceFolderValue;
+      if (earlier(value)) overrides.push({target: vscode.ConfigurationTarget.WorkspaceFolder, folder: folder.uri, file: path.join(folder.uri.fsPath, '.vscode', 'settings.json'), value});
     }
     return overrides;
   }
 
+  /** The `glitnir.pythonPath` value an override's file holds now. */
+  private overrideValue(override: Override): string | undefined {
+    const inspected = vscode.workspace.getConfiguration('glitnir', override.folder).inspect<string>('pythonPath');
+    return override.target === vscode.ConfigurationTarget.Global ? inspected?.globalValue
+      : override.target === vscode.ConfigurationTarget.Workspace ? inspected?.workspaceValue : inspected?.workspaceFolderValue;
+  }
+
   /**
    * Switch every window to this build's complete managed backend at `python`:
-   * share it, and repoint the overrides `pendingOverrides` names, which the
-   * confirmation listed. Returns the settings files that changed.
+   * share it, and repoint exactly the `planned` overrides the confirmation
+   * listed. One whose file no longer holds the value it was planned from is
+   * left alone and reported as skipped.
    */
-  async adopt(python: string): Promise<string[]> {
+  async adopt(python: string, planned: Override[]): Promise<{changed: string[]; skipped: string[]}> {
     this.check();
     const d = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend);
     if (managedBackendSha(python) !== d.sha256) throw new Error('Only this build\'s managed backend can be adopted.');
     await this.context.globalState.update(`backend:${d.sha256}`, python);
-    const changed: string[] = [];
-    for (const override of this.pendingOverrides()) {
+    const changed: string[] = [], skipped: string[] = [];
+    for (const override of planned) {
+      if (this.overrideValue(override) !== override.value) { skipped.push(override.file); continue; }
       await vscode.workspace.getConfiguration('glitnir', override.folder).update('pythonPath', python, override.target);
       changed.push(override.file);
     }
     this.output.appendLine(`Glitnir backend for this build selected: ${python}`);
-    return changed;
+    return {changed, skipped};
   }
 
   private async discovery(uri: vscode.Uri) {

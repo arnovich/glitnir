@@ -130,7 +130,11 @@ workflow manually with the release's `tag`. A version listed on the other channe
 fails. A version that is not newer than the latest listed on its own channel is
 refused unless a manual run sets `allow_older`. A release event runs the workflow
 from the tag's commit; releases made before it existed are published, if at all,
-by a manual run. The workflow installs dependencies with `npm ci --ignore-scripts`,
+by a manual run. The verification requires the VSIX's plugin pin (`glitnirPlugins`)
+to be present and equal to the attached plugin wheel, so releases before 0.1.2
+(v0.1.0, v0.1.1), which have no plugin pin, can never be published or retried: a
+manual run checks out the default branch, whose verification requires the pin.
+This is intended. The workflow installs dependencies with `npm ci --ignore-scripts`,
 pins its actions to commit SHAs and uses no dependency cache in the job holding
 the token.
 

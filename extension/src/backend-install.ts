@@ -51,12 +51,15 @@ export interface UvInstaller {
  * variables). The official installer puts uv in ~/.local/bin, where Glitnir
  * looks without PATH, so it is told not to edit shell profiles.
  */
-export function uvInstaller(brew?: string, home = os.homedir()): UvInstaller {
+export function uvInstaller(brew?: string, home = os.homedir(), parent: NodeJS.ProcessEnv = process.env): UvInstaller {
   if (!/^\d+\.\d+\.\d+$/.test(UV_VERSION)) throw new Error('The uv installer version must be pinned.');
   if (brew && !/^\/[\w./-]+\/brew$/.test(brew)) throw new Error('Homebrew must be at an absolute path without spaces.');
-  const base = {HOME: home, LANG: 'en_US.UTF-8'};
-  if (brew) return {command: `${brew} install uv`, env: {...base, PATH: `${path.dirname(brew)}:${INSTALLER_PATH}`}};
-  return {command: `/usr/bin/curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | /bin/sh`, env: {...base, PATH: INSTALLER_PATH, UV_NO_MODIFY_PATH: '1'}};
+  // Homebrew needs USER and a temporary directory; only plain values are passed on.
+  const user: Record<string, string> = /^[A-Za-z0-9._-]{1,64}$/.test(parent.USER ?? '') ? {USER: parent.USER!} : {};
+  const tmp: Record<string, string> = /^\/[\w./-]{0,1023}$/.test(parent.TMPDIR ?? '') ? {TMPDIR: parent.TMPDIR!} : {};
+  const base: Record<string, string> = {HOME: home, ...user, ...tmp, LANG: 'en_US.UTF-8'};
+  if (brew) return {command: `${brew} install uv`, env: {PATH: `${path.dirname(brew)}:${INSTALLER_PATH}`, ...base}};
+  return {command: `/usr/bin/curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | /bin/sh`, env: {PATH: INSTALLER_PATH, ...base, UV_NO_MODIFY_PATH: '1'}};
 }
 /** The terminal Install uv runs in: its environment is exactly `env` (strictEnv), so no parent or terminal setting adds to it. */
 export function uvInstallerTerminal(installer: UvInstaller): {name: string; shellPath: string; shellArgs: string[]; env: Record<string, string>; strictEnv: true} {

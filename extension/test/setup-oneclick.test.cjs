@@ -119,7 +119,8 @@ test('without uv, Install uv is offered with its command and nothing runs withou
   assert.equal(message, 'Glitnir needs uv to install its backend.');
   assert.deepEqual(actions, ['Install uv', 'Retry', 'Read Setup Guide']);
   assert.ok(detail.includes(`/usr/bin/curl -LsSf https://astral.sh/uv/${h.modules.UV_VERSION}/install.sh | /bin/sh`), 'the command is shown before the click, with absolute paths');
-  assert.ok(detail.includes(`with only these environment variables: HOME=${require('node:os').homedir()} LANG=en_US.UTF-8 PATH=/usr/bin:/bin:/usr/sbin:/sbin UV_NO_MODIFY_PATH=1.`), detail);
+  const names = ['HOME', ...(/^[A-Za-z0-9._-]{1,64}$/.test(process.env.USER ?? '') ? ['USER'] : []), ...(/^\/[\w./-]{0,1023}$/.test(process.env.TMPDIR ?? '') ? ['TMPDIR'] : []), 'LANG'];
+  assert.ok(detail.includes(`in a minimal environment: PATH=/usr/bin:/bin:/usr/sbin:/sbin, ${names.join(', ')}, UV_NO_MODIFY_PATH=1 (VS Code adds its own terminal variables).`), detail);
   assert.match(detail, /leaves your shell profiles unchanged; to use uv in your own terminals, add ~\/\.local\/bin to PATH/);
   assert.equal(h.state.terminals.length + h.state.installs.length, 0, 'dismissing runs nothing');
   const clicked = harness({uv: false});
@@ -156,13 +157,15 @@ test('the uv installer command is Homebrew or a pinned official installer, never
   assert.equal(modules.UV_VERSION, '0.12.23', 'the pinned uv release; bump it with the docs');
   const docs = ['../../README.md', '../media/setup.md'].map(file => require('node:fs').readFileSync(path.join(__dirname, file), 'utf8'));
   for (const text of docs) assert.ok(text.includes(`https://astral.sh/uv/${modules.UV_VERSION}/install.sh`), 'the docs show the pinned installer');
-  process.env.HOMEBREW_PREFIX = '/evil'; process.env.UV_INSTALL_DIR = '/evil';
-  try {
-    assert.deepEqual(modules.uvInstaller('/usr/local/bin/brew', '/home/me'), {command: '/usr/local/bin/brew install uv',
-      env: {HOME: '/home/me', LANG: 'en_US.UTF-8', PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'}}, 'nothing from the parent environment');
-    assert.deepEqual(modules.uvInstaller(undefined, '/home/me'), {command: `/usr/bin/curl -LsSf https://astral.sh/uv/${modules.UV_VERSION}/install.sh | /bin/sh`,
-      env: {HOME: '/home/me', LANG: 'en_US.UTF-8', PATH: '/usr/bin:/bin:/usr/sbin:/sbin', UV_NO_MODIFY_PATH: '1'}});
-  } finally { delete process.env.HOMEBREW_PREFIX; delete process.env.UV_INSTALL_DIR; }
+  const parent = {HOMEBREW_PREFIX: '/evil', UV_INSTALL_DIR: '/evil', USER: 'me', TMPDIR: '/var/folders/x/T/', PATH: '/evil/bin'};
+  assert.deepEqual(modules.uvInstaller('/usr/local/bin/brew', '/home/me', parent), {command: '/usr/local/bin/brew install uv',
+    env: {PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', HOME: '/home/me', USER: 'me', TMPDIR: '/var/folders/x/T/', LANG: 'en_US.UTF-8'}}, 'only USER and TMPDIR come from the parent environment');
+  assert.deepEqual(modules.uvInstaller(undefined, '/home/me', parent), {command: `/usr/bin/curl -LsSf https://astral.sh/uv/${modules.UV_VERSION}/install.sh | /bin/sh`,
+    env: {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: '/home/me', USER: 'me', TMPDIR: '/var/folders/x/T/', LANG: 'en_US.UTF-8', UV_NO_MODIFY_PATH: '1'}});
+  for (const bad of [{USER: 'me; rm -rf ~', TMPDIR: 'relative'}, {USER: '', TMPDIR: '/tmp/a b'}, {USER: 'x'.repeat(65), TMPDIR: '/tmp/$(id)'}]) {
+    const env = modules.uvInstaller(undefined, '/home/me', bad).env;
+    assert.ok(!('USER' in env) && !('TMPDIR' in env), `values that are not plain are dropped: ${JSON.stringify(bad)}`);
+  }
   assert.doesNotMatch(modules.uvInstaller().command, /astral\.sh\/uv\/install\.sh/);
   assert.throws(() => modules.uvInstaller('brew'), /absolute path/);
   assert.equal(modules.uvInstallerTerminal(modules.uvInstaller()).strictEnv, true);

@@ -127,6 +127,8 @@ async function installerEnvironment(extension, root) {
     assert.equal(env.PATH, INSTALLER_PATH, 'only the minimal PATH');
     assert.equal(env.UV_NO_MODIFY_PATH, '1');
     assert.equal(env.HOME, installer.env.HOME);
+    for (const name of ['USER', 'TMPDIR']) assert.equal(env[name], installer.env[name], `${name} is passed on for Homebrew`);
+    assert.ok(installer.env.USER, 'the host has a plain USER');
     assert.equal(process.env.HOMEBREW_GLITNIR_PARENT, 'inherited', 'the editor itself has a HOMEBREW_ variable');
     assert.ok(!Object.keys(env).some(name => name.startsWith('HOMEBREW_') || name.startsWith('GLITNIR_') || name === 'ELECTRON_RUN_AS_NODE'), Object.keys(env).join(' '));
     return Object.keys(env).sort();

@@ -6,7 +6,7 @@ import {BackendDescriptor, backendDescriptor, backendStore} from './backend-inst
 import {InstalledPackage, ProviderReport, VerifiedInstall} from './extension-packages';
 import {knownPackage} from './known-packages';
 import {fetchPlugin, fetchRelease, normalizedName, PluginPin, pluginPins, ReleaseFetch, ReleasePlugin} from './release-assets';
-import {githubToken, openSetupGuide, PreparedUpgrade} from './setup';
+import {githubToken, openSetupGuide, Override, PreparedUpgrade} from './setup';
 
 /** A complete managed backend environment: its directory is named by the wheel digest its marker records. */
 export interface ManagedBackend {sha256: string; directory: string; python: string; created: number}
@@ -90,8 +90,8 @@ export function planCarryOver(previous: InstalledPackage[], plugins: ReleasePlug
 interface Setup {
   installPinned(d: BackendDescriptor, uv: string, signal: AbortSignal, report: (message: string) => void): Promise<string>;
   /** The settings files whose glitnir.pythonPath switching would rewrite. */
-  pendingOverrides(): {file: string}[];
-  adopt(python: string): Promise<string[]>;
+  pendingOverrides(): Override[];
+  adopt(python: string, planned: Override[]): Promise<{changed: string[]; skipped: string[]}>;
   /** The installed uv, after offering to install it; undefined when the user declined. */
   requireUv(): Promise<string | undefined>;
 }
@@ -119,9 +119,11 @@ interface Plan extends PreparedUpgrade {
   packages: InstalledPackage[];
   unreadable?: string;
   carry: CarryPlan;
+  /** The glitnir.pythonPath settings shown in the confirmation; only these are rewritten. */
+  overrides: Override[];
 }
 
-interface Outcome {python: string; earlier?: string; carried: string[]; dropped: string[]; manual: InstalledPackage[]; unreadable?: string; settings: string[]}
+interface Outcome {python: string; earlier?: string; carried: string[]; dropped: string[]; manual: InstalledPackage[]; unreadable?: string; settings: string[]; skipped: string[]}
 
 /**
  * Set up this build's backend after an extension update: download the pinned
@@ -194,20 +196,21 @@ export class BackendUpgrade {
     }
     const carry = planCarryOver(packages, plugins);
     const directory = path.join(this.store(), d.sha256);
+    const overrides = this.setup.pendingOverrides();
     const pypi = (item: CarryItem): string => {
       const extras = item.extras.flatMap(name => knownPackage(item.plugin.name)?.extras.find(extra => extra.name === name)?.packages ?? []);
       return `${extras.length ? `${extras.join(', ')} and its` : 'Its'} own dependencies come from PyPI as prebuilt wheels`;
     };
     const lines = [
-      `Downloads ${d.asset} from GitHub release ${d.tag}, checks it against the SHA-256 this extension records, and installs it with uv into a new environment, ${directory}.`,
+      `Downloads ${d.asset} from GitHub release ${d.tag}, checks it against the SHA-256 this extension records, and installs it with uv into this version's environment (created if needed), ${directory}.`,
       ...carry.fetch.map(item => `Installs ${describe(item.plugin.name, item.plugin.version, item.extras)} from ${item.plugin.asset} in the same release, checked against the SHA-256 this extension records for it. ${pypi(item)}.`),
       ...(carry.fetch.some(item => item.dropped.length) ? [`Extras not carried over (Glitnir does not install them): ${carry.fetch.flatMap(item => item.dropped.map(extra => `${item.plugin.name}[${extra}]`)).join(', ')}.`] : []),
       ...(carry.manual.length ? [`Not in this release, reinstall yourself with Glitnir: Install Extension Package…: ${carry.manual.map(p => `${p.name} ${p.version}`).join(', ')}.`] : []),
       ...(unreadable ? ['The earlier environment\'s extension packages could not be listed; reinstall them yourself afterwards.'] : []),
-      ...this.setup.pendingOverrides().map(override => `Changes glitnir.pythonPath in ${override.file} to the new environment.`),
+      ...overrides.map(override => `Changes glitnir.pythonPath in ${override.file} to the new environment.`),
       ...(state.previous ? [`The earlier environment at ${state.previous.directory} is kept.`] : []),
     ];
-    return {earlier: state.previous?.directory, previous: state.previous, packages, unreadable, carry, detail: lines.join('\n')};
+    return {earlier: state.previous?.directory, previous: state.previous, packages, unreadable, carry, overrides, detail: lines.join('\n')};
   }
 
   private async attempts(prepared?: Plan): Promise<string | undefined> {
@@ -272,8 +275,8 @@ export class BackendUpgrade {
         }
         signal.throwIfAborted();
         // Switch only now that the environment is complete.
-        const settings = await this.setup.adopt(python);
-        return {python, earlier: plan.previous?.directory, carried, dropped, manual: plan.carry.manual, unreadable: plan.unreadable, settings};
+        const {changed: settings, skipped} = await this.setup.adopt(python, plan.overrides);
+        return {python, earlier: plan.previous?.directory, carried, dropped, manual: plan.carry.manual, unreadable: plan.unreadable, settings, skipped};
       } finally {
         subscription.dispose(); this.controller.signal.removeEventListener('abort', stop);
         await rm(scratch, {recursive: true, force: true});
@@ -289,12 +292,13 @@ export class BackendUpgrade {
       ...(outcome.dropped.length ? [`Extras not carried over: ${outcome.dropped.join(', ')}.`] : []),
       ...(outcome.unreadable ? [`The earlier environment's packages could not be listed (see Output → Glitnir); reinstall them with Glitnir: Install Extension Package….`] : []),
       ...(outcome.settings.length ? [`glitnir.pythonPath now names it in ${outcome.settings.join(', ')}.`] : []),
+      ...(outcome.skipped.length ? [`glitnir.pythonPath in ${outcome.skipped.join(', ')} changed after the confirmation and was left alone.`] : []),
       ...(outcome.earlier ? [`The earlier environment at ${outcome.earlier} is kept; remove it yourself once no window uses it (see the README).`] : []),
       'Close existing preview tabs, then open them again to use it.',
     ];
     const message = lines.join(' ');
     this.output.appendLine(message);
-    if (outcome.manual.length || outcome.dropped.length || outcome.unreadable) void vscode.window.showWarningMessage(message);
+    if (outcome.manual.length || outcome.dropped.length || outcome.unreadable || outcome.skipped.length) void vscode.window.showWarningMessage(message);
     else void vscode.window.showInformationMessage(message);
     return outcome.python;
   }

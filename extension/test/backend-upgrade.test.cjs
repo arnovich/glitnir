@@ -156,7 +156,11 @@ async function upgradeFlow(t, options = {}) {
       return newPython;
     },
     pendingOverrides: () => options.overrides ?? [],
-    adopt: async python => { calls.adopted.push(python); return (options.overrides ?? []).map(o => o.file); },
+    adopt: async (python, planned) => {
+      calls.adopted.push(python); calls.planned = planned;
+      const skipped = new Set(options.skipped ?? []);
+      return {changed: planned.filter(o => !skipped.has(o.file)).map(o => o.file), skipped: planned.filter(o => skipped.has(o.file)).map(o => o.file)};
+    },
     requireUv: async () => options.noUv ? undefined : '/installed/uv',
   };
   const earlierPackages = options.earlier ?? [
@@ -262,10 +266,14 @@ test('set up installs the pinned backend, carries over release packages with ext
   declined.state.confirm = undefined;
   assert.equal(await declined.upgrade.run(), undefined);
   assert.equal(declined.r.requests.length + declined.calls.installPinned + declined.state.progress, 0, 'declining the confirmation runs nothing');
-  const settings = await upgradeFlow(t, {overrides: [{file: '/work/.vscode/settings.json'}]});
+  const planned = [{file: '/work/.vscode/settings.json', value: '/old'}, {file: '/work.code-workspace', value: '/old'}];
+  const settings = await upgradeFlow(t, {overrides: planned, skipped: ['/work.code-workspace']});
   await settings.upgrade.run();
   assert.match(settings.state.confirms[0][1], /Changes glitnir\.pythonPath in \/work\/\.vscode\/settings\.json to the new environment\./, 'a settings rewrite is named before the click');
-  assert.match(settings.state.infos.at(-1)?.[0] ?? settings.state.warnings[0], /glitnir\.pythonPath now names it in \/work\/\.vscode\/settings\.json/);
+  assert.match(settings.state.confirms[0][1], /into this version's environment \(created if needed\)/);
+  assert.deepEqual(settings.calls.planned, planned, 'adopt rewrites exactly the overrides the confirmation showed');
+  assert.match(settings.state.warnings[0], /glitnir\.pythonPath now names it in \/work\/\.vscode\/settings\.json\./);
+  assert.match(settings.state.warnings[0], /glitnir\.pythonPath in \/work\.code-workspace changed after the confirmation and was left alone\./);
 });
 
 test('a build that pins no plugin wheel downloads none and lists packages for manual reinstall', async t => {
@@ -437,8 +445,14 @@ test('discovery prefers this build\'s backend over a remembered earlier one, and
   assert.equal((await setup.resolve(file('/work/A.lean'))).python, managed('1'.repeat(64)), 'before the upgrade the remembered environment is used');
   state.inspect.top = {pythonPath: {globalValue: managed('1'.repeat(64)), workspaceValue: '/my/own/python'}};
   await assert.rejects(setup.adopt('/elsewhere/bin/python'), /managed backend/);
-  assert.deepEqual(setup.pendingOverrides().map(o => o.file), ['your user settings.json'], 'the confirmation can name the file before anything changes');
-  assert.deepEqual(await setup.adopt(managed(pin.sha256)), ['your user settings.json']);
+  const planned = setup.pendingOverrides();
+  assert.deepEqual(planned.map(o => [o.file, o.value]), [['your user settings.json', managed('1'.repeat(64))]], 'the confirmation can name the file before anything changes');
+  const changedSince = {...state.inspect.top};
+  state.inspect.top = {pythonPath: {globalValue: '/edited/meanwhile', workspaceValue: '/my/own/python'}};
+  assert.deepEqual(await setup.adopt(managed(pin.sha256), planned), {changed: [], skipped: ['your user settings.json']}, 'a setting edited after the confirmation is left alone');
+  assert.deepEqual(state.updates, []);
+  state.inspect.top = changedSince;
+  assert.deepEqual(await setup.adopt(managed(pin.sha256), planned), {changed: ['your user settings.json'], skipped: []});
   assert.deepEqual(state.updates, [['pythonPath', managed(pin.sha256), 1]], 'only the override naming an earlier managed backend changes');
   assert.equal(global.get(`backend:${pin.sha256}`), managed(pin.sha256));
   probed.length = 0;
