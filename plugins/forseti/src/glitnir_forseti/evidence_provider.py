@@ -8,9 +8,10 @@ bounds of `glitnir_forseti.notebook.evidence` and returns a
 
 ``simulate`` needs nothing beyond this package: the field arrives as exact
 expression trees and rational pairs, read here. ``iterate`` decodes an update
-circuit with Python Asgard's wire decoder, so it needs the ``simulation``
-extra; without it `parse` refuses the directive, which the card shows before
-anything runs. Evidence is never a proof and changes no claim's status.
+circuit with Python Asgard's wire decoder (``gimle-asgard``), so it is served by
+a provider of its own whose `unavailable` names that missing dependency: its
+cards say so and cannot run, and the provider report lists ``iterate`` as
+unavailable. Evidence is never a proof and changes no claim's status.
 """
 
 import hashlib
@@ -20,6 +21,7 @@ import math
 from datetime import UTC, datetime
 from fractions import Fraction
 from importlib import metadata
+from pathlib import Path
 from typing import Any
 
 from glitnir.notebook.evidence_cards import MAX_SERIES, MAX_TEXT
@@ -31,18 +33,33 @@ from glitnir_forseti.notebook.evidence import EvidenceError, Simulation
 IMPORTS = ("Gimle.Asgard.Compile.RationalInterchange", "Gimle.Asgard.Model.Continuous")
 #: Without the optional decoder, `iterate` cannot run.
 NEEDS_ASGARD = (
-    "Install Python Asgard (gimle-asgard) into the backend's environment to run "
-    "`iterate`."
+    "`iterate` needs Python Asgard (gimle-asgard), which is not installed in the "
+    "backend's environment; install it there from its wheel or checkout."
 )
+#: The module `iterate` decodes circuits with.
+DECODER = "rational_interchange"
 FORMAT = "glitnir.evidence/v1"
 
 
 def asgard_installed() -> bool:
-    """Whether Python Asgard can be imported, without importing it."""
+    """Whether Python Asgard and its circuit decoder can be imported.
+
+    Neither is imported: `gimle.asgard` is only located, and its decoder looked
+    for among its files, so this stays cheap enough for every preview refresh.
+    """
     try:
-        return importlib.util.find_spec("gimle.asgard") is not None
+        spec = importlib.util.find_spec("gimle.asgard")
     except (ModuleNotFoundError, ValueError):  # no `gimle` parent, or no spec
         return False
+    if spec is None:
+        return False
+    for location in spec.submodule_search_locations or ():
+        directory = Path(location)
+        if (directory / f"{DECODER}.py").is_file() or (
+            directory / DECODER / "__init__.py"
+        ).is_file():
+            return True
+    return False
 
 
 def _sentence(text: str) -> str:
@@ -60,8 +77,6 @@ def parse(verb: str, target: str, options: str) -> EvidenceRequest:
     simulation = evidence.read_directive(verb, target, options)
     if simulation.error:
         raise ValueError(_sentence(simulation.error))
-    if verb == "iterate" and not asgard_installed():
-        raise ValueError(NEEDS_ASGARD)
     if verb == "iterate" and len(simulation.state) > MAX_SERIES:
         raise ValueError(f"Evidence shows at most {MAX_SERIES} states.")
     return EvidenceRequest(
@@ -235,7 +250,11 @@ def _simulated(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any
 
 def _iterated(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
     """Iterate an emitted update circuit and return its snapshot."""
-    import gimle.asgard
+    try:
+        import gimle.asgard
+        import gimle.asgard.rational_interchange  # noqa: F401 - the decoder
+    except ImportError as error:  # removed, or broken, since the card was read
+        raise EvidenceError(f"{NEEDS_ASGARD} ({error})") from None
 
     denotation = evidence.update_polynomials(emitted, simulation)
     terms = sum(len(output) for output in denotation.outputs)
@@ -286,20 +305,37 @@ def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:
 
 
 def unavailable() -> str | None:
-    """Nothing is missing for every verb: `parse` refuses `iterate` without Asgard."""
+    """Nothing is missing for ``simulate``."""
     return None
 
 
-def evidence_provider() -> EvidenceProvider:
-    """Return the Forseti provider for ``simulate`` and ``iterate``."""
+def iterate_unavailable() -> str | None:
+    """Name the missing Python Asgard ``iterate`` needs, or None."""
+    return None if asgard_installed() else NEEDS_ASGARD
+
+
+def _provider(verbs: frozenset[str], missing: Any) -> EvidenceProvider:
     return EvidenceProvider(
         name="forseti",
-        verbs=frozenset(evidence.VERBS),
+        verbs=verbs,
         imports=IMPORTS,
         preamble="",
         marker=evidence.MARK,
         parse=parse,
         command=command,
         compute=compute,
-        unavailable=unavailable,
+        unavailable=missing,
+    )
+
+
+def evidence_providers() -> tuple[EvidenceProvider, EvidenceProvider]:
+    """Return the Forseti providers for ``simulate`` and for ``iterate``.
+
+    They differ only in what they lack: ``iterate``'s provider is unavailable
+    without Python Asgard, so Glitnir shows why on its cards and never runs it.
+    """
+    simulate = frozenset(evidence.VERBS) - {"iterate"}
+    return (
+        _provider(simulate, unavailable),
+        _provider(frozenset({"iterate"}), iterate_unavailable),
     )

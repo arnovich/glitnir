@@ -8,13 +8,13 @@ from glitnir_forseti import providers
 
 
 def test_provider_declares_kinds_and_imports() -> None:
-    """One provider covers the three Forseti views; evidence and decisions follow."""
+    """One provider draws the three views; two run evidence; one decides."""
     found = providers()
-    assert len(found) == 3
+    assert len(found) == 4
     provider = found[0]
     assert isinstance(provider, ViewProvider)
-    assert isinstance(found[1], EvidenceProvider)
-    assert isinstance(found[2], DecisionProvider)
+    assert all(isinstance(item, EvidenceProvider) for item in found[1:3])
+    assert isinstance(found[3], DecisionProvider)
     assert provider.name == "forseti"
     assert provider.kinds == {"circuit", "model", "dynamics"}
     assert provider.imports == (

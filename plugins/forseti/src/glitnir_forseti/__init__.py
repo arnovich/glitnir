@@ -22,7 +22,7 @@ def _command(kind: str, name: str, using: tuple[str, ...]) -> str:
 def providers() -> list[ViewProvider | EvidenceProvider | DecisionProvider]:
     """Return the Forseti view, evidence and decision providers."""
     from glitnir_forseti.decision_provider import decision_provider
-    from glitnir_forseti.evidence_provider import evidence_provider
+    from glitnir_forseti.evidence_provider import evidence_providers
 
     return [
         ViewProvider(
@@ -33,6 +33,6 @@ def providers() -> list[ViewProvider | EvidenceProvider | DecisionProvider]:
             marker="forsetiView:",
             command=_command,
         ),
-        evidence_provider(),
+        *evidence_providers(),
         decision_provider(),
     ]
