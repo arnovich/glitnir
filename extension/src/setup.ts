@@ -264,11 +264,11 @@ export class EnvironmentSetup {
     } catch (error) {
       this.check();
       if (!(error instanceof DiscoveryError)) throw error;
-      const earlier = canInstall && !configure ? await this.upgrade?.available() : undefined;
+      const earlier = canInstall ? await this.upgrade?.available() : undefined;
       this.check();
       if (earlier) {
         const version = this.context.extension?.packageJSON.version;
-        const choice = await vscode.window.showInformationMessage(`Glitnir was updated to ${version}. Set up its backend to open this notebook.`, {
+        const choice = await vscode.window.showInformationMessage(`Glitnir was updated to ${version}. Set up its backend${configure ? '' : ' to open this notebook'}.`, {
           modal: true,
           detail: `${error.message}\n\nThe backend at ${earlier} belongs to an earlier Glitnir build. Set Up downloads this build's verified backend into a new environment and carries over the extension packages from this release; the earlier environment is kept.`,
         }, UPGRADE_ACTION, 'Other Setup Options');

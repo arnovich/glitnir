@@ -415,6 +415,10 @@ test('opening a notebook without a backend offers the upgrade when an earlier on
   assert.equal(await setup.resolve(file('/work/A.lean')), undefined);
   assert.equal(runs, 1, 'dismissing runs nothing');
   assert.equal(state.infos.length, 1, 'dismissing the upgrade does not stack a second prompt');
+  state.infoAction = message => message.startsWith('Glitnir was updated') ? 'Set Up' : undefined; state.infos.length = 0;
+  assert.deepEqual(await setup.resolve(file('/work/A.lean'), true), {python: '/store/new/bin/python'});
+  assert.equal(state.infos[0][0], 'Glitnir was updated to 0.1.1. Set up its backend.', 'Set Up Environment offers the same upgrade');
+  assert.equal(runs, 2);
 });
 
 test('the command and setting are contributed without changing existing identifiers', () => {
