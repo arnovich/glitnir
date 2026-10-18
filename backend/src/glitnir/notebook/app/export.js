@@ -18,7 +18,12 @@
     const heading = page.createElement('header'); heading.className = 'heading'; app.append(heading);
     const h1 = page.createElement('h1'); h1.textContent = title; heading.append(h1);
     const snapshot = page.createElement('p'); snapshot.className = 'snapshot';
-    snapshot.textContent = `Static snapshot of ${file} · exported ${new Date().toISOString()} · source SHA-256 ${sha256}. ${preview?.mode === 'project' ? 'Saved source and any historical compiled observations shown below. This static page does not check or update results.' : 'Statuses describe recorded Lean observations at export time; this page does not re-check them.'}`;
+    // Saved results shown as recorded say so in the snapshot's own words.
+    const recorded = preview?.recorded === true;
+    if (recorded) snapshot.classList.add('recorded');
+    const words = recorded ? `${preview.notice || 'Saved results, shown as recorded.'} This static page does not check or update results.`
+      : preview?.mode === 'project' ? 'Saved source and any historical compiled observations shown below. This static page does not check or update results.' : 'Statuses describe recorded Lean observations at export time; this page does not re-check them.';
+    snapshot.textContent = `Static snapshot of ${file} · exported ${new Date().toISOString()} · source SHA-256 ${sha256}. ${words}`;
     heading.append(snapshot);
     const main = page.createElement('main'); main.className = 'document'; app.append(main);
     const body = page.importNode(content, true); body.className = 'doc-inner'; main.append(body);

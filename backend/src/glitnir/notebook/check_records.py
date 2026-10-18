@@ -495,9 +495,14 @@ def _located(
 
 
 def claim_views(
-    text: str, records: dict[str, Any] | None, fingerprint: str
+    text: str, records: dict[str, Any] | None, fingerprint: str | None
 ) -> list[dict[str, Any]]:
-    """Locate saved claims in the current text and mark each current or stale."""
+    """Locate saved claims in the current text and mark each current or stale.
+
+    A ``fingerprint`` of None compares each claim with the environment it was
+    recorded in, so only its source is compared: the claim is shown as
+    recorded (see `glitnir.notebook.static_export`).
+    """
     if records is None:
         return []
     normal = _normal(text)
@@ -513,7 +518,7 @@ def claim_views(
         ends = boundaries.ends_at(last)
         current = (
             ends
-            and checked_in == fingerprint
+            and (fingerprint is None or checked_in == fingerprint)
             and _sha("\n".join(lines[:last])) == claim["prefix_sha256"]
         )
         if not ends:
@@ -547,10 +552,15 @@ def claim_views(
 
 
 def non_claim_views(
-    text: str, records: dict[str, Any] | None, fingerprint: str
+    text: str, records: dict[str, Any] | None, fingerprint: str | None
 ) -> list[dict[str, int]]:
-    """Locate the saved examples that claim nothing, while still current."""
-    if records is None or records["environment"]["fingerprint"] != fingerprint:
+    """Locate the saved examples that claim nothing, while still current.
+
+    A ``fingerprint`` of None compares them as recorded, as in `claim_views`.
+    """
+    if records is None:
+        return []
+    if fingerprint is not None and records["environment"]["fingerprint"] != fingerprint:
         return []
     normal = _normal(text)
     lines = normal.split("\n")
@@ -721,10 +731,13 @@ def decision_prefix_sha256(text: str, end_line: int) -> str:
 
 
 def evidence_status(
-    entry: dict[str, Any], text: str, line: int, fingerprint: str
+    entry: dict[str, Any], text: str, line: int, fingerprint: str | None
 ) -> Literal["current", "stale"]:
-    """Say whether saved evidence still describes the directive at ``line``."""
-    if entry["fingerprint"] == fingerprint and entry[
+    """Say whether saved evidence still describes the directive at ``line``.
+
+    A ``fingerprint`` of None compares it as recorded, as in `claim_views`.
+    """
+    if fingerprint in (None, entry["fingerprint"]) and entry[
         "prefix_sha256"
     ] == evidence_prefix_sha256(text, line):
         return "current"
@@ -739,13 +752,14 @@ def block_follows(text: str, end_line: int, block: str) -> bool:
 
 
 def decision_status(
-    entry: dict[str, Any], text: str, end_line: int, fingerprint: str
+    entry: dict[str, Any], text: str, end_line: int, fingerprint: str | None
 ) -> DecisionStatus:
     """Say what a saved decision means for the directive ending at ``end_line``.
 
     A checked block that follows the directive is accepted before anything
     else is compared. Otherwise any change to the environment or to the text
-    through the directive makes the decision stale.
+    through the directive makes the decision stale. A ``fingerprint`` of
+    None compares it as recorded, as in `claim_views`.
     """
     outcome, verification = entry["outcome"], entry["verification"]
     if (
@@ -754,7 +768,7 @@ def decision_status(
         and block_follows(text, end_line, outcome["block"])
     ):
         return "accepted"
-    if entry["fingerprint"] != fingerprint or entry[
+    if fingerprint not in (None, entry["fingerprint"]) or entry[
         "prefix_sha256"
     ] != decision_prefix_sha256(text, end_line):
         return "stale"

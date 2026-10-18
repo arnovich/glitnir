@@ -138,7 +138,9 @@ NOTHING_INSPECTING = "No inspection is running."
 NOTHING_CHECKING = "No check is running."
 INSPECTION_CANCELLED = "Project inspection cancelled."
 #: A fingerprint for a function of the modules loaded besides the notebook's.
-Fingerprint = Callable[..., str]
+#: None compares every saved result with the environment it was recorded in,
+#: so only its source is compared (`glitnir.notebook.static_export`).
+Fingerprint = Callable[..., str | None]
 
 
 def _directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
@@ -300,7 +302,7 @@ def _withheld(records: dict[str, Any] | None, sha256: str) -> dict[str, Any] | N
     return withheld
 
 
-def _environment(fingerprint: Fingerprint, imports: tuple[str, ...] = ()) -> str:
+def _environment(fingerprint: Fingerprint, imports: tuple[str, ...] = ()) -> str | None:
     """Return the fingerprint, or '' (which matches nothing) when it fails."""
     try:
         return fingerprint(imports) if imports else fingerprint()

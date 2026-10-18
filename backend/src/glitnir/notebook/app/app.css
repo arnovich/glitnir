@@ -399,6 +399,8 @@ select{padding:3px 8px;border:1px solid var(--border);border-radius:4px;backgrou
 /* The project banner holds the check actions; it is quiet unless a result needs attention. */
 .banner.quiet{background:var(--chrome);color:var(--muted);border:1px solid var(--border)}
 .banner.quiet button{color:var(--ink);border-color:var(--border);background:var(--paper)}
+/* Saved results shown as recorded (a static export): never compared, never current. */
+.banner.recorded{border-left:3px solid var(--blue)}
 .insp-section .axiom-module{margin:6px 0 3px;font-family:var(--mono)}
 .project-claim .claim .doc-line p{margin:0 0 8px}
 .project-claim .claim .doc-line p:last-child{margin-bottom:0}
