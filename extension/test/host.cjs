@@ -115,6 +115,8 @@ async function run() {
   assert.ok(commands.includes('glitnir.setup'));
   assert.ok(commands.includes('glitnir.setupAgent'));
   assert.ok(commands.includes('glitnir.installExtensionPackage'));
+  assert.ok(commands.includes('glitnir.setupBackendForThisVersion'));
+  assert.equal(vscode.workspace.getConfiguration('glitnir').get('offerBackendUpdate'), true, 'the update offer is on by default');
   assert.ok(!commands.includes('glitnir.removeExtensionPackage'), 'removal is manual');
   assert.ok(commands.includes('glitnir.revealCell'));
   const root = vscode.workspace.workspaceFolders[0].uri;
