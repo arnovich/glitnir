@@ -2255,7 +2255,7 @@
 
   // ----- keyboard shortcuts ------------------------------------------------------
   // The one list of shortcuts: the help dialog and the contents hint are drawn
-  // from it, and the README's table must match it (a test compares them).
+  // from it, and the user guide's table (docs/guide.md) must match it (a test compares them).
   // `editor` keys exist only in the VS Code preview, whose review layer
   // (review.js) handles n/p, c/t and e; `editorText` is their wording there.
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');

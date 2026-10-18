@@ -37,8 +37,8 @@ The repository has four parts:
   `backend/src/glitnir/providers.py`. The core backend has no runtime
   dependencies; Forseti-specific code lives in `plugins/forseti`.
 - **Proof authority.** Only the backend's sandboxed project check, with its
-  independent kernel replay, decides a status. The README's
-  [Checking](README.md#checking) and [Imports and caches](README.md#imports-and-caches)
+  independent kernel replay, decides a status. The user guide's
+  [Checking](docs/guide.md#checking) and [Imports and caches](docs/guide.md#imports-and-caches)
   sections describe the behavior users see; AGENTS.md states the invariants
   that the replay cache and incremental replay must keep, and
   `ProjectReplay.lean` documents the argument.

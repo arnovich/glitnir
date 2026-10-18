@@ -3,8 +3,8 @@
 An optional provider package for Glitnir. It is found through the
 `glitnir.providers` entry point, so install it into the same Python environment
 as the Glitnir backend. It is not on PyPI: each Glitnir release has its wheel,
-and the repository README's
-[Forseti plugin](https://github.com/arnovich/glitnir#the-forseti-plugin) section
+and the setup guide's
+[Forseti plugin](https://github.com/arnovich/glitnir/blob/main/extension/media/setup.md#the-forseti-plugin) section
 explains verifying and installing it. To build it from a checkout, see
 [DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#build-and-test).
 
