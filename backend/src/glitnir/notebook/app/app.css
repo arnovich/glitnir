@@ -170,6 +170,8 @@ select{padding:3px 8px;border:1px solid var(--border);border-radius:4px;backgrou
 .note-line[data-tone=red]{background:var(--red-soft);color:var(--red)}
 .note-line[data-tone=green]{background:var(--green-soft);color:var(--green)}
 .note-line[data-tone=muted]{background:var(--sunk);color:var(--muted)}
+/* Provider errors keep Lean's lines, such as an ambiguous name's interpretations. */
+.note-line .lean-message{white-space:pre-wrap;overflow-wrap:anywhere}
 .claim-actions{padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--chrome);border-top:1px solid var(--border)}
 .claim-actions .small{flex:1;min-width:140px;text-align:right}
 

@@ -138,9 +138,9 @@ def test_no_marker_and_no_errors_is_an_error(needs, message):
 @pytest.mark.parametrize(
     "position, expected",
     [
-        (3, "Line 2: unknown c"),  # notebook line 2, after one provider import
-        (7, "Line 4: unknown c"),  # the provider's command: the directive line
-        (None, "unknown c"),
+        (3, "Line 2: unknown c\nmore detail"),  # after one provider import
+        (7, "Line 4: unknown c\nmore detail"),  # the provider's: the directive
+        (None, "unknown c\nmore detail"),
     ],
 )
 def test_first_error_names_its_notebook_line(position, expected):
@@ -151,6 +151,46 @@ def test_first_error_names_its_notebook_line(position, expected):
         error["line"] = position
     report = {"information": [], "errors": [error, {"line": 1, "text": "later"}]}
     assert _marker_payload(report, "m:", 1, 4, "view") == {"error": expected}
+
+
+def test_an_ambiguous_names_interpretations_are_shown():
+    """Lean's first line hides the cause; blank lines are left out."""
+    from glitnir.lean.provider_lean import _marker_payload
+
+    # Lean 4.32.1's message (Lean/Elab/App.lean) for a preamble line.
+    ambiguous = (
+        "Ambiguous term\n  Circuit\nPossible interpretations:\n"
+        "  Dynamics.Circuit n m : Type\n  \n  Gimle.Asgard.Circuit n m : Type"
+    )
+    report = {"information": [], "errors": [{"line": 99, "text": ambiguous}]}
+    assert _marker_payload(report, "m:", 3, 69, "view") == {
+        "error": "Line 69: Ambiguous term\n  Circuit\nPossible interpretations:\n"
+        "  Dynamics.Circuit n m : Type\n  Gimle.Asgard.Circuit n m : Type"
+    }
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "\n".join(f"line {n}" for n in range(30)),
+            "\n".join(f"line {n}" for n in range(12)) + "\n…",
+        ),
+        ("x" * 5000, "x" * 2000 + "\n…"),
+        ("first\n" + "y" * 3000, "first\n" + "y" * 1994 + "\n…"),
+        (" \n\t\n", "error"),
+    ],
+)
+def test_an_error_is_cut_to_a_bounded_text(text, expected):
+    from glitnir.lean.provider_lean import (
+        ERROR_CHARACTERS,
+        ERROR_LINES,
+        _marker_payload,
+    )
+
+    assert (ERROR_LINES, ERROR_CHARACTERS) == (12, 2000)
+    report = {"information": [], "errors": [text]}
+    assert _marker_payload(report, "m:", 0, 4, "evidence") == {"error": expected}
 
 
 @pytest.mark.parametrize(

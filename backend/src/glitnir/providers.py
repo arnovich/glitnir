@@ -10,7 +10,13 @@ GROUP = "glitnir.providers"
 
 @dataclass(frozen=True)
 class ViewProvider:
-    """Draws `-- @view <kind> <name>` directives with a Lean adapter."""
+    """Draws `-- @view <kind> <name>` directives with a Lean adapter.
+
+    Lean elaborates the notebook before the directive, then `preamble` at the
+    top level, outside the notebook's namespaces and `open`s, then
+    `command(kind, name, using)` back in the notebook's scope. The command
+    prints `marker` followed by the drawing.
+    """
 
     name: str
     kinds: frozenset[str]
@@ -39,10 +45,11 @@ class EvidenceProvider:
     `parse(verb, target, options_text)` raises `ValueError` on bad input.
     `command(request)` is Lean that prints `marker` followed by JSON, which
     `compute(request, payload)` turns into an evidence snapshot; a `ValueError`
-    it raises is shown on the card as its message alone. `unavailable()`
-    names a missing optional dependency, or returns None. `parse` and
-    `unavailable` run on every preview refresh, so they must be cheap and free of
-    side effects.
+    it raises is shown on the card as its message alone. As for views,
+    `preamble` is elaborated outside the notebook's scope and the command in
+    it. `unavailable()` names a missing optional dependency, or returns None.
+    `parse` and `unavailable` run on every preview refresh, so they must be
+    cheap and free of side effects.
     """
 
     name: str

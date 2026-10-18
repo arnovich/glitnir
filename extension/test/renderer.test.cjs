@@ -1914,6 +1914,21 @@ test('a view inside a saved claim cell is drawn under the claim card', async () 
   } finally { window.close(); }
 });
 
+test('a failed view keeps the lines of its Lean error, as text', async () => {
+  const snapshot = {file: 'A.lean', sha256: 'c'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
+    cells: [{index: 0, kind: 'source', start: 1, end: 1, text: '-- @view model m'}], views: [{cell: 0, line: 1, kind: 'model', name: 'm', using: [], error: ''}],
+    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+  const error = 'Line 1: Ambiguous term\n  Circuit\nPossible interpretations:\n  <b>Left.Circuit</b> : Type\n  Right.Circuit : Type';
+  const window = await renderSnapshot(snapshot, {onView: () => ({error})});
+  try {
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const message = window.document.querySelector('#doc .view-cell .lean-message');
+    assert.ok(message, 'the error is shown in the view card');
+    assert.equal(message.textContent, `No drawing: ${error}`, 'every line is kept');
+    assert.equal(message.querySelector('b'), null, 'the error is escaped');
+  } finally { window.close(); }
+});
+
 test('project inspection runs only on click and unsaved files stay off the wire', async () => {
   const requests = [];
   const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/project', toolchain: 'leanprover/lean4:v4.32.1'}}};

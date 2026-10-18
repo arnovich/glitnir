@@ -256,7 +256,8 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
     assert runtime == toolchain
     assert arguments[:3] == ["lean", arguments[1], "--run"]
     assert arguments[1].startswith("-M")
-    helper, composed, setup, report = map(Path, arguments[3:])
+    helper, composed, setup, preamble, command, report = arguments[3:]
+    helper, composed, setup, report = map(Path, (helper, composed, setup, report))
     assert helper.name == "ViewElab.lean"
     assert composed != source
     assert inputs["ViewElab.lean"].startswith("/- Elaborate a composed view")
@@ -268,6 +269,11 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
         "#demo_view circuit c",
         needs="view",
     )
+    # The program elaborates the preamble outside the notebook's scope.
+    written_source = inputs[composed.name].encode()
+    assert written_source[: int(preamble)].endswith(b"def c := 1\n\n")
+    assert written_source[int(preamble) : int(command)] == b"open Demo\n"
+    assert written_source[int(command) :] == b"#demo_view circuit c\n"
     written = json.loads(inputs[setup.name])
     assert written["importArts"]["Demo.View"] == [
         str(tmp_path.resolve() / ".lake/build/Demo/View.olean")
@@ -291,7 +297,7 @@ def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
         monkeypatch,
         {"information": ["hello"], "errors": ["unknown c\nmore detail", "second"]},
     )
-    assert _render(source) == {"error": "unknown c"}
+    assert _render(source) == {"error": "unknown c\nmore detail"}
 
     _reporting(monkeypatch, {"information": ["hello"], "errors": []})
     assert _render(source) == {"error": "The provider printed no drawing."}
@@ -487,6 +493,67 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
     assert not (root / ".lake/build/lib/lean/Example/Unbuilt.olean").exists()
 
 
+def test_live_view_preamble_is_elaborated_outside_the_notebooks_scope(
+    prepared_lean_project,
+):
+    """The notebook's opens cannot make a preamble's names ambiguous.
+
+    The notebook opens two namespaces that both declare `Circuit`, as a
+    notebook opening `Gimle.Asgard` and `Gimle.Asgard.Dynamics` does, so the
+    preamble's `Circuit` was ambiguous in the notebook's scope; as a quoted
+    name in the elaborator, that left the command without one. The command
+    still names `target` as the notebook does, inside its namespace.
+    """
+    import threading
+
+    from glitnir.lean.project_views import render_project_view
+
+    root = prepared_lean_project
+    source = root / "src/Example.lean"
+    text = (
+        "import Example.Helper\n\n"
+        "namespace Left\ndef Circuit : Type := Nat\nend Left\n"
+        "namespace Right\ndef Circuit : Type := Nat\nend Right\n\n"
+        "-- Navier–Stokes, “quoted”: byte offsets are not character offsets.\n"
+        "namespace Notebook\nopen Left Right\n"
+        "def target : Nat := helper + 1\n"
+        "-- @view demo target\n"
+    )
+    source.write_text(text)
+    preamble = (
+        "namespace DemoView\nopen Left\n"
+        "def width (_c : Circuit) : Nat := 40\n"
+        "open Lean Elab Command in\n"
+        'elab "#demo_view " n:ident : command => do\n'
+        "  let value ← liftTermElabM do\n"
+        "    let e ← Term.elabTerm n (some (mkConst ``Nat))\n"
+        "    unsafe Meta.evalExpr Nat (mkConst ``Nat) e\n"
+        '  logInfo m!"demoView:<svg xmlns=\\"http://www.w3.org/2000/svg\\">'
+        '<title>{value + width (0 : Nat)} {``Circuit}</title></svg>"\n'
+        "end DemoView\n"
+    )
+    provider = ViewProvider(
+        name="demo",
+        kinds=frozenset({"demo"}),
+        imports=("Lean",),
+        preamble=preamble,
+        marker="demoView:",
+        command=lambda kind, name, using: f"#demo_view {name}",
+    )
+    result = render_project_view(
+        source,
+        expected_sha256=_sha(text),
+        line=text.count("\n"),
+        provider=provider,
+        kind="demo",
+        name="target",
+        using=(),
+        cancel=threading.Event(),
+    )
+    assert set(result) == {"svg"}, result
+    assert "<title>42 Left.Circuit</title>" in result["svg"]
+
+
 def test_a_slot_busy_past_the_time_limit_is_a_transient_error(tmp_path, monkeypatch):
     import contextlib
 
@@ -597,7 +664,8 @@ def test_live_view_elaboration_keeps_header_and_parse_errors(
     run_observer(
         project_toolchain,
         ["lean", "--run", str(helper), str(source), str(inputs / "setup.json")]
-        + [str(report)],
+        # No preamble and no command: the whole source is the notebook's.
+        + [str(len(text.encode()))] * 2 + [str(report)],
         cwd=output,
         readable=[inputs, project_toolchain],
         writable=True,
