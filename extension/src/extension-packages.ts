@@ -8,8 +8,11 @@ import {pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {crc32, deflateRaw} from 'node:zlib';
 import * as vscode from 'vscode';
-import {backendStore, findUv, runUv, UvNotStartedError} from './backend-install';
+import {BackendDescriptor, backendDescriptor, backendStore, findUv, runUv, UvNotStartedError} from './backend-install';
 import {Environment} from './discovery';
+import {KNOWN_PACKAGES, KnownPackage} from './known-packages';
+import {digest, fetchPlugin, fetchRelease, pluginPins, ReleaseFetch} from './release-assets';
+import {githubToken} from './setup';
 
 export interface WheelLimits {wheelBytes: number; expandedBytes: number; entries: number; metadataBytes: number; recordBytes: number}
 /** Provider wheels are small Python packages; their dependencies come from the index. */
@@ -65,7 +68,13 @@ export interface WheelInfo {
   /** Console and GUI script names, which uv writes to the environment's `bin/`. */
   commands: string[];
 }
-export interface InstalledPackage {name: string; version: string; entryPoints: string[]}
+export interface InstalledPackage {
+  name: string;
+  version: string;
+  entryPoints: string[];
+  /** Declared extras whose requirements are all installed (installers record no extras). */
+  extras?: string[];
+}
 export interface ProviderReport {
   core: string | null;
   packages: InstalledPackage[];
@@ -573,7 +582,8 @@ export function parseReport(stdout: string, providers: boolean): ProviderReport 
   if (value.core !== null && (typeof value.core !== 'string' || !VERSION.test(value.core))) throw new Error('Invalid provider report core.');
   if (!Array.isArray(value.packages) || !value.packages.every((p: InstalledPackage) =>
     p && typeof p.name === 'string' && NAME.test(p.name) && !isCore(p.name) && typeof p.version === 'string' &&
-    Array.isArray(p.entryPoints) && p.entryPoints.every(e => typeof e === 'string'))) throw new Error('Invalid provider report packages.');
+    Array.isArray(p.entryPoints) && p.entryPoints.every(e => typeof e === 'string') &&
+    (p.extras === undefined || (Array.isArray(p.extras) && p.extras.every(e => typeof e === 'string' && NAME.test(e)))))) throw new Error('Invalid provider report packages.');
   const report: ProviderReport = {core: value.core, packages: value.packages};
   if (!providers) {
     const commands = value.commands;
@@ -649,8 +659,15 @@ export interface PackageDependencies {
   report?: (python: string, mode: 'packages' | 'providers', signal: AbortSignal) => Promise<ProviderReport>;
   /** Where managed backends live; their setup lock also guards package changes. */
   store?: () => string;
+  /** Replaces release downloads, for tests. */
+  download?: ReleaseFetch['download'];
 }
 interface Discovery {discovered(uri: vscode.Uri): Promise<Environment | undefined>}
+/** The Other wheel file… choice. */
+const OTHER = 'other';
+interface SelectedWheel {fileName: string; bytes: Buffer; source?: string}
+/** The outcome of installing an already verified wheel. */
+export interface VerifiedInstall {info: WheelInfo; extras: string[]; dropped: string[]; after: ProviderReport}
 
 /**
  * Install optional provider packages into the discovered backend
@@ -690,10 +707,10 @@ export class ExtensionPackages {
   }
 
   /** One package change at a time in this window. */
-  private async exclusive(work: () => Promise<void>): Promise<void> {
+  private async exclusive<T>(work: () => Promise<T>): Promise<T> {
     if (this.busy) throw new Error('Another Glitnir extension package change is in progress. Retry after it finishes.');
     this.busy = true;
-    try { await work(); } finally { this.busy = false; }
+    try { return await work(); } finally { this.busy = false; }
   }
 
   /**
@@ -765,6 +782,29 @@ export class ExtensionPackages {
 
   install(requested?: vscode.Uri): Promise<void> { return this.exclusive(() => this.installPackage(requested)); }
 
+  /** The provider packages in a backend environment, with the extras that are installed. */
+  packages(python: string, signal: AbortSignal): Promise<ProviderReport> { return this.report(python, 'packages', signal); }
+
+  /**
+   * Install a wheel whose bytes the caller already verified, such as a release
+   * asset, into `python` within the caller's progress: the same inspection,
+   * command check, extras allowlist and core constraint as an interactive
+   * install. Requested extras the wheel does not offer are returned as dropped.
+   */
+  installVerified(python: string, fileName: string, bytes: Buffer, requested: string[], signal: AbortSignal, report: (message: string) => void): Promise<VerifiedInstall> {
+    return this.exclusive(async () => {
+      this.check();
+      const before = await this.report(python, 'packages', signal);
+      if (!before.core) throw new Error(`The backend at ${python} has no installed glitnir package metadata.`);
+      const {info, wheel} = await prepareWheel(fileName, bytes);
+      checkCommands(info, before.commands ?? missingCommands(python));
+      const offered = new Set(info.extras.filter(extra => !extra.unavailable).map(extra => extra.name));
+      const extras = requested.filter(extra => offered.has(extra)), dropped = requested.filter(extra => !offered.has(extra));
+      const {after} = await this.installInspected(python, before.core, fileName, info, wheel, extras, signal, report);
+      return {info, extras, dropped, after};
+    });
+  }
+
   private async installPackage(requested?: vscode.Uri): Promise<void> {
     const environment = await this.environment(requested);
     if (!environment) return;
@@ -774,25 +814,37 @@ export class ExtensionPackages {
     const before = await this.report(python, 'packages', this.controller.signal);
     if (!before.core) throw new Error(`The backend at ${python} has no installed glitnir package metadata. Install extension packages into it manually (see the README's Extensions section).`);
     this.check();
-    const files = await vscode.window.showOpenDialog({title: 'Select a Glitnir extension package wheel', canSelectMany: false, canSelectFiles: true, canSelectFolders: false, openLabel: 'Inspect Package', filters: {'Python wheel': ['whl']}});
-    if (!files?.[0]) return;
-    if (files[0].scheme !== 'file') throw new Error('Select a local .whl file.');
-    const fileName = path.basename(files[0].fsPath);
-    if (!fileName.endsWith('.whl')) throw new Error(`Cannot install ${fileName}: select a Python wheel (.whl) file.`);
-    const {info, wheel: inspected} = await prepareWheel(fileName, await readWheel(files[0].fsPath));
+    const known = await this.pickPackage(before);
+    if (!known) return;
+    this.check();
+    const selected = known === OTHER ? await this.chooseWheel() : await this.knownWheel(known, before);
+    if (!selected) return;
+    const {info, wheel: inspected} = await prepareWheel(selected.fileName, selected.bytes);
+    if (known !== OTHER && normalized(info.name) !== known.distribution) throw new Error(`Cannot install ${selected.fileName}: it is ${info.name}, not ${known.distribution}.`);
     checkCommands(info, before.commands ?? missingCommands(python));
     this.check();
     const offered = info.extras.filter(extra => !extra.unavailable), withheld = info.extras.filter(extra => extra.unavailable);
     const notOffered = withheld.map(extra => `${extra.name}: ${extra.unavailable}`);
     let extras: string[] = [];
-    if (offered.length) {
-      const picked = await vscode.window.showQuickPick(offered.map(extra => ({
+    // A known package asks its own questions, only about extras the wheel offers.
+    const asked = known === OTHER ? [] : known.extras.filter(extra => offered.some(o => o.name === extra.name));
+    for (const extra of asked) {
+      const requirements = offered.find(o => o.name === extra.name)!.requirements;
+      const answer = await vscode.window.showInformationMessage(extra.prompt, {
+        modal: true, detail: requirements.length ? `Downloads from PyPI: ${requirements.join(', ')}.` : 'Adds no packages.',
+      }, 'Yes', 'No');
+      if (!answer) return;
+      if (answer === 'Yes') extras.push(extra.name);
+    }
+    const rest = offered.filter(extra => !asked.some(a => a.name === extra.name));
+    if (rest.length) {
+      const picked = await vscode.window.showQuickPick(rest.map(extra => ({
         label: extra.name, picked: false, extra: extra.name,
         detail: extra.requirements.length ? `Downloads from PyPI: ${extra.requirements.join(', ')}` : 'Adds no packages.',
       })), {title: `Install ${info.name} ${info.version}: optional extras`, canPickMany: true,
         placeHolder: `Select extras to install with it, or none.${withheld.length ? ` Not offered: ${withheld.map(extra => extra.name).join(', ')} (see the confirmation).` : ''}`});
       if (!picked) return;
-      extras = picked.map(item => item.extra);
+      extras = [...extras, ...picked.map(item => item.extra)];
     }
     this.check();
     const downloads = [...info.requirements, ...offered.filter(extra => extras.includes(extra.name)).flatMap(extra => extra.requirements)];
@@ -800,35 +852,109 @@ export class ExtensionPackages {
       modal: true,
       detail: [
         `Python: ${python}`,
+        ...(selected.source ? [selected.source] : []),
         `Provider entry points: ${info.entryPoints.join(', ')}.`,
         extras.length ? `Extras: ${extras.join(', ')}.` : 'No extras.',
         ...(notOffered.length ? [`Extras not offered: ${notOffered.join(' ')}`] : []),
         downloads.length ? `Its dependencies come from PyPI as prebuilt wheels: ${downloads.join(', ')}.` : 'It needs no packages from PyPI.',
+        ...(known === OTHER ? [] : known.notes),
         `The installed Glitnir backend ${before.core} is kept. This changes the environment for every window using it; previews in this window that use it are closed.`,
       ].join('\n'),
     }, 'Install');
     if (accepted !== 'Install') return;
     this.check();
-    const result = await this.progress(`Installing ${info.name}`, async (signal, report) => {
-      const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-package-'));
-      let closed: boolean;
-      try {
-        // Install the archive written from the inspected files, never the selected one.
-        const wheel = path.join(scratch, fileName), constraints = path.join(scratch, 'constraints.txt');
-        await writeFile(wheel, inspected, {flag: 'wx', mode: 0o600});
-        await writeFile(constraints, `glitnir==${before.core}\n`, {flag: 'wx', mode: 0o600});
-        report('Installing with uv');
-        this.output.appendLine(`Installing ${info.name} ${info.version}${extras.length ? ` [${extras.join(',')}]` : ''} into ${python}`);
-        closed = await this.change(python, installArguments(python, wheel, info, extras, constraints), scratch, signal,
-          `uv could not install ${info.name}. See Output → Glitnir for its message; PyPI must be reachable for dependencies.`,
-          `Run Glitnir: Install Extension Package again, or uninstall it with uv pip uninstall --python ${python} ${info.name}.`,
-          async () => { checkCommands(info, (await this.report(python, 'packages', signal)).commands ?? missingCommands(python)); });
-      } finally { await rm(scratch, {recursive: true, force: true}); }
-      report('Loading providers');
-      return {closed, after: await this.report(python, 'providers', signal)};
-    });
-    if (result.after.core !== before.core) throw new Error(`Installing ${info.name} changed the Glitnir backend from ${before.core} to ${result.after.core}. Reinstall the backend with Glitnir: Set Up Environment.`);
-    if (!result.after.packages.some(p => normalized(p.name) === normalized(info.name))) throw new Error(`uv finished, but ${info.name} is not visible in ${python}. See Output → Glitnir.`);
+    const core = before.core;
+    const result = await this.progress(`Installing ${info.name}`, (signal, report) => this.installInspected(python, core, selected.fileName, info, inspected, extras, signal, report));
     await this.announce(`Installed ${info.name} ${info.version}`, result.after, result.closed);
+  }
+
+  /** Step 1: a known package, marked when installed, or any other wheel file. */
+  private async pickPackage(before: ProviderReport): Promise<KnownPackage | typeof OTHER | undefined> {
+    const choice = await vscode.window.showQuickPick([
+      ...KNOWN_PACKAGES.map(known => {
+        const installed = before.packages.find(p => normalized(p.name) === known.distribution);
+        return {label: known.label, description: installed ? `installed (${installed.version})` : known.distribution, detail: known.description, known: known as KnownPackage | typeof OTHER};
+      }),
+      {label: 'Other wheel file…', description: '', detail: 'Select a third-party or development .whl file.', known: OTHER as KnownPackage | typeof OTHER},
+    ], {title: 'Install Extension Package', placeHolder: 'Choose a package to install, reinstall or update'});
+    return choice?.known;
+  }
+
+  /** Today's flow: any local wheel file, read once. */
+  private async chooseWheel(): Promise<SelectedWheel | undefined> {
+    const files = await vscode.window.showOpenDialog({title: 'Select a Glitnir extension package wheel', canSelectMany: false, canSelectFiles: true, canSelectFolders: false, openLabel: 'Inspect Package', filters: {'Python wheel': ['whl']}});
+    if (!files?.[0]) return undefined;
+    if (files[0].scheme !== 'file') throw new Error('Select a local .whl file.');
+    const fileName = path.basename(files[0].fsPath);
+    if (!fileName.endsWith('.whl')) throw new Error(`Cannot install ${fileName}: select a Python wheel (.whl) file.`);
+    return {fileName, bytes: await readWheel(files[0].fsPath)};
+  }
+
+  /** Step 2: a known package from this build's release (verified), or from a wheel the user downloaded. */
+  private async knownWheel(known: KnownPackage, before: ProviderReport): Promise<SelectedWheel | undefined> {
+    const version: string = this.context.extension?.packageJSON.version;
+    let pin: BackendDescriptor | undefined;
+    try { pin = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend); } catch { /* A build without a pin has no release. */ }
+    // Only a wheel this VSIX pins is downloaded; a build packaged without one offers files only.
+    const pinned = pluginPins(this.context.extension?.packageJSON.glitnirPlugins).find(p => p.distribution === known.distribution);
+    const installed = before.packages.find(p => normalized(p.name) === known.distribution);
+    const action = !installed ? `Install ${version}` : installed.version === version ? `Reinstall ${version}` : `Update ${installed.version} → ${version}`;
+    const source = await vscode.window.showQuickPick([
+      ...(pin?.tag && pinned ? [{label: 'Download from this release (recommended)', description: action, download: true,
+        detail: `Downloads ${pinned.asset} from GitHub release ${pin.tag} and installs it only if its SHA-256 equals the one this extension records for it.`}] : []),
+      {label: 'Choose downloaded wheel', description: '', detail: `Select a ${known.distribution} .whl file you downloaded or built.`, download: false},
+    ], {title: `Install ${known.label}`});
+    if (!source) return undefined;
+    this.check();
+    if (!source.download) {
+      const selected = await this.chooseWheel();
+      if (!selected) return undefined;
+      const name = WHEEL_FILE.exec(selected.fileName)?.[1];
+      if (!name || normalized(name) !== known.distribution) throw new Error(`Cannot install ${selected.fileName}: select a ${known.distribution} wheel for ${known.label}.`);
+      const same = pinned && selected.fileName === pinned.asset && selected.bytes.length === pinned.size && digest(selected.bytes) === pinned.sha256;
+      return {...selected, source: same
+        ? `Source: ${selected.fileName}, identical to this release's (its SHA-256 equals the one this extension records).`
+        : `Source: ${selected.fileName}, a local wheel, not the release's${pinned ? ' (its SHA-256 differs from the one this extension records)' : ''}. Only the checks below apply.`};
+    }
+    const tag = pin!.tag!, plugin = {name: pinned!.distribution, asset: pinned!.asset, version, size: pinned!.size, sha256: pinned!.sha256};
+    return this.progress(`Downloading ${known.label}`, async (signal, report) => {
+      const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-release-'));
+      try {
+        const download: ReleaseFetch = {signal, githubToken, download: this.dependencies.download};
+        report('Verifying the release');
+        await fetchRelease(pin!, version, [pinned!], scratch, download);
+        report(`Downloading ${plugin.asset}`);
+        const bytes = await fetchPlugin(pin!, plugin, scratch, download);
+        return {fileName: plugin.asset, bytes, source: `Source: ${plugin.asset} from release ${tag}; its SHA-256 equals the one this extension records, and the release's SHA256SUMS and glitnir-candidate.json bind the same bytes.`};
+      } finally { await rm(scratch, {recursive: true, force: true}); }
+    });
+  }
+
+  /**
+   * Install the archive written from the inspected files, never the selected
+   * one, holding the core at `core`; then check that the core is unchanged and
+   * the package visible, and return the providers now loaded.
+   */
+  private async installInspected(python: string, core: string, fileName: string, info: WheelInfo, inspected: Buffer, extras: string[],
+    signal: AbortSignal, report: (message: string) => void): Promise<{closed: boolean; after: ProviderReport}> {
+    await this.uv();
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-package-'));
+    let closed: boolean;
+    try {
+      const wheel = path.join(scratch, fileName), constraints = path.join(scratch, 'constraints.txt');
+      await writeFile(wheel, inspected, {flag: 'wx', mode: 0o600});
+      await writeFile(constraints, `glitnir==${core}\n`, {flag: 'wx', mode: 0o600});
+      report('Installing with uv');
+      this.output.appendLine(`Installing ${info.name} ${info.version}${extras.length ? ` [${extras.join(',')}]` : ''} into ${python}`);
+      closed = await this.change(python, installArguments(python, wheel, info, extras, constraints), scratch, signal,
+        `uv could not install ${info.name}. See Output → Glitnir for its message; PyPI must be reachable for dependencies.`,
+        `Run Glitnir: Install Extension Package again, or uninstall it with uv pip uninstall --python ${python} ${info.name}.`,
+        async () => { checkCommands(info, (await this.report(python, 'packages', signal)).commands ?? missingCommands(python)); });
+    } finally { await rm(scratch, {recursive: true, force: true}); }
+    report('Loading providers');
+    const after = await this.report(python, 'providers', signal);
+    if (after.core !== core) throw new Error(`Installing ${info.name} changed the Glitnir backend from ${core} to ${after.core}. Reinstall the backend with Glitnir: Set Up Environment.`);
+    if (!after.packages.some(p => normalized(p.name) === normalized(info.name))) throw new Error(`uv finished, but ${info.name} is not visible in ${python}. See Output → Glitnir.`);
+    return {closed, after};
   }
 }

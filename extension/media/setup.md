@@ -9,11 +9,28 @@ install `bubblewrap apparmor apparmor-profiles` and run
 
 1. Install the VSIX from a [release](https://github.com/arnovich/glitnir/releases)
    with **Extensions: Install from VSIX…**.
-2. Open a Lean file and run **Glitnir: Set Up Environment → Install Backend with
-   uv → Download matching backend**. Setup verifies the wheel's checksum against
-   the VSIX. To use a wheel you already downloaded, choose **Choose downloaded
-   backend wheel**; to reuse an environment, choose **Choose Existing Environment**.
+2. Open a Lean file and run **Glitnir: Set Up Environment → Set Up**. It
+   downloads this release's backend wheel, verifies its checksum against the
+   VSIX and installs it with uv in one step. **More Options…** holds **Choose
+   downloaded backend wheel** (development builds, offline use), **Choose
+   Existing Environment** and this guide.
 3. Run **Glitnir: Open in Glitnir**.
+
+If uv is not installed, setup says so and offers **Install uv**, showing the
+command and its environment first: Homebrew's `install uv`, by Homebrew's full
+path, when Homebrew is installed, otherwise the official installer of the uv
+version this release pins,
+`/usr/bin/curl -LsSf https://astral.sh/uv/0.12.23/install.sh | /bin/sh`. It runs
+in a minimal environment: `PATH=/usr/bin:/bin:/usr/sbin:/sbin` (plus Homebrew's
+own directory), `HOME`, `USER`, `TMPDIR` and `LANG`; VS Code adds its own
+terminal variables, and nothing else comes from VS Code, your shell or
+`terminal.integrated.env` settings. The official installer puts uv in
+`~/.local/bin`, where Glitnir looks, and is told (`UV_NO_MODIFY_PATH=1`) to leave
+your shell profiles alone; add `~/.local/bin` to `PATH` yourself to use uv in
+your own terminals. Nothing runs until you click **Install uv**; the command then
+runs in a VS Code terminal named "Install uv", where you can watch it. When that terminal closes, or when you
+choose **Retry** (for example after installing uv yourself), Glitnir looks for
+uv again and continues the setup.
 
 To install by hand, download the VSIX, backend wheel and `SHA256SUMS` from one
 release, then run (`--ignore-missing` skips the assets you did not download):
@@ -30,7 +47,15 @@ Then set `glitnir.pythonPath` to that environment's `bin/python`.
 Optional views, evidence and decisions come from provider packages such as
 `glitnir-forseti`, installed into the same environment as the backend. Run
 **Glitnir: Install Extension Package…** (also offered in **Glitnir: Set Up
-Environment**) and select the package's `.whl` file. Glitnir checks that the
+Environment**) and pick a package: **Forseti** (marked "installed (version)" when
+it is) or **Other wheel file…** for any other wheel. For Forseti, **Download from
+this release (recommended)** fetches the wheel this VSIX pins from the same
+GitHub release as the backend and installs it only if its SHA-256 equals the
+recorded one (the release's `SHA256SUMS` and `glitnir-candidate.json` must bind
+the same bytes); **Choose downloaded wheel** takes a Forseti wheel you downloaded
+or built, and says whether it is the release's or a local wheel. Glitnir then asks "Install z3 for decision procedures?".
+The list of known packages grants no trust: every wheel gets the same checks.
+For any wheel, Glitnir checks that the
 wheel declares a `glitnir.providers` entry point, offers the optional extras
 whose packages it knows are on PyPI (for `glitnir-forseti`, `z3` for decisions),
 installs it with uv while keeping the installed backend, closes this window's
@@ -44,8 +69,7 @@ give each file's SHA-256 hash and size, and one that is not a plain zip archive
 Glitnir writes from exactly the files it checked.
 The Set Up Environment item appears only once a backend is detected. The managed
 backend is shared by all windows and workspaces, so a change affects them all;
-reopen their previews. If uv fails or is cancelled, run the install again. After
-an extension update that pins a new backend, install the packages into it again.
+reopen their previews. If uv fails or is cancelled, run the install again.
 
 Glitnir does not remove packages for you: uninstalling deletes whatever the
 installed package's file list names, which Glitnir cannot vouch for. To remove
@@ -60,7 +84,8 @@ with that release's backend; it is not on PyPI. Download it and `SHA256SUMS` fro
 the same release as the VSIX and backend, verify it with
 `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
 `sha256sum -c --ignore-missing SHA256SUMS`), then run **Glitnir: Install Extension
-Package…**, select the wheel and choose the `z3` extra for decisions. To install
+Package… → Forseti → Choose downloaded wheel**, select it and answer Yes to z3 for
+decisions; **Download from this release** does all of this for you. To install
 it by hand instead:
 
 ```sh
@@ -76,6 +101,31 @@ The backend's Python is shown in **Output → Glitnir** ("Glitnir environment: �
 or set by `glitnir.pythonPath`. After a manual install, close and reopen the
 preview. Its views need a notebook in a Lake project whose packages build
 `Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`.
+
+## Upgrading
+
+Each VSIX pins its own backend, installed in its own environment under
+`~/.local/share/glitnir/backends/`. After an extension update, Glitnir shows
+"Glitnir was updated to X. Set up its backend?" once if it finds an environment
+from an earlier build but none for the new one. Nothing downloads until you
+click **Set Up** and confirm the list of what it will download, install and
+change. It then downloads and verifies the new backend as **Set Up** does, into
+a new environment, and carries over the earlier environment's extension
+packages whose wheel this VSIX pins (such as `glitnir-forseti`, with the extras
+Glitnir knows, such as `z3`): each must have the SHA-256 this VSIX records, the
+release's `SHA256SUMS` and `glitnir-candidate.json` must bind the same bytes,
+and it is installed with the same checks as **Install Extension Package…**. Other packages are listed to reinstall with
+**Install Extension Package…**. Glitnir switches to the new environment only
+when everything succeeded; if something fails or you cancel, the earlier
+environment is unchanged and **Retry** runs it again. **Glitnir: Set Up Backend
+for This Version** does the same at any time. Set `glitnir.offerBackendUpdate`
+to `false` to turn the notification off.
+
+The earlier environment is kept. Once no window uses it, remove it with
+`rm -rf ~/.local/share/glitnir/backends/<earlier wheel SHA-256>` (not while a
+`.lock` directory beside it exists).
+
+## Help
 
 If something fails, check **Output → Glitnir**, then open an
 [issue](https://github.com/arnovich/glitnir/issues). See the

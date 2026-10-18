@@ -39,21 +39,37 @@ async function downloads(t, replies, task) {
   finally { https.get = original; }
 }
 
-test('private GitHub download authenticates metadata, pins asset size, and drops credentials at redirect', async t => {
-  const d = {archive: {size: 4}, source: {repository: 'owner/private', tag: 'runtime-v1', asset: 'runtime.zip'}};
+test('release downloads are anonymous and sign in only at GitHub\'s rate limit, dropping credentials at redirect', async t => {
+  const d = {archive: {size: 4}, source: {repository: 'owner/public', tag: 'runtime-v1', asset: 'runtime.zip'}};
+  const limited = {status: 403, headers: {'x-ratelimit-remaining': '0'}};
+  let asked = 0;
   await downloads(t, [
-    {status: 404},
+    limited,
     {body: JSON.stringify({assets: [{id: 123, name: 'runtime.zip', size: 4}]})},
     {status: 302, headers: {location: 'https://release-assets.githubusercontent.com/file?signature=private'}},
     {headers: {'content-length': '4'}, body: 'data'},
   ], async (file, requests) => {
-    await downloadRuntime(file, d, {signal: new AbortController().signal, githubToken: async () => 'secret'});
+    await downloadRuntime(file, d, {signal: new AbortController().signal, githubToken: async () => { asked++; return 'secret'; }});
     assert.equal(await fs.readFile(file, 'utf8'), 'data');
-    assert.equal(requests[0].headers.Authorization, undefined);
+    assert.equal(asked, 1);
+    assert.equal(requests[0].headers.Authorization, undefined, 'the first request is anonymous');
     assert.equal(requests[1].headers.Authorization, 'Bearer secret');
     assert.equal(requests[2].headers.Authorization, 'Bearer secret');
-    assert.equal(requests[3].headers.Authorization, undefined);
-    assert.equal(requests[2].url, 'https://api.github.com/repos/owner/private/releases/assets/123');
+    assert.equal(requests[3].headers.Authorization, undefined, 'credentials never follow a redirect');
+    assert.equal(requests[2].url, 'https://api.github.com/repos/owner/public/releases/assets/123');
+  });
+  for (const reply of [{status: 404}, {status: 403}, {status: 401}]) {
+    await downloads(t, [reply], async file => {
+      await assert.rejects(downloadRuntime(file, d, {signal: new AbortController().signal, githubToken: async () => { asked++; return 'secret'; }}),
+        reply.status === 404 ? /runtime-v1 is not published in owner\/public \(HTTP 404\)/ : /unavailable \(HTTP 40[13]\)/);
+    });
+  }
+  assert.equal(asked, 1, 'a missing release or another refusal never asks for sign-in');
+  await downloads(t, [limited], async file => {
+    await assert.rejects(downloadRuntime(file, d, {signal: new AbortController().signal}), /anonymous rate limit/);
+  });
+  await downloads(t, [limited, limited], async file => {
+    await assert.rejects(downloadRuntime(file, d, {signal: new AbortController().signal, githubToken: async () => 'secret'}), /rate limit even when signed in/);
   });
 });
 
@@ -75,8 +91,8 @@ test('downloads reject oversized/truncated bodies, incorrect metadata and redire
 
 test('cancelling while GitHub sign-in is pending does not wait for the dialog', async t => {
   const controller = new AbortController();
-  await downloads(t, [{status: 404}], async file => {
-    const request = downloadRuntime(file, {archive: {size: 4}, source: {repository: 'owner/private', tag: 'v1', asset: 'runtime.zip'}}, {
+  await downloads(t, [{status: 403, headers: {'x-ratelimit-remaining': '0'}}], async file => {
+    const request = downloadRuntime(file, {archive: {size: 4}, source: {repository: 'owner/public', tag: 'v1', asset: 'runtime.zip'}}, {
       signal: controller.signal,
       githubToken: () => { setImmediate(() => controller.abort()); return new Promise(() => {}); },
     });
@@ -87,6 +103,6 @@ test('cancelling while GitHub sign-in is pending does not wait for the dialog', 
 test('release metadata failures point at the downloaded-wheel setup path', async t => {
   await downloads(t, [{status: 500}], async file => {
     await assert.rejects(downloadRuntime(file, {archive: {size: 4}, source: {repository: 'owner/repo', tag: 'v1', asset: 'glitnir.whl'}}, {signal: new AbortController().signal}),
-      /HTTP 500.*Set Up Environment → Install Backend with uv → Choose downloaded backend wheel/);
+      /HTTP 500.*Set Up Environment → More Options… → Choose downloaded backend wheel/);
   });
 });

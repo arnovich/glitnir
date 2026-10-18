@@ -21,19 +21,13 @@ async function zip(file, entries) {
 }
 // A candidate directory as the draft workflow uploads it, with its VSIX packaged
 // for the release (default) or pre-release channel.
-async function candidate(t, {preRelease = false} = {}) {
+async function candidate(t, {preRelease = false, plugins = 'pinned'} = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'glitnir-marketplace-'));
   t.after(() => fs.rm(root, {recursive: true, force: true}));
   const wheel = path.join(root, 'glitnir-0.1.0-py3-none-any.whl');
   await zip(wheel, {'glitnir/notebook/server.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
   const bytes = await fs.readFile(wheel);
   const metadata = {publisher: 'gimle', name: 'glitnir', version: '0.1.0', glitnirBackend: {asset: path.basename(wheel), size: bytes.length, sha256: digest(bytes), tag: identity.tag}};
-  const vsix = path.join(root, 'glitnir-0.1.0.vsix');
-  await zip(vsix, {
-    'extension/package.json': metadata, 'extension/dist/editor-runtime.json': {apiVersion: 2, rendererSha256: '1'.repeat(64)},
-    'extension/dist/extension.js': 'code', 'extension/dist/probe.py': 'probe', 'extension/dist/providers.py': 'providers',
-    'extension.vsixmanifest': `<PackageManifest><Metadata><Identity Version="0.1.0" /><Properties>${preRelease ? PRE_RELEASE : ''}</Properties></Metadata></PackageManifest>`,
-  });
   const plugin = path.join(root, 'glitnir_forseti-0.1.0-py3-none-any.whl');
   await zip(plugin, {
     'glitnir_forseti/__init__.py': 'providers = []',
@@ -41,9 +35,35 @@ async function candidate(t, {preRelease = false} = {}) {
     'glitnir_forseti-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
     'glitnir_forseti-0.1.0.dist-info/entry_points.txt': '[glitnir.providers]\nforseti = glitnir_forseti:providers\n',
   });
+  const pluginBytes = await fs.readFile(plugin);
+  metadata.glitnirPlugins = [{distribution: 'glitnir-forseti', asset: path.basename(plugin), size: pluginBytes.length, sha256: digest(pluginBytes)}];
+  const vsix = path.join(root, 'glitnir-0.1.0.vsix');
+  const entries = {
+    'extension/package.json': metadata, 'extension/dist/editor-runtime.json': {apiVersion: 2, rendererSha256: '1'.repeat(64)},
+    'extension/dist/extension.js': 'code', 'extension/dist/probe.py': 'probe', 'extension/dist/providers.py': 'providers',
+    'extension.vsixmanifest': `<PackageManifest><Metadata><Identity Version="0.1.0" /><Properties>${preRelease ? PRE_RELEASE : ''}</Properties></Metadata></PackageManifest>`,
+  };
+  await zip(vsix, entries);
   const guide = path.join(root, 'setup.md'); await fs.writeFile(guide, '# Install prerequisites\n');
   const directory = path.join(root, 'release');
   await collectCandidate(identity, vsix, wheel, plugin, guide, directory);
+  // A release whose VSIX pins no plugin wheel, or other bytes: the VSIX is
+  // replaced with its checksums rebound, as such a release would carry it.
+  if (plugins !== 'pinned') {
+    const changed = {...metadata};
+    if (plugins === 'none') delete changed.glitnirPlugins;
+    else changed.glitnirPlugins = [{...metadata.glitnirPlugins[0], sha256: '0'.repeat(64)}];
+    const file = path.join(directory, path.basename(vsix));
+    await zip(file, {...entries, 'extension/package.json': changed});
+    const bytes = await fs.readFile(file);
+    const manifestFile = path.join(directory, 'glitnir-candidate.json');
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+    manifest.assets = manifest.assets.map(a => a.name === path.basename(vsix) ? {...a, size: bytes.length, sha256: digest(bytes)} : a);
+    const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2) + '\n');
+    await fs.writeFile(manifestFile, manifestBytes);
+    const sums = manifest.assets.map(a => `${a.sha256}  ${a.name}\n`).join('') + `${digest(manifestBytes)}  glitnir-candidate.json\n`;
+    await fs.writeFile(path.join(directory, 'SHA256SUMS'), sums);
+  }
   return directory;
 }
 // The published release GitHub reports for those exact files.
@@ -148,4 +168,12 @@ test('a version must be newer than the latest listed on its own channel unless a
   assert.deepEqual(publicationPlan('0.1.2', false, [release('0.1.3')], {allowOlder: true}), {publish: true, latest: '0.1.3'});
   assert.deepEqual(publicationPlan('0.1.4', false, [release('0.1.3'), release('1.0.0-beta')]), {publish: true, latest: '0.1.3'}, 'nonnumeric listings are ignored');
   assert.throws(() => publicationPlan('0.1', false, []), /Not a release tag/);
+});
+
+test('a published VSIX must pin exactly the attached plugin wheel', async t => {
+  const unpinned = await candidate(t, {plugins: 'none'});
+  await assert.rejects(verifyPublishedRelease(await published(unpinned), unpinned, options), /VSIX plugin pin differs from the candidate plugin wheel/,
+    'a VSIX without a plugin pin is never published');
+  const other = await candidate(t, {plugins: 'other'});
+  await assert.rejects(verifyPublishedRelease(await published(other), other, options), /VSIX plugin pin differs from the candidate plugin wheel/);
 });

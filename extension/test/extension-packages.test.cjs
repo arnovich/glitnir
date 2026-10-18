@@ -319,7 +319,11 @@ test('the bundled report lists provider packages and loads them without starting
   ].join('\n'));
   const info = path.join(root, 'fake_provider-1.0.dist-info');
   await fs.mkdir(info);
-  await fs.writeFile(path.join(info, 'METADATA'), 'Metadata-Version: 2.1\nName: fake-provider\nVersion: 1.0\n');
+  await fs.writeFile(path.join(info, 'METADATA'), ['Metadata-Version: 2.1', 'Name: fake-provider', 'Version: 1.0',
+    // Extras are reported when every requirement is installed; the backend is, the other package is not.
+    'Provides-Extra: Core_Extra', 'Requires-Dist: Glitnir; extra == "core-extra"',
+    'Provides-Extra: missing', 'Requires-Dist: glitnir; extra == "missing"', 'Requires-Dist: not-installed-anywhere>=1; "missing" == extra',
+    'Provides-Extra: empty', ''].join('\n'));
   await fs.writeFile(path.join(info, 'entry_points.txt'), '[glitnir.providers]\nfake = fake_provider:providers\nbroken = fake_provider:broken\n');
   // The fixture's RECORD claims one existing file in the interpreter's scripts directory.
   const scripts = spawnSync(python, ['-I', '-c', 'import sysconfig; print(sysconfig.get_path("scripts"))'], {encoding: 'utf8'}).stdout.trim();
@@ -332,7 +336,7 @@ test('the bundled report lists provider packages and loads them without starting
   assert.equal(listed.status, 0, listed.stdout + listed.stderr);
   const list = JSON.parse(listed.stdout);
   assert.match(list.core, /^\d/);
-  assert.deepEqual(list.packages.find(p => p.name === 'fake-provider'), {name: 'fake-provider', version: '1.0', entryPoints: ['fake', 'broken']});
+  assert.deepEqual(list.packages.find(p => p.name === 'fake-provider'), {name: 'fake-provider', version: '1.0', entryPoints: ['fake', 'broken'], extras: ['core-extra']});
   assert.ok(!list.packages.some(p => p.name.toLowerCase() === 'glitnir'));
   assert.equal(list.views, undefined, 'listing packages does not load them');
   assert.ok(list.commands[claimed].includes('fake-provider'), JSON.stringify(list.commands[claimed]));
@@ -354,7 +358,7 @@ test('the bundled report lists provider packages and loads them without starting
 
 function fakeVscode() {
   const file = fsPath => ({fsPath, scheme: 'file', path: fsPath, toString: () => `file://${fsPath}`});
-  const state = {dialogs: [], picks: [], modals: [], infos: [], warnings: [], commands: [], pickItems: [], modalDetails: []};
+  const state = {dialogs: [], picks: [], modals: [], infos: [], warnings: [], commands: [], pickItems: [], modalDetails: [], packageItems: [], packagePicks: []};
   const fake = {
     Uri: {file, joinPath: (uri, ...parts) => file(path.join(uri.fsPath, ...parts))},
     ProgressLocation: {Notification: 15}, env: {},
@@ -363,7 +367,16 @@ function fakeVscode() {
     window: {
       activeTextEditor: undefined,
       showOpenDialog: async () => state.dialogs.shift(),
-      showQuickPick: async items => { state.pickItems.push(items); return state.picks.shift(); },
+      showQuickPick: async (items, options) => {
+        // Step 1 of Install Extension Package…; by default the unchanged Other wheel file… path.
+        if (options?.title === 'Install Extension Package') {
+          state.packageItems.push(items);
+          return (state.packagePicks.shift() ?? (list => list.at(-1)))(items);
+        }
+        state.pickItems.push(items);
+        const pick = state.picks.shift();
+        return typeof pick === 'function' ? pick(items) : pick;
+      },
       showInformationMessage: async (message, options, ...actions) => {
         if (options?.modal) { state.modalDetails.push([message, options.detail, actions]); return state.modals.shift(); }
         state.infos.push([message, options, ...actions]);
@@ -383,14 +396,22 @@ async function flow(t, options = {}) {
   t.after(() => fs.rm(root, {recursive: true, force: true}));
   const wheelFile = path.join(root, FORSETI);
   await fs.writeFile(wheelFile, await forseti());
+  if (options.context?.extension && options.pinPlugin !== false) {
+    // The VSIX pins this wheel, as packaging does from the plugin wheel built with it.
+    const bytes = await fs.readFile(wheelFile);
+    options.context.extension.packageJSON.glitnirPlugins = [{distribution: 'glitnir-forseti', asset: FORSETI, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex')}];
+  }
   const calls = {runs: [], reports: [], restarts: [], discovered: 0, log: []};
   const installed = [];
   const environment = options.environment === undefined ? {python: '/env/bin/python'} : options.environment;
-  const manager = new ExtensionPackages({extensionUri: file('/extension')}, {append: text => calls.log.push(text), appendLine: text => calls.log.push(text + '\n')},
+  /** Set by a test to serve release assets. */
+  const release = {download: async () => { throw new Error('No release download expected'); }};
+  const manager = new ExtensionPackages({extensionUri: file('/extension'), ...options.context}, {append: text => calls.log.push(text), appendLine: text => calls.log.push(text + '\n')},
     {discovered: async uri => { calls.discovered++; calls.uri = uri; return environment ?? undefined; }},
     python => { calls.restarts.push(python); return true; }, {
       findUv: async () => '/installed/uv',
       store: () => options.store ?? '/no-managed-store',
+      download: (...args) => release.download(...args),
       run: async (uv, args, cwd, signal, uvOptions) => {
         const requirement = args.at(-1);
         const run = {uv, args, cwd, uvOptions};
@@ -418,7 +439,7 @@ async function flow(t, options = {}) {
         return report;
       },
     });
-  return {manager, fake, file, state, calls, wheelFile, installed};
+  return {manager, fake, file, state, calls, wheelFile, installed, release};
 }
 
 test('installing an extension package requires trust and a set-up backend', async t => {
@@ -500,6 +521,23 @@ test('install stops on dismissal, refused wheels or uv failure, and reports prov
   await errors.manager.install();
   assert.match(errors.state.warnings[0], /^Installed glitnir-forseti 0\.1\.0, but some providers did not load: forseti \(ImportError: lark\)/);
   assert.ok(errors.calls.log.join('').includes('Glitnir provider forseti did not load: ImportError: lark'));
+});
+
+test('a verified release wheel installs through the same checks without prompts, keeping only offered extras', async t => {
+  const f = await flow(t);
+  const signal = new AbortController().signal;
+  const result = await f.manager.installVerified('/env/bin/python', FORSETI, await fs.readFile(f.wheelFile), ['z3', 'simulation', 'gone'], signal, () => {});
+  assert.deepEqual([result.extras, result.dropped], [['z3'], ['simulation', 'gone']], 'withheld and unknown extras are never installed');
+  assert.equal(result.info.name, 'glitnir-forseti');
+  const run = f.calls.runs[0];
+  assert.equal(run.constraints, 'glitnir==0.1.0\n');
+  assert.ok(run.bytesMatch, 'uv installs the archive written from the inspected files');
+  assert.match(run.args.at(-1), /^glitnir-forseti\[z3\] @ file:\/\//);
+  assert.equal(f.state.dialogs.length + f.state.modalDetails.length + f.state.pickItems.length + f.state.infos.length, 0, 'the caller reports the outcome');
+  const core = await wheel({'glitnir-0.1.0.dist-info/METADATA': 'Name: glitnir\nVersion: 0.1.0\n'});
+  await assert.rejects(f.manager.installVerified('/env/bin/python', 'glitnir-0.1.0-py3-none-any.whl', core, [], signal, () => {}), /Glitnir backend itself/);
+  const changed = await flow(t, {coreAfter: '0.2.0'});
+  await assert.rejects(changed.manager.installVerified('/env/bin/python', FORSETI, await fs.readFile(changed.wheelFile), [], signal, () => {}), /changed the Glitnir backend/);
 });
 
 const install = f => { f.state.dialogs.push([f.file(f.wheelFile)]); f.state.picks.push([]); f.state.modals.push('Install'); return f.manager.install(); };
@@ -861,4 +899,158 @@ test('archives that zip readers could resolve differently are refused', async ()
   await assert.rejects(inspect(addLocalExtra(bytes, 'glitnir_forseti/__init__.py', zip64)), /plain zip archives: glitnir_forseti\/__init__\.py has ZIP64 sizes/);
   const other = Buffer.alloc(8); other.writeUInt16LE(0xcafe, 0); other.writeUInt16LE(4, 2);
   assert.equal((await inspect(addLocalExtra(bytes, 'glitnir_forseti/__init__.py', other))).name, 'glitnir-forseti', 'the local-extra helper keeps the archive valid');
+});
+
+/** Serve a v0.1.0 release whose plugin binding names the test's Forseti wheel, as the candidate script writes it. */
+async function serveRelease(f, overrides = {}) {
+  // A coherent tampered release binds other bytes in its manifest and SHA256SUMS alike.
+  const plugin = overrides.releasePlugin ?? await fs.readFile(f.wheelFile);
+  const backend = Buffer.from('backend wheel');
+  const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+  const pin = {asset: 'glitnir-0.1.0-py3-none-any.whl', size: backend.length, sha256: digest(backend), tag: 'v0.1.0', ...overrides.pin};
+  const assets = [{name: pin.asset, size: backend.length, sha256: digest(backend)}, {name: FORSETI, size: plugin.length, sha256: digest(plugin)}];
+  const manifest = Buffer.from(JSON.stringify({schema: 'glitnir-thin-candidate/v2', repository: 'arnovich/glitnir', tag: 'v0.1.0', version: '0.1.0',
+    plugin: {asset: FORSETI, version: '0.1.0', size: plugin.length, sha256: digest(plugin)}, assets, ...overrides.manifest}));
+  const sums = [...assets, {name: 'glitnir-candidate.json', sha256: digest(manifest)}].map(a => `${a.sha256}  ${a.name}\n`).join('');
+  const served = {'glitnir-candidate.json': manifest, SHA256SUMS: Buffer.from(sums), [FORSETI]: overrides.servedPlugin ?? plugin};
+  const requests = [];
+  f.release.download = async (destination, descriptor) => {
+    requests.push([descriptor.source.repository, descriptor.source.tag, descriptor.source.asset]);
+    await fs.writeFile(destination, served[descriptor.source.asset], {flag: 'wx'});
+  };
+  return {pin, requests};
+}
+const releaseContext = pin => ({extension: {packageJSON: {version: '0.1.0', glitnirBackend: pin}}});
+const PIN = {asset: 'glitnir-0.1.0-py3-none-any.whl', size: 13, sha256: createHash('sha256').update('backend wheel').digest('hex'), tag: 'v0.1.0'};
+const forsetiPick = items => items.find(item => item.label === 'Forseti');
+
+test('the package picker lists known packages with their installed state, then Other wheel file…', async t => {
+  const fresh = await flow(t, {context: releaseContext(PIN)});
+  fresh.state.packagePicks.push(() => undefined);
+  await fresh.manager.install();
+  const [items] = fresh.state.packageItems;
+  assert.deepEqual(items.map(item => [item.label, item.description]), [['Forseti', 'glitnir-forseti'], ['Other wheel file…', '']]);
+  assert.equal(items[0].detail, 'circuit, model and dynamics diagrams, simulation evidence and decision procedures');
+  assert.equal(fresh.calls.runs.length + fresh.state.dialogs.length, 0, 'dismissing the picker installs nothing');
+  const present = await flow(t, {context: releaseContext(PIN), alsoInstalled: [{name: 'Glitnir_Forseti', version: '0.0.9', entryPoints: ['forseti']}]});
+  present.state.packagePicks.push(forsetiPick);
+  present.state.picks.push(undefined);
+  await present.manager.install();
+  assert.equal(present.state.packageItems[0][0].description, 'installed (0.0.9)');
+  assert.deepEqual(present.state.pickItems[0].map(item => [item.label, item.description]), [['Download from this release (recommended)', 'Update 0.0.9 → 0.1.0'], ['Choose downloaded wheel', '']]);
+  const same = await flow(t, {context: releaseContext(PIN), alsoInstalled: [{name: 'glitnir-forseti', version: '0.1.0', entryPoints: ['forseti']}]});
+  same.state.packagePicks.push(forsetiPick);
+  same.state.picks.push(undefined);
+  await same.manager.install();
+  assert.equal(same.state.pickItems[0][0].description, 'Reinstall 0.1.0');
+  const unreleased = await flow(t, {context: releaseContext({...PIN, tag: undefined})});
+  unreleased.state.packagePicks.push(forsetiPick);
+  unreleased.state.picks.push(undefined);
+  await unreleased.manager.install();
+  assert.deepEqual(unreleased.state.pickItems[0].map(item => item.label), ['Choose downloaded wheel'], 'a build without a release cannot download');
+  const unpinned = await flow(t, {context: releaseContext(PIN), pinPlugin: false});
+  unpinned.state.packagePicks.push(forsetiPick);
+  unpinned.state.picks.push(undefined);
+  await unpinned.manager.install();
+  assert.deepEqual(unpinned.state.pickItems[0].map(item => item.label), ['Choose downloaded wheel'], 'a build packaged without a plugin wheel pins none and cannot download one');
+  assert.match(present.state.pickItems[0][0].detail, /^Downloads glitnir_forseti-0\.1\.0-py3-none-any\.whl from GitHub release v0\.1\.0 and installs it only if its SHA-256 equals the one this extension records for it\.$/);
+});
+
+test('a known package downloads from this release, verified, and asks its extras questions', async t => {
+  const f = await flow(t, {context: releaseContext(PIN)});
+  const {requests} = await serveRelease(f);
+  f.state.packagePicks.push(forsetiPick);
+  f.state.picks.push(items => items[0]);
+  f.state.modals.push('Yes', 'Install');
+  await f.manager.install();
+  assert.deepEqual(requests, [['arnovich/glitnir', 'v0.1.0', 'glitnir-candidate.json'], ['arnovich/glitnir', 'v0.1.0', 'SHA256SUMS'], ['arnovich/glitnir', 'v0.1.0', FORSETI]]);
+  const [question, confirmation] = f.state.modalDetails;
+  assert.equal(question[0], 'Install z3 for decision procedures? (adds the z3-solver package from PyPI)');
+  assert.deepEqual(question[2], ['Yes', 'No']);
+  assert.match(question[1], /z3-solver==5\.1\.0\.0/);
+  assert.equal(f.state.modalDetails.length, 2, 'the withheld simulation extra is not asked about');
+  assert.match(confirmation[1], /from release v0\.1\.0; its SHA-256 equals the one this extension records, and the release's SHA256SUMS and glitnir-candidate\.json bind the same bytes/);
+  assert.match(confirmation[1], /Extras not offered: simulation/);
+  assert.match(confirmation[1], /iterate evidence also needs Python Asgard/);
+  const run = f.calls.runs[0];
+  assert.match(run.args.at(-1), /^glitnir-forseti\[z3\] @ file:\/\//);
+  assert.equal(run.constraints, 'glitnir==0.1.0\n', 'the core stays at its installed version');
+  assert.ok(run.bytesMatch, 'the downloaded wheel is inspected and rewritten like any other');
+  assert.match(f.state.infos.at(-1)[0], /^Installed glitnir-forseti 0\.1\.0: views circuit, model/);
+  const declined = await flow(t, {context: releaseContext(PIN)});
+  await serveRelease(declined);
+  declined.state.packagePicks.push(forsetiPick);
+  declined.state.picks.push(items => items[0]);
+  declined.state.modals.push('No', 'Install');
+  await declined.manager.install();
+  assert.match(declined.calls.runs[0].args.at(-1), /^glitnir-forseti @ file:\/\//, 'No installs it without the extra');
+  const dismissed = await flow(t, {context: releaseContext(PIN)});
+  await serveRelease(dismissed);
+  dismissed.state.packagePicks.push(forsetiPick);
+  dismissed.state.picks.push(items => items[0]);
+  dismissed.state.modals.push(undefined);
+  await dismissed.manager.install();
+  assert.equal(dismissed.calls.runs.length, 0, 'dismissing a question installs nothing');
+});
+
+test('a release whose manifest or checksums do not match is refused, and nothing is installed', async t => {
+  const evil = await wheel({...FORSETI_FILES, 'glitnir_forseti/evil.py': 'import os\n'});
+  for (const overrides of [{servedPlugin: Buffer.alloc((await forseti()).length)}, {manifest: {tag: 'v0.0.9'}}, {manifest: {version: '0.0.9'}},
+    {manifest: {plugin: {asset: FORSETI, version: '0.1.0', size: 1, sha256: '0'.repeat(64)}}}, {releasePlugin: evil, servedPlugin: evil}]) {
+    const f = await flow(t, {context: releaseContext(PIN)});
+    await serveRelease(f, overrides);
+    f.state.packagePicks.push(forsetiPick);
+    f.state.picks.push(items => items[0]);
+    await assert.rejects(f.manager.install(), /does not match (this Glitnir build|the SHA-256 this extension records)/, JSON.stringify(overrides).slice(0, 80));
+    assert.equal(f.calls.runs.length, 0);
+    assert.equal(f.state.modalDetails.length, 0, 'nothing is asked about a refused wheel');
+  }
+});
+
+test('a downloaded wheel must be the selected package', async t => {
+  const f = await flow(t, {context: releaseContext(PIN)});
+  const other = path.join(path.dirname(f.wheelFile), 'other_provider-1.0-py3-none-any.whl');
+  await fs.writeFile(other, await forseti());
+  f.state.packagePicks.push(forsetiPick);
+  f.state.picks.push(items => items.find(item => item.label === 'Choose downloaded wheel'));
+  f.state.dialogs.push([f.file(other)]);
+  await assert.rejects(f.manager.install(), /Cannot install other_provider-1\.0-py3-none-any\.whl: select a glitnir-forseti wheel for Forseti\./);
+  assert.equal(f.calls.runs.length, 0);
+  const right = await flow(t, {context: releaseContext(PIN)});
+  right.state.packagePicks.push(forsetiPick);
+  right.state.picks.push(items => items.find(item => item.label === 'Choose downloaded wheel'));
+  right.state.dialogs.push([right.file(right.wheelFile)]);
+  right.state.modals.push('Yes', 'Install');
+  await right.manager.install();
+  assert.match(right.calls.runs[0].args.at(-1), /^glitnir-forseti\[z3\] @ file:\/\//, 'the matching downloaded wheel installs with the same questions');
+});
+
+test('the registry is data only: one Forseti entry naming its release asset and allowed extras', () => {
+  const {KNOWN_PACKAGES} = require('../../dist/known-packages');
+  assert.equal(KNOWN_PACKAGES.length, 1);
+  const [forsetiEntry] = KNOWN_PACKAGES;
+  assert.equal(forsetiEntry.distribution, 'glitnir-forseti');
+  assert.equal(forsetiEntry.asset('0.1.1'), 'glitnir_forseti-0.1.1-py3-none-any.whl');
+  assert.deepEqual(forsetiEntry.extras.map(extra => extra.name), ['z3']);
+  assert.ok(forsetiEntry.extras.every(extra => packages.PUBLISHED_EXTRA_PACKAGES.has('z3-solver') && /PyPI/.test(extra.prompt)));
+});
+
+test('a known package\'s downloaded wheel is compared with the VSIX pin and labelled', async t => {
+  const same = await flow(t, {context: releaseContext(PIN)});
+  same.state.packagePicks.push(forsetiPick);
+  same.state.picks.push(items => items.find(item => item.label === 'Choose downloaded wheel'));
+  same.state.dialogs.push([same.file(same.wheelFile)]);
+  same.state.modals.push('No', 'Install');
+  await same.manager.install();
+  assert.match(same.state.modalDetails.at(-1)[1], /Source: glitnir_forseti-0\.1\.0-py3-none-any\.whl, identical to this release's/);
+  const local = await flow(t, {context: releaseContext(PIN)});
+  const built = path.join(path.dirname(local.wheelFile), 'built', FORSETI);
+  await fs.mkdir(path.dirname(built));
+  await fs.writeFile(built, await wheel({...FORSETI_FILES, 'glitnir_forseti/local.py': 'x = 1\n'}));
+  local.state.packagePicks.push(forsetiPick);
+  local.state.picks.push(items => items.find(item => item.label === 'Choose downloaded wheel'));
+  local.state.dialogs.push([local.file(built)]);
+  local.state.modals.push('No', 'Install');
+  await local.manager.install();
+  assert.match(local.state.modalDetails.at(-1)[1], /Source: glitnir_forseti-0\.1\.0-py3-none-any\.whl, a local wheel, not the release's \(its SHA-256 differs from the one this extension records\)/);
 });

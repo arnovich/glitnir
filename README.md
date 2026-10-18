@@ -72,7 +72,8 @@ Glitnir runs in local VS Code windows on **macOS and Linux** (see
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** and
   **Python 3.12 or newer**, for the Python backend. VS Code may not inherit your
   shell's `PATH`, so setup looks for `uv` in `~/.local/bin`, `/opt/homebrew/bin`,
-  `/usr/local/bin`, `/usr/bin` and `/bin` (on macOS: `brew install uv`).
+  `/usr/local/bin`, `/usr/bin` and `/bin`. Without it, setup offers **Install
+  uv** (see [Set Up Environment](#set-up-environment)).
 - **Lean 4.32.1**, installed with [elan](https://github.com/leanprover/elan):
   `elan toolchain install leanprover/lean4:v4.32.1`. Reading a notebook needs only
   the backend; checking, proof steps, views, evidence and decisions need Lean.
@@ -97,20 +98,38 @@ a GitHub release:
 ### Set Up Environment
 
 1. Open a Lean file in a trusted workspace.
-2. Run **Glitnir: Set Up Environment → Install Backend with uv → Download matching
-   backend**. Setup downloads the backend wheel of the extension's own release,
-   verifies its checksum against the one the extension records, and installs it
-   with uv into a new environment under `~/.local/share/glitnir/backends`.
+2. Run **Glitnir: Set Up Environment → Set Up** (also offered when you first open
+   a notebook). In one step it downloads the backend wheel of the extension's own
+   release, verifies its checksum against the one the extension records, and
+   installs it with uv into a new environment under
+   `~/.local/share/glitnir/backends`.
 3. Run **Glitnir: Open in Glitnir**.
 
-The other setup choices:
+**More Options…** holds the other setup choices:
 
 - **Choose downloaded backend wheel** installs a matching backend `.whl` you
-  downloaded yourself.
-- **Choose Existing Environment** (or **Choose another installation**) selects a
-  Python where the backend is already installed.
-- Opening a notebook without a backend offers the same choices and **Read
-  Installation Guide**.
+  downloaded or built yourself, for development builds and offline use. It must
+  still match the checksum the extension records.
+- **Choose Existing Environment** selects a Python where the backend is already
+  installed.
+- **Read setup guide** opens the installation guide, which setup errors also
+  link to.
+
+If uv is not installed, setup says so and offers **Install uv**, showing the
+command and its environment first: Homebrew's `install uv`, by Homebrew's full
+path, when Homebrew is installed, otherwise the official installer of the uv
+version this release pins,
+`/usr/bin/curl -LsSf https://astral.sh/uv/0.12.23/install.sh | /bin/sh`. It runs
+in a minimal environment: `PATH=/usr/bin:/bin:/usr/sbin:/sbin` (plus Homebrew's
+own directory), `HOME`, `USER`, `TMPDIR` and `LANG`; VS Code adds its own
+terminal variables, and nothing else comes from VS Code, your shell or
+`terminal.integrated.env` settings. The official installer puts uv in
+`~/.local/bin`, where Glitnir looks, and is told (`UV_NO_MODIFY_PATH=1`) to leave
+your shell profiles alone; add `~/.local/bin` to `PATH` yourself to use uv in
+your own terminals. Nothing runs until you click **Install uv**; the command then
+runs in a VS Code terminal named "Install uv", where you can watch it. When that terminal closes, or when you choose **Retry**
+(for example after installing uv yourself), Glitnir looks for uv again and
+continues the setup.
 
 Without any setup, Glitnir also finds a backend in the environment you chose
 before, a `.venv` in the workspace or in a folder above the notebook, or
@@ -137,27 +156,68 @@ The optional `glitnir-forseti` package adds Forseti views, evidence and decision
 (see [Extensions](#extensions)). It is not on PyPI; each release has its wheel,
 built from the same commit and tested with that release's backend.
 
-1. Download `glitnir_forseti-VERSION-py3-none-any.whl` and `SHA256SUMS` from the
-   same release as the VSIX, and verify it with
+1. Run **Glitnir: Install Extension Package… → Forseti → Download from this
+   release** (also offered in **Glitnir: Set Up Environment**), and answer Yes to
+   "Install z3 for decision procedures?" for decisions. Glitnir downloads the
+   wheel from the same release as the backend and installs it only if its
+   SHA-256 equals the one the extension records for it (and the release's
+   `SHA256SUMS` and `glitnir-candidate.json` bind the same bytes).
+2. To use a file instead, download `glitnir_forseti-VERSION-py3-none-any.whl` and
+   `SHA256SUMS` from the same release as the VSIX, verify it with
    `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
-   `sha256sum -c --ignore-missing SHA256SUMS`).
-2. Run **Glitnir: Install Extension Package…** (also offered in **Glitnir: Set Up
-   Environment**), select the wheel, and choose the `z3` extra for decisions.
+   `sha256sum -c --ignore-missing SHA256SUMS`), and choose **Choose downloaded
+   wheel** in step 1.
 3. For `iterate` evidence, install Python Asgard (`gimle-asgard`, not on PyPI)
    into the backend yourself, for example
    `uv pip install --python <backend python> <gimle-asgard wheel>`.
 
 ### Upgrading
 
-Use the VSIX, backend wheel and plugin wheel of the same release.
+Each release pins its own backend wheel, and each backend lives in its own
+environment, `~/.local/share/glitnir/backends/<wheel SHA-256>`. When the
+extension updates (from the Marketplace, or a new VSIX) and finds an environment
+from an earlier Glitnir build but none for its own backend, it shows one
+notification: "Glitnir was updated to X. Set up its backend?". **Set Up** first
+lists what it will do: the backend and package wheels it downloads, the extras
+and the PyPI packages they add, the packages you must reinstall yourself, and
+any settings file whose `glitnir.pythonPath` it changes. Nothing is downloaded
+or installed until you confirm, after which it:
 
-1. Install the new VSIX as above.
-2. Each release pins its backend. If the preview reports that the installed
-   runtime is incompatible with this Glitnir build, run **Glitnir: Set Up
-   Environment → Install Backend with uv → Download matching backend** again. It
-   creates a new environment and leaves the old one in place.
-3. Install extension packages such as `glitnir-forseti` into the new environment
-   again, from the same release.
+1. downloads this release's backend wheel, checks it against the size and
+   SHA-256 the extension records, and installs it with uv into a new
+   environment, exactly as **Glitnir: Set Up Environment → Set Up** does;
+2. for each package of the earlier environment whose wheel the extension pins
+   (like its backend, the extension records the release's `glitnir-forseti`
+   wheel by size and SHA-256), downloads the release's `glitnir-candidate.json`
+   and `SHA256SUMS`, refuses a release that does not bind exactly the pinned
+   wheel and backend, downloads the wheel, installs it only if its SHA-256
+   equals the recorded one, with the same checks as **Install Extension
+   Package…**, and keeps only the installed extras Glitnir knows (for Forseti,
+   `z3`);
+3. switches to the new environment only once all of that has succeeded. Each
+   `glitnir.pythonPath` the confirmation listed (one naming the earlier managed
+   environment) is changed to the new one; one edited since the confirmation is
+   left alone and reported, and other overrides are never touched.
+
+Packages whose wheel the extension does not pin (third-party or local wheels,
+packages you installed yourself such as `gimle-asgard`, and every package in a
+build packaged without a plugin wheel) are listed to
+reinstall with **Glitnir: Install Extension Package…**; they never fail the
+upgrade. If anything fails or you cancel, the earlier environment is unchanged,
+nothing is switched, and the message offers **Retry**; opening a notebook offers
+the same setup again. **Glitnir: Set Up Backend for This Version** does all of
+this at any time, and running it again is safe. The notification appears once
+per extension version; set `glitnir.offerBackendUpdate` to `false` to turn it
+off. Downloads go only to this repository's GitHub release for the pinned tag.
+
+The earlier environment is never deleted. Once no window uses it (**Output →
+Glitnir** shows the environment in use), remove it yourself, but not while a
+`.lock` directory beside it exists:
+
+```sh
+ls ~/.local/share/glitnir/backends/          # one directory per backend build
+rm -rf ~/.local/share/glitnir/backends/<earlier wheel SHA-256>
+```
 
 A release that changes the replay program shows saved results as out of date
 once, and its first check replays the imports again (see [Imports and
@@ -476,6 +536,7 @@ in DEVELOPMENT.md.
 | `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
 | `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
+| `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend and carry over extension packages (see [Upgrading](#upgrading)). Nothing downloads until you click **Set Up**. |
 
 Changing `glitnir.pythonPath` closes open previews; reopen them to apply the
 change.
@@ -513,8 +574,29 @@ environment as the Glitnir backend.
 ### Installing extension packages
 
 To install one, run **Glitnir: Install Extension Package…** (also offered in
-**Glitnir: Set Up Environment**) in a trusted workspace with the backend set up,
-and select the package's `.whl` file. Glitnir reads the wheel's metadata without
+**Glitnir: Set Up Environment**) in a trusted workspace with the backend set up:
+
+1. **Pick a package.** The list shows the packages Glitnir knows about (for now
+   **Forseti**: circuit, model and dynamics diagrams, simulation evidence and
+   decision procedures), marked "installed (version)" when they are, and last
+   **Other wheel file…** for third-party or development wheels.
+2. **Choose the source** of a known package. **Download from this release
+   (recommended)** fetches the wheel the extension pins from the GitHub release
+   its backend comes from and installs it only if its SHA-256 equals the one the
+   extension records; the release's `SHA256SUMS` and the plugin binding in
+   `glitnir-candidate.json` must bind the same bytes, or it is refused. A build
+   packaged without the plugin wheel does not offer it. **Choose downloaded
+   wheel** selects a file, which must be that package's wheel; the confirmation
+   says whether it is identical to the release's or a local wheel. For an
+   installed package this reinstalls or updates it.
+3. **Answer its questions**, such as "Install z3 for decision procedures? (adds
+   the z3-solver package from PyPI)", asked only for extras the wheel offers.
+   Notes say what cannot be installed from here.
+4. **Confirm**, and Glitnir installs it and lists the providers now available.
+
+The list of known packages is data only and grants no trust: every wheel goes
+through the same checks, and a downloaded one must be the wheel the extension
+pins. With **Other wheel file…**, select the package's `.whl` file. Glitnir reads the wheel's metadata without
 running it and refuses a file that declares no `glitnir.providers` entry point or
 is the backend itself. Pick any optional extras (none are preselected), confirm,
 and uv installs the wheel into the backend's Python. Its dependencies, and those
@@ -538,8 +620,10 @@ The backend installed by Set Up Environment is shared by every window and
 workspace using it, so a package change affects them all, while only this
 window's previews close; reopen previews in other windows too. If uv fails or is
 cancelled, the environment may be partly changed: run the install
-again. After an extension update that pins a new backend, Set Up Environment
-creates a new environment; install the extension packages into it again.
+again. After an extension update that pins a new backend, **Set Up** in the
+update notification (or **Glitnir: Set Up Backend for This Version**) creates a
+new environment and carries over the packages published with the release; see
+[Upgrading](#upgrading).
 
 To install by hand instead, find the backend's Python (shown in **Output →
 Glitnir** as "Glitnir environment: …", or set by the `glitnir.pythonPath`
@@ -621,10 +705,12 @@ and package installs, and each preview's backend output.
 
 - **"No Python environment with the Glitnir backend was found"**: run **Glitnir:
   Set Up Environment** ([Install](#set-up-environment)).
-- **"Install uv first"**: install uv into one of the locations under
-  [Requirements](#requirements), then run Set Up Environment again.
+- **"Glitnir needs uv to install its backend"**: choose **Install uv**, or
+  install uv into one of the locations under [Requirements](#requirements) and
+  choose **Retry**.
 - **"The installed Glitnir runtime is incompatible with this Glitnir build"**: the
-  backend is from another release; see [Upgrading](#upgrading).
+  backend is from another release; run **Glitnir: Set Up Backend for This
+  Version** (see [Upgrading](#upgrading)).
 - **"Install leanprover/lean4:v4.32.1 with elan"**: install the toolchain with
   `elan toolchain install leanprover/lean4:v4.32.1`.
 - **"no working sandbox"** on Linux: install bubblewrap and allow unprivileged

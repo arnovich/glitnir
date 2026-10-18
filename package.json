@@ -61,6 +61,11 @@
         "category": "Glitnir"
       },
       {
+        "command": "glitnir.setupBackendForThisVersion",
+        "title": "Set Up Backend for This Version",
+        "category": "Glitnir"
+      },
+      {
         "command": "glitnir.installExtensionPackage",
         "title": "Install Extension Package\u2026",
         "category": "Glitnir"
@@ -141,6 +146,12 @@
           "default": "",
           "scope": "resource",
           "description": "Python interpreter with the matching Glitnir backend installed. Empty discovers an existing environment; thin packages do not install Python."
+        },
+        "glitnir.offerBackendUpdate": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "After an extension update, offer once to set up the new version's backend and carry over the extension packages of the earlier one. Nothing is downloaded until you click Set Up."
         },
         "glitnir.elaborationTimeoutMs": {
           "type": "number",

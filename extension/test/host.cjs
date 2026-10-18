@@ -106,6 +106,38 @@ async function checkThroughLine(extension, root) {
   } finally { await backend.close(); }
 }
 
+/**
+ * Install uv's terminal gets exactly the environment Glitnir builds: a
+ * workspace `terminal.integrated.env.*` setting and the editor's own
+ * environment (its PATH, HOMEBREW_* variables) never reach it.
+ */
+async function installerEnvironment(extension, root) {
+  const {uvInstaller, uvInstallerTerminal, INSTALLER_PATH} = require(path.join(extension.extensionPath, 'dist', 'backend-install.js'));
+  const platform = process.platform === 'darwin' ? 'osx' : 'linux';
+  const settings = vscode.workspace.getConfiguration('terminal.integrated.env');
+  await settings.update(platform, {GLITNIR_INJECTED: 'from settings', PATH: '/injected'}, vscode.ConfigurationTarget.Workspace);
+  const out = path.join(root.fsPath, 'installer-env.txt');
+  const installer = uvInstaller();
+  const terminal = vscode.window.createTerminal(uvInstallerTerminal({...installer, command: `/usr/bin/env > '${out}.tmp' && /bin/mv '${out}.tmp' '${out}'`}));
+  try {
+    const deadline = Date.now() + 30000;
+    while (!require('node:fs').existsSync(out) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+    const env = Object.fromEntries(readFileSync(out, 'utf8').trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+    assert.equal(env.GLITNIR_INJECTED, undefined, 'terminal.integrated.env does not apply under strictEnv');
+    assert.equal(env.PATH, INSTALLER_PATH, 'only the minimal PATH');
+    assert.equal(env.UV_NO_MODIFY_PATH, '1');
+    assert.equal(env.HOME, installer.env.HOME);
+    for (const name of ['USER', 'TMPDIR']) assert.equal(env[name], installer.env[name], `${name} is passed on for Homebrew`);
+    assert.ok(installer.env.USER, 'the host has a plain USER');
+    assert.equal(process.env.HOMEBREW_GLITNIR_PARENT, 'inherited', 'the editor itself has a HOMEBREW_ variable');
+    assert.ok(!Object.keys(env).some(name => name.startsWith('HOMEBREW_') || name.startsWith('GLITNIR_') || name === 'ELECTRON_RUN_AS_NODE'), Object.keys(env).join(' '));
+    return Object.keys(env).sort();
+  } finally {
+    terminal.dispose();
+    await settings.update(platform, undefined, vscode.ConfigurationTarget.Workspace);
+  }
+}
+
 async function run() {
   const extension = vscode.extensions.getExtension('gimle.glitnir');
   assert.ok(extension);
@@ -115,6 +147,8 @@ async function run() {
   assert.ok(commands.includes('glitnir.setup'));
   assert.ok(commands.includes('glitnir.setupAgent'));
   assert.ok(commands.includes('glitnir.installExtensionPackage'));
+  assert.ok(commands.includes('glitnir.setupBackendForThisVersion'));
+  assert.equal(vscode.workspace.getConfiguration('glitnir').get('offerBackendUpdate'), true, 'the update offer is on by default');
   assert.ok(!commands.includes('glitnir.removeExtensionPackage'), 'removal is manual');
   assert.ok(commands.includes('glitnir.revealCell'));
   const root = vscode.workspace.workspaceFolders[0].uri;
@@ -158,6 +192,7 @@ async function run() {
   await acceptCandidate(extension, root);
   await readLinkedNotebook(extension, root);
   await checkThroughLine(extension, root);
+  console.log(`Install uv terminal environment: ${(await installerEnvironment(extension, root)).join(' ')}`);
   console.log('VS Code host: two previews, reverse navigation, edit/save, disposal, accepting a decision, reading a linked notebook and a check through one line passed.');
   if (process.env.GLITNIR_HOST_SUCCESS) require('node:fs').writeFileSync(process.env.GLITNIR_HOST_SUCCESS, 'passed');
 }
