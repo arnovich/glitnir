@@ -117,9 +117,9 @@ a GitHub release:
 
 If uv is not installed, setup says so and offers **Install uv**, showing the
 command first: `brew install uv` (by Homebrew's full path) when Homebrew is
-installed, otherwise the official installer of a pinned uv version,
-`curl -LsSf https://astral.sh/uv/VERSION/install.sh | sh` (the extension pins
-VERSION; the installer puts uv in `~/.local/bin`). Nothing runs until you click
+installed, otherwise the official installer of the uv version this release pins,
+`curl -LsSf https://astral.sh/uv/0.12.23/install.sh | sh` (it puts uv in
+`~/.local/bin`). Nothing runs until you click
 **Install uv**; the command then runs in a VS Code terminal named "Install uv",
 where you can watch it. When that terminal closes, or when you choose **Retry**
 (for example after installing uv yourself), Glitnir looks for uv again and

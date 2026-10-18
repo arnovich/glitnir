@@ -27,7 +27,7 @@ export async function findUv(candidates = installedPaths().map(dir => path.join(
   throw new Error('Install uv first (on macOS: brew install uv), then run Set Up Environment again. See the installation guide.');
 }
 /** The uv release whose official installer Install uv runs when Homebrew is not installed. */
-export const UV_VERSION = '0.7.13';
+export const UV_VERSION = '0.12.23';
 /** Homebrew, looked up where it installs itself, never in a workspace. */
 export async function findBrew(candidates = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew', '/home/linuxbrew/.linuxbrew/bin/brew']): Promise<string | undefined> {
   for (const file of candidates) {

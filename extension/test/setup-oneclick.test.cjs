@@ -147,7 +147,9 @@ test('without uv, Install uv is offered with its command and nothing runs withou
 
 test('the uv installer command is Homebrew or a pinned official installer, never an unversioned URL', () => {
   const {modules} = harness();
-  assert.match(modules.UV_VERSION, /^\d+\.\d+\.\d+$/);
+  assert.equal(modules.UV_VERSION, '0.12.23', 'the pinned uv release; bump it with the docs');
+  const docs = ['../../README.md', '../media/setup.md'].map(file => require('node:fs').readFileSync(path.join(__dirname, file), 'utf8'));
+  for (const text of docs) assert.ok(text.includes(`https://astral.sh/uv/${modules.UV_VERSION}/install.sh`), 'the docs show the pinned installer');
   assert.equal(modules.uvInstallCommand('/usr/local/bin/brew'), '/usr/local/bin/brew install uv');
   assert.equal(modules.uvInstallCommand(), `curl -LsSf https://astral.sh/uv/${modules.UV_VERSION}/install.sh | sh`);
   assert.doesNotMatch(modules.uvInstallCommand(), /astral\.sh\/uv\/install\.sh/);
