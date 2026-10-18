@@ -1,8 +1,10 @@
 """Report installed Glitnir provider packages without starting a notebook server.
 
 ``packages`` lists distributions that declare ``glitnir.providers`` entry points
-without importing them, and the files in the environment's scripts directory
-with the distributions whose RECORD lists each one. ``providers`` also loads
+without importing them, with the extras whose requirements are all installed
+(installers record no extras, so this is how a backend upgrade keeps them), and
+the files in the environment's scripts directory with the distributions whose
+RECORD lists each one. ``providers`` also loads
 them as a preview would and reports the view kinds, evidence verbs and
 decision kinds they serve, with any load errors, and why an evidence verb or
 decision kind cannot run yet (its provider's ``unavailable()``).
@@ -27,6 +29,44 @@ def _normalized(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+_EXTRA_MARKER = re.compile(
+    r"""\bextra\s*==\s*["']([^"']+)["']|["']([^"']+)["']\s*==\s*extra\b"""
+)
+
+
+def _installed(requirement: str) -> bool:
+    """Return whether the distribution a requirement names is installed."""
+    match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", requirement)
+    if not match:
+        return False
+    try:
+        metadata.distribution(match.group(0))
+    except metadata.PackageNotFoundError:
+        return False
+    return True
+
+
+def _extras(dist: metadata.Distribution) -> list[str]:
+    """Return the declared extras whose requirements are all installed.
+
+    An extra with no requirements adds nothing and is never reported.
+    """
+    declared = dist.metadata.get_all("Provides-Extra") or []
+    needs: dict[str, list[str]] = {_normalized(extra): [] for extra in declared}
+    for line in dist.requires or []:
+        requirement, _, marker = line.partition(";")
+        match = _EXTRA_MARKER.search(marker)
+        if match:
+            extra = _normalized(match.group(1) or match.group(2))
+            if extra in needs:
+                needs[extra].append(requirement.strip())
+    return sorted(
+        extra
+        for extra, requirements in needs.items()
+        if requirements and all(_installed(r) for r in requirements)
+    )
+
+
 def _packages() -> list[dict[str, Any]]:
     """Return provider distributions other than the Glitnir core, by name."""
     found: dict[str, dict[str, Any]] = {}
@@ -39,7 +79,12 @@ def _packages() -> list[dict[str, Any]]:
             continue
         item = found.setdefault(
             _normalized(name),
-            {"name": name, "version": dist.version, "entryPoints": []},
+            {
+                "name": name,
+                "version": dist.version,
+                "entryPoints": [],
+                "extras": _extras(dist),
+            },
         )
         if entry.name not in item["entryPoints"]:
             item["entryPoints"].append(entry.name)

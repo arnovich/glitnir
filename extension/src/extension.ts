@@ -5,6 +5,7 @@ import {Backend, heldWhileDirty} from './backend';
 import {previewHtml} from './webview';
 import {EnvironmentSetup} from './setup';
 import {ExtensionPackages} from './extension-packages';
+import {BackendUpgrade} from './backend-upgrade';
 import {setupAgent} from './agent-setup';
 import {sourceCell, sourceTactic, cellAtLine} from './navigation';
 import {validationCommand} from './validation-command';
@@ -27,6 +28,7 @@ const stopping = new Set<Promise<void>>();
 let shuttingDown = false;
 let setup: EnvironmentSetup | undefined;
 let packages: ExtensionPackages | undefined;
+let upgrade: BackendUpgrade | undefined;
 
 /** Register a source-preserving preview; the Python checker owns every status. */
 export function activate(context: vscode.ExtensionContext): void {
@@ -45,6 +47,10 @@ export function activate(context: vscode.ExtensionContext): void {
     return closed;
   }
   packages = new ExtensionPackages(context, output, setup, closePreviewsUsing);
+  upgrade = new BackendUpgrade(context, output, setup, packages);
+  setup.upgrade = upgrade;
+  // After an extension update, offer this build's backend once; nothing downloads without the click.
+  void upgrade.offer().catch(error => output.appendLine(`Glitnir backend update check failed: ${error}`));
   const media = vscode.Uri.joinPath(context.extensionUri, 'dist', 'media');
 
   function dirty(): boolean {
@@ -301,6 +307,9 @@ export function activate(context: vscode.ExtensionContext): void {
         await setup!.resolve(uri, true);
       } catch (error) { if (!shuttingDown) void vscode.window.showErrorMessage(String(error)); }
     }),
+    vscode.commands.registerCommand('glitnir.setupBackendForThisVersion', async () => {
+      try { await upgrade!.run(); } catch (error) { if (!shuttingDown) void vscode.window.showErrorMessage(String(error)); }
+    }),
     vscode.commands.registerCommand('glitnir.installExtensionPackage', async requested => {
       try { await packages!.install(requested); } catch (error) { if (!shuttingDown) void vscode.window.showErrorMessage(String(error)); }
     }),
@@ -329,6 +338,7 @@ export async function deactivate(): Promise<void> {
   shuttingDown = true;
   setup?.dispose();
   packages?.dispose();
+  upgrade?.dispose();
   const active = [...previews.values()];
   for (const preview of active) preview.panel.dispose();
   await Promise.all([...active.map(p => p.backend.close()), ...stopping]);

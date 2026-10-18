@@ -65,7 +65,13 @@ export interface WheelInfo {
   /** Console and GUI script names, which uv writes to the environment's `bin/`. */
   commands: string[];
 }
-export interface InstalledPackage {name: string; version: string; entryPoints: string[]}
+export interface InstalledPackage {
+  name: string;
+  version: string;
+  entryPoints: string[];
+  /** Declared extras whose requirements are all installed (installers record no extras). */
+  extras?: string[];
+}
 export interface ProviderReport {
   core: string | null;
   packages: InstalledPackage[];
@@ -573,7 +579,8 @@ export function parseReport(stdout: string, providers: boolean): ProviderReport 
   if (value.core !== null && (typeof value.core !== 'string' || !VERSION.test(value.core))) throw new Error('Invalid provider report core.');
   if (!Array.isArray(value.packages) || !value.packages.every((p: InstalledPackage) =>
     p && typeof p.name === 'string' && NAME.test(p.name) && !isCore(p.name) && typeof p.version === 'string' &&
-    Array.isArray(p.entryPoints) && p.entryPoints.every(e => typeof e === 'string'))) throw new Error('Invalid provider report packages.');
+    Array.isArray(p.entryPoints) && p.entryPoints.every(e => typeof e === 'string') &&
+    (p.extras === undefined || (Array.isArray(p.extras) && p.extras.every(e => typeof e === 'string' && NAME.test(e)))))) throw new Error('Invalid provider report packages.');
   const report: ProviderReport = {core: value.core, packages: value.packages};
   if (!providers) {
     const commands = value.commands;
@@ -651,6 +658,8 @@ export interface PackageDependencies {
   store?: () => string;
 }
 interface Discovery {discovered(uri: vscode.Uri): Promise<Environment | undefined>}
+/** The outcome of installing an already verified wheel. */
+export interface VerifiedInstall {info: WheelInfo; extras: string[]; dropped: string[]; after: ProviderReport}
 
 /**
  * Install optional provider packages into the discovered backend
@@ -690,10 +699,10 @@ export class ExtensionPackages {
   }
 
   /** One package change at a time in this window. */
-  private async exclusive(work: () => Promise<void>): Promise<void> {
+  private async exclusive<T>(work: () => Promise<T>): Promise<T> {
     if (this.busy) throw new Error('Another Glitnir extension package change is in progress. Retry after it finishes.');
     this.busy = true;
-    try { await work(); } finally { this.busy = false; }
+    try { return await work(); } finally { this.busy = false; }
   }
 
   /**
@@ -765,6 +774,29 @@ export class ExtensionPackages {
 
   install(requested?: vscode.Uri): Promise<void> { return this.exclusive(() => this.installPackage(requested)); }
 
+  /** The provider packages in a backend environment, with the extras that are installed. */
+  packages(python: string, signal: AbortSignal): Promise<ProviderReport> { return this.report(python, 'packages', signal); }
+
+  /**
+   * Install a wheel whose bytes the caller already verified, such as a release
+   * asset, into `python` within the caller's progress: the same inspection,
+   * command check, extras allowlist and core constraint as an interactive
+   * install. Requested extras the wheel does not offer are returned as dropped.
+   */
+  installVerified(python: string, fileName: string, bytes: Buffer, requested: string[], signal: AbortSignal, report: (message: string) => void): Promise<VerifiedInstall> {
+    return this.exclusive(async () => {
+      this.check();
+      const before = await this.report(python, 'packages', signal);
+      if (!before.core) throw new Error(`The backend at ${python} has no installed glitnir package metadata.`);
+      const {info, wheel} = await prepareWheel(fileName, bytes);
+      checkCommands(info, before.commands ?? missingCommands(python));
+      const offered = new Set(info.extras.filter(extra => !extra.unavailable).map(extra => extra.name));
+      const extras = requested.filter(extra => offered.has(extra)), dropped = requested.filter(extra => !offered.has(extra));
+      const {after} = await this.installInspected(python, before.core, fileName, info, wheel, extras, signal, report);
+      return {info, extras, dropped, after};
+    });
+  }
+
   private async installPackage(requested?: vscode.Uri): Promise<void> {
     const environment = await this.environment(requested);
     if (!environment) return;
@@ -809,26 +841,36 @@ export class ExtensionPackages {
     }, 'Install');
     if (accepted !== 'Install') return;
     this.check();
-    const result = await this.progress(`Installing ${info.name}`, async (signal, report) => {
-      const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-package-'));
-      let closed: boolean;
-      try {
-        // Install the archive written from the inspected files, never the selected one.
-        const wheel = path.join(scratch, fileName), constraints = path.join(scratch, 'constraints.txt');
-        await writeFile(wheel, inspected, {flag: 'wx', mode: 0o600});
-        await writeFile(constraints, `glitnir==${before.core}\n`, {flag: 'wx', mode: 0o600});
-        report('Installing with uv');
-        this.output.appendLine(`Installing ${info.name} ${info.version}${extras.length ? ` [${extras.join(',')}]` : ''} into ${python}`);
-        closed = await this.change(python, installArguments(python, wheel, info, extras, constraints), scratch, signal,
-          `uv could not install ${info.name}. See Output → Glitnir for its message; PyPI must be reachable for dependencies.`,
-          `Run Glitnir: Install Extension Package again, or uninstall it with uv pip uninstall --python ${python} ${info.name}.`,
-          async () => { checkCommands(info, (await this.report(python, 'packages', signal)).commands ?? missingCommands(python)); });
-      } finally { await rm(scratch, {recursive: true, force: true}); }
-      report('Loading providers');
-      return {closed, after: await this.report(python, 'providers', signal)};
-    });
-    if (result.after.core !== before.core) throw new Error(`Installing ${info.name} changed the Glitnir backend from ${before.core} to ${result.after.core}. Reinstall the backend with Glitnir: Set Up Environment.`);
-    if (!result.after.packages.some(p => normalized(p.name) === normalized(info.name))) throw new Error(`uv finished, but ${info.name} is not visible in ${python}. See Output → Glitnir.`);
+    const core = before.core;
+    const result = await this.progress(`Installing ${info.name}`, (signal, report) => this.installInspected(python, core, fileName, info, inspected, extras, signal, report));
     await this.announce(`Installed ${info.name} ${info.version}`, result.after, result.closed);
+  }
+
+  /**
+   * Install the archive written from the inspected files, never the selected
+   * one, holding the core at `core`; then check that the core is unchanged and
+   * the package visible, and return the providers now loaded.
+   */
+  private async installInspected(python: string, core: string, fileName: string, info: WheelInfo, inspected: Buffer, extras: string[],
+    signal: AbortSignal, report: (message: string) => void): Promise<{closed: boolean; after: ProviderReport}> {
+    await this.uv();
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-package-'));
+    let closed: boolean;
+    try {
+      const wheel = path.join(scratch, fileName), constraints = path.join(scratch, 'constraints.txt');
+      await writeFile(wheel, inspected, {flag: 'wx', mode: 0o600});
+      await writeFile(constraints, `glitnir==${core}\n`, {flag: 'wx', mode: 0o600});
+      report('Installing with uv');
+      this.output.appendLine(`Installing ${info.name} ${info.version}${extras.length ? ` [${extras.join(',')}]` : ''} into ${python}`);
+      closed = await this.change(python, installArguments(python, wheel, info, extras, constraints), scratch, signal,
+        `uv could not install ${info.name}. See Output → Glitnir for its message; PyPI must be reachable for dependencies.`,
+        `Run Glitnir: Install Extension Package again, or uninstall it with uv pip uninstall --python ${python} ${info.name}.`,
+        async () => { checkCommands(info, (await this.report(python, 'packages', signal)).commands ?? missingCommands(python)); });
+    } finally { await rm(scratch, {recursive: true, force: true}); }
+    report('Loading providers');
+    const after = await this.report(python, 'providers', signal);
+    if (after.core !== core) throw new Error(`Installing ${info.name} changed the Glitnir backend from ${core} to ${after.core}. Reinstall the backend with Glitnir: Set Up Environment.`);
+    if (!after.packages.some(p => normalized(p.name) === normalized(info.name))) throw new Error(`uv finished, but ${info.name} is not visible in ${python}. See Output → Glitnir.`);
+    return {closed, after};
   }
 }

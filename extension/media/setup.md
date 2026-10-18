@@ -44,8 +44,7 @@ give each file's SHA-256 hash and size, and one that is not a plain zip archive
 Glitnir writes from exactly the files it checked.
 The Set Up Environment item appears only once a backend is detected. The managed
 backend is shared by all windows and workspaces, so a change affects them all;
-reopen their previews. If uv fails or is cancelled, run the install again. After
-an extension update that pins a new backend, install the packages into it again.
+reopen their previews. If uv fails or is cancelled, run the install again.
 
 Glitnir does not remove packages for you: uninstalling deletes whatever the
 installed package's file list names, which Glitnir cannot vouch for. To remove
@@ -76,6 +75,31 @@ The backend's Python is shown in **Output → Glitnir** ("Glitnir environment: �
 or set by `glitnir.pythonPath`. After a manual install, close and reopen the
 preview. Its views need a notebook in a Lake project whose packages build
 `Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`.
+
+## Upgrading
+
+Each VSIX pins its own backend, installed in its own environment under
+`~/.local/share/glitnir/backends/`. After an extension update, Glitnir shows
+"Glitnir was updated to X. Set up its backend?" once if it finds an environment
+from an earlier build but none for the new one. Nothing downloads until you
+click **Set Up**. It then downloads and verifies the new backend as **Download
+matching backend** does, into a new environment, and carries over the earlier
+environment's extension packages that the same release publishes (such as
+`glitnir-forseti`, with extras such as `z3`): each is checked against the
+release's `SHA256SUMS` and `glitnir-candidate.json`, which must match this
+VSIX's tag, version and backend, and installed with the same checks as
+**Install Extension Package…**. Other packages are listed to reinstall with
+**Install Extension Package…**. Glitnir switches to the new environment only
+when everything succeeded; if something fails or you cancel, the earlier
+environment is unchanged and **Retry** runs it again. **Glitnir: Set Up Backend
+for This Version** does the same at any time. Set `glitnir.offerBackendUpdate`
+to `false` to turn the notification off.
+
+The earlier environment is kept. Once no window uses it, remove it with
+`rm -rf ~/.local/share/glitnir/backends/<earlier wheel SHA-256>` (not while a
+`.lock` directory beside it exists).
+
+## Help
 
 If something fails, check **Output → Glitnir**, then open an
 [issue](https://github.com/arnovich/glitnir/issues). See the

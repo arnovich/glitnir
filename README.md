@@ -149,15 +149,47 @@ built from the same commit and tested with that release's backend.
 
 ### Upgrading
 
-Use the VSIX, backend wheel and plugin wheel of the same release.
+Each release pins its own backend wheel, and each backend lives in its own
+environment, `~/.local/share/glitnir/backends/<wheel SHA-256>`. When the
+extension updates (from the Marketplace, or a new VSIX) and finds an environment
+from an earlier Glitnir build but none for its own backend, it shows one
+notification: "Glitnir was updated to X. Set up its backend?". Nothing is
+downloaded until you click **Set Up**, which:
 
-1. Install the new VSIX as above.
-2. Each release pins its backend. If the preview reports that the installed
-   runtime is incompatible with this Glitnir build, run **Glitnir: Set Up
-   Environment → Install Backend with uv → Download matching backend** again. It
-   creates a new environment and leaves the old one in place.
-3. Install extension packages such as `glitnir-forseti` into the new environment
-   again, from the same release.
+1. downloads this release's backend wheel, checks it against the size and
+   SHA-256 the extension records, and installs it with uv into a new
+   environment, exactly as **Glitnir: Set Up Environment → Install Backend with
+   uv → Download matching backend** does;
+2. lists the extension packages of the earlier environment, with the extras
+   installed there, such as `glitnir-forseti[z3]`;
+3. for each package the same release publishes, downloads the release's
+   `glitnir-candidate.json` and `SHA256SUMS`, refuses a manifest whose tag,
+   version, backend or plugin binding differs from this extension or from
+   `SHA256SUMS`, downloads the wheel, checks its SHA-256, and installs it with
+   the same checks as **Install Extension Package…**, keeping the extras it
+   still offers;
+4. switches to the new environment only once all of that has succeeded. A
+   `glitnir.pythonPath` that named the earlier managed environment is changed to
+   the new one; other overrides are left alone.
+
+Packages that are not assets of the release (third-party or local wheels, and
+packages you installed yourself such as `gimle-asgard`) are listed at the end to
+reinstall with **Glitnir: Install Extension Package…**; they never fail the
+upgrade. If anything fails or you cancel, the earlier environment is unchanged,
+nothing is switched, and the message offers **Retry**; opening a notebook offers
+the same setup again. **Glitnir: Set Up Backend for This Version** does all of
+this at any time, and running it again is safe. The notification appears once
+per extension version; set `glitnir.offerBackendUpdate` to `false` to turn it
+off. Downloads go only to this repository's GitHub release for the pinned tag.
+
+The earlier environment is never deleted. Once no window uses it (**Output →
+Glitnir** shows the environment in use), remove it yourself, but not while a
+`.lock` directory beside it exists:
+
+```sh
+ls ~/.local/share/glitnir/backends/          # one directory per backend build
+rm -rf ~/.local/share/glitnir/backends/<earlier wheel SHA-256>
+```
 
 A release that changes the replay program shows saved results as out of date
 once, and its first check replays the imports again (see [Imports and
@@ -476,6 +508,7 @@ in DEVELOPMENT.md.
 | `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
 | `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
+| `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend and carry over extension packages (see [Upgrading](#upgrading)). Nothing downloads until you click **Set Up**. |
 
 Changing `glitnir.pythonPath` closes open previews; reopen them to apply the
 change.
@@ -538,8 +571,10 @@ The backend installed by Set Up Environment is shared by every window and
 workspace using it, so a package change affects them all, while only this
 window's previews close; reopen previews in other windows too. If uv fails or is
 cancelled, the environment may be partly changed: run the install
-again. After an extension update that pins a new backend, Set Up Environment
-creates a new environment; install the extension packages into it again.
+again. After an extension update that pins a new backend, **Set Up** in the
+update notification (or **Glitnir: Set Up Backend for This Version**) creates a
+new environment and carries over the packages published with the release; see
+[Upgrading](#upgrading).
 
 To install by hand instead, find the backend's Python (shown in **Output →
 Glitnir** as "Glitnir environment: …", or set by the `glitnir.pythonPath`
@@ -624,7 +659,8 @@ and package installs, and each preview's backend output.
 - **"Install uv first"**: install uv into one of the locations under
   [Requirements](#requirements), then run Set Up Environment again.
 - **"The installed Glitnir runtime is incompatible with this Glitnir build"**: the
-  backend is from another release; see [Upgrading](#upgrading).
+  backend is from another release; run **Glitnir: Set Up Backend for This
+  Version** (see [Upgrading](#upgrading)).
 - **"Install leanprover/lean4:v4.32.1 with elan"**: install the toolchain with
   `elan toolchain install leanprover/lean4:v4.32.1`.
 - **"no working sandbox"** on Linux: install bubblewrap and allow unprivileged

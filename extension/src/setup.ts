@@ -1,8 +1,32 @@
 import * as path from 'node:path';
-import {downloadRuntime} from './runtime-download';
-import {backendDescriptor, backendStore, findUv, installBackend} from './backend-install';
+import {downloadRuntime, RELEASE_REPOSITORY} from './runtime-download';
+import {BackendDescriptor, backendDescriptor, backendStore, findUv, installBackend} from './backend-install';
 import * as vscode from 'vscode';
 import {discover, DiscoveryError, Environment, ProbeResult, probePython} from './discovery';
+
+/** Release downloads are anonymous; GitHub sign-in is asked for only if GitHub refuses them. */
+export async function githubToken(): Promise<string> {
+  const session = await vscode.authentication.getSession('github', ['repo'], {createIfNone: true});
+  return session.accessToken;
+}
+
+/** The managed environment directory holding `python`, if it is one of the store's backends. */
+export function managedBackendSha(python: string | undefined, store = backendStore()): string | undefined {
+  if (!python) return undefined;
+  const directory = path.dirname(path.dirname(path.resolve(python)));
+  return path.dirname(directory) === store && /^[a-f0-9]{64}$/.test(path.basename(directory)) && path.basename(python) === 'python'
+    ? path.basename(directory) : undefined;
+}
+
+const UPGRADE_ACTION = 'Set Up';
+
+/** Offered when no backend is found but an earlier build's managed backend exists. */
+export interface UpgradeOffer {
+  /** The earlier build's environment directory, or undefined when there is nothing to upgrade from. */
+  available(): Promise<string | undefined>;
+  /** Run the upgrade; resolves to the new Python, or undefined when it did not finish. */
+  run(): Promise<string | undefined>;
+}
 
 interface PythonApi {
   ready?: Promise<void>;
@@ -34,6 +58,8 @@ async function selectedPython(uri: vscode.Uri): Promise<string | undefined> {
 /** Workspace-local remembered choices; every use is checked against the installed pin. */
 export class EnvironmentSetup {
   private controller = new AbortController();
+  /** Set by the extension once the backend upgrade exists; offered when opening a notebook finds no backend. */
+  upgrade?: UpgradeOffer;
   constructor(private context: vscode.ExtensionContext, private output: vscode.OutputChannel) {}
 
   dispose(): void { this.controller.abort(); }
@@ -78,20 +104,54 @@ export class EnvironmentSetup {
       this.controller.signal.addEventListener('abort', stop, {once: true});
       const subscription = token.onCancellationRequested(stop);
       if (token.isCancellationRequested || this.controller.signal.aborted) stop();
-      const report = (message: string): void => progress.report({message});
       try {
-        return await installBackend(backendStore(), d, {
-          uv, wheel, signal: controller.signal, progress: report,
-          probe: python => probePython(python, vscode.Uri.joinPath(this.context.extensionUri, 'dist/probe.py').fsPath, controller.signal),
-          acquire: d.tag ? (destination, signal) => downloadRuntime(destination, {
-            archive: {size: d.size}, source: {repository: 'arnovich/glitnir', tag: d.tag!, asset: d.asset},
-          }, {signal, progress: () => report('Downloading the matching backend'), githubToken: async () => {
-            const session = await vscode.authentication.getSession('github', ['repo'], {createIfNone: true});
-            return session.accessToken;
-          }}) : undefined,
-        });
+        return await this.installPinned(d, uv, controller.signal, message => progress.report({message}), wheel);
       } finally { subscription.dispose(); this.controller.signal.removeEventListener('abort', stop); }
     });
+  }
+
+  /**
+   * Install, or reuse, the backend this VSIX pins in its own managed
+   * environment: from a selected wheel, or downloaded from this build's
+   * release. Either way the wheel must match the pinned size and SHA-256.
+   */
+  installPinned(d: BackendDescriptor, uv: string, signal: AbortSignal, report: (message: string) => void, wheel?: string): Promise<string> {
+    return installBackend(backendStore(), d, {
+      uv, wheel, signal, progress: report,
+      probe: python => probePython(python, vscode.Uri.joinPath(this.context.extensionUri, 'dist/probe.py').fsPath, signal),
+      acquire: d.tag ? (destination, signal) => downloadRuntime(destination, {
+        archive: {size: d.size}, source: {repository: RELEASE_REPOSITORY, tag: d.tag!, asset: d.asset},
+      }, {signal, progress: () => report('Downloading the matching backend'), githubToken}) : undefined,
+    });
+  }
+
+  /**
+   * Switch every window to this build's complete managed backend at `python`:
+   * share it, and repoint `glitnir.pythonPath` values that name an earlier
+   * build's managed backend. Other overrides are the user's own choice and are
+   * kept. Returns the settings scopes that changed.
+   */
+  async adopt(python: string): Promise<string[]> {
+    this.check();
+    const d = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend);
+    if (managedBackendSha(python) !== d.sha256) throw new Error('Only this build\'s managed backend can be adopted.');
+    await this.context.globalState.update(`backend:${d.sha256}`, python);
+    const changed: string[] = [];
+    const earlier = (value: string | undefined): boolean => { const sha = managedBackendSha(value); return !!sha && sha !== d.sha256; };
+    const top = vscode.workspace.getConfiguration('glitnir').inspect<string>('pythonPath');
+    for (const [value, target, label] of [[top?.globalValue, vscode.ConfigurationTarget.Global, 'user settings'], [top?.workspaceValue, vscode.ConfigurationTarget.Workspace, 'workspace settings']] as const) {
+      if (!earlier(value)) continue;
+      await vscode.workspace.getConfiguration('glitnir').update('pythonPath', python, target);
+      changed.push(label);
+    }
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const config = vscode.workspace.getConfiguration('glitnir', folder.uri);
+      if (!earlier(config.inspect<string>('pythonPath')?.workspaceFolderValue)) continue;
+      await config.update('pythonPath', python, vscode.ConfigurationTarget.WorkspaceFolder);
+      changed.push(`${folder.name} folder settings`);
+    }
+    this.output.appendLine(`Glitnir backend for this build selected: ${python}`);
+    return changed;
   }
 
   private async discovery(uri: vscode.Uri) {
@@ -99,13 +159,19 @@ export class EnvironmentSetup {
     const cwd = folder?.uri.fsPath ?? path.dirname(uri.fsPath);
     const key = `environment:${folder?.uri.toString() ?? cwd}`;
     const config = vscode.workspace.getConfiguration('glitnir', uri);
+    const pinned = this.context.extension?.packageJSON.glitnirBackend?.sha256;
+    const sharedPython = this.context.globalState?.get<string>(`backend:${pinned}`);
+    let remembered = this.context.workspaceState.get<Environment>(key);
+    // Once this build's own backend is set up, a remembered backend of an earlier build gives way to it.
+    const rememberedSha = managedBackendSha(remembered?.python);
+    if (sharedPython && rememberedSha && rememberedSha !== pinned) remembered = undefined;
     const input = {
       cwd, notebook: uri.fsPath,
       roots: (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath),
       pythonOverride: config.get<string>('pythonPath', ''),
-      remembered: this.context.workspaceState.get<Environment>(key),
+      remembered,
       selectedPython: await selectedPython(uri),
-      sharedPython: this.context.globalState?.get<string>(`backend:${this.context.extension?.packageJSON.glitnirBackend?.sha256}`),
+      sharedPython,
       cancelled: () => this.controller.signal.aborted,
       log: (text: string) => this.output.append(text),
     };
@@ -152,6 +218,21 @@ export class EnvironmentSetup {
     } catch (error) {
       this.check();
       if (!(error instanceof DiscoveryError)) throw error;
+      const earlier = canInstall && !configure ? await this.upgrade?.available() : undefined;
+      this.check();
+      if (earlier) {
+        const version = this.context.extension?.packageJSON.version;
+        const choice = await vscode.window.showInformationMessage(`Glitnir was updated to ${version}. Set up its backend to open this notebook.`, {
+          modal: true,
+          detail: `${error.message}\n\nThe backend at ${earlier} belongs to an earlier Glitnir build. Set Up downloads this build's verified backend into a new environment and carries over the extension packages from this release; the earlier environment is kept.`,
+        }, UPGRADE_ACTION, 'Other Setup Options');
+        this.check();
+        if (choice === UPGRADE_ACTION) {
+          const python = await this.upgrade!.run();
+          return python ? {python} : undefined;
+        }
+        if (choice !== 'Other Setup Options') return undefined;
+      }
       const action = await vscode.window.showInformationMessage(
         'Set up Glitnir to open this notebook',
         {modal: true, detail: `${error.message}\n\nSource preview needs an installed Python backend only. Explicit project checks also need the supported Lean toolchain and prepared dependencies. You can choose existing installations or follow the installation guide.`},

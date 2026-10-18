@@ -319,7 +319,11 @@ test('the bundled report lists provider packages and loads them without starting
   ].join('\n'));
   const info = path.join(root, 'fake_provider-1.0.dist-info');
   await fs.mkdir(info);
-  await fs.writeFile(path.join(info, 'METADATA'), 'Metadata-Version: 2.1\nName: fake-provider\nVersion: 1.0\n');
+  await fs.writeFile(path.join(info, 'METADATA'), ['Metadata-Version: 2.1', 'Name: fake-provider', 'Version: 1.0',
+    // Extras are reported when every requirement is installed; the backend is, the other package is not.
+    'Provides-Extra: Core_Extra', 'Requires-Dist: Glitnir; extra == "core-extra"',
+    'Provides-Extra: missing', 'Requires-Dist: glitnir; extra == "missing"', 'Requires-Dist: not-installed-anywhere>=1; "missing" == extra',
+    'Provides-Extra: empty', ''].join('\n'));
   await fs.writeFile(path.join(info, 'entry_points.txt'), '[glitnir.providers]\nfake = fake_provider:providers\nbroken = fake_provider:broken\n');
   // The fixture's RECORD claims one existing file in the interpreter's scripts directory.
   const scripts = spawnSync(python, ['-I', '-c', 'import sysconfig; print(sysconfig.get_path("scripts"))'], {encoding: 'utf8'}).stdout.trim();
@@ -332,7 +336,7 @@ test('the bundled report lists provider packages and loads them without starting
   assert.equal(listed.status, 0, listed.stdout + listed.stderr);
   const list = JSON.parse(listed.stdout);
   assert.match(list.core, /^\d/);
-  assert.deepEqual(list.packages.find(p => p.name === 'fake-provider'), {name: 'fake-provider', version: '1.0', entryPoints: ['fake', 'broken']});
+  assert.deepEqual(list.packages.find(p => p.name === 'fake-provider'), {name: 'fake-provider', version: '1.0', entryPoints: ['fake', 'broken'], extras: ['core-extra']});
   assert.ok(!list.packages.some(p => p.name.toLowerCase() === 'glitnir'));
   assert.equal(list.views, undefined, 'listing packages does not load them');
   assert.ok(list.commands[claimed].includes('fake-provider'), JSON.stringify(list.commands[claimed]));
@@ -500,6 +504,23 @@ test('install stops on dismissal, refused wheels or uv failure, and reports prov
   await errors.manager.install();
   assert.match(errors.state.warnings[0], /^Installed glitnir-forseti 0\.1\.0, but some providers did not load: forseti \(ImportError: lark\)/);
   assert.ok(errors.calls.log.join('').includes('Glitnir provider forseti did not load: ImportError: lark'));
+});
+
+test('a verified release wheel installs through the same checks without prompts, keeping only offered extras', async t => {
+  const f = await flow(t);
+  const signal = new AbortController().signal;
+  const result = await f.manager.installVerified('/env/bin/python', FORSETI, await fs.readFile(f.wheelFile), ['z3', 'simulation', 'gone'], signal, () => {});
+  assert.deepEqual([result.extras, result.dropped], [['z3'], ['simulation', 'gone']], 'withheld and unknown extras are never installed');
+  assert.equal(result.info.name, 'glitnir-forseti');
+  const run = f.calls.runs[0];
+  assert.equal(run.constraints, 'glitnir==0.1.0\n');
+  assert.ok(run.bytesMatch, 'uv installs the archive written from the inspected files');
+  assert.match(run.args.at(-1), /^glitnir-forseti\[z3\] @ file:\/\//);
+  assert.equal(f.state.dialogs.length + f.state.modalDetails.length + f.state.pickItems.length + f.state.infos.length, 0, 'the caller reports the outcome');
+  const core = await wheel({'glitnir-0.1.0.dist-info/METADATA': 'Name: glitnir\nVersion: 0.1.0\n'});
+  await assert.rejects(f.manager.installVerified('/env/bin/python', 'glitnir-0.1.0-py3-none-any.whl', core, [], signal, () => {}), /Glitnir backend itself/);
+  const changed = await flow(t, {coreAfter: '0.2.0'});
+  await assert.rejects(changed.manager.installVerified('/env/bin/python', FORSETI, await fs.readFile(changed.wheelFile), [], signal, () => {}), /changed the Glitnir backend/);
 });
 
 const install = f => { f.state.dialogs.push([f.file(f.wheelFile)]); f.state.picks.push([]); f.state.modals.push('Install'); return f.manager.install(); };
