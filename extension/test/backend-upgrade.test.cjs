@@ -148,6 +148,7 @@ async function upgradeFlow(t, options = {}) {
       return newPython;
     },
     adopt: async python => { calls.adopted.push(python); return options.settings ?? []; },
+    requireUv: async () => options.noUv ? undefined : '/installed/uv',
   };
   const earlierPackages = options.earlier ?? [
     {name: 'glitnir-forseti', version: '0.1.0', entryPoints: ['forseti'], extras: ['z3']},
@@ -173,7 +174,7 @@ async function upgradeFlow(t, options = {}) {
     globalState: {get: key => global.get(key), update: async (key, value) => { global.set(key, value); }},
   };
   const upgrade = new BackendUpgrade(context, {appendLine: text => calls.log.push(text)}, setup, packages, {
-    store: () => root, findUv: async () => '/installed/uv', download: r.download,
+    store: () => root, download: r.download,
   });
   return {upgrade, state, fake, calls, r, root, old: path.join(root, old), newPython, global, OFFERED_KEY, installedNew};
 }
@@ -271,7 +272,7 @@ test('a manifest or checksum that does not match this build is refused before an
     assert.equal(f.calls.installPinned, 0, 'the backend is not installed from a mismatched release');
     assert.deepEqual(f.calls.adopted, []);
     assert.match(f.state.errors[0][0], /did not finish: .*(does not match this Glitnir build|SHA256SUMS)/);
-    assert.deepEqual(f.state.errors[0].slice(1), ['Retry']);
+    assert.deepEqual(f.state.errors[0].slice(1), ['Retry', 'Read Setup Guide']);
   }
   const tampered = await upgradeFlow(t, {release: {servedPlugin: 'other bytes!'}});
   tampered.state.errorActions.push(undefined);
@@ -301,7 +302,7 @@ test('failure and cancellation leave the earlier environment intact and switch n
   cancelled.state.errorActions.push(undefined);
   assert.equal(await cancelled.upgrade.run(), undefined);
   assert.match(cancelled.state.errors[0][0], /was cancelled/);
-  assert.deepEqual(cancelled.state.errors[0].slice(1), ['Retry']);
+  assert.deepEqual(cancelled.state.errors[0].slice(1), ['Retry', 'Read Setup Guide']);
   assert.deepEqual(cancelled.calls.adopted, []);
   assert.deepEqual(await snapshot(cancelled.old), kept);
   const concurrent = await upgradeFlow(t);
@@ -309,6 +310,13 @@ test('failure and cancellation leave the earlier environment intact and switch n
   assert.equal(first, second, 'a second click joins the running setup');
   await first;
   assert.equal(concurrent.calls.installPinned, 1);
+});
+
+test('declining to install uv stops the upgrade quietly before any download', async t => {
+  const f = await upgradeFlow(t, {noUv: true});
+  assert.equal(await f.upgrade.run(), undefined);
+  assert.equal(f.r.requests.length + f.calls.installPinned + f.state.errors.length, 0);
+  assert.deepEqual(f.calls.adopted, []);
 });
 
 test('release verification binds tag, version, backend and plugin to SHA256SUMS', () => {

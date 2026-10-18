@@ -9,11 +9,22 @@ install `bubblewrap apparmor apparmor-profiles` and run
 
 1. Install the VSIX from a [release](https://github.com/arnovich/glitnir/releases)
    with **Extensions: Install from VSIX…**.
-2. Open a Lean file and run **Glitnir: Set Up Environment → Install Backend with
-   uv → Download matching backend**. Setup verifies the wheel's checksum against
-   the VSIX. To use a wheel you already downloaded, choose **Choose downloaded
-   backend wheel**; to reuse an environment, choose **Choose Existing Environment**.
+2. Open a Lean file and run **Glitnir: Set Up Environment → Set Up**. It
+   downloads this release's backend wheel, verifies its checksum against the
+   VSIX and installs it with uv in one step. **More Options…** holds **Choose
+   downloaded backend wheel** (development builds, offline use), **Choose
+   Existing Environment** and this guide.
 3. Run **Glitnir: Open in Glitnir**.
+
+If uv is not installed, setup says so and offers **Install uv**, showing the
+command first: `brew install uv` (by Homebrew's full path) when Homebrew is
+installed, otherwise the official installer of a pinned uv version,
+`curl -LsSf https://astral.sh/uv/VERSION/install.sh | sh` (VERSION is pinned in
+the extension; the installer puts uv in `~/.local/bin`). Nothing runs until you
+click **Install uv**; the command then runs in a VS Code terminal named
+"Install uv", where you can watch it. When that terminal closes, or when you
+choose **Retry** (for example after installing uv yourself), Glitnir looks for
+uv again and continues the setup.
 
 To install by hand, download the VSIX, backend wheel and `SHA256SUMS` from one
 release, then run (`--ignore-missing` skips the assets you did not download):
@@ -83,7 +94,7 @@ Each VSIX pins its own backend, installed in its own environment under
 "Glitnir was updated to X. Set up its backend?" once if it finds an environment
 from an earlier build but none for the new one. Nothing downloads until you
 click **Set Up**. It then downloads and verifies the new backend as **Download
-matching backend** does, into a new environment, and carries over the earlier
+Set Up** does, into a new environment, and carries over the earlier
 environment's extension packages that the same release publishes (such as
 `glitnir-forseti`, with extras such as `z3`): each is checked against the
 release's `SHA256SUMS` and `glitnir-candidate.json`, which must match this

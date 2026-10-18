@@ -87,6 +87,6 @@ test('cancelling while GitHub sign-in is pending does not wait for the dialog', 
 test('release metadata failures point at the downloaded-wheel setup path', async t => {
   await downloads(t, [{status: 500}], async file => {
     await assert.rejects(downloadRuntime(file, {archive: {size: 4}, source: {repository: 'owner/repo', tag: 'v1', asset: 'glitnir.whl'}}, {signal: new AbortController().signal}),
-      /HTTP 500.*Set Up Environment → Install Backend with uv → Choose downloaded backend wheel/);
+      /HTTP 500.*Set Up Environment → More Options… → Choose downloaded backend wheel/);
   });
 });

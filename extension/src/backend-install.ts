@@ -26,6 +26,25 @@ export async function findUv(candidates = installedPaths().map(dir => path.join(
   }
   throw new Error('Install uv first (on macOS: brew install uv), then run Set Up Environment again. See the installation guide.');
 }
+/** The uv release whose official installer Install uv runs when Homebrew is not installed. */
+export const UV_VERSION = '0.7.13';
+/** Homebrew, looked up where it installs itself, never in a workspace. */
+export async function findBrew(candidates = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew', '/home/linuxbrew/.linuxbrew/bin/brew']): Promise<string | undefined> {
+  for (const file of candidates) {
+    try { await access(file, constants.X_OK); return file; } catch { /* Try the next installed location. */ }
+  }
+  return undefined;
+}
+/**
+ * The command Install uv shows and then runs in a terminal: Homebrew's when it
+ * is installed, otherwise the official installer of a pinned uv version (it
+ * installs to ~/.local/bin, where Glitnir looks). Never an unversioned URL.
+ */
+export function uvInstallCommand(brew?: string): string {
+  if (brew) return `${brew} install uv`;
+  if (!/^\d+\.\d+\.\d+$/.test(UV_VERSION)) throw new Error('The uv installer version must be pinned.');
+  return `curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh`;
+}
 /** Do not inherit workspace venvs, uv configuration, indexes or Python injection. */
 export function uvEnvironment(original: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return {HOME: os.homedir(), PATH: installedPaths().join(path.delimiter),

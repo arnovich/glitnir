@@ -17,7 +17,8 @@ test('setup remembers validated choices, respects cancellation and rejects untru
     },
     window: {
       showOpenDialog: async () => dialogs.shift(),
-      showQuickPick: async () => choices.length ? choices.shift() : {detected: false},
+      // Without a queued choice: More Options… → Choose Existing Environment.
+      showQuickPick: async items => choices.length ? choices.shift() : items.find(i => i.action === 'more') ?? items.find(i => i.source === 'existing'),
       showErrorMessage: async () => 'Set Up Glitnir',
       showInformationMessage: async () => {},
     },
@@ -59,14 +60,14 @@ test('setup remembers validated choices, respects cancellation and rejects untru
   choices.push(undefined);
   assert.equal(await setup.resolve(uri, true), undefined);
   assert.equal(store.size, 0, 'cancelling the detected-environment choice stores nothing');
-  choices.push({detected: true});
+  choices.push({action: 'detected'});
   const detected = await setup.resolve(uri, true);
   assert.equal(detected.python, '/work/.venv/bin/python');
   assert.equal(store.size, 1, 'explicitly accepting detection remembers the verified choice');
   assert.equal(dialogs.length, 0);
   fake.workspace.getWorkspaceFolder = () => undefined;
   fake.workspace.getConfiguration = namespace => (assert.equal(namespace, 'glitnir'), {get: key => key === 'pythonPath' ? '/global/python' : '', update: async (...args) => updates.push(args)});
-  choices.push({detected: true});
+  choices.push({action: 'detected'});
   assert.equal((await setup.resolve(uri, true)).python, '/global/python');
   assert.equal(updates.length, 0, 'accepting an existing global override needs no workspace or settings rewrite');
   dialogs.push([file('/replacement/python')]);
@@ -80,9 +81,10 @@ test('setup remembers validated choices, respects cancellation and rejects untru
   fake.window.showInformationMessage = async (message, options, ...actions) => {
     assert.equal(options.modal, true);
     assert.match(options.detail, /installed Python backend/);
-    assert.ok(actions.includes('Read Installation Guide'));
-    return 'Read Installation Guide';
+    assert.deepEqual(actions, ['Choose Existing Environment', 'More Options…'], 'the guide moved into More Options…');
+    return 'More Options…';
   };
+  choices.push({source: 'guide'});
   const storedBeforeGuide = store.size;
   assert.equal(await setup.resolve(uri), undefined);
   assert.equal(opened[0][0], 'markdown.showPreview');
@@ -139,7 +141,7 @@ test('setup offers extension packages and quiet discovery never prompts', async 
     workspace: {isTrusted: true, workspaceFolders: [{uri: file('/work')}], getWorkspaceFolder: () => ({uri: file('/work')}), getConfiguration: () => ({get: () => ''})},
     window: {
       showQuickPick: async items => {
-        const item = items.find(i => i.extensionPackage);
+        const item = items.find(i => i.action === 'package');
         assert.equal(item.label, 'Install Extension Package…');
         return item;
       },

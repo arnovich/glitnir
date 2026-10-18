@@ -2,10 +2,10 @@ import {lstat, mkdtemp, readdir, readFile, rm, stat} from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import {BackendDescriptor, backendDescriptor, backendStore, findUv} from './backend-install';
+import {BackendDescriptor, backendDescriptor, backendStore} from './backend-install';
 import {InstalledPackage, ProviderReport, readWheel, VerifiedInstall} from './extension-packages';
 import {fetchPlugin, fetchRelease, normalizedName, ReleaseFetch, ReleasePlugin, VerifiedRelease} from './release-assets';
-import {githubToken} from './setup';
+import {githubToken, openSetupGuide} from './setup';
 
 /** A complete managed backend environment: its directory is named by the wheel digest its marker records. */
 export interface ManagedBackend {sha256: string; directory: string; python: string; created: number}
@@ -77,6 +77,8 @@ export function planCarryOver(previous: InstalledPackage[], plugins: ReleasePlug
 interface Setup {
   installPinned(d: BackendDescriptor, uv: string, signal: AbortSignal, report: (message: string) => void): Promise<string>;
   adopt(python: string): Promise<string[]>;
+  /** The installed uv, after offering to install it; undefined when the user declined. */
+  requireUv(): Promise<string | undefined>;
 }
 interface Packages {
   packages(python: string, signal: AbortSignal): Promise<ProviderReport>;
@@ -84,7 +86,6 @@ interface Packages {
 }
 export interface UpgradeDependencies {
   store?: () => string;
-  findUv?: () => Promise<string>;
   /** Replaces release downloads, for tests. */
   download?: ReleaseFetch['download'];
 }
@@ -92,6 +93,9 @@ export interface UpgradeDependencies {
 /** The globalState key holding the extension version the update offer was last shown for. */
 export const OFFERED_KEY = 'backendUpdateOffered';
 export const SET_UP = 'Set Up';
+
+/** The user dismissed a prerequisite prompt; nothing was started. */
+class Dismissed extends Error {}
 
 interface Outcome {python: string; earlier?: string; carried: string[]; dropped: string[]; manual: InstalledPackage[]; unreadable?: string; settings: string[]}
 
@@ -149,11 +153,12 @@ export class BackendUpgrade {
       const progress = new AbortController();
       try { return this.announce(await this.upgrade(progress)); }
       catch (error) {
-        if (this.controller.signal.aborted) return undefined;
+        if (this.controller.signal.aborted || error instanceof Dismissed) return undefined;
         const failure = progress.signal.aborted ? 'was cancelled' : `did not finish: ${(error as Error).message}`;
         const message = `Setting up the backend for Glitnir ${this.version} ${failure}`;
         this.output.appendLine(message);
-        const choice = await vscode.window.showErrorMessage(`${message} The earlier environment is unchanged and nothing was switched.`, 'Retry');
+        const choice = await vscode.window.showErrorMessage(`${message} The earlier environment is unchanged and nothing was switched.`, 'Retry', 'Read Setup Guide');
+        if (choice === 'Read Setup Guide') await openSetupGuide(this.context);
         if (choice !== 'Retry' || this.controller.signal.aborted) return undefined;
       }
     }
@@ -164,7 +169,8 @@ export class BackendUpgrade {
     if (!this.supported()) throw new Error('Backend setup supports local macOS and Linux windows.');
     const d = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend);
     if (!d.tag) throw new Error('This Glitnir build names no release to download its backend from. Run Glitnir: Set Up Environment and choose a downloaded backend wheel.');
-    const uv = await (this.dependencies.findUv ?? findUv)();
+    const uv = await this.setup.requireUv();
+    if (!uv) throw new Dismissed('uv is not installed.');
     const state = await upgradeState(this.store(), d.sha256);
     return vscode.window.withProgress({location: vscode.ProgressLocation.Notification, title: `Setting up the Glitnir ${this.version} backend`, cancellable: true}, async (progress, token) => {
       const stop = (): void => controller.abort();

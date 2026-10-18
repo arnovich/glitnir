@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import {downloadRuntime, RELEASE_REPOSITORY} from './runtime-download';
-import {BackendDescriptor, backendDescriptor, backendStore, findUv, installBackend} from './backend-install';
+import {BackendDescriptor, backendDescriptor, backendStore, findBrew, findUv, installBackend, uvInstallCommand} from './backend-install';
 import * as vscode from 'vscode';
 import {discover, DiscoveryError, Environment, ProbeResult, probePython} from './discovery';
 
@@ -19,6 +19,21 @@ export function managedBackendSha(python: string | undefined, store = backendSto
 }
 
 const UPGRADE_ACTION = 'Set Up';
+/** The one-step setup: download this build's verified backend and install it with uv. */
+export const SET_UP = 'Set Up';
+export const MORE_OPTIONS = 'More Options…';
+export const INSTALL_UV = 'Install uv';
+type Source = 'download' | 'wheel' | 'existing';
+
+export interface SetupDependencies {
+  findUv?: () => Promise<string>;
+  findBrew?: () => Promise<string | undefined>;
+}
+
+/** Open the setup guide shipped with the extension. */
+export async function openSetupGuide(context: vscode.ExtensionContext): Promise<void> {
+  await vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.joinPath(context.extensionUri, 'dist', 'media', 'setup.md'));
+}
 
 /** Offered when no backend is found but an earlier build's managed backend exists. */
 export interface UpgradeOffer {
@@ -60,7 +75,7 @@ export class EnvironmentSetup {
   private controller = new AbortController();
   /** Set by the extension once the backend upgrade exists; offered when opening a notebook finds no backend. */
   upgrade?: UpgradeOffer;
-  constructor(private context: vscode.ExtensionContext, private output: vscode.OutputChannel) {}
+  constructor(private context: vscode.ExtensionContext, private output: vscode.OutputChannel, private dependencies: SetupDependencies = {}) {}
 
   dispose(): void { this.controller.abort(); }
 
@@ -75,29 +90,27 @@ export class EnvironmentSetup {
     return probePython(python, script, this.controller.signal);
   }
 
-  /** An explicit setup action installs only the wheel pinned by this VSIX. */
-  private async installWithUv(): Promise<string | undefined> {
+  /**
+   * An explicit setup action installs only the wheel pinned by this VSIX: in one
+   * step from its release, or from a wheel the user selects (always for a
+   * build that names no release).
+   */
+  private async installWithUv(chooseWheel: boolean): Promise<string | undefined> {
     this.check();
     if (vscode.env.remoteName || !['darwin', 'linux'].includes(process.platform)) throw new Error('Backend setup supports local macOS and Linux windows.');
     const d = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend);
-    const uv = await findUv();
-    const source = await vscode.window.showQuickPick([
-      ...(d.tag ? [{label: 'Download matching backend', download: true, detail: 'Download the verified backend from this Glitnir release.'}] : []),
-      {label: 'Choose downloaded backend wheel', download: false, detail: 'Select the matching .whl file. The wheel has no runtime dependencies.'},
-    ], {title: 'Install Backend with uv'});
-    if (!source) return undefined;
+    const uv = await this.requireUv();
+    if (!uv) return undefined;
+    this.check();
     let wheel: string | undefined;
-    if (!source.download) {
+    if (chooseWheel || !d.tag) {
       const files = await vscode.window.showOpenDialog({title: 'Select matching Glitnir backend wheel', canSelectMany: false, canSelectFiles: true, canSelectFolders: false, filters: {'Python wheel': ['whl']}});
       if (!files?.[0]) return undefined;
       if (files[0].scheme !== 'file') throw new Error('Select a local backend wheel.');
       wheel = files[0].fsPath;
     }
-    const accepted = await vscode.window.showInformationMessage('Install Glitnir backend with uv?', {
-      modal: true, detail: `Use installed Python 3.12+ and install the backend in ${path.join(backendStore(), d.sha256)}. Python and Lean will not be downloaded. Existing environments are kept.`,
-    }, 'Install Backend');
-    if (accepted !== 'Install Backend') return undefined;
     this.check();
+    this.output.appendLine(`Installing the Glitnir backend in ${path.join(backendStore(), d.sha256)}`);
     return vscode.window.withProgress({location: vscode.ProgressLocation.Notification, title: 'Installing Glitnir backend', cancellable: true}, async (progress, token) => {
       const controller = new AbortController();
       const stop = (): void => controller.abort();
@@ -107,6 +120,38 @@ export class EnvironmentSetup {
       try {
         return await this.installPinned(d, uv, controller.signal, message => progress.report({message}), wheel);
       } finally { subscription.dispose(); this.controller.signal.removeEventListener('abort', stop); }
+    });
+  }
+
+  /**
+   * The installed uv, or, when there is none, an explanation with Install uv:
+   * only that click opens a terminal running the shown command. After the
+   * terminal closes, or on Retry, uv is looked up again. Undefined when dismissed.
+   */
+  async requireUv(): Promise<string | undefined> {
+    for (;;) {
+      this.check();
+      try { return await (this.dependencies.findUv ?? findUv)(); } catch { /* Offer to install it. */ }
+      const command = uvInstallCommand(await (this.dependencies.findBrew ?? findBrew)());
+      const choice = await vscode.window.showInformationMessage('Glitnir needs uv to install its backend.', {
+        modal: true,
+        detail: `uv creates the backend environment from your installed Python. Install uv runs this command in a VS Code terminal, where you can watch it:\n\n${command}\n\nSetup continues when the terminal closes. Choose Retry once uv is installed some other way.`,
+      }, INSTALL_UV, 'Retry', 'Read Setup Guide');
+      this.check();
+      if (choice === 'Read Setup Guide') { await openSetupGuide(this.context); return undefined; }
+      if (choice === INSTALL_UV) await this.runInTerminal(command);
+      else if (choice !== 'Retry') return undefined;
+    }
+  }
+
+  /** Run `command` visibly in a new terminal; resolves when the terminal closes or the user chooses Retry. */
+  private async runInTerminal(command: string): Promise<void> {
+    const terminal = vscode.window.createTerminal({name: 'Install uv', shellPath: '/bin/sh', shellArgs: ['-c', command]});
+    terminal.show();
+    await new Promise<void>(resolve => {
+      const closed = vscode.window.onDidCloseTerminal(t => { if (t === terminal) finish(); });
+      const finish = (): void => { closed.dispose(); resolve(); };
+      void vscode.window.showInformationMessage(`Installing uv in the terminal: ${command}. Glitnir continues setup when the terminal closes, or choose Retry.`, 'Retry').then(choice => { if (choice === 'Retry') finish(); }, finish);
     });
   }
 
@@ -195,8 +240,9 @@ export class EnvironmentSetup {
     this.check();
     const {folder, key, config, input} = await this.discovery(uri);
     this.check();
-    let installRequested = false;
+    let installRequested = false, source: Source | undefined;
     const canInstall = !!this.context.extension?.packageJSON.glitnirBackend;
+    const setUpDetail = 'Download this build\'s verified backend and install it with uv, using installed Python 3.12+. Python and Lean are not downloaded; existing environments are kept.';
     const remember = async (env: Environment, replaceOverride: boolean): Promise<Environment> => {
       this.check();
       // Only user-invoked setup may replace an explicit override, and only here.
@@ -235,38 +281,38 @@ export class EnvironmentSetup {
       }
       const action = await vscode.window.showInformationMessage(
         'Set up Glitnir to open this notebook',
-        {modal: true, detail: `${error.message}\n\nSource preview needs an installed Python backend only. Explicit project checks also need the supported Lean toolchain and prepared dependencies. You can choose existing installations or follow the installation guide.`},
-        ...(canInstall ? ['Install Backend with uv'] : []), 'Choose Existing Environment', 'Read Installation Guide',
+        {modal: true, detail: `${error.message}\n\n${canInstall ? `${SET_UP} installs this build's verified backend with uv in one step. ` : ''}Source preview needs an installed Python backend only. Explicit project checks also need the supported Lean toolchain and prepared dependencies. ${MORE_OPTIONS} offers a downloaded wheel, an existing environment and the setup guide.`},
+        ...(canInstall ? [SET_UP] : ['Choose Existing Environment']), MORE_OPTIONS,
       );
       this.check();
-      if (action === 'Read Installation Guide') {
-        await vscode.commands.executeCommand('markdown.showPreview', vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'media', 'setup.md'));
-        return undefined;
-      }
-      installRequested = action === 'Install Backend with uv';
-      if (!installRequested && action !== 'Choose Existing Environment') return undefined;
+      if (action === SET_UP) source = 'download';
+      else if (action === 'Choose Existing Environment') source = 'existing';
+      else if (action === MORE_OPTIONS) source = await this.moreOptions(canInstall);
+      if (!source) return undefined;
     }
     this.check();
     if (detected) {
       if (!configure) return detected;
       const choice = await vscode.window.showQuickPick([
-        {label: 'Use detected environment', detail: `Python: ${detected.python}`, detected: true},
-        ...(canInstall ? [{label: 'Install Backend with uv', detail: 'Set up the matching backend using installed Python.', detected: false, install: true}] : []),
-        {label: 'Choose another installation', detail: 'Select an installed Python backend.', detected: false},
-        {label: 'Install Extension Package…', detail: 'Add an optional provider package, such as glitnir-forseti, to this backend.', detected: false, extensionPackage: true},
+        ...(canInstall ? [{label: `${SET_UP} (recommended)`, detail: setUpDetail, action: 'download' as const}] : []),
+        {label: 'Use detected environment', detail: `Python: ${detected.python}`, action: 'detected' as const},
+        {label: 'Install Extension Package…', detail: 'Add an optional provider package, such as glitnir-forseti, to this backend.', action: 'package' as const},
+        {label: MORE_OPTIONS, detail: 'Choose a downloaded backend wheel or another installation, or read the setup guide.', action: 'more' as const},
       ], {title: 'Set Up Glitnir', placeHolder: 'A compatible environment is already installed.'});
       this.check();
       if (!choice) return undefined;
-      if (choice.detected) return remember(detected, false);
-      if ('extensionPackage' in choice && choice.extensionPackage) {
+      if (choice.action === 'detected') return remember(detected, false);
+      if (choice.action === 'package') {
         await vscode.commands.executeCommand('glitnir.installExtensionPackage', uri);
         return undefined;
       }
-      installRequested = 'install' in choice && choice.install === true;
+      source = choice.action === 'more' ? await this.moreOptions(canInstall) : choice.action;
+      if (!source) return undefined;
     }
     this.check();
+    installRequested = source !== 'existing';
     let executable: string | undefined;
-    if (installRequested) executable = await this.installWithUv();
+    if (installRequested) executable = await this.installWithUv(source === 'wheel');
     else {
       const pythonFile = await vscode.window.showOpenDialog({title: 'Select Python with the Glitnir backend installed', canSelectMany: false, canSelectFiles: true, canSelectFolders: false, openLabel: 'Use Python'});
       executable = pythonFile?.[0].fsPath;
@@ -275,5 +321,17 @@ export class EnvironmentSetup {
     this.check();
     const python = await this.probe(executable);
     return remember({python: python.python}, true);
+  }
+
+  /** The less common choices, and the setup guide; undefined when dismissed or the guide was opened. */
+  private async moreOptions(canInstall: boolean): Promise<Source | undefined> {
+    const choice = await vscode.window.showQuickPick([
+      ...(canInstall ? [{label: 'Choose downloaded backend wheel', detail: 'Select the matching .whl file, for development builds or offline use. It must match this build\'s pinned checksum.', source: 'wheel' as const}] : []),
+      {label: 'Choose Existing Environment', detail: 'Select a Python that already has the matching Glitnir backend installed.', source: 'existing' as const},
+      {label: 'Read setup guide', detail: 'Prerequisites, manual installation and troubleshooting.', source: 'guide' as const},
+    ], {title: 'Set Up Glitnir: more options'});
+    this.check();
+    if (choice?.source === 'guide') { await openSetupGuide(this.context); return undefined; }
+    return choice?.source;
   }
 }

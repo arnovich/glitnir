@@ -72,7 +72,8 @@ Glitnir runs in local VS Code windows on **macOS and Linux** (see
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** and
   **Python 3.12 or newer**, for the Python backend. VS Code may not inherit your
   shell's `PATH`, so setup looks for `uv` in `~/.local/bin`, `/opt/homebrew/bin`,
-  `/usr/local/bin`, `/usr/bin` and `/bin` (on macOS: `brew install uv`).
+  `/usr/local/bin`, `/usr/bin` and `/bin`. Without it, setup offers **Install
+  uv** (see [Set Up Environment](#set-up-environment)).
 - **Lean 4.32.1**, installed with [elan](https://github.com/leanprover/elan):
   `elan toolchain install leanprover/lean4:v4.32.1`. Reading a notebook needs only
   the backend; checking, proof steps, views, evidence and decisions need Lean.
@@ -97,20 +98,32 @@ a GitHub release:
 ### Set Up Environment
 
 1. Open a Lean file in a trusted workspace.
-2. Run **Glitnir: Set Up Environment → Install Backend with uv → Download matching
-   backend**. Setup downloads the backend wheel of the extension's own release,
-   verifies its checksum against the one the extension records, and installs it
-   with uv into a new environment under `~/.local/share/glitnir/backends`.
+2. Run **Glitnir: Set Up Environment → Set Up** (also offered when you first open
+   a notebook). In one step it downloads the backend wheel of the extension's own
+   release, verifies its checksum against the one the extension records, and
+   installs it with uv into a new environment under
+   `~/.local/share/glitnir/backends`.
 3. Run **Glitnir: Open in Glitnir**.
 
-The other setup choices:
+**More Options…** holds the other setup choices:
 
 - **Choose downloaded backend wheel** installs a matching backend `.whl` you
-  downloaded yourself.
-- **Choose Existing Environment** (or **Choose another installation**) selects a
-  Python where the backend is already installed.
-- Opening a notebook without a backend offers the same choices and **Read
-  Installation Guide**.
+  downloaded or built yourself, for development builds and offline use. It must
+  still match the checksum the extension records.
+- **Choose Existing Environment** selects a Python where the backend is already
+  installed.
+- **Read setup guide** opens the installation guide, which setup errors also
+  link to.
+
+If uv is not installed, setup says so and offers **Install uv**, showing the
+command first: `brew install uv` (by Homebrew's full path) when Homebrew is
+installed, otherwise the official installer of a pinned uv version,
+`curl -LsSf https://astral.sh/uv/VERSION/install.sh | sh` (the extension pins
+VERSION; the installer puts uv in `~/.local/bin`). Nothing runs until you click
+**Install uv**; the command then runs in a VS Code terminal named "Install uv",
+where you can watch it. When that terminal closes, or when you choose **Retry**
+(for example after installing uv yourself), Glitnir looks for uv again and
+continues the setup.
 
 Without any setup, Glitnir also finds a backend in the environment you chose
 before, a `.venv` in the workspace or in a folder above the notebook, or
@@ -158,8 +171,7 @@ downloaded until you click **Set Up**, which:
 
 1. downloads this release's backend wheel, checks it against the size and
    SHA-256 the extension records, and installs it with uv into a new
-   environment, exactly as **Glitnir: Set Up Environment → Install Backend with
-   uv → Download matching backend** does;
+   environment, exactly as **Glitnir: Set Up Environment → Set Up** does;
 2. lists the extension packages of the earlier environment, with the extras
    installed there, such as `glitnir-forseti[z3]`;
 3. for each package the same release publishes, downloads the release's
@@ -656,8 +668,9 @@ and package installs, and each preview's backend output.
 
 - **"No Python environment with the Glitnir backend was found"**: run **Glitnir:
   Set Up Environment** ([Install](#set-up-environment)).
-- **"Install uv first"**: install uv into one of the locations under
-  [Requirements](#requirements), then run Set Up Environment again.
+- **"Glitnir needs uv to install its backend"**: choose **Install uv**, or
+  install uv into one of the locations under [Requirements](#requirements) and
+  choose **Retry**.
 - **"The installed Glitnir runtime is incompatible with this Glitnir build"**: the
   backend is from another release; run **Glitnir: Set Up Backend for This
   Version** (see [Upgrading](#upgrading)).

@@ -15,7 +15,7 @@ export interface AssetDownload {source: {url: string} | {repository: string; tag
 export const RELEASE_REPOSITORY = 'arnovich/glitnir';
 
 /** Where to go when a download cannot finish: the same setup flow, with a wheel the user fetched. */
-const DOWNLOADED_WHEEL = 'run Glitnir: Set Up Environment → Install Backend with uv → Choose downloaded backend wheel';
+const DOWNLOADED_WHEEL = 'run Glitnir: Set Up Environment → More Options… → Choose downloaded backend wheel (see the setup guide)';
 
 export interface DownloadOptions {
   signal: AbortSignal;
