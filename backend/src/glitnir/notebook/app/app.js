@@ -405,7 +405,7 @@
   function projectCheckHTML(result, sourceSha) {
     if (!result) return '';
     const through = Number.isSafeInteger(result.through_line) ? result.through_line : null;
-    if (result.status === 'running') return `<p role="status">${through ? `Checking lines 1–${esc(through)} · ` : ''}${esc(result.message)}… Close this preview to cancel.</p>`;
+    if (result.status === 'running') return `<p role="status">${through ? `Checking lines 1–${esc(through)} · ` : ''}${esc(result.message)}… <button type="button" class="secondary" data-act="check-cancel">${icon('x')}Stop</button></p>`;
     if (result.status !== 'checked_snapshot') return `<h3>Check unavailable${through ? ` · lines 1–${esc(through)}` : ''}</h3><pre>${esc(result.message)}</pre>`;
     const labels = {checked: 'Kernel checked', admitted: 'Contains sorry', assumptions: 'Additional assumptions'};
     const stopped = !result.withheld ? '' : requestedCut(result.withheld)
@@ -821,6 +821,11 @@
   }
   async function cancelInspection() {
     await post('/api/project/inspect/cancel', {});
+    await refresh();
+  }
+  // Also stops a check still waiting for another Lean run.
+  async function cancelCheck() {
+    await post('/api/project/check/cancel', {});
     await refresh();
   }
 
@@ -2357,6 +2362,7 @@
       case 'evidence-run': runEvidence(Number(b.dataset.line), b.dataset.sha); break;
       case 'view-cancel': cancelView(b); break;
       case 'inspect-cancel': cancelInspection(); break;
+      case 'check-cancel': cancelCheck(); break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
       case 'decision-run': decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;

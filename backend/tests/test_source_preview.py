@@ -252,7 +252,7 @@ def test_project_check_is_explicit_historical_and_cancelled(tmp_path, monkeypatc
     started, finish = threading.Event(), threading.Event()
     calls = []
 
-    def check(source, *, expected_sha256, cancel, progress, through_line):
+    def check(source, *, expected_sha256, cancel, progress, through_line, acquired):
         calls.append(source)
         assert through_line is None, "a check of the whole file by default"
         progress("Checking saved file")
@@ -285,6 +285,86 @@ def test_project_check_is_explicit_historical_and_cancelled(tmp_path, monkeypatc
     assert service._cancel.is_set()
     with pytest.raises(NotebookError, match="closed"):
         service.check(after["sha256"])
+
+
+def test_a_check_saves_the_environment_it_compiled_in(tmp_path, monkeypatch):
+    """The fingerprint is retaken once the check holds the Lean slot.
+
+    The environment is A when the check is asked for, B while it compiles
+    (it changed during the wait), then A again. Saved under A, the result
+    would read as current although it was compiled in B.
+    """
+    from glitnir.notebook import source_preview
+    from glitnir.notebook.check_records import load_records
+
+    path = tmp_path / "A.lean"
+    path.write_text("/-! # Title -/\ntheorem result : True := by\n  trivial\n")
+    service = SourcePreviewService(path)
+    environment = {"sha256": "A"}
+    monkeypatch.setattr(
+        source_preview, "environment_fingerprint", lambda *a: dict(environment)
+    )
+
+    def check(source, *, expected_sha256, cancel, progress, through_line, acquired):
+        environment["sha256"] = "B"  # changed while the check waited
+        acquired()
+        result = _fake_result(expected_sha256)
+        environment["sha256"] = "A"  # and back, after it compiled
+        return result
+
+    monkeypatch.setattr(source_preview, "check_project", check)
+    sha = service.snapshot()["sha256"]
+    service.check(sha)
+    service._worker.join(5)
+    saved = load_records(path)
+    assert saved["environment"]["fingerprint"] == "B"
+    [claim] = service.snapshot()["project_claims"]
+    assert claim["current"] is False, "a result compiled in B is not current in A"
+    service.close()
+
+
+def test_stop_cancels_a_check_waiting_for_the_slot(tmp_path, monkeypatch):
+    """A check waiting for another Lean run is stopped by Stop, not only close."""
+    import threading
+
+    from glitnir.lean.project_snapshot import SnapshotError, snapshot_slot
+    from glitnir.notebook import source_preview
+
+    monkeypatch.setattr(
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f"}
+    )
+    path = tmp_path / "A.lean"
+    path.write_text("theorem t : True := True.intro\n")
+    service = SourcePreviewService(path)
+    with pytest.raises(SnapshotError, match="No check is running"):
+        service.cancel_check()
+    sha = service.snapshot()["sha256"]
+    held = snapshot_slot()
+    held.__enter__()
+    try:
+        service.check(sha)
+        for _ in range(100):
+            if (
+                "Waiting for another Lean run"
+                in service.snapshot()["preview"]["check"]["message"]
+            ):
+                break
+            threading.Event().wait(0.05)
+        assert (
+            "Waiting for another Lean run"
+            in service.snapshot()["preview"]["check"]["message"]
+        )
+        service.cancel_check()
+        service._worker.join(5)
+        assert not service._worker.is_alive(), "stopped while the slot is still held"
+    finally:
+        held.__exit__(None, None, None)
+    check = service.snapshot()["preview"]["check"]
+    assert check["status"] == "unavailable"
+    assert check["message"].endswith("cancelled.")
+    assert not service._cancel.is_set(), "the preview stays open"
+    service.check(sha)  # the gate is open again
+    service.close()
 
 
 def test_project_cli_reports_json_without_metadata(tmp_path, monkeypatch, capsys):

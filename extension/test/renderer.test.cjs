@@ -1963,6 +1963,21 @@ test('project inspection is reported from snapshots for the saved source it read
   } finally { window.close(); }
 });
 
+test('a running check, also one waiting for another Lean run, can be stopped', async () => {
+  const requests = [];
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'},
+    check: {status: 'running', source_sha256: 'a'.repeat(64), message: 'Waiting for another Lean run to finish.', theorems: []}}};
+  const window = await renderSnapshot(snapshot, {onMessage: message => requests.push(message)});
+  try {
+    const panel = window.document.getElementById('project-check');
+    assert.match(panel.textContent, /Waiting for another Lean run to finish/);
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
+    panel.querySelector('[data-act="check-cancel"]').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(requests.filter(r => r.path === '/api/project/check/cancel').map(r => [r.method, r.body]), [['POST', '{}']], 'sent even with unsaved Lean files');
+  } finally { window.close(); }
+});
+
 test('views are drawn in the background: progress, Stop and Draw again', async () => {
   const requests = [];
   const job = 'a1'.repeat(16), other = 'b2'.repeat(16), next = 'c3'.repeat(16);

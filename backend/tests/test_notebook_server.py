@@ -290,6 +290,33 @@ def test_project_inspection_http_is_explicit_and_bound(tmp_path, monkeypatch):
         httpd.server_close()
 
 
+def test_check_cancel_http_needs_a_running_check(tmp_path, monkeypatch):
+    """`/api/project/check/cancel` takes an empty object and stops the check."""
+    from glitnir.notebook.source_preview import SourcePreviewService
+
+    source = tmp_path / "A.lean"
+    source.write_text("example : True := True.intro\n")
+    service = SourcePreviewService(source)
+    cancelled = []
+    httpd = make_server(service, 0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    headers = {"Content-Type": "application/json"}
+    route = "/api/project/check/cancel"
+    try:
+        response, data = _request(httpd, "POST", route, "{}", headers)
+        assert response.status == 409
+        assert json.loads(data) == {"error": "No check is running."}
+        assert _request(httpd, "POST", route, '{"x": 1}', headers)[0].status == 400
+        monkeypatch.setattr(service, "cancel_check", lambda: cancelled.append(1))
+        assert _request(httpd, "POST", route, "{}", headers)[0].status == 202
+        assert cancelled == [1]
+    finally:
+        service.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_inspection_cancel_http_stops_the_inspection(tmp_path, monkeypatch):
     """`/api/project/inspect/cancel` takes an empty object and stops Lake."""
     from glitnir.notebook import source_preview

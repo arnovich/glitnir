@@ -14,7 +14,6 @@ import stat
 import subprocess
 import threading
 import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -45,6 +44,11 @@ _LOCKS_GUARD = threading.Lock()
 _DIGESTS: dict[tuple[str, int, int, int, int, int], tuple[str, list[str] | None]] = {}
 _DIGESTS_GUARD = threading.Lock()
 _MAX_DIGESTS = 50_000
+#: Headers read, by the SHA-256 of their text: polls read the same texts again
+#: and again, which are never kept themselves.
+_HEADERS: dict[tuple[bytes, bool], tuple[str, ...] | None] = {}
+_HEADERS_GUARD = threading.Lock()
+_MAX_HEADERS = 256
 #: How much of each source is read for its header's imports.
 _HEADER_BYTES = 64 * 1024
 
@@ -325,13 +329,21 @@ def header_imports(text: str, complete: bool = True) -> list[str] | None:
     is only the start of a file: a header that reaches its end is not
     understood.
     """
+    key = (hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest(), complete)
+    with _HEADERS_GUARD:
+        if key in _HEADERS:
+            found = _HEADERS[key]
+            return None if found is None else list(found)
     found = _header_imports(text, complete)
+    with _HEADERS_GUARD:
+        _HEADERS[key] = found
+        while len(_HEADERS) > _MAX_HEADERS:
+            del _HEADERS[next(iter(_HEADERS))]
     return None if found is None else list(found)
 
 
-@lru_cache(maxsize=64)
 def _header_imports(text: str, complete: bool) -> tuple[str, ...] | None:
-    """`header_imports`, kept for the texts polls read again and again."""
+    """Read the header of `text`; see `header_imports`."""
     if not complete:
         text = text[: text.rfind("\n") + 1]  # the last line may be cut
     lines = text.split("\n")

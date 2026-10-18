@@ -159,6 +159,7 @@ test('ordinary Lean source opens without Lean tools and offers no pinned checkin
     assert.equal((await backend.request('/api/view?cell=0&line=1')).status, 404);
     assert.deepEqual(await backend.request('/api/view/cancel', 'POST', JSON.stringify({sha256: snapshot.sha256, line: 1})), {status: 409, json: {error: 'That view is not being drawn.'}});
     assert.deepEqual(await backend.request('/api/project/inspect/cancel', 'POST', '{}'), {status: 409, json: {error: 'No inspection is running.'}});
+    assert.deepEqual(await backend.request('/api/project/check/cancel', 'POST', '{}'), {status: 409, json: {error: 'No check is running.'}});
     assert.deepEqual(await backend.request(`/api/view/job?id=${'0'.repeat(32)}`), {status: 200, json: {error: 'This drawing is no longer known; draw it again.', transient: true}});
     // An inspection starts in the background and is reported in snapshots.
     const inspection = await backend.request('/api/project/inspect', 'POST', JSON.stringify({sha256: snapshot.sha256}));

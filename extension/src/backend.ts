@@ -66,6 +66,7 @@ function empty(body: string | undefined): boolean {
 const BODIES: Record<string, (body: string | undefined) => boolean> = {
   '/api/evidence/run': directive, '/api/decide/run': directive, '/api/decide/discard': directive,
   '/api/decide/stop': empty, '/api/view/cancel': directive, '/api/project/inspect/cancel': empty,
+  '/api/project/check/cancel': empty,
   '/api/project/check': check,
 };
 
@@ -73,7 +74,8 @@ const BODIES: Record<string, (body: string | undefined) => boolean> = {
  * Posts that only stop work; they never depend on the editor's text, so unsaved
  * Lean files do not hold them back. `media/bridge.js` keeps the same list.
  */
-export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel'];
+export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel',
+  '/api/project/check/cancel'];
 
 /** Whether a preview request must wait until unsaved Lean files are saved or reverted. */
 export function heldWhileDirty(path: string, method: string, dirty: boolean): boolean {

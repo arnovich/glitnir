@@ -122,6 +122,7 @@ class _Handler(BaseHTTPRequestHandler):
             "/api/proof/cancel": self._cancel_proof,
             "/api/view/cancel": self._cancel_view,
             "/api/project/inspect/cancel": self._cancel_inspection,
+            "/api/project/check/cancel": self._cancel_check,
             "/api/evidence/run": self._run_evidence,
             "/api/decide/run": self._run_decision,
             "/api/decide/stop": self._stop_decision,
@@ -246,6 +247,16 @@ class _Handler(BaseHTTPRequestHandler):
         digest, line = _directive(body)
         try:
             self.notebook.cancel_view(digest, line)
+        except SnapshotError as error:
+            return HTTPStatus.CONFLICT, {"error": str(error)}
+        return HTTPStatus.ACCEPTED, {"status": "cancelling"}
+
+    def _cancel_check(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
+        """Stop the running check, also while it waits for the Lean slot."""
+        if body:
+            raise ValueError("send an empty object")
+        try:
+            self.notebook.cancel_check()
         except SnapshotError as error:
             return HTTPStatus.CONFLICT, {"error": str(error)}
         return HTTPStatus.ACCEPTED, {"status": "cancelling"}

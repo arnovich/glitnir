@@ -843,3 +843,28 @@ def test_the_stable_digest_ignores_only_the_unknown_marker(tmp_path, monkeypatch
     assert known["unknown"] is False
     assert known["stable_sha256"] != first["stable_sha256"]
     assert environment_fingerprint(source, text)["sha256"] == known["sha256"]
+
+
+def test_headers_are_kept_by_digest_never_by_text(monkeypatch):
+    """Polls reread the same texts; the cache holds digests, not 16 MB texts."""
+    from glitnir.lean import fingerprint
+
+    monkeypatch.setattr(fingerprint, "_HEADERS", {})
+    monkeypatch.setattr(fingerprint, "_MAX_HEADERS", 2)
+    reads = []
+    real = fingerprint._header_imports
+    monkeypatch.setattr(
+        fingerprint,
+        "_header_imports",
+        lambda text, complete: reads.append(text) or real(text, complete),
+    )
+    text = "import A\n" + "-- body\n" * 1000
+    assert header_imports(text) == ["A"]
+    assert header_imports(text) == ["A"]
+    assert len(reads) == 1
+    assert all(
+        isinstance(key[0], bytes) and len(key[0]) == 32 for key in fingerprint._HEADERS
+    )
+    header_imports("import B\n")
+    header_imports("import C\n")
+    assert len(fingerprint._HEADERS) == 2

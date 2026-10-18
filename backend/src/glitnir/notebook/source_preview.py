@@ -135,6 +135,7 @@ VIEW_CANCELLED = "View drawing cancelled."
 NOTHING_DRAWING = "That view is not being drawn."
 UNKNOWN_JOB = "This drawing is no longer known; draw it again."
 NOTHING_INSPECTING = "No inspection is running."
+NOTHING_CHECKING = "No check is running."
 INSPECTION_CANCELLED = "Project inspection cancelled."
 #: A fingerprint for a function of the modules loaded besides the notebook's.
 Fingerprint = Callable[..., str]
@@ -830,6 +831,7 @@ class SourcePreviewService:
         self._inspection_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._check: dict[str, Any] | None = None
+        self._check_cancel: threading.Event | None = None
         self._worker: threading.Thread | None = None
         self._inspection: dict[str, Any] | None = None
         self._inspection_worker: threading.Thread | None = None
@@ -875,6 +877,8 @@ class SourcePreviewService:
                 self._view_job.cancel.set()
             if self._inspection_cancel is not None:
                 self._inspection_cancel.set()
+            if self._check_cancel is not None:
+                self._check_cancel.set()
             workers = [
                 self._worker,
                 self._inspection_worker,
@@ -987,8 +991,10 @@ class SourcePreviewService:
                 "message": "Preparing check",
                 "theorems": [],
             }
+            cancel = threading.Event()
+            self._check_cancel = cancel
             self._worker = threading.Thread(
-                target=self._work, args=(sha256, through_line), daemon=False
+                target=self._work, args=(sha256, through_line, cancel), daemon=False
             )
             try:
                 self._worker.start()
@@ -1001,7 +1007,19 @@ class SourcePreviewService:
                     "theorems": [],
                 }
                 self._worker = None
+                self._check_cancel = None
                 self._inspection_lock.release()
+
+    def cancel_check(self) -> None:
+        """Stop the running check, also while it waits for the Lean slot.
+
+        Raises:
+            SnapshotError: No check is running.
+        """
+        with self._state_lock:
+            if self._check_cancel is None:
+                raise SnapshotError(NOTHING_CHECKING)
+            self._check_cancel.set()
 
     def _with_import_hint(
         self, result: dict[str, Any], environment: dict[str, Any]
@@ -1027,8 +1045,14 @@ class SourcePreviewService:
             hint = "Imports of other notebooks need a Lake project; see the README."
         return {**result, "message": " ".join(filter(None, [message, hint]))}
 
-    def _work(self, sha256: str, through_line: int | None = None) -> None:
+    def _work(
+        self,
+        sha256: str,
+        through_line: int | None = None,
+        cancel: threading.Event | None = None,
+    ) -> None:
         """Publish phases and a complete result; never touch the notebook source."""
+        cancel = cancel or self._cancel
 
         def progress(message: str) -> None:
             with self._state_lock:
@@ -1037,19 +1061,31 @@ class SourcePreviewService:
 
         try:
             text = read_regular(self.path, 16 * 1024 * 1024).decode()
-            # Taken before the check so an environment change during it
-            # leaves the saved results out of date.
             progress("Reading dependency state")
             environment = environment_fingerprint(self.path, text)
-            fingerprint = environment["sha256"]
-            unknown = unknown_git_note(environment)
+            compiled: list[dict[str, Any]] = []
+
+            def acquired() -> None:
+                # Retaken once the check holds the Lean slot, before it reads
+                # anything: the environment may change while it waits, and the
+                # saved results must describe the one it compiles in. Any
+                # change after this leaves them out of date.
+                if not compiled:
+                    progress("Reading dependency state")
+                    compiled.append(environment_fingerprint(self.path, text))
+
             result = check_project(
                 self.path,
                 expected_sha256=sha256,
-                cancel=self._cancel,
+                cancel=cancel,
                 progress=progress,
                 through_line=through_line,
+                acquired=acquired,
             )
+            if compiled:
+                environment = compiled[0]
+            fingerprint = environment["sha256"]
+            unknown = unknown_git_note(environment)
             if result.get("status") == "unavailable":
                 result = self._with_import_hint(result, environment)
             if (
@@ -1105,6 +1141,8 @@ class SourcePreviewService:
                     "theorems": [],
                 }
         finally:
+            with self._state_lock:
+                self._check_cancel = None
             self._inspection_lock.release()
 
     def _text(self) -> str:
