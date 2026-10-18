@@ -812,7 +812,7 @@ export class ExtensionPackages {
     await this.uv();
     this.check();
     const before = await this.report(python, 'packages', this.controller.signal);
-    if (!before.core) throw new Error(`The backend at ${python} has no installed glitnir package metadata. Install extension packages into it manually (see the README's Extensions section).`);
+    if (!before.core) throw new Error(`The backend at ${python} has no installed glitnir package metadata. Install extension packages into it manually (see the setup guide's Forseti plugin section).`);
     this.check();
     const known = await this.pickPackage(before);
     if (!known) return;

@@ -293,7 +293,7 @@ export class BackendUpgrade {
       ...(outcome.unreadable ? [`The earlier environment's packages could not be listed (see Output → Glitnir); reinstall them with Glitnir: Install Extension Package….`] : []),
       ...(outcome.settings.length ? [`glitnir.pythonPath now names it in ${outcome.settings.join(', ')}.`] : []),
       ...(outcome.skipped.length ? [`glitnir.pythonPath in ${outcome.skipped.join(', ')} changed after the confirmation and was left alone.`] : []),
-      ...(outcome.earlier ? [`The earlier environment at ${outcome.earlier} is kept; remove it yourself once no window uses it (see the README).`] : []),
+      ...(outcome.earlier ? [`The earlier environment at ${outcome.earlier} is kept; remove it yourself once no window uses it (see the setup guide).`] : []),
       'Close existing preview tabs, then open them again to use it.',
     ];
     const message = lines.join(' ');

@@ -3472,8 +3472,8 @@ test('every shortcut listing comes from one list that matches the keys that work
   const media = path.resolve(__dirname, '../../dist/media');
   assert.doesNotMatch(readFileSync(path.join(media, 'index.html'), 'utf8'), /<kbd>[a-z]<\/kbd>/, 'no hand-written key list in the page');
   assert.doesNotMatch(readFileSync(path.join(media, 'review.js'), 'utf8'), /shortcuts\s*=\s*\[/, 'the review layer keeps no list of its own');
-  const readme = readFileSync(path.resolve(__dirname, '../../README.md'), 'utf8');
-  const table = readme.slice(readme.indexOf('<!-- shortcuts:start'), readme.indexOf('<!-- shortcuts:end -->'));
+  const guide = readFileSync(path.resolve(__dirname, '../../docs/guide.md'), 'utf8');
+  const table = guide.slice(guide.indexOf('<!-- shortcuts:start'), guide.indexOf('<!-- shortcuts:end -->'));
   const documented = table.split('\n').filter(line => line.startsWith('| `')).map(line => {
     const [keys, text] = line.slice(2, -2).split(' | ');
     return {keys: [...keys.matchAll(/`([^`]+)`/g)].map(m => m[1]), text};
@@ -3484,8 +3484,8 @@ test('every shortcut listing comes from one list that matches the keys that work
     // Unsaved source keeps the keys from checking or recording anything.
     host.dispatchEvent(new host.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
     const rows = shortcutRows(d);
-    assert.deepEqual(rows.map(r => r.text), documented.map(r => r.text), 'the README table says what the preview says');
-    rows.forEach((row, i) => assert.ok(documented[i].keys.join(' ').includes(row.keys.join(' ')), `README keys for ${row.keys}`));
+    assert.deepEqual(rows.map(r => r.text), documented.map(r => r.text), 'the guide table says what the preview says');
+    rows.forEach((row, i) => assert.ok(documented[i].keys.join(' ').includes(row.keys.join(' ')), `guide keys for ${row.keys}`));
     const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
     assert.deepEqual(listed, ['?', 'c', 'e', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
     assert.deepEqual(handledKeys(host).sort(), listed, 'the editor preview acts on exactly the listed keys');
