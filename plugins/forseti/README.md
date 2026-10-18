@@ -3,8 +3,10 @@
 An optional provider package for Glitnir. It is found through the
 `glitnir.providers` entry point, so install it into the same Python environment
 as the Glitnir backend. It is not on PyPI: each Glitnir release has its wheel,
-and the repository README's Extensions section explains verifying and installing
-it, or building it from a checkout.
+and the repository README's
+[Forseti plugin](https://github.com/arnovich/glitnir#the-forseti-plugin) section
+explains verifying and installing it. To build it from a checkout, see
+[DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#build-and-test).
 
 **What it provides now:** Forseti circuit, model and dynamics views for
 `-- @view circuit|model|dynamics <name>` directives. The notebook must sit in a
@@ -67,7 +69,8 @@ Development: from the repository root, build it with
 `uv build plugins/forseti --wheel --out-dir plugins/forseti/dist`, install the
 wheel with `--no-deps` after installing `lark` and `z3-solver==5.1.0.0` (the
 `z3` extra's pin), and run its tests
-from `plugins/forseti`. See the repository README's Development section.
+from `plugins/forseti`. See the repository's
+[DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#build-and-test).
 
 The live evidence tests (`tests/test_evidence_provider_lean.py`) run `simulate`,
 and `iterate` when `gimle.asgard` is installed, end to end through Glitnir's

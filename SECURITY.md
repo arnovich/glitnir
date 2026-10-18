@@ -15,7 +15,9 @@ candidates do not receive a separate maintenance commitment.
 Glitnir requires trusted local workspaces. Lean checking also requires the
 platform sandbox; do not disable confinement to work around a setup failure.
 Saved check results, simulation output and source preview are not independent
-proof verification. See the installation guide for the supported environment.
+proof verification. See the
+[installation guide](https://github.com/arnovich/glitnir#install) for the
+supported environment.
 
 The independent kernel replay always replays a notebook's own declarations. It
 skips replaying the imported declarations only when the per-user cache directory

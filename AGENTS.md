@@ -8,7 +8,7 @@ the `RELEASE_CANDIDATES` repository variable is `true`.
 This repository owns the VS Code integration and the extracted backend in
 `backend/`, including its canonical renderer and Python checking services.
 The extension build consumes an installed wheel of that backend. Read
-the README's Development section before changing or building it. Default universal thin VSIXs
+DEVELOPMENT.md before changing or building it. Default universal thin VSIXs
 use a separately installed backend and existing Python and Lean.
 Do not maintain a second renderer or weaken the release/sandbox checks. Keep
 `gimle.glitnir` and the `glitnir.*` command/settings identifiers stable.

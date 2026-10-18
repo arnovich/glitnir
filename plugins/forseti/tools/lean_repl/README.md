@@ -13,8 +13,8 @@ those positions for suggestions; a live test triggered a UTF-8 position panic.
 The patch gives the tactic its own file map. It changes search machinery only.
 The final candidate is replayed by ordinary Lean, without importing REPL.
 
-First complete [the Python backend setup](../../../README.md#development)
-and [the Lean setup](../../../extension/media/setup.md).
+First complete [the Python backend setup](../../../../DEVELOPMENT.md#build-and-test)
+and [the Lean setup](../../../../extension/media/setup.md).
 From Glitnir's `backend/` directory, choose a new durable directory for the REPL.
 The example is beside the Glitnir checkout; use another new path if it exists:
 
