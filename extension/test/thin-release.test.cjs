@@ -487,3 +487,16 @@ test('the VSIX plugin pin must equal the attached plugin wheel at collection and
   await assert.rejects(verifyCandidate(f.output, identity), /plugin pin differs/, 'only the VSIX pin tells the coherent tampered release apart');
   await assert.rejects(pluginPin(f.plugin, '0.2.0'), /version differs/);
 });
+
+test('verification refuses a VSIX without a plugin pin or with a different one', async t => {
+  const {checkThin, pluginPin} = require('../scripts/package-thin.cjs');
+  const f = await fixture(t);
+  const pins = [await pluginPin(f.plugin, identity.version)];
+  const metadata = f.entries['extension/package.json'];
+  await checkThin(f.vsix, identity.version, editor, metadata.glitnirBackend, pins);
+  const {glitnirPlugins, ...unpinned} = metadata;
+  await zip(f.vsix, {...f.entries, 'extension/package.json': unpinned});
+  await assert.rejects(checkThin(f.vsix, identity.version, editor, metadata.glitnirBackend, pins), /plugin pin differs/, 'the pin must be present');
+  await zip(f.vsix, {...f.entries, 'extension/package.json': {...metadata, glitnirPlugins: [{...glitnirPlugins[0], size: 1}]}});
+  await assert.rejects(checkThin(f.vsix, identity.version, editor, metadata.glitnirBackend, pins), /plugin pin differs/);
+});
