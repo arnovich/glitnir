@@ -1,6 +1,6 @@
 [project]
 name = "glitnir"
-version = "0.1.1"
+version = "0.1.2"
 description = "Glitnir notebook backend, rendering and Lean checking services"
 readme = "README.md"
 license = "MIT AND OFL-1.1"

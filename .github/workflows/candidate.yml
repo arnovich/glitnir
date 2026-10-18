@@ -82,7 +82,7 @@ jobs:
             ln -s "$(command -v uv)" "$HOME/.local/bin/uv"
           fi
           unzip -q "glitnir-$CANDIDATE_VERSION.vsix" -d "$RUNNER_TEMP/candidate-vsix"
-          python=$(node extension/scripts/check-thin-install.cjs "$RUNNER_TEMP/candidate-vsix/extension" backend/dist/glitnir-0.1.1-py3-none-any.whl "$RUNNER_TEMP/candidate-backends")
+          python=$(node extension/scripts/check-thin-install.cjs "$RUNNER_TEMP/candidate-vsix/extension" backend/dist/glitnir-0.1.2-py3-none-any.whl "$RUNNER_TEMP/candidate-backends")
           echo "GLITNIR_TEST_PYTHON=$python" >> "$GITHUB_ENV"
       - name: Test the actual installed VSIX with the separate core backend
         env:
