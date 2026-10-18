@@ -5,7 +5,7 @@ const {readFileSync} = require('node:fs');
 const path = require('node:path');
 
 test('unsaved Lean files hold back preview actions except stopping work, in the host and the webview alike', () => {
-  for (const stop of ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel']) assert.equal(heldWhileDirty(stop, 'POST', true), false, stop);
+  for (const stop of ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel']) assert.equal(heldWhileDirty(stop, 'POST', true), false, stop);
   for (const action of ['/api/decide/run', '/api/decide/discard', '/api/evidence/run', '/api/project/check', '/api/proof/start']) {
     assert.equal(heldWhileDirty(action, 'POST', true), true, action);
     assert.equal(heldWhileDirty(action, 'POST', false), false, action);
@@ -90,12 +90,25 @@ test('preview bridge permits decision runs, stops and discards only with exact b
     }
   }
   assert.equal(validateRequest('/api/decide/stop', 'POST', '{}'), '/api/decide/stop');
-  // Stopping a view names nothing: one view is drawn at a time.
-  assert.equal(validateRequest('/api/view/cancel', 'POST', '{}'), '/api/view/cancel');
+  // Stopping a view names that card's view: its saved source and line.
+  const view = JSON.stringify({sha256: 'a'.repeat(64), line: 3});
+  assert.equal(validateRequest('/api/view/cancel', 'POST', view), '/api/view/cancel');
   assert.throws(() => validateRequest('/api/view/cancel', 'GET'));
-  for (const body of [undefined, '', 'null', '[]', 'not json', JSON.stringify({line: 1})]) {
+  for (const body of [undefined, '', 'null', '[]', '{}', 'not json', JSON.stringify({line: 1}), JSON.stringify({sha256: 'a'.repeat(64), line: 0})]) {
     assert.throws(() => validateRequest('/api/view/cancel', 'POST', body), String(body));
   }
+  // Stopping an inspection names nothing: one runs at a time.
+  assert.equal(validateRequest('/api/project/inspect/cancel', 'POST', '{}'), '/api/project/inspect/cancel');
+  for (const body of [undefined, 'null', JSON.stringify({sha256: 'a'.repeat(64)})]) {
+    assert.throws(() => validateRequest('/api/project/inspect/cancel', 'POST', body), String(body));
+  }
+  // A view job is polled by its id alone.
+  const job = `/api/view/job?id=${'0f'.repeat(16)}`;
+  assert.equal(validateRequest(job, 'GET'), job);
+  for (const bad of ['/api/view/job', '/api/view/job?id=x', `${job}&id=${'0f'.repeat(16)}`, `${job}&cell=0`]) {
+    assert.throws(() => validateRequest(bad, 'GET'), bad);
+  }
+  assert.throws(() => validateRequest(job, 'POST', '{}'));
   assert.throws(() => validateRequest('/api/decide/stop', 'GET', '{}'));
   for (const body of [undefined, '', 'null', '[]', 'not json', named, JSON.stringify({run: 'x'})]) {
     assert.throws(() => validateRequest('/api/decide/stop', 'POST', body), String(body));

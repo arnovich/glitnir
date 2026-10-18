@@ -918,10 +918,12 @@ def _demo_provider():
 def _drawn(service, cell: int, line: int) -> dict:
     """Ask for a view until its background drawing has ended; return the answer."""
     answer = service.view(cell, line)
-    if answer.get("status") in ("drawing", "queued"):
+    while answer.get("status") in ("drawing", "queued"):
+        mine = answer["status"] == "drawing"
         service._view_worker.join(timeout=30)
         assert not service._view_worker.is_alive()
-        answer = service.view(cell, line)
+        # A queued view asks again once the drawing before it has ended.
+        answer = service.view_job(answer["job"]) if mine else service.view(cell, line)
     return answer
 
 
@@ -1046,7 +1048,7 @@ def test_view_cache_key_includes_the_environment_fingerprint(
 
 
 def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> None:
-    """Drawing runs in a worker; requests report its progress until it ends."""
+    """Drawing runs in a worker; its job is polled until it ends."""
     import threading
 
     from glitnir.notebook import source_preview
@@ -1066,28 +1068,140 @@ def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> Non
     service = _view_service(tmp_path, monkeypatch, text)
     cell = service.snapshot()["views"][0]["cell"]
     first = service.view(cell, 3)
-    assert first == {"status": "drawing", "message": source_preview.VIEW_STARTING}
+    job = first["job"]
+    assert first == {
+        "status": "drawing",
+        "message": source_preview.VIEW_STARTING,
+        "job": job,
+    }
     assert started.wait(10)
-    assert service.view(cell, 3) == {
+    waiting = {
         "status": "drawing",
         "message": "Waiting for another Lean run to finish.",
+        "job": job,
     }
-    # One view at a time: another waits, without starting Lean.
+    assert service.view(cell, 3) == waiting
+    assert service.view_job(job) == waiting
+    # One view at a time: another waits, polling the job being drawn.
     assert service.view(cell, 4) == {
         "status": "queued",
         "message": source_preview.VIEW_QUEUED,
+        "job": job,
     }
     finish.set()
     service._view_worker.join(timeout=10)
+    assert service.view_job(job) == {"svg": "<svg>3</svg>"}
+    assert service.view_job(job) == {"svg": "<svg>3</svg>"}, "as often as asked"
     assert service.view(cell, 3) == {"svg": "<svg>3</svg>"}
     assert _drawn(service, cell, 4) == {"svg": "<svg>4</svg>"}
     assert calls == [3, 4]
+    assert service.view_job("0" * 32) == {
+        "error": source_preview.UNKNOWN_JOB,
+        "transient": True,
+    }
     service.close()
 
 
-def test_a_cancelled_view_says_so_once_and_draws_again_on_request(
+def test_polling_a_job_reads_no_notebook(tmp_path: Path, monkeypatch) -> None:
+    """A poll is cheap: no saved file, snapshot or fingerprint."""
+    from glitnir.notebook import source_preview
+
+    monkeypatch.setattr(
+        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
+    )
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    job = service.view(cell, 4)["job"]
+    service._view_worker.join(timeout=10)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("a poll read the notebook")
+
+    monkeypatch.setattr(service, "_text", forbidden)
+    monkeypatch.setattr(source_preview, "environment_fingerprint", forbidden)
+    assert service.view_job(job) == {"svg": "<svg/>"}
+
+
+def test_an_unknown_environment_draws_once_and_says_so(
     tmp_path: Path, monkeypatch
 ) -> None:
+    """A random unknown-state value must not make every poll a new drawing."""
+    import secrets
+
+    from glitnir.notebook import source_preview
+
+    renders = []
+    monkeypatch.setattr(
+        source_preview,
+        "render_project_view",
+        lambda path, **o: renders.append(1) or {"svg": "<svg/>"},
+    )
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a: {
+            "sha256": secrets.token_hex(32),  # matches nothing, ever
+            "stable_sha256": "stable",
+            "unknown": True,
+        },
+    )
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    answers = [service.view(cell, 4)]
+    service._view_worker.join(timeout=10)
+    answers += [service.view(cell, 4) for _ in range(4)]
+    assert len(renders) == 1
+    assert answers[-1] == {"svg": "<svg/>", "uncertain": True}
+    assert service.view_job(answers[0]["job"]) == {"svg": "<svg/>", "uncertain": True}
+
+
+def test_a_known_environment_needs_no_label(tmp_path: Path, monkeypatch) -> None:
+    from glitnir.notebook import source_preview
+
+    monkeypatch.setattr(
+        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
+    )
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
+
+
+def test_a_view_is_keyed_by_the_providers_modules(tmp_path: Path, monkeypatch) -> None:
+    """The provider's modules are part of the drawing's environment."""
+    from glitnir.notebook import source_preview
+    from glitnir.providers import ViewProvider
+
+    provider = ViewProvider(
+        "demo", frozenset({"circuit"}), ("Demo.View",), "", "m:", lambda *a: ""
+    )
+    monkeypatch.setattr(
+        source_preview,
+        "load_providers",
+        lambda: Providers({"circuit": provider}, {}, {}, {}),
+    )
+    asked = []
+
+    def fingerprint(path, text, imports=(), packages=None):
+        asked.append(imports)
+        return {"sha256": f"env-{len(imports)}", "packages": []}
+
+    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    keys = []
+    monkeypatch.setattr(
+        source_preview,
+        "render_project_view",
+        lambda path, **o: keys.append(service._view_job.key) or {"svg": "<svg/>"},
+    )
+    path = tmp_path / "A.lean"
+    path.write_text(VIEW_TEXT)
+    service = SourcePreviewService(path)
+    cell = service.snapshot()["views"][0]["cell"]
+    _drawn(service, cell, 4)
+    assert ("Demo.View",) in asked
+    assert keys[0][1] == "env-1"
+
+
+def test_stop_cancels_only_that_cards_view(tmp_path: Path, monkeypatch) -> None:
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError
@@ -1106,15 +1220,20 @@ def test_a_cancelled_view_says_so_once_and_draws_again_on_request(
 
     monkeypatch.setattr(source_preview, "render_project_view", render)
     service = _view_service(tmp_path, monkeypatch)
-    cell = service.snapshot()["views"][0]["cell"]
-    with pytest.raises(SnapshotError, match="No view is drawing"):
-        service.cancel_view()
-    service.view(cell, 4)
+    snapshot = service.snapshot()
+    sha, cell = snapshot["sha256"], snapshot["views"][0]["cell"]
+    with pytest.raises(SnapshotError, match="not being drawn"):
+        service.cancel_view(sha, 4)
+    job = service.view(cell, 4)["job"]
     assert started.wait(10)
-    service.cancel_view()
+    for other in ((sha, 3), ("0" * 64, 4)):
+        with pytest.raises(SnapshotError, match="not being drawn"):
+            service.cancel_view(*other)
+    assert service._view_job is not None and not service._view_job.cancel.is_set()
+    service.cancel_view(sha, 4)
     service._view_worker.join(timeout=10)
     # Not transient: the reader asked for it, so nothing redraws it unasked.
-    assert service.view(cell, 4) == {"error": source_preview.VIEW_CANCELLED}
+    assert service.view_job(job) == {"error": source_preview.VIEW_CANCELLED}
     assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
     assert len(calls) == 2
 
@@ -1159,10 +1278,11 @@ def test_close_stops_a_view_being_drawn(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(source_preview, "render_project_view", render)
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
-    service.view(cell, 4)
+    job = service.view(cell, 4)["job"]
     assert started.wait(10)
     service.close()
     assert not service._view_worker.is_alive()
+    assert service.view_job(job) == {"error": source_preview.CLOSED}
     assert service.view(cell, 4) == {"error": source_preview.CLOSED}
 
 
@@ -1439,6 +1559,34 @@ def _run_evidence(service, line=4):
 
 def _card(service, line=4):
     return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
+
+
+def test_an_evidence_run_waits_for_the_slot_and_counts_its_modules(
+    tmp_path, monkeypatch
+):
+    """The run counts its provider's modules and waits for a busy slot.
+
+    A card saved under that environment reads as current.
+    """
+    from glitnir.notebook import source_preview
+
+    service, calls = _evidence_service(tmp_path, monkeypatch)
+    imports = service._providers().evidence["simulate"].imports
+    assert imports, "the demo provider loads modules of its own"
+    asked = []
+
+    def fingerprint(path, text, extra=(), packages=None):
+        asked.append(extra)
+        return {"sha256": f"env-{'+'.join(extra)}", "packages": []}
+
+    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    _run_evidence(service)
+    [(_, options)] = [call for call in calls if call[0] == "lean"]
+    assert options["wait"] is True
+    assert imports in asked
+    card = _card(service)
+    assert card["status"] == "current", card
+    service.close()
 
 
 def test_an_evidence_run_saves_a_current_snapshot(tmp_path, monkeypatch):

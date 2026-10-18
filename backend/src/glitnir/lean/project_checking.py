@@ -30,6 +30,7 @@ from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import TOOLCHAIN, _toolchain, inspect_project
 from glitnir.lean.project_snapshot import (
+    SLOT_WAITING,
     ProjectSnapshot,
     SnapshotError,
     artifact_lease,
@@ -974,8 +975,10 @@ def _check_text(
         # end would move every position Lean reports against these bytes.
         raise SnapshotError(CARRIAGE_RETURN)
     expected_sha256 = hashlib.sha256(text.encode()).hexdigest()
+    # A check waits for another Lean run, a view say, rather than failing at
+    # once, so views drawn one after another never keep it out.
     with (
-        snapshot_slot(),
+        snapshot_slot(cancel=cancellation, waiting=lambda: progress(SLOT_WAITING)),
         scratch_directory("glitnir-check-") as temporary,
         artifact_lease(temporary) as store,
     ):

@@ -301,7 +301,7 @@ the preview for this list. Moving never starts a check.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds each Lake run of the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and a view's wait for another Lean run. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout. Applies to previews opened after the change. |
+| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
 | `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
 

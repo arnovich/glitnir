@@ -427,7 +427,9 @@ def test_snapshot_marks_saved_evidence_current(tmp_path: Path, monkeypatch):
     path, _text, calls, entry = _saved_service(tmp_path, monkeypatch, "f")
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert (card["status"], card["snapshot"]) == ("current", entry["snapshot"])
-    assert calls == [1]
+    # The claims' fingerprint, then the run's, which counts the provider's
+    # modules too.
+    assert calls == [1, 1]
 
 
 def test_snapshot_marks_saved_evidence_stale_for_other_text_or_environment(

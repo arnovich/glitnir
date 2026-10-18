@@ -9,7 +9,7 @@
   const images = /^image\/(png|jpeg|gif|webp|svg\+xml)$/;
   // Posts that only stop work never depend on the editor's text. The
   // extension host applies the same list (STOP_PATHS in backend.ts).
-  const STOP_PATHS = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel'];
+  const STOP_PATHS = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel'];
 
   function request(path, options = {}, type = 'request') {
     const id = ++sequence;

@@ -48,6 +48,8 @@ class SnapshotError(ValueError):
     """The checker could not capture a bounded environment."""
 
 
+#: What a caller waiting for a busy slot reports.
+SLOT_WAITING = "Waiting for another Lean run to finish."
 SLOT_WAIT_CANCELLED = "Waiting for another Lean run was cancelled."
 SLOT_WAIT_TIMED_OUT = "Waiting for another Lean run timed out."
 #: Seconds between attempts to take a busy slot while waiting for it.

@@ -11,7 +11,12 @@ from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import OUTPUT_BYTES, check_seconds, run_observer
 from glitnir.lean.project_inspection import MODULE_NAME, _toolchain, inspect_project
-from glitnir.lean.project_snapshot import SLOT_BUSY, SnapshotError, snapshot_slot
+from glitnir.lean.project_snapshot import (
+    SLOT_BUSY,
+    SLOT_WAITING,
+    SnapshotError,
+    snapshot_slot,
+)
 from glitnir.lean.proof_trace import _absolute_setup, _check_configuration
 from glitnir.lean.sandbox import SandboxUnavailable
 from glitnir.lean.scratch import scratch_directory
@@ -33,7 +38,7 @@ CANCELLED = {
     "evidence": "Evidence run cancelled.",
 }
 #: What a provider run reports while it waits for, prepares and runs Lean.
-WAITING = "Waiting for another Lean run to finish."
+WAITING = SLOT_WAITING
 PREPARING = "Reading the project's setup with Lake."
 RUNNING = {"view": "Lean is drawing it.", "evidence": "Lean is running it."}
 # Lake lists only workspace modules in `importArts`; the toolchain's own

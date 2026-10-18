@@ -84,7 +84,33 @@ def test_explicit_inspection_timeout_overrides_check_limit(tmp_path, monkeypatch
     monkeypatch.setattr(inspection, "_toolchain", lambda: tmp_path)
     monkeypatch.setattr(inspection, "_run", run)
     inspection.inspect_project(source, timeout_seconds=7)
-    assert limits == [7]
+    assert len(limits) == 1 and 6 < limits[0] <= 7
+
+
+def test_the_inspection_is_bounded_as_a_whole(tmp_path, monkeypatch):
+    """Two Lake runs share one limit, so an inspection never takes twice it."""
+    clock = _Clock()
+    limits = []
+
+    def run(arguments, *rest, timeout_seconds=None, program=None, **kwargs):
+        limits.append(timeout_seconds)
+        clock.now += 40
+        if program is None:
+            return "Lake version 5.0.0-src+x (Lean version 4.32.1)"
+        raise ValueError("stop here")
+
+    monkeypatch.setattr(inspection.time, "monotonic", clock.monotonic)
+    source = _inspectable(tmp_path, monkeypatch, run)
+    inspection.inspect_project(source, timeout_seconds=100)
+    assert limits == [100, 60]
+    limits.clear()
+    clock.now = 0
+    result = inspection.inspect_project(source, timeout_seconds=30)
+    assert limits == [30]
+    assert result == {
+        "status": "unavailable",
+        "message": "Project inspection timed out.",
+    }
 
 
 def _inspectable(tmp_path, monkeypatch, run):

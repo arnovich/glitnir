@@ -47,6 +47,7 @@ MAX_BODY_BYTES = 65_536
 #: Header the workbench sends on every API request; see the module docstring.
 API_HEADER = "X-Glitnir"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_JOB = re.compile(r"[0-9a-f]{32}")
 
 
 def make_server(
@@ -98,6 +99,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"css": export_styles()})
             elif url.path == "/api/view":
                 self._view(parse_qs(url.query))
+            elif url.path == "/api/view/job":
+                self._view_job(parse_qs(url.query))
             elif url.path == "/asset":
                 self._asset(parse_qs(url.query))
             elif url.path == "/api/decide/candidate":
@@ -118,6 +121,7 @@ class _Handler(BaseHTTPRequestHandler):
             "/api/proof/start": self._start_proof,
             "/api/proof/cancel": self._cancel_proof,
             "/api/view/cancel": self._cancel_view,
+            "/api/project/inspect/cancel": self._cancel_inspection,
             "/api/evidence/run": self._run_evidence,
             "/api/decide/run": self._run_decision,
             "/api/decide/stop": self._stop_decision,
@@ -171,6 +175,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, self.notebook.view(cell, line))
         except (KeyError, NotebookError) as error:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(error)})
+
+    def _view_job(self, query: dict[str, list[str]]) -> None:
+        """Answer a poll for one view job; the notebook is not read."""
+        ids = query.get("id", [])
+        if set(query) != {"id"} or len(ids) != 1 or not _JOB.fullmatch(ids[0]):
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "send one view job id"})
+            return
+        self._json(HTTPStatus.OK, self.notebook.view_job(ids[0]))
 
     def _linked(self, query: dict[str, list[str]]) -> None:
         """Serve another notebook of this project, read-only, by its link."""
@@ -230,11 +242,20 @@ class _Handler(BaseHTTPRequestHandler):
         return HTTPStatus.ACCEPTED, {"status": "cancelling"}
 
     def _cancel_view(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
-        """Stop the view being drawn."""
+        """Stop drawing the view at one directive line of the saved source."""
+        digest, line = _directive(body)
+        try:
+            self.notebook.cancel_view(digest, line)
+        except SnapshotError as error:
+            return HTTPStatus.CONFLICT, {"error": str(error)}
+        return HTTPStatus.ACCEPTED, {"status": "cancelling"}
+
+    def _cancel_inspection(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
+        """Stop the running project inspection."""
         if body:
             raise ValueError("send an empty object")
         try:
-            self.notebook.cancel_view()
+            self.notebook.cancel_inspection()
         except SnapshotError as error:
             return HTTPStatus.CONFLICT, {"error": str(error)}
         return HTTPStatus.ACCEPTED, {"status": "cancelling"}

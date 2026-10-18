@@ -65,14 +65,15 @@ function empty(body: string | undefined): boolean {
 /** Exact body shapes of the routes that start or end provider work, and of checks. */
 const BODIES: Record<string, (body: string | undefined) => boolean> = {
   '/api/evidence/run': directive, '/api/decide/run': directive, '/api/decide/discard': directive,
-  '/api/decide/stop': empty, '/api/view/cancel': empty, '/api/project/check': check,
+  '/api/decide/stop': empty, '/api/view/cancel': directive, '/api/project/inspect/cancel': empty,
+  '/api/project/check': check,
 };
 
 /**
  * Posts that only stop work; they never depend on the editor's text, so unsaved
  * Lean files do not hold them back. `media/bridge.js` keeps the same list.
  */
-export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel'];
+export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel'];
 
 /** Whether a preview request must wait until unsaved Lean files are saved or reverted. */
 export function heldWhileDirty(path: string, method: string, dirty: boolean): boolean {
@@ -82,6 +83,8 @@ export function heldWhileDirty(path: string, method: string, dirty: boolean): bo
 /** Exact queries of the reads that name one thing: a decision candidate names only its key. */
 const QUERIES: Record<string, RegExp> = {
   '/api/decide/candidate': /^\?key=[0-9a-f]{64}$/,
+  // A poll for one view job names only its id.
+  '/api/view/job': /^\?id=[0-9a-f]{32}$/,
 };
 
 /**

@@ -215,8 +215,9 @@ def inspect_project(
 ) -> dict[str, Any]:
     """Resolve prepared module setup on explicit request, without proof metadata.
 
-    `timeout_seconds` bounds each Lake run; by default it is the configured
-    check time limit. A caller that answers a quick request passes a shorter one.
+    `timeout_seconds` bounds the whole inspection, every Lake run together;
+    by default it is the configured check time limit. A caller that answers a
+    quick request passes a shorter one.
     `imports` are modules set up as if the source's header imported them too,
     from the project's existing build. A module no package provides is left
     out of the setup; a missing or out-of-date build of one, as of any import,
@@ -249,12 +250,22 @@ def inspect_project(
             raise ValueError("Source is outside the project root.")
         toolchain = _toolchain()
         cancellation = cancel if cancel is not None else threading.Event()
+        deadline = time.monotonic() + (
+            check_seconds() if timeout_seconds is None else timeout_seconds
+        )
+
+        def remaining() -> float:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise ValueError("Project inspection timed out.")
+            return left
+
         version = _run(
             ["--version"],
             root,
             toolchain,
             cancellation,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=remaining(),
         ).strip()
         if (
             not version.startswith("Lake version 5.0.0-src+")
@@ -269,7 +280,7 @@ def inspect_project(
             toolchain,
             cancellation,
             program=PROGRAM,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=remaining(),
         )
         report = json.loads(output)
         if not isinstance(report, dict) or set(report) != {"setup", "resolution"}:

@@ -694,11 +694,14 @@
     if (linked) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Lean draws this view in the notebook's own preview.</span></div>`;
     else if (view.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>${esc(view.error)}</span></div>`;
     else if (!drawing || drawing.loading) body = `<p class="small muted view-wait" role="status">${esc(drawing?.message || 'Lean is drawing it…')}</p>`
-      + (drawing?.drawing ? `<div class="claim-actions"><button type="button" class="secondary" data-act="view-cancel">${icon('x')}Stop</button><span class="small muted">Drawing is bounded by the check time limit.</span></div>` : '');
+      + (drawing?.drawing ? `<div class="claim-actions"><button type="button" class="secondary" data-act="view-cancel" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('x')}Stop</button><span class="small muted">Drawing is bounded by the check time limit.</span></div>` : '');
     else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>No drawing: ${esc(drawing.error)}</span></div>`
       + `<div class="claim-actions"><button type="button" class="secondary" data-act="view-retry" data-key="${esc(key)}">${icon('replay')}Draw again</button></div>`;
     else if (drawing.graph || drawing.model) body = diagramHTML(key);
     else body = `<div class="view-body"><img alt="${esc(view.kind)} view of ${esc(view.name)}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing.svg)}"></div>`;
+    // Drawn while a dependency's state could not be read: it is not redrawn
+    // on every poll, so it may be out of date.
+    if (drawing?.uncertain && !drawing.error && !drawing.loading) body = `<div class="note-line" data-tone="amber">${icon('branch')}<span>May be out of date: the state of a dependency could not be read when this was drawn.</span></div>` + body;
     return `<section data-document-start="${line}" data-document-end="${line}" class="cell box view-cell">${head}${body}</section>`;
   }
 
@@ -778,29 +781,47 @@
     }
   }
 
-  // The server draws views in the background, one at a time: until a drawing
-  // is done it answers with what it is doing, and the view is asked again.
-  const VIEW_POLL_MS = 750;
-  async function loadView(key, view) {
-    UI.drawings[key] = {loading: true, ...(UI.drawings[key]?.loading ? UI.drawings[key] : {})};
-    let next;
+  // The server draws views in the background, one at a time. Asking for a
+  // view starts it, or names the job drawing before it; that job is then
+  // polled on its own cheap route, which reads no notebook, until it ends.
+  const VIEW_POLL_MS = 2000;
+  const JOB = /^[0-9a-f]{32}$/;
+  async function viewAnswer(path) {
     try {
-      const response = await fetch(`/api/view?cell=${view.cell}&line=${view.line}`, {cache: 'no-store', headers: API});
+      const response = await fetch(path, {cache: 'no-store', headers: API});
       const answer = await response.json().catch(() => ({}));
-      if (response.ok && (answer.status === 'drawing' || answer.status === 'queued')) next = {loading: true, drawing: answer.status === 'drawing', message: String(answer.message || '')};
-      else next = response.ok ? answer : {error: answer.error || `the server answered ${response.status}`, transient: response.status >= 500};
+      return response.ok ? answer : {error: answer.error || `the server answered ${response.status}`, transient: response.status >= 500};
     } catch (error) {
-      next = {error: 'the server did not answer', transient: true};
+      return {error: 'the server did not answer', transient: true};
     }
+  }
+  async function loadView(key, view, job = null, mine = false) {
+    UI.drawings[key] = {loading: true, ...(UI.drawings[key]?.loading ? UI.drawings[key] : {})};
+    const answer = await viewAnswer(job ? `/api/view/job?id=${job}` : `/api/view?cell=${view.cell}&line=${view.line}`);
     // A drawing forgotten meanwhile (Draw again, a changed source) is not revived.
     if (!UI.drawings[key]?.loading) return;
+    const waiting = answer.status === 'drawing' || answer.status === 'queued';
+    let next = answer;
+    if (waiting && JOB.test(String(answer.job || ''))) {
+      mine = job ? mine : answer.status === 'drawing';
+      // While another view draws, this card keeps saying that it waits.
+      const message = mine || !job ? answer.message : UI.drawings[key].message;
+      next = {loading: true, drawing: mine, message: String(message || ''), job: answer.job};
+    } else if (waiting) next = {error: 'the server named no drawing to wait for', transient: true};
+    else if (job && !mine) next = {loading: true, message: UI.drawings[key].message};  // the view before it ended: ask for this one
     UI.drawings[key] = next;
     render();
-    if (next.loading) setTimeout(() => { if (UI.drawings[key]?.loading && UI.data?.sha256 && key.endsWith(UI.data.sha256)) loadView(key, view); }, VIEW_POLL_MS);
+    if (!next.loading) return;
+    const ask = next.job && waiting ? next.job : null;
+    setTimeout(() => { if (UI.drawings[key]?.loading && UI.data?.sha256 && key.endsWith(UI.data.sha256)) loadView(key, view, ask, mine); }, VIEW_POLL_MS);
   }
-  async function cancelView() {
-    await post('/api/view/cancel', {});
+  async function cancelView(button) {
+    await post('/api/view/cancel', {sha256: button.dataset.sha, line: Number(button.dataset.line)});
     render();
+  }
+  async function cancelInspection() {
+    await post('/api/project/inspect/cancel', {});
+    await refresh();
   }
 
   // Evidence is what a provider computed for one listed `@evidence` directive:
@@ -2049,7 +2070,7 @@
     const inspected = inspection();
     $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
     $('project-inspection').hidden = !project || linked || (!inspected && !inspecting());
-    $('project-inspection').innerHTML = inspecting() ? 'Inspecting the saved project setup… Close this preview to cancel.' : inspected ? `Last inspection: ${esc(inspected.message)}` + projectResolutionHTML(inspected.resolution) : '';
+    $('project-inspection').innerHTML = inspecting() ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>` : inspected ? `Last inspection: ${esc(inspected.message)}` + projectResolutionHTML(inspected.resolution) : '';
     if (project) {
       // The check actions live in the banner, so it stays; it is amber only
       // when a result needs attention: out of date, withheld or unavailable.
@@ -2334,7 +2355,8 @@
       case 'source-lines': e.preventDefault(); showSourceLines(Number(b.dataset.start), Number(b.dataset.end)); break;
       case 'source': if (linkedPath()) break; if (b.dataset.start && HOST) HOST.openSource({index: Number(b.dataset.index), sha256: b.dataset.sha, range: {start: Number(b.dataset.start), end: Number(b.dataset.end)}}); else openSource(Number(b.dataset.index)); break;
       case 'evidence-run': runEvidence(Number(b.dataset.line), b.dataset.sha); break;
-      case 'view-cancel': cancelView(); break;
+      case 'view-cancel': cancelView(b); break;
+      case 'inspect-cancel': cancelInspection(); break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
       case 'decision-run': decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;

@@ -290,6 +290,49 @@ def test_project_inspection_http_is_explicit_and_bound(tmp_path, monkeypatch):
         httpd.server_close()
 
 
+def test_inspection_cancel_http_stops_the_inspection(tmp_path, monkeypatch):
+    """`/api/project/inspect/cancel` takes an empty object and stops Lake."""
+    from glitnir.notebook import source_preview
+    from glitnir.notebook.source_preview import SourcePreviewService
+
+    started = threading.Event()
+
+    def inspect(path, *, expected_sha256, cancel, **options):
+        started.set()
+        assert cancel.wait(30)
+        return {"status": "unavailable", "message": "Lake was stopped."}
+
+    monkeypatch.setattr(source_preview, "inspect_project", inspect)
+    source = tmp_path / "A.lean"
+    source.write_text("example : True := True.intro\n")
+    service = SourcePreviewService(source)
+    httpd = make_server(service, 0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    headers = {"Content-Type": "application/json"}
+    try:
+        route = "/api/project/inspect/cancel"
+        response, data = _request(httpd, "POST", route, "{}", headers)
+        assert response.status == 409
+        assert json.loads(data) == {"error": "No inspection is running."}
+        body = json.dumps({"sha256": service.snapshot()["sha256"]})
+        started_at = _request(httpd, "POST", "/api/project/inspect", body, headers)
+        assert started_at[0].status == 202
+        assert started.wait(30)
+        assert _request(httpd, "POST", route, '{"x": 1}', headers)[0].status == 400
+        assert _request(httpd, "POST", route, "{}", headers)[0].status == 202
+        service._inspection_worker.join(timeout=30)
+        found = service.snapshot()["preview"]["inspection"]
+        assert found["message"] == "Project inspection cancelled."
+        # The gate is open again.
+        again = _request(httpd, "POST", "/api/project/inspect", body, headers)
+        assert again[0].status == 202
+    finally:
+        service.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_project_check_http_requires_saved_digest(tmp_path, monkeypatch):
     """Project checks have an authenticated, bounded, asynchronous request path."""
     from glitnir.notebook.source_preview import SourcePreviewService
@@ -434,19 +477,27 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
     thread.start()
     headers = {"Content-Type": "application/json"}
     try:
-        response, data = _request(httpd, "POST", "/api/view/cancel", "{}", headers)
+        snapshot = service.snapshot()
+        named = json.dumps({"sha256": snapshot["sha256"], "line": 3})
+        response, data = _request(httpd, "POST", "/api/view/cancel", named, headers)
         assert response.status == 409
         assert json.loads(data) == {"error": NOTHING_DRAWING}
-        cell = service.snapshot()["views"][0]["cell"]
-        _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
+        cell = snapshot["views"][0]["cell"]
+        _, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
+        job = json.loads(data)["job"]
         assert started.wait(30)
-        bad = _request(httpd, "POST", "/api/view/cancel", '{"line": 3}', headers)
-        assert bad[0].status == 400
-        response, _ = _request(httpd, "POST", "/api/view/cancel", "{}", headers)
+        for bad in ("{}", '{"line": 3}', json.dumps({"sha256": "x", "line": 3})):
+            refused = _request(httpd, "POST", "/api/view/cancel", bad, headers)
+            assert refused[0].status == 400
+        response, _ = _request(httpd, "POST", "/api/view/cancel", named, headers)
         assert response.status == 202
         service._view_worker.join(timeout=30)
-        _, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
+        _, data = _request(httpd, "GET", f"/api/view/job?id={job}")
         assert json.loads(data) == {"error": VIEW_CANCELLED}
+        for query in ("", "?id=x", f"?id={job}&id={job}", f"?id={job}&cell=0"):
+            assert _request(httpd, "GET", f"/api/view/job{query}")[0].status == 400
+        polled = _request(httpd, "GET", f"/api/view/job?id={job}", app=False)
+        assert polled[0].status == 403
     finally:
         service.close()
         httpd.shutdown()
@@ -480,6 +531,9 @@ def test_project_view_http_draws_directives(tmp_path, monkeypatch):
         # The first request starts the drawing and answers at once.
         assert response.status == 200 and json.loads(data)["status"] == "drawing"
         service._view_worker.join(timeout=30)
+        job = json.loads(data)["job"]
+        _, polled = _request(httpd, "GET", f"/api/view/job?id={job}")
+        assert json.loads(polled) == {"svg": "<svg/>"}
         response, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
         assert response.status == 200 and json.loads(data) == {"svg": "<svg/>"}
         assert _request(httpd, "GET", f"/api/view?cell={cell}&line=99")[0].status == 404

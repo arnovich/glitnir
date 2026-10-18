@@ -4,11 +4,12 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import threading
 import time
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -22,7 +23,11 @@ from glitnir.lean.project_checking import (
     through_line_end,
 )
 from glitnir.lean.project_inspection import inspect_project
-from glitnir.lean.project_snapshot import SLOT_BUSY, SnapshotError
+from glitnir.lean.project_snapshot import (
+    SLOT_BUSY,
+    SLOT_WAIT_TIMED_OUT,
+    SnapshotError,
+)
 from glitnir.lean.project_views import render_project_view
 from glitnir.lean.provider_lean import provider_imports_error, run_provider_lean
 from glitnir.notebook import assets
@@ -127,7 +132,12 @@ BUSY = "Project inspection or checking is already running."
 VIEW_STARTING = "Preparing the view."
 VIEW_QUEUED = "Waiting for another view to finish drawing."
 VIEW_CANCELLED = "View drawing cancelled."
-NOTHING_DRAWING = "No view is drawing."
+NOTHING_DRAWING = "That view is not being drawn."
+UNKNOWN_JOB = "This drawing is no longer known; draw it again."
+NOTHING_INSPECTING = "No inspection is running."
+INSPECTION_CANCELLED = "Project inspection cancelled."
+#: A fingerprint for a function of the modules loaded besides the notebook's.
+Fingerprint = Callable[..., str]
 
 
 def _directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
@@ -263,7 +273,11 @@ def _split_at_claims(
 
 def _cut_short(message: str) -> bool:
     """Whether a check stopped before Lean said anything about the notebook."""
-    return message.rstrip().endswith("cancelled.") or message.startswith(SLOT_BUSY)
+    return (
+        message.rstrip().endswith("cancelled.")
+        or message.startswith(SLOT_BUSY)
+        or message.startswith(SLOT_WAIT_TIMED_OUT)
+    )
 
 
 def _failed_fresh_check(observation: dict[str, Any] | None, sha256: str) -> bool:
@@ -285,27 +299,45 @@ def _withheld(records: dict[str, Any] | None, sha256: str) -> dict[str, Any] | N
     return withheld
 
 
-def _environment(fingerprint: Callable[[], str]) -> str:
+def _environment(fingerprint: Fingerprint, imports: tuple[str, ...] = ()) -> str:
     """Return the fingerprint, or '' (which matches nothing) when it fails."""
     try:
-        return fingerprint()
+        return fingerprint(imports) if imports else fingerprint()
     except Exception:  # noqa: BLE001 - saved results must not break preview
         return ""  # every saved result then reads as stale
+
+
+def _provider_imports(provider: Any) -> tuple[str, ...]:
+    """Return the modules a provider loads besides the notebook's, or ()."""
+    try:  # provider code must never break the preview
+        imports = provider.imports
+        if isinstance(imports, tuple) and all(isinstance(m, str) for m in imports):
+            return imports
+    except Exception:  # noqa: BLE001
+        pass
+    return ()
 
 
 def _with_saved_evidence(
     cards: list[dict[str, Any]],
     records: dict[str, Any] | None,
     text: str,
-    fingerprint: Callable[[], str],
+    fingerprint: Fingerprint,
+    providers: Providers | None = None,
 ) -> list[dict[str, Any]]:
-    """Show each card's saved snapshot, current or stale; nothing is recomputed."""
+    """Show each card's saved snapshot, current or stale; nothing is recomputed.
+
+    A run's environment includes its provider's modules, so each card is
+    compared with the fingerprint taken with them.
+    """
     saved = saved_evidence(records)
     found = [card for card in cards if card["key"] in saved]
     if not found:
         return cards  # no saved evidence, no fingerprint
-    environment = _environment(fingerprint)
     for card in found:
+        provider = providers.evidence.get(card["verb"]) if providers else None
+        imports = _provider_imports(provider) if provider is not None else ()
+        environment = _environment(fingerprint, imports)
         entry = saved[card["key"]]
         card["status"] = evidence_status(entry, text, card["line"], environment)
         card["snapshot"] = checked_evidence(entry["snapshot"])
@@ -316,7 +348,7 @@ def _with_saved_decisions(
     cards: list[dict[str, Any]],
     records: dict[str, Any] | None,
     text: str,
-    fingerprint: Callable[[], str],
+    fingerprint: Fingerprint,
 ) -> list[dict[str, Any]]:
     """Show each card's saved outcome and its status; nothing is decided."""
     saved = saved_decisions(records)
@@ -695,11 +727,26 @@ def _expected_theorem(name: str, status: str) -> str:
 
 @dataclass
 class _ViewJob:
-    """The view being drawn: its cache key, its cancel and what it is doing."""
+    """The view being drawn: its cache key, its cancel and what it is doing.
+
+    The key is (saved source, stable environment, line): the environment
+    without the random value an unknown state adds (`environment_fingerprint`),
+    so an unknown state never makes each poll a new drawing. Such a drawing
+    is `uncertain`: it may be out of date.
+    """
 
     key: tuple[str, str, int]
     cancel: threading.Event
+    uncertain: bool
+    id: str = field(default_factory=lambda: secrets.token_hex(16))
     message: str = VIEW_STARTING
+
+
+def _labelled(drawing: dict[str, Any], uncertain: bool) -> dict[str, Any]:
+    """Mark a drawing made or kept while the environment is not fully known."""
+    if uncertain and "error" not in drawing:
+        return {**drawing, "uncertain": True}
+    return drawing
 
 
 def _inspection_summary(result: dict[str, Any], sha256: str) -> dict[str, Any]:
@@ -721,6 +768,46 @@ def _inspection_summary(result: dict[str, Any], sha256: str) -> dict[str, Any]:
             "packages": resolution.get("packages", []),
         }
     return summary
+
+
+class _Fingerprints:
+    """The environment fingerprints of one saved text, each computed at most once.
+
+    Called with the modules loaded besides the notebook's (a provider's),
+    none by default, it returns the digest; `environment` returns the whole
+    fingerprint. A failure is remembered too, so every later call raises it
+    again without recomputing.
+    """
+
+    def __init__(self, path: Path, text: str) -> None:
+        """Keep the notebook and its saved text; nothing is computed yet."""
+        self._path, self._text = path, text
+        self._found: dict[tuple[str, ...], dict[str, Any]] = {}
+        self._failed: dict[tuple[str, ...], Exception] = {}
+
+    def environment(self, imports: tuple[str, ...] = ()) -> dict[str, Any]:
+        """Return the fingerprint taken with `imports`."""
+        if imports in self._failed:
+            raise self._failed[imports]
+        if imports not in self._found:
+            try:
+                if imports:
+                    # The dependencies' git states are the notebook's own.
+                    packages = self.environment().get("packages")
+                    found = environment_fingerprint(
+                        self._path, self._text, imports, packages
+                    )
+                else:
+                    found = environment_fingerprint(self._path, self._text)
+                self._found[imports] = found
+            except Exception as error:
+                self._failed[imports] = error
+                raise
+        return self._found[imports]
+
+    def __call__(self, imports: tuple[str, ...] = ()) -> str:
+        """Return the digest of the fingerprint taken with `imports`."""
+        return str(self.environment(imports)["sha256"])
 
 
 class SourcePreviewService:
@@ -746,10 +833,12 @@ class SourcePreviewService:
         self._worker: threading.Thread | None = None
         self._inspection: dict[str, Any] | None = None
         self._inspection_worker: threading.Thread | None = None
-        # Drawn views and failed attempts by (source, environment, line); the
-        # view being drawn, if any, and its worker. All under `_state_lock`.
+        self._inspection_cancel: threading.Event | None = None
+        # Drawn views by (source, stable environment, line); finished jobs'
+        # answers by job id, for the polls that ask for them; the view being
+        # drawn, if any, and its worker. All under `_state_lock`.
         self._drawings: dict[tuple[str, str, int], dict[str, Any]] = {}
-        self._view_failures: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self._finished_views: dict[str, tuple[dict[str, Any], bool]] = {}
         self._view_job: _ViewJob | None = None
         self._view_worker: threading.Thread | None = None
         self._providers_lock = threading.Lock()
@@ -784,6 +873,8 @@ class SourcePreviewService:
                 self._decision_cancel.set()
             if self._view_job is not None:
                 self._view_job.cancel.set()
+            if self._inspection_cancel is not None:
+                self._inspection_cancel.set()
             workers = [
                 self._worker,
                 self._inspection_worker,
@@ -801,8 +892,9 @@ class SourcePreviewService:
 
         The inspection runs in a worker, one at a time and never beside a
         check, and is reported through snapshots as `preview.inspection`, so
-        no request waits for Lake; each Lake run is bounded by the check time
-        limit. Nothing about proof is retained.
+        no request waits for Lake. It is bounded as a whole by the check time
+        limit and stopped by `cancel_inspection`. Nothing about proof is
+        retained.
         """
         if self._cancel.is_set():
             raise NotebookError(CLOSED)
@@ -817,8 +909,10 @@ class SourcePreviewService:
                 "source_sha256": sha256,
                 "message": INSPECTING,
             }
+            cancel = threading.Event()
+            self._inspection_cancel = cancel
             self._inspection_worker = threading.Thread(
-                target=self._inspect_work, args=(sha256,), daemon=False
+                target=self._inspect_work, args=(sha256, cancel), daemon=False
             )
             try:
                 self._inspection_worker.start()
@@ -829,16 +923,30 @@ class SourcePreviewService:
                     "message": str(error),
                 }
                 self._inspection_worker = None
+                self._inspection_cancel = None
                 self._inspection_lock.release()
             return dict(self._inspection)
 
-    def _inspect_work(self, sha256: str) -> None:
+    def cancel_inspection(self) -> None:
+        """Stop the running inspection; it then reports that it was cancelled.
+
+        Raises:
+            SnapshotError: No inspection is running.
+        """
+        with self._state_lock:
+            if self._inspection_cancel is None:
+                raise SnapshotError(NOTHING_INSPECTING)
+            self._inspection_cancel.set()
+
+    def _inspect_work(self, sha256: str, cancel: threading.Event) -> None:
         """Inspect, keep the summary for snapshots, and always open the gate."""
         try:
             result = _inspection_summary(
-                inspect_project(self.path, expected_sha256=sha256, cancel=self._cancel),
+                inspect_project(self.path, expected_sha256=sha256, cancel=cancel),
                 sha256,
             )
+            if cancel.is_set() and not self._cancel.is_set():
+                result = {**result, "message": INSPECTION_CANCELLED}
         except Exception as error:  # a background failure must end the run
             result = {
                 "status": "unavailable",
@@ -847,6 +955,7 @@ class SourcePreviewService:
             }
         with self._state_lock:
             self._inspection = result
+            self._inspection_cancel = None
         self._inspection_lock.release()
 
     def check(self, sha256: str, through_line: int | None = None) -> None:
@@ -1002,34 +1111,16 @@ class SourcePreviewService:
         text = read_regular(self.path, MAX_SOURCE_BYTES).decode("utf-8")
         return text.replace("\r\n", "\n")
 
-    def _fingerprint(self, text: str) -> Callable[[], str]:
-        """Compute the environment fingerprint of `text` at most once.
-
-        A failure is remembered too, so every later call raises it again
-        without recomputing.
-        """
-        found: list[str] = []
-        failed: list[Exception] = []
-
-        def fingerprint() -> str:
-            if failed:
-                raise failed[0]
-            if not found:
-                try:
-                    found.append(environment_fingerprint(self.path, text)["sha256"])
-                except Exception as error:
-                    failed.append(error)
-                    raise
-            return found[0]
-
-        return fingerprint
+    def _fingerprint(self, text: str) -> "_Fingerprints":
+        """Compute each environment fingerprint of `text` at most once."""
+        return _Fingerprints(self.path, text)
 
     def snapshot(self) -> dict[str, Any]:
         """Preserve all source, using prose cells only when parsing is lossless."""
         text = self._text()
         return self._snapshot(text, self._fingerprint(text))
 
-    def _snapshot(self, text: str, fingerprint: Callable[[], str]) -> dict[str, Any]:
+    def _snapshot(self, text: str, fingerprint: Fingerprint) -> dict[str, Any]:
         """Build the snapshot of `text`; `fingerprint` is called only if needed."""
         lines = _lines(text)
         cells = _cells(text, lines)
@@ -1087,7 +1178,11 @@ class SourcePreviewService:
                 if providers is None
                 else _with_runs(
                     _with_saved_evidence(
-                        evidence_cards(evidence, providers), records, text, fingerprint
+                        evidence_cards(evidence, providers),
+                        records,
+                        text,
+                        fingerprint,
+                        providers,
                     ),
                     running,
                     run_errors,
@@ -1139,7 +1234,7 @@ class SourcePreviewService:
         if compared:
             snapshot = other._snapshot(text, other._fingerprint(text))
         else:
-            snapshot = _uncompared(other._snapshot(text, lambda: ""))
+            snapshot = _uncompared(other._snapshot(text, lambda *_: ""))
         snapshot["preview"]["linked"] = {
             "path": link,
             "file": target.name,
@@ -1162,11 +1257,14 @@ class SourcePreviewService:
 
         Never waits for Lean. A drawing is made in a worker, one view at a
         time and bounded by the check time limit; until it is done the answer
-        is `{"status": "drawing", "message": ...}` (or `"queued"` while
-        another view is drawn), and the caller asks again. A finished drawing
-        is kept for its saved source and environment; a failure, `{"error":
-        ...}` and `transient` if it says nothing about the notebook, is
-        answered once, so asking again draws it again. Raises KeyError if no
+        is `{"status": "drawing", "message": ..., "job": id}`, or `"queued"`
+        with the id of the job being drawn, and the caller polls `view_job`
+        for that id, which answers without reading the notebook. A finished
+        drawing is kept for its saved source and environment, the provider's
+        modules included; one made while the environment is not fully known
+        is marked `uncertain` and kept for that same unknown state, so asking
+        again never draws it again. A failure goes to the polls of its job
+        only, so asking here again draws again. Raises KeyError if no
         directive is listed at `cell` and `line`.
         """
         text = self._text()
@@ -1180,25 +1278,26 @@ class SourcePreviewService:
             raise KeyError(f"no view directive at cell {cell}, line {line}")
         if entry["error"]:
             return {"error": entry["error"]}
-        key = (snapshot["sha256"], fingerprint(), line)
+        imports = _provider_imports(self._providers().views[entry["kind"]])
+        environment = fingerprint.environment(imports)
+        stable = str(environment.get("stable_sha256", environment["sha256"]))
+        uncertain = bool(environment.get("unknown", False))
+        key = (snapshot["sha256"], stable, line)
         with self._state_lock:
             cached = self._drawings.get(key)
             if cached is not None:
-                return cached
+                return _labelled(cached, uncertain)
             job = self._view_job
             if job is not None:
                 if job.key == key:
-                    return {"status": "drawing", "message": job.message}
+                    return {"status": "drawing", "message": job.message, "job": job.id}
                 if job.key[0] != key[0]:
                     # Its saved source is gone, so its drawing would be refused.
                     job.cancel.set()
-                return {"status": "queued", "message": VIEW_QUEUED}
-            failure = self._view_failures.pop(key, None)
-            if failure is not None:
-                return failure
+                return {"status": "queued", "message": VIEW_QUEUED, "job": job.id}
             if self._cancel.is_set():
                 return {"error": CLOSED}
-            job = _ViewJob(key, threading.Event())
+            job = _ViewJob(key, threading.Event(), uncertain)
             worker = threading.Thread(
                 target=self._draw_view, args=(job, entry), daemon=False
             )
@@ -1208,7 +1307,23 @@ class SourcePreviewService:
             except RuntimeError as error:
                 self._view_job = self._view_worker = None
                 return {"error": f"View drawing could not start: {error}"}
-            return {"status": "drawing", "message": job.message}
+            return {"status": "drawing", "message": job.message, "job": job.id}
+
+    def view_job(self, job_id: str) -> dict[str, Any]:
+        """Answer a poll for one view job, without reading the notebook.
+
+        While the job draws, its status and progress; once it has ended, its
+        drawing or failure, as often as asked; a job no longer remembered is
+        a transient failure, so the caller asks `view` again.
+        """
+        with self._state_lock:
+            job = self._view_job
+            if job is not None and job.id == job_id:
+                return {"status": "drawing", "message": job.message, "job": job.id}
+            found = self._finished_views.get(job_id)
+        if found is None:
+            return {"error": UNKNOWN_JOB, "transient": True}
+        return _labelled(*found)
 
     def _draw_view(self, job: _ViewJob, entry: dict[str, Any]) -> None:
         """Draw one view and keep its drawing or failure; always end the job."""
@@ -1236,22 +1351,28 @@ class SourcePreviewService:
                 # Asked for, so not transient: drawing it again needs a request.
                 closed = self._cancel.is_set()
                 drawing = {"error": CLOSED if closed else VIEW_CANCELLED}
-            table = self._view_failures if "error" in drawing else self._drawings
-            table[job.key] = drawing
-            while len(table) > MAX_CACHED_VIEWS:
-                del table[next(iter(table))]
+            if "error" not in drawing:
+                self._drawings[job.key] = drawing
+                while len(self._drawings) > MAX_CACHED_VIEWS:
+                    del self._drawings[next(iter(self._drawings))]
+            self._finished_views[job.id] = (drawing, job.uncertain)
+            while len(self._finished_views) > MAX_CACHED_VIEWS:
+                del self._finished_views[next(iter(self._finished_views))]
             self._view_job = None
 
-    def cancel_view(self) -> None:
-        """Stop the view being drawn; its card then says it was cancelled.
+    def cancel_view(self, sha256: str, line: int) -> None:
+        """Stop drawing the view at `line` of the saved source `sha256`.
+
+        Only that view's drawing stops; its card then says it was cancelled.
 
         Raises:
-            SnapshotError: No view is being drawn.
+            SnapshotError: That view is not being drawn.
         """
         with self._state_lock:
-            if self._view_job is None:
+            job = self._view_job
+            if job is None or job.key[0] != sha256 or job.key[2] != line:
                 raise SnapshotError(NOTHING_DRAWING)
-            self._view_job.cancel.set()
+            job.cancel.set()
 
     def run_evidence(self, sha256: str, line: int) -> str:
         """Start running the evidence directive at `line`; return its card key.
@@ -1351,7 +1472,7 @@ class SourcePreviewService:
             return provider_failure(provider, failure)
         # Taken before the run so an environment change during it leaves the
         # saved evidence out of date.
-        environment = environment_fingerprint(self.path, job.text)
+        environment = environment_fingerprint(self.path, job.text, imports)
         fingerprint = environment["sha256"]
         result = run_provider_lean(
             self.path,
@@ -1364,6 +1485,7 @@ class SourcePreviewService:
             marker=marker,
             needs="evidence",
             cancel=self._cancel,
+            wait=True,
         )
         if "payload" not in result:
             return str(result["error"])

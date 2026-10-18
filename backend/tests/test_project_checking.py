@@ -83,6 +83,46 @@ def test_a_waiting_caller_takes_the_slot_once_it_is_free() -> None:
     assert told == [1]
 
 
+def test_a_check_waits_for_a_view_holding_the_slot(tmp_path, monkeypatch) -> None:
+    """Views drawn one after another never keep a check out: it waits its turn."""
+    import hashlib
+    import threading
+
+    from glitnir.lean import project_checking
+    from glitnir.lean.project_checking import check_project
+    from glitnir.lean.project_snapshot import SLOT_WAITING
+
+    source = tmp_path / "A.lean"
+    source.write_text("theorem t : True := trivial\n")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    reached = threading.Event()
+
+    def toolchain():
+        reached.set()
+        raise ValueError("reached the check")
+
+    monkeypatch.setattr(project_checking, "_toolchain", toolchain)
+    messages: list[str] = []
+    results: list[dict] = []
+    held = snapshot_slot()
+    held.__enter__()
+    try:
+        worker = threading.Thread(
+            target=lambda: results.append(
+                check_project(source, expected_sha256=digest, progress=messages.append)
+            ),
+            daemon=True,
+        )
+        worker.start()
+        assert not reached.wait(0.6), "the check started beside the view"
+        assert SLOT_WAITING in messages
+    finally:
+        held.__exit__(None, None, None)
+    worker.join(10)
+    assert reached.is_set()
+    assert results[0]["message"].startswith("reached the check")
+
+
 def _take(cancel, told, taken) -> None:
     with snapshot_slot(cancel=cancel, waiting=lambda: told.append(1)):
         taken.set()
