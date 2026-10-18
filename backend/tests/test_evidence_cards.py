@@ -22,6 +22,10 @@ from glitnir.notebook.evidence_cards import (
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 
+# Environment fingerprints are SHA-256 digests; any other string matches nothing.
+FP = "f" * 64
+GP = "9" * 64
+
 DIRECTIVE = "-- @evidence simulate M (h := 1/100)"
 
 
@@ -418,13 +422,13 @@ def _saved_service(tmp_path: Path, monkeypatch, fingerprint: str):
     text = f"def M := 1\n{DIRECTIVE}\n"
     path = tmp_path / "A.lean"
     path.write_text(text)
-    entry = _saved_entry(text, 2, "f")
+    entry = _saved_entry(text, 2, FP)
     save_records(path, with_evidence(None, evidence_key(DIRECTIVE, 0), entry, []))
     return path, text, calls, entry
 
 
 def test_snapshot_marks_saved_evidence_current(tmp_path: Path, monkeypatch):
-    path, _text, calls, entry = _saved_service(tmp_path, monkeypatch, "f")
+    path, _text, calls, entry = _saved_service(tmp_path, monkeypatch, FP)
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert (card["status"], card["snapshot"]) == ("current", entry["snapshot"])
     # The claims' fingerprint, then the run's, which counts the provider's
@@ -435,7 +439,7 @@ def test_snapshot_marks_saved_evidence_current(tmp_path: Path, monkeypatch):
 def test_snapshot_marks_saved_evidence_stale_for_other_text_or_environment(
     tmp_path: Path, monkeypatch
 ):
-    path, text, _calls, entry = _saved_service(tmp_path, monkeypatch, "g")
+    path, text, _calls, entry = _saved_service(tmp_path, monkeypatch, GP)
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert (card["status"], card["snapshot"]) == ("stale", entry["snapshot"])
     path.write_text(text.replace("M := 1", "M := 2"))
@@ -444,7 +448,7 @@ def test_snapshot_marks_saved_evidence_stale_for_other_text_or_environment(
 
 
 def test_snapshot_without_a_sidecar_pays_no_fingerprint(tmp_path: Path, monkeypatch):
-    path, _text, calls, _entry = _saved_service(tmp_path, monkeypatch, "f")
+    path, _text, calls, _entry = _saved_service(tmp_path, monkeypatch, FP)
     records_path(path).unlink()
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert (card["status"], card["snapshot"]) == ("never", None)
@@ -454,7 +458,7 @@ def test_snapshot_without_a_sidecar_pays_no_fingerprint(tmp_path: Path, monkeypa
 def test_snapshot_with_claims_but_no_evidence_fingerprints_once(
     tmp_path: Path, monkeypatch
 ):
-    path, _text, calls, _entry = _saved_service(tmp_path, monkeypatch, "f")
+    path, _text, calls, _entry = _saved_service(tmp_path, monkeypatch, FP)
     path.write_text(path.read_text().replace("simulate M", "simulate N"))
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert (card["status"], card["snapshot"]) == ("never", None)
@@ -466,7 +470,7 @@ def test_snapshot_reads_saved_evidence_as_stale_when_the_fingerprint_fails(
 ):
     from glitnir.notebook import source_preview
 
-    path, _text, _calls, entry = _saved_service(tmp_path, monkeypatch, "f")
+    path, _text, _calls, entry = _saved_service(tmp_path, monkeypatch, FP)
 
     def boom(*_arguments):
         raise OSError("no environment")
@@ -479,7 +483,7 @@ def test_snapshot_reads_saved_evidence_as_stale_when_the_fingerprint_fails(
 def test_snapshot_serves_the_normalised_copy_of_saved_evidence(
     tmp_path: Path, monkeypatch
 ):
-    path, _text, _calls, entry = _saved_service(tmp_path, monkeypatch, "f")
+    path, _text, _calls, entry = _saved_service(tmp_path, monkeypatch, FP)
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert card["snapshot"] == entry["snapshot"]
     assert card["snapshot"] is not entry["snapshot"]

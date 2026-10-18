@@ -7,17 +7,19 @@ through ``GET /api/notebook``, built from the saved source and its saved
 ``<Notebook>.glitnir.json`` *as recorded*. Each saved result is compared only
 with the source, never with the reader's Lean environment, so the snapshot
 says so (``preview.recorded``) and the renderer words it "Saved results, shown
-as recorded", never "current".
+as recorded", never "current". Only this module asks for that comparison; the
+editor's preview always compares with the environment.
 
-Reading a snapshot never runs Lean, git or a provider computation, and never
-writes a file. Drawing a view (`~SavedNotebook.draw_view`) runs Lean in the
-sandbox to draw, as the editor does; it checks nothing and writes nothing
-beside the notebook. `export_styles` is the CSS the renderer's Export HTML
+Reading a snapshot never runs Lean, git or a provider run, and never writes a
+file. Drawing a view (`~SavedNotebook.draw_view`) runs Lean in the sandbox to
+draw, as the editor does; it checks nothing and writes nothing in the
+notebook's project. `export_styles` is the CSS the renderer's Export HTML
 embeds (``GET /api/export/styles``). Export reports recorded observations: it
 neither runs Lean for checks nor updates records.
 """
 
 import base64
+import os
 import re
 import time
 from pathlib import Path
@@ -39,9 +41,21 @@ RECORDED_NOTICE = (
 POLL_SECONDS = 0.2
 
 
-def _as_recorded(*_imports: str) -> None:
-    """Compare every saved result with the environment it was recorded in."""
-    return None
+def _unfingerprinted(*_imports: str) -> str:
+    """Stand in for the environment, which a static export never fingerprints.
+
+    It is never called when results are compared as recorded; if it were,
+    '' matches no saved result, so nothing would read as current.
+    """
+    return ""
+
+
+def _neutral_project(project: dict[str, Any], notebook: Path) -> dict[str, Any]:
+    """Describe the project without local paths: its root relative to `notebook`."""
+    root = project.get("root")
+    if root is not None:
+        root = Path(os.path.relpath(root, notebook.absolute().parent)).as_posix()
+    return {"kind": project["kind"], "root": root, "toolchain": project["toolchain"]}
 
 
 class SavedNotebook:
@@ -78,16 +92,24 @@ class SavedNotebook:
         """Stop any drawing in progress and wait briefly for it."""
         self._service.close()
 
+    def _recorded(self, text: str) -> dict[str, Any]:
+        return self._service._snapshot(
+            text, _unfingerprinted, compare_environment=False
+        )
+
     def snapshot(self, *, run_prompts: bool = False) -> dict[str, Any]:
         """Return the renderer's snapshot of the saved source and saved results.
 
         Each saved claim, evidence run and decision keeps its saved status and
         is compared only with the saved source: one whose source changed
-        since it was saved is out of date, and every other one is shown as
+        since it was saved is out of date, one saved under no known
+        environment is out of date too, and every other one is shown as
         recorded. ``preview.recorded`` is True and ``preview.notice`` is
         `RECORDED_NOTICE`. A claim's ``current`` and an evidence card's
         ``"current"`` status mean "recorded for this source"; the renderer
-        words them so.
+        words them so. ``preview.project`` names the project's kind and
+        declared toolchain, and its root relative to the notebook's directory,
+        so the snapshot holds no local absolute path of it.
 
         Args:
             run_prompts: Keep what running a provider would need (an
@@ -101,10 +123,11 @@ class SavedNotebook:
             The snapshot, in the shape ``GET /api/notebook`` serves. Its
             ``sha256`` is the saved source's SHA-256, with CRLF read as LF.
         """
-        service = self._service
-        snapshot = service._snapshot(service._text(), _as_recorded)
-        snapshot["preview"]["recorded"] = True
-        snapshot["preview"]["notice"] = RECORDED_NOTICE
+        snapshot = self._recorded(self._service._text())
+        preview = snapshot["preview"]
+        preview["recorded"] = True
+        preview["notice"] = RECORDED_NOTICE
+        preview["project"] = _neutral_project(preview["project"], self.path)
         if not run_prompts:
             for card in [*snapshot["evidence"], *snapshot["decisions"]]:
                 card["unavailable"] = None
@@ -130,17 +153,16 @@ class SavedNotebook:
         view's provider, and must be built in the notebook's Lake project
         before `draw_view`. Toolchain modules (``Init``, ``Std``, ``Lean``,
         ``Lake``) are listed as named. A notebook without drawable views
-        needs none. No saved result is read.
+        needs none. The views are found as in `snapshot`, which reads the
+        saved results to place claims; nothing is compared or run.
         """
-        service = self._service
-        text = service._text()
-        snapshot = service._snapshot(text, _as_recorded)
-        views = [view for view in snapshot["views"] if not view["error"]]
+        text = self._service._text()
+        views = [view for view in self._recorded(text)["views"] if not view["error"]]
         if not views:
             return []
         header = header_imports(text)
         modules = set(direct_imports(text) if header is None else header)
-        providers = service._providers()
+        providers = self._service._providers()
         for view in views:
             modules.update(_provider_imports(providers.views[view["kind"]]))
         return sorted(modules)
@@ -151,7 +173,8 @@ class SavedNotebook:
         The view is drawn as the editor draws it, by its provider with Lean in
         the sandbox, from the notebook project's own build, bounded by the
         check time limit. Nothing is checked, and a drawing never changes a
-        result.
+        result. Reading the notebook or its environment for the drawing may
+        fail; that failure is returned like a failed drawing.
 
         Returns:
             The drawing the renderer reads from ``GET /api/view`` (``svg`` and
@@ -160,6 +183,14 @@ class SavedNotebook:
         Raises:
             KeyError: No view directive is listed at `cell` and `line`.
         """
+        try:
+            return self._drawn(cell, line)
+        except KeyError:
+            raise
+        except Exception as error:  # noqa: BLE001 - reported as the drawing
+            return {"error": f"View drawing failed: {type(error).__name__}: {error}"}
+
+    def _drawn(self, cell: int, line: int) -> dict[str, Any]:
         service = self._service
         while True:
             answer = service.view(cell, line)

@@ -3651,6 +3651,14 @@ test('saved results shown as recorded get their own banner state and never read 
     assert.doesNotMatch($('doc').textContent, /\bCurrent\b|Out of date/);
     assert.match($('insp').textContent, /as recorded/);
     assert.doesNotMatch($('insp').textContent, /\bcurrent\b/);
+    // Each current-as-recorded claim says so: card, inspector and contents.
+    const claimCard = window.document.querySelector('#doc .project-claim .claim');
+    assert.equal(claimCard.dataset.tone, 'muted');
+    assert.deepEqual([...claimCard.querySelectorAll('.claim-head .pill')].map(pill => [pill.textContent, pill.dataset.tone]).at(-1), ['As recorded', 'muted']);
+    assert.match($('insp-sub').textContent, / · as recorded$/);
+    const dot = $('outline').querySelector('.dot');
+    assert.equal(dot.dataset.tone, 'muted');
+    assert.match(dot.title, / · as recorded$/);
     let html;
     window.glitnirHost.saveHTML = async value => { html = value; };
     await $('export-html').onclick();
@@ -3669,5 +3677,9 @@ test('saved results shown as recorded get their own banner state and never read 
     assert.equal(window.document.getElementById('banner').dataset.state, '');
     assert.equal(window.document.querySelector('#doc .evidence .pill').textContent, 'Current');
     assert.ok(window.document.querySelector('[data-act="evidence-run"]'), 'the editor preview can run it');
+    const claimCard = window.document.querySelector('#doc .project-claim .claim');
+    assert.notEqual(claimCard.dataset.tone, 'muted');
+    assert.doesNotMatch(claimCard.querySelector('.claim-head').textContent, /As recorded/);
+    assert.doesNotMatch(window.document.getElementById('insp-sub').textContent, /recorded/);
   } finally { window.close(); }
 });

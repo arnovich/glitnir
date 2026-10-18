@@ -28,6 +28,13 @@ from glitnir.notebook.check_records import (
 from glitnir.notebook.decision_cards import checked_decision, decision_key
 from glitnir.notebook.evidence_cards import evidence_key
 
+# Environment fingerprints are SHA-256 digests; any other string matches nothing.
+FP = "f" * 64
+GP = "9" * 64
+FP_SAVED = "c" * 64
+OLD = "1" * 64
+NEW = "2" * 64
+
 TEXT = (
     "/-! # Notes -/\n"
     "def base : Nat := 1\n"
@@ -60,8 +67,8 @@ RESULT = {
 }
 
 
-def views(text, fingerprint="f"):
-    records = records_from_check(TEXT, RESULT, "f")
+def views(text, fingerprint=FP):
+    records = records_from_check(TEXT, RESULT, FP)
     found = claim_views(text, records, fingerprint)
     return {v["name"]: v for v in found}
 
@@ -117,14 +124,14 @@ def test_withheld_claims_are_reported_from_their_line():
         "theorems": RESULT["theorems"][:1],
         "withheld": {"from_line": 6, "message": "type mismatch"},
     }
-    records = records_from_check(TEXT, result, "f")
+    records = records_from_check(TEXT, result, FP)
     assert records["withheld"] == {"from_line": 6, "message": "type mismatch"}
-    assert [v["name"] for v in claim_views(TEXT, records, "f")] == ["A.result"]
+    assert [v["name"] for v in claim_views(TEXT, records, FP)] == ["A.result"]
 
 
 def test_round_trip_and_unknown_formats(tmp_path: Path):
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     save_records(notebook, records)
     assert records_path(notebook).name == "N.glitnir.json"
     assert load_records(notebook) == records
@@ -137,7 +144,7 @@ def test_round_trip_and_unknown_formats(tmp_path: Path):
 
 def test_claim_entry_missing_a_key_is_unknown(tmp_path: Path):
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     del records["claims"][0]["prefix_sha256"]
     records_path(notebook).write_text(json.dumps(records))
     assert load_records(notebook) is None
@@ -165,15 +172,15 @@ def _result(*theorems):
 
 
 def _current(text, source, result):
-    records = records_from_check(source, result, "f")
-    return {v["name"]: v["current"] for v in claim_views(text, records, "f")}
+    records = records_from_check(source, result, FP)
+    return {v["name"]: v["current"] for v in claim_views(text, records, FP)}
 
 
 def test_identical_declarations_map_to_their_own_lines():
     source = "theorem t : True := trivial\n\ntheorem t : True := trivial\n"
     result = _result(("A.t", 1), ("B.t", 3))
-    records = records_from_check(source, result, "f")
-    found = claim_views(source, records, "f")
+    records = records_from_check(source, result, FP)
+    found = claim_views(source, records, FP)
     assert [(v["name"], v["start_line"]) for v in found] == [("A.t", 1), ("B.t", 3)]
     assert all(v["current"] for v in found)
     edited = source.replace(
@@ -232,7 +239,7 @@ def test_verso_prose_edits_are_seen():
 def test_saved_records_are_world_readable(tmp_path: Path):
     """The sidecar is shared like the notebook, not private like a temp file."""
     notebook = tmp_path / "Note.lean"
-    save_records(notebook, records_from_check(TEXT, RESULT, "fp"))
+    save_records(notebook, records_from_check(TEXT, RESULT, FP_SAVED))
     assert records_path(notebook).stat().st_mode & 0o777 == 0o644
 
 
@@ -246,7 +253,7 @@ SNAPSHOT = {
 }
 
 
-def _entry(text=NOTEBOOK, line=3, fingerprint="f", snapshot=SNAPSHOT):
+def _entry(text=NOTEBOOK, line=3, fingerprint=FP, snapshot=SNAPSHOT):
     return {
         "prefix_sha256": evidence_prefix_sha256(text, line),
         "fingerprint": fingerprint,
@@ -259,7 +266,7 @@ def _entry(text=NOTEBOOK, line=3, fingerprint="f", snapshot=SNAPSHOT):
 KEY = evidence_key(NOTE, 0)
 
 
-def _status(text, line=3, fingerprint="f"):
+def _status(text, line=3, fingerprint=FP):
     return evidence_status(_entry(), text, line, fingerprint)
 
 
@@ -277,7 +284,7 @@ def test_edits_above_the_directive_mark_evidence_stale():
 
 
 def test_a_changed_environment_marks_evidence_stale():
-    assert _status(NOTEBOOK, fingerprint="g") == "stale"
+    assert _status(NOTEBOOK, fingerprint=GP) == "stale"
 
 
 def test_evidence_status_reads_crlf_text_like_lf():
@@ -292,7 +299,7 @@ def test_with_evidence_starts_a_file_that_holds_only_evidence(tmp_path: Path):
     loaded = load_records(notebook)
     assert loaded == records
     assert saved_evidence(loaded) == {KEY: _entry()}
-    assert claim_views(NOTEBOOK, loaded, "f") == []
+    assert claim_views(NOTEBOOK, loaded, FP) == []
 
 
 def test_with_evidence_prunes_keys_of_directives_that_are_gone():
@@ -304,7 +311,7 @@ def test_with_evidence_prunes_keys_of_directives_that_are_gone():
 
 
 def test_with_evidence_does_not_change_its_input_or_the_claims():
-    checked = records_from_check(TEXT, RESULT, "f")
+    checked = records_from_check(TEXT, RESULT, FP)
     before = json.dumps(checked, sort_keys=True)
     updated = with_evidence(checked, KEY, _entry(), [KEY])
     assert json.dumps(checked, sort_keys=True) == before
@@ -322,24 +329,24 @@ def test_with_evidence_refuses_a_malformed_entry():
 
 def test_a_check_keeps_the_saved_evidence():
     previous = with_evidence(None, KEY, _entry(), [KEY])
-    records = records_from_check(TEXT, RESULT, "f", previous)
+    records = records_from_check(TEXT, RESULT, FP, previous)
     assert saved_evidence(records) == {KEY: _entry()}
-    assert "evidence" not in records_from_check(TEXT, RESULT, "f")
+    assert "evidence" not in records_from_check(TEXT, RESULT, FP)
 
 
 def test_a_check_never_drops_evidence_to_fit_the_file(monkeypatch):
     """Records too large with the saved evidence are refused, never trimmed."""
     previous = with_evidence(None, KEY, _entry(), [KEY])
-    claims_only = len(_serialised(records_from_check(TEXT, RESULT, "f")).encode())
+    claims_only = len(_serialised(records_from_check(TEXT, RESULT, FP)).encode())
     monkeypatch.setattr(check_records, "_MAX_RECORDS", claims_only + 10)
     with pytest.raises(ValueError, match="nothing saved before was dropped"):
-        records_from_check(TEXT, RESULT, "f", previous)
+        records_from_check(TEXT, RESULT, FP, previous)
     assert RESULTS_TOO_LARGE.startswith("the results file would exceed 16 MiB")
 
 
 def test_evidence_survives_a_round_trip_beside_claims(tmp_path: Path):
     notebook = tmp_path / "N.lean"
-    records = with_evidence(records_from_check(TEXT, RESULT, "f"), KEY, _entry(), [KEY])
+    records = with_evidence(records_from_check(TEXT, RESULT, FP), KEY, _entry(), [KEY])
     save_records(notebook, records)
     assert load_records(notebook) == records
 
@@ -363,7 +370,7 @@ def test_evidence_survives_a_round_trip_beside_claims(tmp_path: Path):
 )
 def test_a_malformed_evidence_section_makes_the_file_unreadable(tmp_path, evidence):
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     records_path(notebook).write_text(json.dumps({**records, "evidence": evidence}))
     assert load_records(notebook) is None
 
@@ -386,7 +393,7 @@ def _maximal_snapshot(seed: int) -> dict:
 def test_saved_evidence_that_would_exceed_the_file_cap_is_refused(tmp_path: Path):
     notebook = tmp_path / "N.lean"
     keys = [f"k{n}" for n in range(12)]
-    records = with_evidence(records_from_check(TEXT, RESULT, "f"), "k0", _entry(), [])
+    records = with_evidence(records_from_check(TEXT, RESULT, FP), "k0", _entry(), [])
     saved = 0
     for key in keys:
         entry = _entry(snapshot=_maximal_snapshot(saved))
@@ -458,7 +465,7 @@ REJECTED = {**CHECKED, "status": "rejected", "message": "`two` is admitted."}
 DECISION_KEY = decision_key(f"{DECIDE}\n{DECIDE_MORE}", 0)
 
 
-def _decision(outcome=PROVEN, verification=CHECKED, text=DECIDING, fingerprint="f"):
+def _decision(outcome=PROVEN, verification=CHECKED, text=DECIDING, fingerprint=FP):
     return {
         "prefix_sha256": decision_prefix_sha256(text, 4),
         "fingerprint": fingerprint,
@@ -469,7 +476,7 @@ def _decision(outcome=PROVEN, verification=CHECKED, text=DECIDING, fingerprint="
     }
 
 
-def _decided(text, entry=None, fingerprint="f", end_line=4):
+def _decided(text, entry=None, fingerprint=FP, end_line=4):
     return decision_status(entry or _decision(), text, end_line, fingerprint)
 
 
@@ -489,7 +496,7 @@ def test_a_saved_decision_reads_as_its_outcome_while_current():
 def test_edits_through_the_directive_or_a_new_environment_mark_a_decision_stale():
     assert _decided(DECIDING.replace("def M := 1", "def M := 2")) == "stale"
     assert _decided(DECIDING.replace("arithmetic", "arith")) == "stale"
-    assert _decided(DECIDING, fingerprint="g") == "stale"
+    assert _decided(DECIDING, fingerprint=GP) == "stale"
     unknown = _decision(UNKNOWN, None)
     assert _decided(DECIDING.replace("# Notes", "# Other"), unknown) == "stale"
 
@@ -505,7 +512,7 @@ def test_an_accepted_block_stays_accepted_when_the_text_above_changes():
     """Review Focus 4: the block is in the file, so the check judges it."""
     edited = _accepted().replace("def M := 1", "def M := 2")
     assert _decided(edited) == "accepted"
-    assert _decided(_accepted(), fingerprint="g") == "accepted"
+    assert _decided(_accepted(), fingerprint=GP) == "accepted"
 
 
 def test_deleting_an_accepted_block_returns_the_saved_state():
@@ -545,7 +552,7 @@ def test_a_rejected_block_in_the_text_is_never_accepted():
 
 def test_with_decision_saves_beside_evidence_and_claims(tmp_path: Path):
     notebook = tmp_path / "N.lean"
-    records = with_evidence(records_from_check(TEXT, RESULT, "f"), KEY, _entry(), [KEY])
+    records = with_evidence(records_from_check(TEXT, RESULT, FP), KEY, _entry(), [KEY])
     records = with_decision(records, DECISION_KEY, _decision(), [], notebook)
     save_records(notebook, records)
     loaded = load_records(notebook)
@@ -557,14 +564,14 @@ def test_with_decision_saves_beside_evidence_and_claims(tmp_path: Path):
 
 def test_with_decision_starts_a_file_and_prunes_gone_directives():
     records = with_decision(None, "gone", _decision(), [])
-    assert records["claims"] == [] and records["environment"]["fingerprint"] == "f"
+    assert records["claims"] == [] and records["environment"]["fingerprint"] == FP
     records = with_decision(records, "other", _decision(UNKNOWN, None), ["gone"])
     records = with_decision(records, DECISION_KEY, _decision(), ["other"])
     assert set(saved_decisions(records)) == {"other", DECISION_KEY}
 
 
 def test_with_decision_does_not_change_its_input():
-    checked = records_from_check(TEXT, RESULT, "f")
+    checked = records_from_check(TEXT, RESULT, FP)
     before = json.dumps(checked, sort_keys=True)
     updated = with_decision(checked, DECISION_KEY, _decision(), [])
     assert json.dumps(checked, sort_keys=True) == before
@@ -599,7 +606,7 @@ def test_a_malformed_decision_is_refused_and_makes_the_file_unreadable(tmp_path,
     with pytest.raises(ValueError, match="decision entry is malformed"):
         with_decision(None, DECISION_KEY, entry, [])
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     records_path(notebook).write_text(
         json.dumps({**records, "decisions": {DECISION_KEY: entry}})
     )
@@ -609,7 +616,7 @@ def test_a_malformed_decision_is_refused_and_makes_the_file_unreadable(tmp_path,
 @pytest.mark.parametrize("decisions", [[], {DECISION_KEY: []}, {DECISION_KEY: None}])
 def test_a_malformed_decisions_section_makes_the_file_unreadable(tmp_path, decisions):
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     records_path(notebook).write_text(json.dumps({**records, "decisions": decisions}))
     assert load_records(notebook) is None
 
@@ -663,7 +670,7 @@ def test_saved_decisions_that_would_exceed_the_file_cap_are_refused(
     tmp_path: Path, monkeypatch
 ):
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     one = with_decision(records, "k0", _decision(), [])
     monkeypatch.setattr(
         check_records, "_MAX_RECORDS", len(_serialised(one).encode()) + 10
@@ -677,7 +684,7 @@ def test_saved_decisions_that_would_exceed_the_file_cap_are_refused(
 
 def test_a_check_keeps_saved_decisions():
     previous = with_decision(None, DECISION_KEY, _decision(), [])
-    records = records_from_check(TEXT, RESULT, "f", previous)
+    records = records_from_check(TEXT, RESULT, FP, previous)
     assert saved_decisions(records) == {DECISION_KEY: _decision()}
 
 
@@ -690,14 +697,14 @@ def test_a_check_refuses_records_too_large_for_its_saved_results(monkeypatch, se
         previous = with_evidence(previous, KEY, _entry(), [KEY])
     if "decisions" in sections:
         previous = with_decision(previous, DECISION_KEY, _decision(), [])
-    claims_only = len(_serialised(records_from_check(TEXT, RESULT, "f")).encode())
+    claims_only = len(_serialised(records_from_check(TEXT, RESULT, FP)).encode())
     monkeypatch.setattr(check_records, "_MAX_RECORDS", claims_only + 10)
     with pytest.raises(ValueError, match="16 MiB"):
-        records_from_check(TEXT, RESULT, "f", previous)
+        records_from_check(TEXT, RESULT, FP, previous)
     # Claims alone over the limit are refused too.
     monkeypatch.setattr(check_records, "_MAX_RECORDS", 10)
     with pytest.raises(ValueError, match="16 MiB"):
-        records_from_check(TEXT, RESULT, "f")
+        records_from_check(TEXT, RESULT, FP)
 
 
 @pytest.mark.parametrize(
@@ -760,7 +767,7 @@ def _example_result():
 def test_examples_are_saved_as_marked_claims(tmp_path):
     """Examples keep their mark through saving; other claims carry none."""
     notebook = tmp_path / "A.lean"
-    records = records_from_check(EXAMPLES, _example_result(), "f")
+    records = records_from_check(EXAMPLES, _example_result(), FP)
     assert [c.get("example") for c in records["claims"]] == [True, None, True]
     assert [c.get("statement") for c in records["claims"]] == [
         "base = 2",
@@ -776,7 +783,7 @@ def test_examples_are_saved_as_marked_claims(tmp_path):
     save_records(notebook, records)
     loaded = load_records(notebook)
     assert loaded == records
-    found = claim_views(EXAMPLES, loaded, "f")
+    found = claim_views(EXAMPLES, loaded, FP)
     assert [(v["start_line"], v.get("example"), v["current"]) for v in found] == [
         (2, True, True),
         (3, None, True),
@@ -788,7 +795,7 @@ def test_examples_are_saved_as_marked_claims(tmp_path):
 def test_a_malformed_example_mark_is_unreadable(tmp_path, mark):
     """Only `"example": true` marks an example; any other value is refused."""
     notebook = tmp_path / "A.lean"
-    records = records_from_check(EXAMPLES, _example_result(), "f")
+    records = records_from_check(EXAMPLES, _example_result(), FP)
     records["claims"][0]["example"] = mark
     save_records(notebook, records)
     assert load_records(notebook) is None
@@ -796,14 +803,14 @@ def test_a_malformed_example_mark_is_unreadable(tmp_path, mark):
 
 def test_identical_examples_keep_their_own_results():
     """Equal example texts are matched in order; an edit between stales the later."""
-    records = records_from_check(EXAMPLES, _example_result(), "f")
+    records = records_from_check(EXAMPLES, _example_result(), FP)
     edited = EXAMPLES.replace("theorem t", "theorem t'")
-    found = claim_views(edited, records, "f")
+    found = claim_views(edited, records, FP)
     assert [(v["name"], v["start_line"], v["current"]) for v in found] == [
         ("_private.M.0._glitnir_example_20", 2, True),
         ("_private.M.0._glitnir_example_77", 4, False),
     ]
-    found = claim_views("\n" + EXAMPLES, records, "f")
+    found = claim_views("\n" + EXAMPLES, records, FP)
     assert [(v["start_line"], v["current"]) for v in found] == [
         (3, False),
         (4, False),
@@ -816,7 +823,7 @@ def test_a_long_checked_statement_is_saved_shortened(tmp_path):
     result = _example_result()
     result["theorems"][0]["type"] = "x" * (check_records.MAX_TYPE + 5)
     result["theorems"][2]["statement"] = "y" * (check_records.MAX_TYPE + 1)
-    records = records_from_check(EXAMPLES, result, "f")
+    records = records_from_check(EXAMPLES, result, FP)
     kernel = records["claims"][0]["kernel_statement"]
     assert len(kernel) == check_records.MAX_TYPE and kernel.endswith("…")
     # Each form says for itself whether it was cut.
@@ -829,13 +836,13 @@ def test_a_long_checked_statement_is_saved_shortened(tmp_path):
     assert "kernel_statement_shortened" not in records["claims"][2]
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") == records
-    first, _, last = claim_views(EXAMPLES, records, "f")
+    first, _, last = claim_views(EXAMPLES, records, FP)
     assert first["kernel_statement"] == kernel
     assert first["kernel_statement_shortened"] is True
     assert "statement_shortened" not in first
     assert last["statement"] == printed and last["statement_shortened"] is True
     result["theorems"][2]["statement"] = "base = 4"
-    unshortened = claim_views(EXAMPLES, records_from_check(EXAMPLES, result, "f"), "f")
+    unshortened = claim_views(EXAMPLES, records_from_check(EXAMPLES, result, FP), FP)
     assert "statement_shortened" not in unshortened[2]
 
 
@@ -843,7 +850,7 @@ def test_a_long_checked_statement_is_saved_shortened(tmp_path):
 @pytest.mark.parametrize("mark", [False, "true", None, 1])
 def test_a_malformed_shortened_mark_is_unreadable(tmp_path, mark, key):
     """Only `true` marks a shortened statement."""
-    records = records_from_check(EXAMPLES, _example_result(), "f")
+    records = records_from_check(EXAMPLES, _example_result(), FP)
     records["claims"][0][key] = mark
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") is None
@@ -853,7 +860,7 @@ def test_a_malformed_shortened_mark_is_unreadable(tmp_path, mark, key):
 @pytest.mark.parametrize("statement", [None, 3, "x" * (check_records.MAX_TYPE + 1)])
 def test_a_malformed_checked_statement_is_unreadable(tmp_path, statement, key):
     """Only a string within the saved length is a checked statement."""
-    records = records_from_check(EXAMPLES, _example_result(), "f")
+    records = records_from_check(EXAMPLES, _example_result(), FP)
     records["claims"][0][key] = statement
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") is None
@@ -864,8 +871,8 @@ def test_a_check_without_a_printed_statement_saves_the_kernel_form():
     result = _example_result()
     del result["theorems"][0]["statement"]
     result["theorems"][2]["statement"] = None
-    records = records_from_check(EXAMPLES, result, "f")
-    first, _, last = claim_views(EXAMPLES, records, "f")
+    records = records_from_check(EXAMPLES, result, FP)
+    first, _, last = claim_views(EXAMPLES, records, FP)
     for view, line in ((first, 2), (last, 4)):
         assert "statement" not in view
         assert view["kernel_statement"] == f"Eq base {line}"
@@ -886,12 +893,12 @@ def _v1(records):
 def test_v1_records_stay_readable_with_their_kernel_statements(tmp_path):
     """An old example statement is the kernel form; claims stay current."""
     notebook = tmp_path / "A.lean"
-    records = records_from_check(EXAMPLES, _example_result(), "f")
+    records = records_from_check(EXAMPLES, _example_result(), FP)
     old = _v1(records)
     records_path(notebook).write_text(json.dumps(old))
     loaded = load_records(notebook)
     assert loaded is not None and loaded["format"] == check_records.FORMAT
-    found = claim_views(EXAMPLES, loaded, "f")
+    found = claim_views(EXAMPLES, loaded, FP)
     assert [(v.get("statement"), v.get("kernel_statement")) for v in found] == [
         (None, "Eq base 2"),
         (None, None),
@@ -907,7 +914,7 @@ def test_v1_records_stay_readable_with_their_kernel_statements(tmp_path):
 def test_v1_records_with_a_v2_field_are_unreadable(tmp_path):
     """A v1 record never held a kernel statement of its own."""
     notebook = tmp_path / "A.lean"
-    old = _v1(records_from_check(EXAMPLES, _example_result(), "f"))
+    old = _v1(records_from_check(EXAMPLES, _example_result(), FP))
     old["claims"][0]["kernel_statement"] = "Eq base 2"
     records_path(notebook).write_text(json.dumps(old))
     assert load_records(notebook) is None
@@ -928,22 +935,22 @@ def test_examples_without_a_proposition_are_saved_as_non_claims(tmp_path):
             {"start_line": 3, "end_line": 3},
         ],
     }
-    records = records_from_check(NON_CLAIMS, result, "f")
+    records = records_from_check(NON_CLAIMS, result, FP)
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") == records
     lines = [
         (v["start_line"], v["end_line"])
-        for v in non_claim_views(NON_CLAIMS, records, "f")
+        for v in non_claim_views(NON_CLAIMS, records, FP)
     ]
     assert lines == [(2, 2), (3, 3)]
     assert non_claim_views(NON_CLAIMS, records, "other") == []
     edited = NON_CLAIMS.replace("example : Nat := 3", "example : Nat := 4")
-    assert [v["start_line"] for v in non_claim_views(edited, records, "f")] == []
-    assert non_claim_views(NON_CLAIMS + "-- below\n", records, "f") == [
+    assert [v["start_line"] for v in non_claim_views(edited, records, FP)] == []
+    assert non_claim_views(NON_CLAIMS + "-- below\n", records, FP) == [
         {"start_line": 2, "end_line": 2},
         {"start_line": 3, "end_line": 3},
     ]
-    assert "non_claims" not in records_from_check(TEXT, RESULT, "f")
+    assert "non_claims" not in records_from_check(TEXT, RESULT, FP)
 
 
 @pytest.mark.parametrize(
@@ -962,7 +969,7 @@ def test_examples_without_a_proposition_are_saved_as_non_claims(tmp_path):
     ],
 )
 def test_malformed_non_claims_are_unreadable(tmp_path, non_claims):
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     records["non_claims"] = non_claims
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") is None
@@ -984,7 +991,7 @@ def _with_uses(uses=USES):
 def test_claims_save_the_claims_they_use(tmp_path):
     """Uses are saved per claim and shown with it, current or not."""
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, _with_uses(), "f")
+    records = records_from_check(TEXT, _with_uses(), FP)
     assert [c["uses"] for c in records["claims"]] == [[], USES]
     save_records(notebook, records)
     assert load_records(notebook) == records
@@ -995,9 +1002,9 @@ def test_claims_save_the_claims_they_use(tmp_path):
 
 def test_a_check_without_uses_records_none():
     """No uses reported is not the same as using nothing: nothing is saved."""
-    records = records_from_check(TEXT, RESULT, "f")
+    records = records_from_check(TEXT, RESULT, FP)
     assert all("uses" not in claim for claim in records["claims"])
-    assert all("uses" not in view for view in claim_views(TEXT, records, "f"))
+    assert all("uses" not in view for view in claim_views(TEXT, records, FP))
 
 
 @pytest.mark.parametrize(
@@ -1014,7 +1021,7 @@ def test_a_check_without_uses_records_none():
 def test_malformed_uses_are_unreadable(tmp_path, uses):
     """Only a list of exact `{module, name, in_notebook}` entries is saved uses."""
     notebook = tmp_path / "N.lean"
-    records = records_from_check(TEXT, _with_uses(), "f")
+    records = records_from_check(TEXT, _with_uses(), FP)
     records["claims"][1]["uses"] = uses
     save_records(notebook, records)
     assert load_records(notebook) is None
@@ -1023,7 +1030,7 @@ def test_malformed_uses_are_unreadable(tmp_path, uses):
 def test_v1_records_with_uses_are_unreadable(tmp_path):
     """Format v1 recorded no uses."""
     notebook = tmp_path / "N.lean"
-    old = _v1(records_from_check(TEXT, _with_uses(), "f"))
+    old = _v1(records_from_check(TEXT, _with_uses(), FP))
     records_path(notebook).write_text(json.dumps(old))
     assert load_records(notebook) is None
     for claim in old["claims"]:
@@ -1088,9 +1095,9 @@ def test_a_check_through_a_claim_keeps_later_results_not_rechecked(tmp_path):
 
     (c) The records say the check covered lines 1 to N.
     """
-    previous = records_from_check(THREE, _full_check(), "f")
+    previous = records_from_check(THREE, _full_check(), FP)
     partial = _through(2, [_theorem("one", 2, "admitted")])
-    records = records_from_check(THREE, partial, "f", previous)
+    records = records_from_check(THREE, partial, FP, previous)
     assert records["withheld"] == partial["withheld"]
     by_name = {c["name"]: c for c in records["claims"]}
     assert (
@@ -1099,10 +1106,10 @@ def test_a_check_through_a_claim_keeps_later_results_not_rechecked(tmp_path):
     for name in ("two", "three"):
         kept = {k: v for k, v in by_name[name].items() if k != "fingerprint"}
         assert kept == {c["name"]: c for c in previous["claims"]}[name]
-        assert by_name[name]["fingerprint"] == "f"
+        assert by_name[name]["fingerprint"] == FP
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") == records
-    found = _views(THREE, records, "f")
+    found = _views(THREE, records, FP)
     assert found["one"]["current"] and "not_rechecked" not in found["one"]
     # Same environment and source: the earlier results still describe them.
     assert found["two"]["current"] and found["two"]["not_rechecked"] is True
@@ -1111,59 +1118,55 @@ def test_a_check_through_a_claim_keeps_later_results_not_rechecked(tmp_path):
 
 def test_later_results_are_never_made_current_by_a_check_through_a_claim():
     """(b) A later result from another environment or text stays out of date."""
-    previous = records_from_check(THREE, _full_check(), "old")
+    previous = records_from_check(THREE, _full_check(), OLD)
     records = records_from_check(
-        THREE, _through(2, [_theorem("one", 2)]), "new", previous
+        THREE, _through(2, [_theorem("one", 2)]), NEW, previous
     )
-    found = _views(THREE, records, "new")
+    found = _views(THREE, records, NEW)
     assert found["one"]["current"]
     assert not found["two"]["current"] and not found["three"]["current"]
     assert found["two"]["not_rechecked"] is True
     # The text above `two` changed since its result: out of date, kept as such.
     edited = THREE.replace("def base : Nat := 1", "def base : Nat := 1 -- now")
-    previous = records_from_check(THREE, _full_check(), "f")
+    previous = records_from_check(THREE, _full_check(), FP)
     records = records_from_check(
-        edited, _through(2, [_theorem("one", 2)]), "f", previous
+        edited, _through(2, [_theorem("one", 2)]), FP, previous
     )
-    found = _views(edited, records, "f")
+    found = _views(edited, records, FP)
     assert found["one"]["current"]
     assert not found["two"]["current"] and not found["three"]["current"]
 
 
 def test_not_rechecked_results_keep_the_environment_they_were_checked_in():
     """A second check through a later claim carries the first one's results on."""
-    previous = records_from_check(THREE, _full_check(), "old")
-    first = records_from_check(
-        THREE, _through(2, [_theorem("one", 2)]), "new", previous
-    )
+    previous = records_from_check(THREE, _full_check(), OLD)
+    first = records_from_check(THREE, _through(2, [_theorem("one", 2)]), NEW, previous)
     second = records_from_check(
-        THREE, _through(4, [_theorem("one", 2), _theorem("two", 4)]), "new", first
+        THREE, _through(4, [_theorem("one", 2), _theorem("two", 4)]), NEW, first
     )
     by_name = {c["name"]: c for c in second["claims"]}
     assert "fingerprint" not in by_name["two"]
-    assert by_name["three"]["fingerprint"] == "old"
-    found = _views(THREE, second, "new")
+    assert by_name["three"]["fingerprint"] == OLD
+    found = _views(THREE, second, NEW)
     assert found["one"]["current"] and found["two"]["current"]
     assert not found["three"]["current"]
 
 
 def test_a_whole_check_replaces_every_result():
     """(d) A later check of the whole file supersedes everything."""
-    previous = records_from_check(THREE, _full_check(), "f")
-    partial = records_from_check(
-        THREE, _through(2, [_theorem("one", 2)]), "f", previous
-    )
-    full = records_from_check(THREE, _full_check(), "f", partial)
+    previous = records_from_check(THREE, _full_check(), FP)
+    partial = records_from_check(THREE, _through(2, [_theorem("one", 2)]), FP, previous)
+    full = records_from_check(THREE, _full_check(), FP, partial)
     assert full["withheld"] is None
     assert all("fingerprint" not in c for c in full["claims"])
-    assert all("not_rechecked" not in v for v in claim_views(THREE, full, "f"))
+    assert all("not_rechecked" not in v for v in claim_views(THREE, full, FP))
     # One that stops at a failing command keeps nothing after it either.
     failing = {
         **RESULT,
         "theorems": [_theorem("one", 2)],
         "withheld": {"from_line": 3, "message": "bad"},
     }
-    stopped = records_from_check(THREE, failing, "f", partial)
+    stopped = records_from_check(THREE, failing, FP, partial)
     assert [c["name"] for c in stopped["claims"]] == ["one"]
 
 
@@ -1171,19 +1174,19 @@ def test_a_check_through_a_claim_keeps_later_non_claims_only_in_the_same_environ
     """Examples that claim nothing are notes shown while the records match."""
     from glitnir.notebook.check_records import non_claim_views
 
-    previous = records_from_check(THREE, _full_check(), "f")
+    previous = records_from_check(THREE, _full_check(), FP)
     partial = _through(3, [_theorem("one", 2)], [{"start_line": 3, "end_line": 3}])
-    same = records_from_check(THREE, partial, "f", previous)
-    assert non_claim_views(THREE, same, "f") == [
+    same = records_from_check(THREE, partial, FP, previous)
+    assert non_claim_views(THREE, same, FP) == [
         {"start_line": 3, "end_line": 3},
         {"start_line": 5, "end_line": 5},
     ]
-    other = records_from_check(THREE, partial, "g", previous)
-    assert non_claim_views(THREE, other, "g") == [{"start_line": 3, "end_line": 3}]
+    other = records_from_check(THREE, partial, GP, previous)
+    assert non_claim_views(THREE, other, GP) == [{"start_line": 3, "end_line": 3}]
 
 
 def test_a_check_through_a_claim_without_earlier_records_keeps_nothing_later():
-    records = records_from_check(THREE, _through(2, [_theorem("one", 2)]), "f")
+    records = records_from_check(THREE, _through(2, [_theorem("one", 2)]), FP)
     assert [c["name"] for c in records["claims"]] == ["one"]
 
 
@@ -1202,21 +1205,19 @@ def test_a_check_through_a_claim_without_earlier_records_keeps_nothing_later():
     ],
 )
 def test_malformed_withheld_records_are_unreadable(tmp_path, withheld):
-    records = records_from_check(THREE, _full_check(), "f")
+    records = records_from_check(THREE, _full_check(), FP)
     records["withheld"] = withheld
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") is None
 
 
 def test_a_not_rechecked_mark_is_a_fingerprint_and_v1_has_none(tmp_path):
-    previous = records_from_check(THREE, _full_check(), "f")
-    records = records_from_check(
-        THREE, _through(2, [_theorem("one", 2)]), "f", previous
-    )
+    previous = records_from_check(THREE, _full_check(), FP)
+    records = records_from_check(THREE, _through(2, [_theorem("one", 2)]), FP, previous)
     records["claims"][1]["fingerprint"] = 7
     save_records(tmp_path / "A.lean", records)
     assert load_records(tmp_path / "A.lean") is None
-    old = _v1(records_from_check(THREE, _through(2, [_theorem("one", 2)]), "f"))
+    old = _v1(records_from_check(THREE, _through(2, [_theorem("one", 2)]), FP))
     for claim in old["claims"]:
         claim.pop("uses", None)
     records_path(tmp_path / "A.lean").write_text(json.dumps(old))
@@ -1227,7 +1228,7 @@ C1 = "def h : 1 = 1 := rfl\ntheorem foo : 1 = 1 := h\n"
 
 
 def _c1_records():
-    return records_from_check(C1, {**RESULT, "theorems": [_theorem("foo", 2)]}, "f")
+    return records_from_check(C1, {**RESULT, "theorems": [_theorem("foo", 2)]}, FP)
 
 
 @pytest.mark.parametrize(
@@ -1249,7 +1250,7 @@ def test_a_claim_whose_command_now_runs_on_is_out_of_date(continuation):
     The claim is then shown through the continuation, so the added lines are
     part of its cell rather than a cell of their own.
     """
-    [view] = claim_views(C1 + continuation, _c1_records(), "f")
+    [view] = claim_views(C1 + continuation, _c1_records(), FP)
     assert view["current"] is False
     assert view["start_line"] == 2
     assert view["end_line"] == 2 + continuation.rstrip("\n").count("\n") + 1
@@ -1259,8 +1260,8 @@ def test_a_column_0_term_continuation_is_out_of_date():
     text = "def h : 1 = 1 := rfl\ntheorem foo : 1 = 1 :=\nh\n"
     result = {**RESULT, "theorems": [_theorem("foo", 2)]}
     # Recorded as if the reader had said the command ends on line 2.
-    records = records_from_check(text, result, "f")
-    [view] = claim_views(text, records, "f")
+    records = records_from_check(text, result, FP)
+    [view] = claim_views(text, records, FP)
     assert view["current"] is False and view["end_line"] == 3
 
 
@@ -1274,7 +1275,7 @@ def test_a_column_0_term_continuation_is_out_of_date():
     ],
 )
 def test_a_claim_followed_by_another_command_stays_current(below):
-    [view] = claim_views(C1 + below, _c1_records(), "f")
+    [view] = claim_views(C1 + below, _c1_records(), FP)
     assert view["current"] is True and view["end_line"] == 2
 
 
@@ -1285,10 +1286,10 @@ def test_non_claims_that_now_run_on_are_not_shown():
     records = records_from_check(
         text,
         {**RESULT, "theorems": [], "non_claims": [{"start_line": 1, "end_line": 1}]},
-        "f",
+        FP,
     )
-    assert non_claim_views(text, records, "f") == [{"start_line": 1, "end_line": 1}]
-    assert non_claim_views(text + "  + 1\n", records, "f") == []
+    assert non_claim_views(text, records, FP) == [{"start_line": 1, "end_line": 1}]
+    assert non_claim_views(text + "  + 1\n", records, FP) == []
 
 
 def test_uses_are_capped_and_marked_truncated(tmp_path):
@@ -1299,13 +1300,13 @@ def test_uses_are_capped_and_marked_truncated(tmp_path):
         {"module": "M", "name": f"x{i}", "in_notebook": True}
         for i in range(MAX_USES + 5)
     ]
-    records = records_from_check(TEXT, _with_uses(many), "f")
+    records = records_from_check(TEXT, _with_uses(many), FP)
     claim = records["claims"][1]
     assert len(claim["uses"]) == MAX_USES and claim["uses_truncated"] is True
     assert "uses_truncated" not in records["claims"][0]
     save_records(tmp_path / "N.lean", records)
     assert load_records(tmp_path / "N.lean") == records
-    assert claim_views(TEXT, records, "f")[1]["uses_truncated"] is True
+    assert claim_views(TEXT, records, FP)[1]["uses_truncated"] is True
     for bad in (False, 1):
         records["claims"][1]["uses_truncated"] = bad
         save_records(tmp_path / "N.lean", records)
@@ -1330,8 +1331,8 @@ INDENTED = (
 def test_claims_before_indented_claims_stay_current():
     """Indented commands inside a namespace are command starts too."""
     result = {**RESULT, "theorems": [_theorem("Foo.a", 2), _theorem("Foo.b", 3)]}
-    records = records_from_check(INDENTED, result, "f")
-    found = claim_views(INDENTED, records, "f")
+    records = records_from_check(INDENTED, result, FP)
+    found = claim_views(INDENTED, records, FP)
     assert [
         (v["name"], v["start_line"], v["end_line"], v["current"]) for v in found
     ] == [
@@ -1350,8 +1351,8 @@ def test_an_extended_claim_never_takes_in_the_next_claim():
     saved = "theorem a : True := by\n  trivial\ntheorem b : True := trivial\n"
     result = {**RESULT, "theorems": [_theorem("a", 2), _theorem("b", 3)]}
     result["theorems"][0]["start_line"] = 1
-    records = records_from_check(saved, result, "f")
-    a, b = claim_views(text, records, "f")
+    records = records_from_check(saved, result, FP)
+    a, b = claim_views(text, records, FP)
     assert (a["start_line"], a["end_line"], a["current"]) == (1, 3, False)
     assert (b["start_line"], b["end_line"]) == (4, 4)
     # Even where no command end is found before the next claim, the first
@@ -1369,7 +1370,7 @@ def test_an_extended_claim_never_takes_in_the_next_claim():
     original = module.command_boundaries
     module.command_boundaries = lambda text: Nowhere()
     try:
-        a, b = claim_views(text, records, "f")
+        a, b = claim_views(text, records, FP)
     finally:
         module.command_boundaries = original
     assert (a["end_line"], b["start_line"], b["end_line"]) == (3, 4, 5)
@@ -1380,10 +1381,106 @@ def test_a_where_declaration_added_below_makes_the_claim_out_of_date(opener):
     """An attribute or doc comment opening a `where` declaration is no command."""
     saved = "theorem foo : True := bar\nwhere\nbar : True := baz\n"
     result = {**RESULT, "theorems": [{**_theorem("foo", 3), "start_line": 1}]}
-    records = records_from_check(saved, result, "f")
-    [view] = claim_views(saved + f"{opener}\nbaz : True := sorry\n", records, "f")
+    records = records_from_check(saved, result, FP)
+    [view] = claim_views(saved + f"{opener}\nbaz : True := sorry\n", records, FP)
     assert view["current"] is False and view["end_line"] == 5
     [control] = claim_views(
-        saved + "@[simp]\ntheorem baz : True := trivial\n", records, "f"
+        saved + "@[simp]\ntheorem baz : True := trivial\n", records, FP
     )
     assert control["current"] is True and control["end_line"] == 3
+
+
+# ----- what a fingerprint may match, and comparing as recorded ---------------
+
+
+def _saved_under(records, fingerprint):
+    """Records whose environment says `fingerprint`, as an edited file might."""
+    environment = {**records["environment"], "fingerprint": fingerprint}
+    return {**records, "environment": environment}
+
+
+@pytest.mark.parametrize("current", [None, "", "f", "F" * 64, "f" * 63, "g" * 64])
+def test_a_fingerprint_that_is_not_a_digest_is_never_current(current):
+    records = records_from_check(TEXT, RESULT, FP)
+    assert [v["current"] for v in claim_views(TEXT, records, current)] == [False] * 2
+    assert evidence_status(_entry(), NOTEBOOK, 3, current) == "stale"
+    assert _decided(DECIDING, fingerprint=current) == "stale"
+
+
+@pytest.mark.parametrize("saved", ["", "f", "F" * 64, "g" * 64])
+def test_a_result_saved_under_no_digest_never_matches(saved):
+    """A failed fingerprint reads as '' and must not match a saved ''."""
+    from glitnir.notebook.check_records import non_claim_views
+
+    records = _saved_under(records_from_check(TEXT, RESULT, FP), saved)
+    result = {
+        **RESULT,
+        "theorems": [],
+        "non_claims": [{"start_line": 2, "end_line": 2}],
+    }
+    examples = _saved_under(records_from_check(NON_CLAIMS, result, FP), saved)
+    entry, decision = _entry(fingerprint=saved), _decision(fingerprint=saved)
+    for compare in (True, False):
+        found = claim_views(TEXT, records, saved, compare_environment=compare)
+        assert [v["current"] for v in found] == [False] * 2
+        assert (
+            non_claim_views(NON_CLAIMS, examples, saved, compare_environment=compare)
+            == []
+        )
+        assert (
+            evidence_status(entry, NOTEBOOK, 3, saved, compare_environment=compare)
+            == "stale"
+        )
+        assert (
+            decision_status(decision, DECIDING, 4, saved, compare_environment=compare)
+            == "stale"
+        )
+
+
+def test_comparing_as_recorded_compares_only_the_source():
+    """Each result matches the environment it was saved in, whatever is given."""
+    from glitnir.notebook.check_records import non_claim_views
+
+    records = records_from_check(TEXT, RESULT, FP)
+    found = claim_views(TEXT, records, "", compare_environment=False)
+    assert [v["current"] for v in found] == [True, True]
+    edited = TEXT.replace("def base : Nat := 1", "def base : Nat := 2")
+    found = claim_views(edited, records, "", compare_environment=False)
+    assert [v["current"] for v in found] == [False, False]
+    result = {
+        **RESULT,
+        "theorems": [],
+        "non_claims": [{"start_line": 2, "end_line": 2}],
+    }
+    saved = records_from_check(NON_CLAIMS, result, FP)
+    assert non_claim_views(NON_CLAIMS, saved, GP, compare_environment=False) == [
+        {"start_line": 2, "end_line": 2}
+    ]
+    entry = _entry()
+    assert evidence_status(entry, NOTEBOOK, 3, GP, compare_environment=False) == (
+        "current"
+    )
+    moved = NOTEBOOK.replace("def M := 1", "def M := 2")
+    assert evidence_status(entry, moved, 3, GP, compare_environment=False) == "stale"
+    assert (
+        decision_status(_decision(), DECIDING, 4, GP, compare_environment=False)
+        == "candidate"
+    )
+
+
+def test_the_environment_is_compared_by_default():
+    records = records_from_check(TEXT, RESULT, FP)
+    assert [v["current"] for v in claim_views(TEXT, records, GP)] == [False, False]
+    assert evidence_status(_entry(), NOTEBOOK, 3, GP) == "stale"
+    assert _decided(DECIDING, fingerprint=GP) == "stale"
+
+
+@pytest.mark.parametrize("fingerprint", ["", "f", "F" * 64, "f" * 65])
+def test_nothing_is_saved_under_a_fingerprint_that_is_not_a_digest(fingerprint):
+    with pytest.raises(ValueError, match="fingerprint is unknown"):
+        records_from_check(TEXT, RESULT, fingerprint)
+    with pytest.raises(ValueError, match="fingerprint is unknown"):
+        with_evidence(None, KEY, _entry(fingerprint=fingerprint), [KEY])
+    decision = _decision(fingerprint=fingerprint)
+    with pytest.raises(ValueError, match="fingerprint is unknown"):
+        with_decision(None, "d", decision, ["d"])

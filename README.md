@@ -465,7 +465,10 @@ reads a saved notebook and its saved results for the canonical renderer:
   so the snapshot sets `preview.recorded` and the renderer shows "Saved results,
   shown as recorded", never "current". By default, evidence and decision cards
   show their saved results without what running them would need, such as an
-  extra to install; `run_prompts=True` keeps those prompts.
+  extra to install; `run_prompts=True` keeps those prompts. A result saved
+  without a known environment fingerprint is never shown as recorded, and
+  `preview.project` gives the project's root relative to the notebook, so the
+  snapshot holds no local absolute path.
 - `asset(path, sha256)` returns an image the prose shows.
 - `view_imports()` lists the modules to build before drawing views.
 - `draw_view(cell, line)` draws one listed view and waits for it, as the editor

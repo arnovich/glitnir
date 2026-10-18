@@ -111,7 +111,7 @@ def saved(tmp_path: Path, monkeypatch) -> Path:
     records = records_from_check(TEXT, _result(sha256), RECORDED)
     entry = {
         "prefix_sha256": evidence_prefix_sha256(TEXT, 6),
-        "fingerprint": "g" * 64,
+        "fingerprint": "9" * 64,
         "provider": "demo",
         "created": "2026-10-14T12:00:00Z",
         "snapshot": _evidence_body(),
@@ -178,7 +178,7 @@ def test_the_editor_preview_compares_the_same_results_with_its_environment(
     monkeypatch.setattr(
         source_preview,
         "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "other", "packages": []},
+        lambda *_a, **_k: {"sha256": "1" * 64, "packages": []},
     )
     snapshot = SourcePreviewService(saved).snapshot()
     assert "recorded" not in snapshot["preview"]
@@ -240,7 +240,7 @@ def test_draw_view_waits_for_the_drawing(saved: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         source_preview,
         "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "reader", "packages": []},
+        lambda *_a, **_k: {"sha256": "2" * 64, "packages": []},
     )
     drawn = []
 
@@ -264,7 +264,7 @@ def test_draw_view_reports_a_failed_drawing(saved: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         source_preview,
         "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "reader", "packages": []},
+        lambda *_a, **_k: {"sha256": "2" * 64, "packages": []},
     )
     monkeypatch.setattr(
         source_preview,
@@ -276,3 +276,126 @@ def test_draw_view_reports_a_failed_drawing(saved: Path, monkeypatch) -> None:
         assert notebook.draw_view(view["cell"], view["line"]) == {
             "error": "needs import Demo.View"
         }
+
+
+def test_draw_view_reports_a_failure_to_read_for_it(saved: Path, monkeypatch) -> None:
+    """Reading the notebook or its environment fails: answered, never raised."""
+
+    def gone(*_arguments, **_options):
+        raise OSError("environment unreadable")
+
+    monkeypatch.setattr(source_preview, "environment_fingerprint", gone)
+    with SavedNotebook(saved) as notebook:
+        [view] = notebook.snapshot()["views"]
+        assert notebook.draw_view(view["cell"], view["line"]) == {
+            "error": "View drawing failed: OSError: environment unreadable"
+        }
+
+
+def test_the_snapshot_names_no_local_project_path(tmp_path: Path, nothing_runs):
+    import json
+
+    project = tmp_path / "project"
+    (project / "examples").mkdir(parents=True)
+    (project / "lakefile.toml").write_text('name = "demo"\n')
+    (project / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    path = project / "examples" / "A.lean"
+    path.write_text("def c : Nat := 1\n")
+    with SavedNotebook(path) as notebook:
+        snapshot = notebook.snapshot()
+    assert snapshot["preview"]["project"] == {
+        "kind": "lake",
+        "root": "..",
+        "toolchain": "leanprover/lean4:v4.32.1",
+    }
+    assert str(tmp_path) not in json.dumps(snapshot)
+
+
+# ----- the editor's preview never shows results as recorded -------------------
+
+
+def test_the_editor_preview_and_linked_notebooks_are_never_as_recorded(
+    saved: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *_a, **_k: {"sha256": RECORDED, "packages": []},
+    )
+    (saved.parent / "B.lean").write_text("def b : Nat := 2\n")
+    service = SourcePreviewService(saved)
+    try:
+        snapshots = [service.snapshot(), service.linked("B.lean")]
+    finally:
+        service.close()
+    for snapshot in snapshots:
+        assert "recorded" not in snapshot["preview"]
+        assert snapshot["preview"]["notice"] != RECORDED_NOTICE
+    # In the recorded environment the editor's own comparison finds it current.
+    assert [claim["current"] for claim in snapshots[0]["project_claims"]] == [True]
+
+
+def _empty(*_arguments, **_options):
+    return {"sha256": "", "packages": []}
+
+
+def _failing(*_arguments, **_options):
+    raise OSError("no environment")
+
+
+@pytest.mark.parametrize("fingerprint", [_empty, _failing])
+def test_an_unknown_environment_shows_saved_results_out_of_date(
+    saved: Path, monkeypatch, fingerprint
+) -> None:
+    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    snapshot = SourcePreviewService(saved).snapshot()
+    assert [claim["current"] for claim in snapshot["project_claims"]] == [False]
+    assert [card["status"] for card in snapshot["evidence"]] == ["stale"]
+
+
+def test_results_saved_under_an_empty_fingerprint_are_never_current(
+    saved: Path, monkeypatch
+) -> None:
+    """A record saved with '' must not match an environment that reads as ''."""
+    import json
+
+    from glitnir.notebook.check_records import records_path
+
+    file = records_path(saved)
+    records = json.loads(file.read_text())
+    records["environment"]["fingerprint"] = ""
+    for entry in records["evidence"].values():
+        entry["fingerprint"] = ""
+    file.write_text(json.dumps(records))
+    monkeypatch.setattr(source_preview, "environment_fingerprint", _empty)
+    snapshot = SourcePreviewService(saved).snapshot()
+    assert [claim["current"] for claim in snapshot["project_claims"]] == [False]
+    assert [card["status"] for card in snapshot["evidence"]] == ["stale"]
+    with SavedNotebook(saved) as notebook:
+        recorded = notebook.snapshot()
+    assert [claim["current"] for claim in recorded["project_claims"]] == [False]
+    assert [card["status"] for card in recorded["evidence"]] == ["stale"]
+
+
+def test_a_check_in_an_unknown_environment_saves_nothing(
+    saved: Path, monkeypatch
+) -> None:
+    from glitnir.notebook.check_records import records_path
+
+    before = records_path(saved).read_bytes()
+    monkeypatch.setattr(source_preview, "environment_fingerprint", _empty)
+    monkeypatch.setattr(
+        source_preview, "check_project", lambda *a, **k: _result(k["expected_sha256"])
+    )
+    service = SourcePreviewService(saved)
+    try:
+        sha256 = service.snapshot()["sha256"]
+        service.check(sha256)
+        service._worker.join(timeout=10)
+        check = service.snapshot()["preview"]["check"]
+    finally:
+        service.close()
+    assert check["status"] == "checked_snapshot"
+    assert "Results could not be saved" in check["message"]
+    assert "fingerprint is unknown" in check["message"]
+    assert records_path(saved).read_bytes() == before

@@ -557,13 +557,17 @@
   // A linked notebook of another Lake project shows its saved results without
   // comparing them with any environment: their currency is unknown (null).
   const NOT_COMPARED = 'Saved result, not compared with this project’s environment: this notebook belongs to another Lake project. Open it in its own preview to check it.';
-  const currencyPillHTML = saved => saved.current === null ? '<span class="pill" data-tone="muted">Not compared</span>' : saved.current ? '' : '<span class="pill" data-tone="amber">Out of date</span>';
+  // A result current only as recorded says so wherever a current one says nothing.
+  const asRecorded = saved => recorded() && saved.current === true;
+  const currencyPillHTML = saved => saved.current === null ? '<span class="pill" data-tone="muted">Not compared</span>' : asRecorded(saved) ? '<span class="pill" data-tone="muted">As recorded</span>' : saved.current ? '' : '<span class="pill" data-tone="amber">Out of date</span>';
+  const currencyNoted = saved => saved.current !== true || recorded();
   const currencyText = saved => (saved.current === null ? 'not compared' : saved.current ? (recorded() ? 'as recorded' : 'current') : 'out of date') + (saved.not_rechecked ? ' · not rechecked by the last check' : '');
-  const toneOf = c => (c.project && !c.project.current ? 'amber' : statusOf(c).tone);
+  const toneOf = c => (c.project && !c.project.current ? 'amber' : c.project && asRecorded(c.project) ? 'muted' : statusOf(c).tone);
   // Section summaries count a project result's status and, apart, whether it
   // is out of date.
   const summariesOf = (c, staticPage) => [statusOf(c, staticPage), ...(c.project && c.project.current === false ? [{key: 'out-of-date', label: 'Out of date', tone: 'amber'}] : []),
     ...(c.project && c.project.current === null ? [{key: 'not-compared', label: 'Not compared', tone: 'muted'}] : []),
+    ...(c.project && asRecorded(c.project) ? [{key: 'as-recorded', label: 'As recorded', tone: 'muted'}] : []),
     ...(c.project?.not_rechecked ? [{key: 'not-rechecked', label: 'Not rechecked', tone: 'muted'}] : [])];
   // Colour only: the text is the exact source. Comments are matched first so
   // words inside them are never shown as keywords.
@@ -1930,7 +1934,7 @@
     }
     if (c.project) {
       $('insp-title').textContent = c.label;
-      $('insp-sub').textContent = `${c.keyword || 'claim'} · ${statusOf(c).label.toLowerCase()}${c.project.current ? '' : ` · ${currencyText(c.project)}`}`;
+      $('insp-sub').textContent = `${c.keyword || 'claim'} · ${statusOf(c).label.toLowerCase()}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}`;
       $('insp').innerHTML = projectInspectorHTML(c);
       return;
     }
@@ -1961,7 +1965,7 @@
     const H = Math.max(28, 14 + (cs.length - 1) * rowH + 14);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('height', H);
-    const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)'})[t] || 'var(--blue)';
+    const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', muted: 'var(--faint)'})[t] || 'var(--blue)';
     const arcs = cs.flatMap(c => c.uses.filter(u => pos.has(u) && u !== c.name).map(u => {
       const y1 = pos.get(u), y2 = pos.get(c.name), bend = x - 10 - (y2 - y1) / 5;
       return `<path d="M${x - 7} ${y1}C${bend} ${y1} ${bend} ${y2} ${x - 9} ${y2}" fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#g-arr)"/>`;
@@ -1969,7 +1973,7 @@
     svg.innerHTML = `<defs><marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8" fill="var(--faint)"/></marker></defs>${arcs}` +
       cs.map(c => {
         const tone = toneOf(c), y = pos.get(c.name), sel = UI.selected === c.name;
-        return `<g class="node" data-act="goto" data-id="${esc(c.name)}"><title>${esc(claimLabel(c))}: ${esc(statusOf(c).label)}${c.project && c.project.current !== true ? ` · ${currencyText(c.project)}` : ''}</title><rect x="0" y="${y - 12}" width="${W}" height="24" fill="transparent"/><circle cx="${x}" cy="${y}" r="${sel ? 6.5 : 5.5}" fill="${tone === 'blue' ? 'var(--paper)' : color(tone)}" stroke="${color(tone)}" stroke-width="${sel ? 3 : 1.8}"/><text x="${x + 13}" y="${y + 3.5}" font-size="10.5" font-family="var(--mono)" fill="${sel ? 'var(--ink)' : 'var(--muted)'}">${esc(claimLabel(c))}</text></g>`;
+        return `<g class="node" data-act="goto" data-id="${esc(c.name)}"><title>${esc(claimLabel(c))}: ${esc(statusOf(c).label)}${c.project && currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}</title><rect x="0" y="${y - 12}" width="${W}" height="24" fill="transparent"/><circle cx="${x}" cy="${y}" r="${sel ? 6.5 : 5.5}" fill="${tone === 'blue' ? 'var(--paper)' : color(tone)}" stroke="${color(tone)}" stroke-width="${sel ? 3 : 1.8}"/><text x="${x + 13}" y="${y + 3.5}" font-size="10.5" font-family="var(--mono)" fill="${sel ? 'var(--ink)' : 'var(--muted)'}">${esc(claimLabel(c))}</text></g>`;
       }).join('');
   }
 
@@ -2119,7 +2123,7 @@
       }
       if (cell.kind === 'source' && cell.claim) {
         const c = claim(cell.claim);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${c.project.current ? '' : ` · ${currencyText(c.project)}`}"></span></button></li>`] : [];
+        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}"></span></button></li>`] : [];
       }
       if (cell.kind === 'prose') {
         return [...cell.markdown.matchAll(/^\s*(#{2,6}) (.+)$/gm)].map((m, i) => `<li class="outline-level-${m[1].length}"><button type="button" data-act="scroll" data-id="notebook-heading-${cell.index}-${i}">${inlineHTML(m[2].trim().replace(/\s+\{fold\}$/, ''))}</button></li>`);
