@@ -23,6 +23,165 @@ The Glitnir notebook updates live and highlights the newest updates, making it e
 
 Generally I am not a believer in new agent harnesses for math. I think coding agents, with the right skills and tools, are the perfect agents for mathematical research. So that is what I am trying to improve with this Glitnir.
 
+## The VS Code extension
+
+The extension opens any `.lean` file as a rendered notebook beside your editor. Main advantages and features of the extension:
+
+- **Reading:** prose, typeset mathematics, images and collapsible sections,
+  with each claim's statement, proof and check status in its own card.
+- **Source navigation:** **Edit in VS Code** jumps from a cell to its source, and
+  **Glitnir: Reveal in Glitnir** jumps back from the cursor to the notebook.
+- **Live updates:** the preview refreshes whenever the file is saved, from VS Code
+  or a coding agent, and briefly highlights changed sections. **Follow edits**
+  scrolls to them.
+- **Claim review:** **Next** and **Previous** step through the claims that need
+  attention, in source order: out of date, not rechecked, containing `sorry`,
+  resting on additional assumptions, or where checking stopped.
+- **Proof steps:** **Explore Proof Steps** records a proof's tactic tree once, then
+  lets you walk it with the goals before and after each step.
+  **Inspect proof goals** in the claim inspector shows the goals after each tactic
+  step of the selected claim from the same recording. Both are historical
+  observations and never change a status.
+- **Checking:** **Check saved file** checks the whole file and saves each claim's
+  result to `<Notebook>.glitnir.json`. Claims show as cards marked current or out
+  of date. If a command fails, claims before it are still checked; later claims
+  show as plain source under a "Checking stopped at line N" banner.
+  **Copy Validation Command** gives the equivalent command-line check.
+- **Evidence:** `-- @evidence` directives show simulations as cards with a
+  chart and provenance, run on click and saved with the check results.
+- **Decisions:** `-- @decide` directives show as cards. **Run** asks a provider
+  for a Lean block, Glitnir kernel-checks it, and **Accept** inserts a checked
+  block into the notebook.
+- **History:** recent Git commits for the notebook, with each commit's diff.
+- **Export HTML:** saves an offline snapshot of the rendered notebook.
+- **Coding agents:** **Set Up Coding Agent** installs the authoring skill for
+  Claude Code or Codex.
+
+Checking, proof-step recording and evidence runs happen only when you ask. Lean
+runs in the sandbox; an evidence provider computes from its output.
+
+## Install
+
+Glitnir runs in local VS Code windows on **macOS and Linux** (see
+[Limits](#limits)).
+
+### Requirements
+
+- **VS Code** 1.96 or newer, with the notebook's folder open as a trusted
+  workspace.
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** and
+  **Python 3.12 or newer**, for the Python backend. VS Code may not inherit your
+  shell's `PATH`, so setup looks for `uv` in `~/.local/bin`, `/opt/homebrew/bin`,
+  `/usr/local/bin`, `/usr/bin` and `/bin` (on macOS: `brew install uv`).
+- **Lean 4.32.1**, installed with [elan](https://github.com/leanprover/elan):
+  `elan toolchain install leanprover/lean4:v4.32.1`. Reading a notebook needs only
+  the backend; checking, proof steps, views, evidence and decisions need Lean.
+  Glitnir never builds or downloads a project's dependencies: build the
+  notebook's Lake project first (`lake build`, after `lake exe cache get` for
+  Mathlib).
+- **On Linux, bubblewrap** with unprivileged user namespaces, which Lean runs in.
+  On Ubuntu 24.04, install `bubblewrap apparmor apparmor-profiles` and run
+  `sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict`.
+  macOS uses its built-in sandbox.
+
+### Install the extension
+
+Once Glitnir is published on the Visual Studio Marketplace, install
+**Glitnir — Lean Notebooks** from the Extensions view. Until then, install it from
+a GitHub release:
+
+1. Download `glitnir-VERSION.vsix` from
+   [Releases](https://github.com/arnovich/glitnir/releases).
+2. In VS Code, run **Extensions: Install from VSIX…** and select it.
+
+### Set Up Environment
+
+1. Open a Lean file in a trusted workspace.
+2. Run **Glitnir: Set Up Environment → Install Backend with uv → Download matching
+   backend**. Setup downloads the backend wheel of the extension's own release,
+   verifies its checksum against the one the extension records, and installs it
+   with uv into a new environment under `~/.local/share/glitnir/backends`.
+3. Run **Glitnir: Open in Glitnir**.
+
+The other setup choices:
+
+- **Choose downloaded backend wheel** installs a matching backend `.whl` you
+  downloaded yourself.
+- **Choose Existing Environment** (or **Choose another installation**) selects a
+  Python where the backend is already installed.
+- Opening a notebook without a backend offers the same choices and **Read
+  Installation Guide**.
+
+Without any setup, Glitnir also finds a backend in the environment you chose
+before, a `.venv` in the workspace or in a folder above the notebook, or
+`python3`. The `glitnir.pythonPath` setting overrides all of these. The backend
+must match the extension's release.
+
+To install by hand, download the VSIX, backend wheel and `SHA256SUMS` from one
+release, then run (`--ignore-missing` skips the assets you did not download):
+
+```sh
+shasum -a 256 -c --ignore-missing SHA256SUMS   # Linux: sha256sum -c --ignore-missing SHA256SUMS
+uv venv --python 3.12 --no-python-downloads "$HOME/.local/share/glitnir/venv"
+uv pip install --python "$HOME/.local/share/glitnir/venv/bin/python" --reinstall \
+  ./glitnir-*-py3-none-any.whl
+```
+
+Then set `glitnir.pythonPath` to that environment's `bin/python`. The
+[installation guide](https://github.com/arnovich/glitnir/blob/main/extension/media/setup.md)
+(`INSTALL.md` in each release) has the same steps.
+
+### The Forseti plugin
+
+The optional `glitnir-forseti` package adds Forseti views, evidence and decisions
+(see [Extensions](#extensions)). It is not on PyPI; each release has its wheel,
+built from the same commit and tested with that release's backend.
+
+1. Download `glitnir_forseti-VERSION-py3-none-any.whl` and `SHA256SUMS` from the
+   same release as the VSIX, and verify it with
+   `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
+   `sha256sum -c --ignore-missing SHA256SUMS`).
+2. Run **Glitnir: Install Extension Package…** (also offered in **Glitnir: Set Up
+   Environment**), select the wheel, and choose the `z3` extra for decisions.
+3. For `iterate` evidence, install Python Asgard (`gimle-asgard`, not on PyPI)
+   into the backend yourself, for example
+   `uv pip install --python <backend python> <gimle-asgard wheel>`.
+
+### Upgrading
+
+Use the VSIX, backend wheel and plugin wheel of the same release.
+
+1. Install the new VSIX as above.
+2. Each release pins its backend. If the preview reports that the installed
+   runtime is incompatible with this Glitnir build, run **Glitnir: Set Up
+   Environment → Install Backend with uv → Download matching backend** again. It
+   creates a new environment and leaves the old one in place.
+3. Install extension packages such as `glitnir-forseti` into the new environment
+   again, from the same release.
+
+A release that changes the replay program shows saved results as out of date
+once, and its first check replays the imports again (see [Imports and
+caches](#imports-and-caches)).
+
+## Try it
+
+Save this as `Hello.lean`, then run **Glitnir: Open in Glitnir**:
+
+```lean
+/-! # A first notebook -/
+theorem hello : True := by
+  trivial
+```
+
+- **Edit in VS Code** jumps to source; **Glitnir: Reveal in Glitnir** returns to the notebook.
+- Save edits to refresh the preview. Enable **Follow edits** to follow changed sections.
+- Use **Claims** and **Proof steps** to review proofs; press **?** for keyboard shortcuts.
+- Use **Check saved file** to check the saved file.
+- **Export HTML** saves an offline snapshot.
+
+For more advanced examples explore [Forseti examples](https://github.com/arnovich/forseti-examples) for notebooks
+on circuits, dynamical systems and PDEs.
+
 ## The notebook format
 
 A Glitnir notebook is a `.lean` file that works perfectly well with standard Lean but extends the syntax with *cells*, rendered as such by Glitnir:
@@ -126,31 +285,66 @@ Results are saved in `<Notebook>.glitnir.json` under `decisions`, with the same
 16 MiB and unreadable-file rules as evidence. Without a provider the line shows
 why.
 
+## Using the preview
+
+### Reading
+
+Run **Glitnir: Open in Glitnir** from the Command Palette, or **Open in Glitnir**
+on a `.lean` file in the Explorer's context menu. The preview opens beside the
+editor and shows the saved file, not unsaved edits. **Contents** lists the
+sections, and `s` switches between the rendered document and the Lean source.
+
+- **Edit in VS Code** on a cell jumps to its source. **Glitnir: Reveal in
+  Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
+  macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
+- Every save, from VS Code or a coding agent, refreshes the preview and briefly
+  highlights the changed sections. **Follow edits** scrolls to them.
+- **Claims** (`c`) steps through the claims with `j` and `k`; `i` shows the claim
+  inspector for the selected claim.
+- `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
+  Item**, step through the claims that need attention: out of date, not
+  rechecked, containing `sorry`, resting on additional assumptions, or where
+  checking stopped.
+
 ### Checking
 
 A notebook is ordinary Lean that builds with its Lake project (or, for a loose
-file, the standard library). Checks are explicit and cover the whole saved file,
-or, with **Check through here** on a claim (also in the inspector, or `r` on the
-selected claim), only its lines 1 through that claim's last line: the same
-sandboxed compile and kernel replay of that prefix. Every checked prefix, also
-the one before a failing command, ends where Glitnir's own lexer finds a command
-end: the next code is a word that never occurs inside a command (a declaration
-keyword, `namespace`, `section`, `end`, `variable`, `private`, … at any column),
-or at column 0 `open`/`set_option` (not their `… in` forms), `#print`, a module
-doc, or a doc comment or `@[…]` followed by a command word; or the file ends. A
-`mutual … end` block is one command. A cut inside a
-command moves back to the end of the command before it, so no command is ever
-checked shortened. Claims after it are not checked: each keeps its earlier
-saved result, marked "Not rechecked", current only while the environment it was
-checked in and the source through its last line still match. The next check of
-the whole file replaces every result.
+file, the standard library). Checks are explicit: **Check saved file** checks the
+whole saved file, and nothing is checked when you only move around.
 Results are saved beside the notebook in `<Notebook>.glitnir.json`; a result goes
 out of date when anything above the claim changes (any edit above it, not only
 to declarations it uses), when an edit below it continues its command (another
 proof step, `where`, `termination_by`), or the toolchain, `lake-manifest.json`, a rebuilt
 import or a dependency checkout changes. If a command fails, only the claims
 from that command onward are withheld. See the
-[authoring skill](skills/glitnir-notebooks/SKILL.md) for the full rules.
+[authoring skill](https://github.com/arnovich/glitnir/blob/main/skills/glitnir-notebooks/SKILL.md)
+for the full rules.
+
+**Glitnir: Copy Validation Command** copies the equivalent command-line check of
+the saved file, for a terminal or a coding agent. It runs
+`python -m glitnir.notebook check FILE.lean` with the backend's Python, prints
+one JSON result and writes no notebook metadata. It exits 0 when every theorem is
+kernel checked, 1 when some contain `sorry` or extra assumptions or when a
+failing command withheld the claims after it, and 2 when checking is unavailable.
+
+### Checking through a claim
+
+**Check through here** on a claim (also in the inspector, or `r` on the selected
+claim) checks only lines 1 through that claim's last line: the same sandboxed
+compile and kernel replay of that prefix. Every checked prefix, also the one
+before a failing command, ends where Glitnir's own lexer finds a command end: the
+next code is a word that never occurs inside a command (a declaration keyword,
+`namespace`, `section`, `end`, `variable`, `private`, … at any column), or at
+column 0 `open`/`set_option` (not their `… in` forms), `#print`, a module doc,
+or a doc comment or `@[…]` followed by a command word; or the file ends. A
+`mutual … end` block is one command. A cut inside a command moves back to the
+end of the command before it, so no command is ever checked shortened. Claims
+after it are not checked: each keeps its earlier saved result, marked "Not
+rechecked", current only while the environment it was checked in and the source
+through its last line still match. The next check of the whole file replaces
+every result.
+
+### What a check accepts
 
 Besides declarations, `namespace`/`section`/`end`, `open`, `export`, `variable`,
 `set_option`, `attribute` and module docs, a notebook may use `#print axioms c`.
@@ -167,27 +361,33 @@ each as a private theorem with a reserved name, which stays in the checked modul
 like any other declaration. Its status is about that theorem's statement, which
 the card shows as Lean prints it where the example stands (its namespace, `open`s
 and this project's notation, which is project code), with the kernel form, every
-name in full and without notation, one fold away; both are display only. Results saved before this (format `v1`) still
-load and show only the kernel form. The checker finds every `example` keyword
-with its own lexer, replaces only those keywords (the rest of the file is compared
-byte for byte, and lines keep their numbers), and the theorem is then bound,
-replayed and given its status like any other. The helper that reads the file runs
-its code and only decides which examples are claims; it cannot choose what is
-compiled. Section variables are included as for a theorem (the ones the statement
-mentions, plus instances), not as Lean includes them for an example (also the
-ones its proof uses), so state any hypothesis the proof uses. An example without a
-type, or whose type is not a proposition, claims nothing and is marked "not a
-claim". Examples that use `decl_name%`, and examples in a file the lexer cannot
-read exactly (for example, a string containing `{`), withhold the check from that
-example. A file with a carriage return left after CRLF normalisation is refused.
+name in full and without notation, one fold away; both are display only. Results
+saved before this (format `v1`) still load and show only the kernel form. The
+checker finds every `example` keyword with its own lexer, replaces only those
+keywords (the rest of the file is compared byte for byte, and lines keep their
+numbers), and the theorem is then bound, replayed and given its status like any
+other. The helper that reads the file runs its code and only decides which
+examples are claims; it cannot choose what is compiled. Section variables are
+included as for a theorem (the ones the statement mentions, plus instances), not
+as Lean includes them for an example (also the ones its proof uses), so state any
+hypothesis the proof uses. An example without a type, or whose type is not a
+proposition, claims nothing and is marked "not a claim". Examples that use
+`decl_name%`, and examples in a file the lexer cannot read exactly (for example,
+a string containing `{`), withhold the check from that example. A file with a
+carriage return left after CRLF normalisation is refused.
 
-Each result also records the claims it uses: the theorems its statement and proof
-name directly, from this notebook or from another notebook of the project (a
-module the project builds itself, not a dependency). Cards show them as chips,
-the sidebar draws them as the claim graph, and a chip of another notebook opens
-it in the same panel at that claim. Uses are display only and never change a
-status. Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in
-`simp`), so a claim may use more than its chips show.
+### Statuses
+
+A theorem's status comes from the axioms it depends on: `checked` when they are
+all among Lean's standard axioms and declared by the toolchain's own modules,
+`admitted` when they include `sorryAx`, `assumptions` otherwise. The kernel
+replay collects these axioms itself, in the environment where it has just
+checked the notebook's declarations, walking every dependency (imported lemmas
+included) from its checked value rather than from summaries stored in compiled
+files. The separate module report lists them too, for display; when the two
+lists differ the check is unavailable rather than trusting either.
+
+### Imports and caches
 
 Every check replays the notebook's own declarations in Lean's kernel on top of
 its compiled imports. The first check of a set of imports also replays every
@@ -207,77 +407,80 @@ and is not identical), all of its imports are replayed instead; an identical
 or earlier restatement keeps the incremental replay. Building on a recorded
 replay holds both rebuilt environments in memory at once: for Mathlib about
 4.7 GB, within the 8 GB default of `glitnir.memoryLimitMb`.
-A result's `replay` field is `full`, `imports
-cached`, or `imports cached (+N modules)`. The notebook's own declarations are replayed
-either way, in an environment rebuilt from nothing but the replayed imports'
-declarations (no compiled code from the project or its dependencies), which the
-first replay verified equals its own. When the imports do not hold the kernel's
-own quotient (`init_quot`), or a notebook restates an imported theorem, the whole
-closure is replayed from an empty environment instead. Delete the cache directory
-to force full replays. Anyone who can write to it can forge a record, which is the
-same trust as being able to change your files.
+A result's `replay` field is `full`, `imports cached`, or `imports cached (+N
+modules)`. The notebook's own declarations are replayed either way, in an
+environment rebuilt from nothing but the replayed imports' declarations (no
+compiled code from the project or its dependencies), which the first replay
+verified equals its own. When the imports do not hold the kernel's own quotient
+(`init_quot`), or a notebook restates an imported theorem, the whole closure is
+replayed from an empty environment instead. Delete the cache directory to force
+full replays. Anyone who can write to it can forge a record, which is the same
+trust as being able to change your files.
 
 Each check reads the files it depends on (the toolchain, compiled imports and
 project sources) once, hashes them, and links its private snapshot to a copy of
 the toolchain's and compiled imports' exact bytes in a store beside the replay
-cache (`glitnir/artifacts`),
-named by their SHA-256 and never changed once written. Checks with the same
-dependencies share these files instead of copying gigabytes each time. Lean sees
-only the toolchain's files and its own project's, read-only; project sources
-are hashed but never stored. The least recently used files are removed when the
-store exceeds 40 GiB or would leave less free space than 10 GiB (or a tenth of
-the disk, if that is less), never while a check uses them. Delete it at any time to free the space.
+cache (`glitnir/artifacts`), named by their SHA-256 and never changed once
+written. Checks with the same dependencies share these files instead of copying
+gigabytes each time. Lean sees only the toolchain's files and its own project's,
+read-only; project sources are hashed but never stored. The least recently used
+files are removed when the store exceeds 40 GiB or would leave less free space
+than 10 GiB (or a tenth of the disk, if that is less), never while a check uses
+them. Delete it at any time to free the space.
 
-A theorem's status comes from the axioms it depends on: `checked` when they are
-all among Lean's standard axioms and declared by the toolchain's own modules,
-`admitted` when they include `sorryAx`, `assumptions` otherwise. The kernel
-replay collects these axioms itself, in the environment where it has just
-checked the notebook's declarations, walking every dependency (imported lemmas
-included) from its checked value rather than from summaries stored in compiled
-files. The separate module report lists them too, for display; when the two
-lists differ the check is unavailable rather than trusting either. Upgrading to
-a version that changes the replay program invalidates saved results once (they
-show as out of date) and the recorded import replays, so the first check after
-an upgrade replays the imports again.
+Upgrading to a version that changes the replay program invalidates saved results
+once (they show as out of date) and the recorded import replays, so the first
+check after an upgrade replays the imports again.
 
-## The VS Code extension
+### Uses and the claim graph
 
-The extension opens any `.lean` file as a rendered notebook beside your editor. Main advantages and features of the extension:
+Each result also records the claims it uses: the theorems its statement and proof
+name directly, from this notebook or from another notebook of the project (a
+module the project builds itself, not a dependency). Cards show them as chips,
+the sidebar draws them as the claim graph, and a chip of another notebook opens
+it in the same panel at that claim. Uses are display only and never change a
+status. Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in
+`simp`), so a claim may use more than its chips show.
 
-- **Reading:** prose, typeset mathematics, images and collapsible sections,
-  with each claim's statement, proof and check status in its own card.
-- **Source navigation:** **Edit in VS Code** jumps from a cell to its source, and
-  **Glitnir: Reveal in Glitnir** jumps back from the cursor to the notebook.
-- **Live updates:** the preview refreshes whenever the file is saved, from VS Code
-  or a coding agent, and briefly highlights changed sections. **Follow edits**
-  scrolls to them.
-- **Claim review:** **Next** and **Previous** step through the claims that need
-  attention, in source order: out of date, not rechecked, containing `sorry`,
-  resting on additional assumptions, or where checking stopped.
-- **Proof steps:** **Explore Proof Steps** records a proof's tactic tree once, then
-  lets you walk it with the goals before and after each step.
-  **Inspect proof goals** in the claim inspector shows the goals after each tactic
-  step of the selected claim from the same recording. Both are historical
-  observations and never change a status.
-- **Checking:** **Check saved file** checks the whole file and saves each claim's
-  result to `<Notebook>.glitnir.json`. Claims show as cards marked current or out
-  of date. If a command fails, claims before it are still checked; later claims
-  show as plain source under a "Checking stopped at line N" banner.
-  **Copy Validation Command** gives the equivalent command-line check.
-- **Evidence:** `-- @evidence` directives show simulations as cards with a
-  chart and provenance, run on click and saved with the check results.
-- **Decisions:** `-- @decide` directives show as cards. **Run** asks a provider
-  for a Lean block, Glitnir kernel-checks it, and **Accept** inserts a checked
-  block into the notebook.
-- **History:** recent Git commits for the notebook, with each commit's diff.
-- **Export HTML:** saves an offline snapshot of the rendered notebook.
-- **Coding agents:** **Set Up Coding Agent** installs the authoring skill for
-  Claude Code or Codex.
+### Proof goals and steps
 
-Checking, proof-step recording and evidence runs happen only when you ask. Lean
-runs in the sandbox; an evidence provider computes from its output.
+**Glitnir: Explore Proof Steps** (or `t` in the preview) records the selected
+proof's tactic tree once with Lean, then lets you walk it with the goals before
+and after each step: `n` and `p` move between steps, `r` checks the whole saved
+file, and `Esc` returns to Claims. **Inspect proof goals** in the claim inspector
+shows the goals after each tactic step of the selected claim from the same
+recording. Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`.
+Both are historical observations of the saved file and never change a status.
 
-### Keyboard shortcuts
+### Linked notebooks
+
+A Markdown link to a sibling notebook, such as `[Basics](Basics.lean)`, opens it
+in the same panel, read-only and with its own saved results; see [Images and
+links](#images-and-links). A claim chip of another notebook opens it at that
+claim. Use **Open in its own preview** to check it.
+
+### Export and history
+
+- **Export HTML** saves an offline snapshot of the rendered notebook, with its
+  images embedded.
+- **History** lists recent Git commits of the notebook, each with its diff.
+
+A gallery can also publish notebooks from their committed saved results without
+running any checks; see [Static export](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#static-export-galleries)
+in DEVELOPMENT.md.
+
+## Settings
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
+| `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
+| `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
+
+Changing `glitnir.pythonPath` closes open previews; reopen them to apply the
+change.
+
+## Keyboard shortcuts
 
 Single keys work while the preview has focus, outside text fields; press **?** in
 the preview for this list. Moving never starts a check.
@@ -297,65 +500,17 @@ the preview for this list. Moving never starts a check.
 | `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
 <!-- shortcuts:end -->
 
-## Settings
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
-| `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
-| `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
-
-Changing `glitnir.pythonPath` closes open previews; reopen them to apply the
-change.
-
-## Install
-
-Requires VS Code, **Python 3.12+** and **uv** on local **macOS or Linux**.
-
-1. Download `glitnir-VERSION.vsix` from [Releases](https://github.com/arnovich/glitnir/releases).
-2. In VS Code, run **Extensions: Install from VSIX…**.
-3. Open a Lean file in a trusted workspace, then run **Glitnir: Set Up Environment → Install Backend with uv → Download matching backend**.
-4. Run **Glitnir: Open in Glitnir**.
-
-Python, Lean and Mathlib are installed separately. Preview needs only the Python
-backend; proof checking also needs **Lean 4.32.1**, prepared project dependencies
-and a working platform sandbox. Windows and remote VS Code environments are
-unsupported.
-
-For the optional Forseti views, evidence and decisions, download
-`glitnir_forseti-VERSION-py3-none-any.whl` and `SHA256SUMS` from the same release,
-verify the wheel with `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
-`sha256sum -c --ignore-missing SHA256SUMS`), then run **Glitnir: Install
-Extension Package…** and select it (see [Extensions](#extensions)).
-
-See the [setup guide](extension/media/setup.md) for prerequisites, manual installation,
-existing environments and troubleshooting. Use the VSIX, backend wheel and plugin
-wheel from the same release.
-
-## Try it
-
-Save this as `Hello.lean`, then run **Glitnir: Open in Glitnir**:
-
-```lean
-/-! # A first notebook -/
-theorem hello : True := by
-  trivial
-```
-
-- **Edit in VS Code** jumps to source; **Glitnir: Reveal in Glitnir** returns to the notebook.
-- Save edits to refresh the preview. Enable **Follow edits** to follow changed sections.
-- Use **Claims** and **Proof steps** to review proofs; press **?** for keyboard shortcuts.
-- Use **Check saved file** to check the saved file.
-- **Export HTML** saves an offline snapshot.
-
-For more advanced examples explore [Forseti examples](https://github.com/arnovich/forseti-examples) for notebooks
-on circuits, dynamical systems and PDEs.
+The Command Palette also has **Glitnir: Review Claims**, **Glitnir: Explore Proof
+Steps**, **Glitnir: Next Review Item**, **Glitnir: Previous Review Item** and
+**Glitnir: Keyboard Shortcuts**.
 
 ## Extensions
 
 Optional Python packages can add notebook features. They are found through the
 `glitnir.providers` entry-point group, so install them into the same Python
 environment as the Glitnir backend.
+
+### Installing extension packages
 
 To install one, run **Glitnir: Install Extension Package…** (also offered in
 **Glitnir: Set Up Environment**) in a trusted workspace with the backend set up,
@@ -368,17 +523,11 @@ keeps its version. Only extras whose packages Glitnir knows to be published on
 PyPI are offered (for now `z3-solver`); others are listed with what to install
 yourself. A message then lists the view kinds, evidence verbs and decision kinds
 now available (with what is still missing, such as an extra), or the providers
-that failed to load (details in **Output → Glitnir**).
-Glitnir refuses a wheel that could reach beyond its package: one that touches
-the backend's own files, adds a startup hook (`.pth`, `sitecustomize`), names a
-command like a path or after another package's command, or needs an extra it
-does not offer. Its `entry_points.txt` must be plain `[group]` headers and
-`name = module:attribute` lines, without comments or indentation.
-It also refuses a wheel whose file names or file list (RECORD) are not plain
-ASCII, whose file list does not give each file's SHA-256 hash and size, or
-that is not a plain zip archive (ZIP64 records, an archive comment). uv
-installs a copy that Glitnir writes from exactly the files it checked. The Set
-Up Environment item appears only once a backend is detected.
+that failed to load (details in **Output → Glitnir**). Glitnir refuses a wheel
+that could reach beyond its package, such as one that touches the backend's own
+files or adds a startup hook; [DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#extension-packages)
+lists the exact rules. The Set Up Environment item appears only once a backend
+is detected.
 
 Glitnir does not remove packages for you: uninstalling deletes whatever the
 installed package's file list names, which Glitnir cannot vouch for. To remove
@@ -392,178 +541,125 @@ cancelled, the environment may be partly changed: run the install
 again. After an extension update that pins a new backend, Set Up Environment
 creates a new environment; install the extension packages into it again.
 
-`glitnir-forseti` (in [`plugins/forseti`](plugins/forseti)) draws Forseti
-circuit, model and dynamics views for `-- @view circuit|model|dynamics <name>`
-directives. The notebook must sit in a Lake project whose packages build
-`Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`; the notebook need not
-import the visualization module, which the view loads from the project's build. If that build is missing or out of date,
-the card names the `lake build` command to run. A loose `.lean` file has no
-prepared imports to draw from. A view is drawn in the background, one at a time:
-its card says what it is doing, including waiting for another Lean run, and
-**Stop** cancels it.
-
-It also runs `-- @evidence simulate|iterate <target>` directives, loading
-`Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
-from the project's build in the same way. `simulate` needs nothing more; `iterate`
-needs Python Asgard (`gimle-asgard`), which is not on PyPI: install it into the
-backend's environment from its own wheel or checkout. Without it, `iterate` cards
-say so and cannot run, and the provider list shows `iterate` as unavailable.
-Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
-
-It also decides `-- @decide <name> : <goal>` directives of kind `entailment`,
-`trajectory` or `stream` (the `z3` extra, `glitnir-forseti[z3]`, is needed). Its
-blocks need the Forseti and Asgard modules the goal uses imported in the
-notebook; a missing one shows as the check's unknown-identifier rejection. See
-the [plugin README](plugins/forseti/README.md).
-
-Verified on 2026-10-15 against forseti-lean `c65dada` (Lean 4.32.1): the opt-in
-live tests passed for proven and refuted `entailment` and `trajectory` decisions
-and for `simulate` evidence. `stream` decisions and `iterate` evidence have not
-been run through Glitnir's checker yet. CI does not run these tests
-(`plugins/forseti/tests/test_decision_provider_lean.py` and
-`test_evidence_provider_lean.py`, with `FORSETI_LEAN_TEST_PROJECT` set), so
-re-run them after Forseti or Glitnir changes. The first check of a Forseti
-project replays Mathlib and Forseti once (about 18 minutes on a laptop); later
-checks take a few minutes.
-
-`glitnir-forseti` is not on PyPI. Each release has its wheel, built from the same
-commit and tested with that release's backend:
-
-1. Download `glitnir_forseti-VERSION-py3-none-any.whl` and `SHA256SUMS` from the
-   same release as the VSIX, and verify it with
-   `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
-   `sha256sum -c --ignore-missing SHA256SUMS`). From a checkout, build it instead:
-   `uv build plugins/forseti --wheel --out-dir plugins/forseti/dist`.
-2. Run **Glitnir: Install Extension Package…**, select the wheel, and choose the
-   `z3` extra for decisions.
-3. For `iterate` evidence, install `gimle-asgard` into the backend yourself, for
-   example `uv pip install --python <backend python> <gimle-asgard wheel>`.
-
 To install by hand instead, find the backend's Python (shown in **Output →
 Glitnir** as "Glitnir environment: …", or set by the `glitnir.pythonPath`
-setting) and install the wheel into it, with the extras you need. Its `lark`
-dependency comes from the package index; the installed backend satisfies its
-`glitnir` dependency. Then close and reopen the notebook preview:
+setting) and install the wheel into it, with the extras you need. Then close and
+reopen the notebook preview:
 
 ```sh
 uv pip install --python <backend python> \
   "./glitnir_forseti-VERSION-py3-none-any.whl[z3]"
 ```
 
-The core backend has no runtime dependencies.
+### Forseti: views, evidence and decisions
 
-## Static export (galleries)
+`glitnir-forseti` ([install it](#the-forseti-plugin); source in
+[`plugins/forseti`](https://github.com/arnovich/glitnir/tree/main/plugins/forseti))
+provides three features.
 
-A gallery can publish notebooks from their committed `<Notebook>.glitnir.json`
-without running any checks. `glitnir.notebook.static_export.SavedNotebook`
-reads a saved notebook and its saved results for the canonical renderer:
+**Views.** It draws Forseti circuit, model and dynamics views for
+`-- @view circuit|model|dynamics <name>` directives. The notebook must sit in a
+Lake project whose packages build `Gimle.Forseti` and
+`Gimle.Asgard.Visualization.Model`; the notebook need not import the
+visualization module, which the view loads from the project's build. If that
+build is missing or out of date, the card names the `lake build` command to run.
+A loose `.lean` file has no prepared imports to draw from. A view is drawn in the
+background, one at a time: its card says what it is doing, including waiting for
+another Lean run, and **Stop** cancels it.
 
-- `snapshot(run_prompts=False)` returns the snapshot the renderer reads from
-  `GET /api/notebook`. Each saved result is compared only with the saved source:
-  one whose source changed since its check is out of date, and every other one
-  is shown as recorded. It is never compared with the reader's Lean environment,
-  so the snapshot sets `preview.recorded` and the renderer shows "Saved results,
-  shown as recorded", never "current". By default, evidence and decision cards
-  show their saved results without what running them would need, such as an
-  extra to install; `run_prompts=True` keeps those prompts. A result saved
-  without a known environment fingerprint is never shown as recorded, and
-  `preview.project` gives the project's root relative to the notebook, so the
-  snapshot holds no local absolute path.
-- `asset(path, sha256)` returns an image the prose shows.
-- `view_imports()` lists the modules to build before drawing views.
-- `draw_view(cell, line)` draws one listed view and waits for it, as the editor
-  does: with Lean in the sandbox, from the project's own build. Drawing checks
-  nothing.
+**Evidence.** It runs `-- @evidence simulate|iterate <target>` directives,
+loading `Gimle.Asgard.Compile.RationalInterchange` and
+`Gimle.Asgard.Model.Continuous` from the project's build in the same way.
+`simulate` needs nothing more; `iterate` needs Python Asgard (`gimle-asgard`),
+which is not on PyPI: install it into the backend's environment from its own
+wheel or checkout. Without it, `iterate` cards say so and cannot run, and the
+provider list shows `iterate` as unavailable. Numbers in options are plain
+decimals or fractions such as `0.01` or `1/100`.
 
-The module's `export_styles()` returns the CSS that **Export HTML** embeds
-(`GET /api/export/styles`). Reading a snapshot or an image runs no Lean, git or
-provider run and writes no file.
-Nothing here checks the notebook or writes its source or results; drawing a view
-writes only Glitnir's own temporary and cache files, never the project. Saved
-results are matched to the saved source result by result, so a gallery that
-must publish only complete results should also compare the results file's
-`source_sha256` with the snapshot's `sha256`.
+**Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
+`entailment`, `trajectory` or `stream` (the `z3` extra, `glitnir-forseti[z3]`, is
+needed). Its blocks need the Forseti and Asgard modules the goal uses imported in
+the notebook; a missing one shows as the check's unknown-identifier rejection.
 
-Render the snapshot with the packaged renderer (`glitnir/notebook/app`), and
-export it with its **Export HTML**, through the same `window.glitnirHost`
-interface the editor uses (`fetch`, `asset` and `saveHTML`). Answer `fetch` from
-the prepared data and refuse anything else:
-
-```python
-import json
-from pathlib import Path
-
-from glitnir.notebook.static_export import SavedNotebook, export_styles
-
-with SavedNotebook(Path("examples/Decay.lean")) as notebook:
-    snapshot = notebook.snapshot()  # GET /api/notebook
-    views = {  # GET /api/view?cell=C&line=L: a drawing, or {"error": ...}
-        f"{view['cell']}:{view['line']}": notebook.draw_view(view["cell"], view["line"])
-        for view in snapshot["views"]
-    }
-page = {"snapshot": snapshot, "views": views, "css": export_styles()}
-Path("decay.json").write_text(json.dumps(page))  # read by your renderer driver
-```
+`stream` decisions and `iterate` evidence have not been run through Glitnir's
+checker yet. The first check of a Forseti project replays Mathlib and Forseti
+once (about 18 minutes on a laptop); later checks take a few minutes. The
+[plugin README](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/README.md)
+lists every option and goal form.
 
 ## Coding agents
 
 Run **Glitnir: Set Up Coding Agent**, choose your workspace and agent, then start
 a new agent session and ask it to use `glitnir-notebooks`.
-See the bundled [authoring skill](skills/glitnir-notebooks/SKILL.md).
+See the bundled [authoring skill](https://github.com/arnovich/glitnir/blob/main/skills/glitnir-notebooks/SKILL.md).
 
-## Development
+The command installs the skill into the workspace, keeping any edits you made to
+an earlier copy: **Codex** uses `.agents/skills/glitnir-notebooks` and **Claude
+Code** uses `.claude/skills/glitnir-notebooks`. **Export for another agent**
+writes it to a folder you choose; give its `SKILL.md` to your agent. Agents can
+check a notebook with the command from **Glitnir: Copy Validation Command**.
 
-The repository has four parts:
+## Limits
 
-- [`backend/`](backend/README.md): the Python backend, including the notebook
-  renderer and the checking services.
-- [`plugins/forseti/`](plugins/forseti/README.md): the optional `glitnir-forseti`
-  provider package.
-- `extension/`: the VS Code extension, with its source, webview assets,
-  build scripts and tests.
-- [`skills/`](skills/glitnir-notebooks/SKILL.md): the authoring skill for coding
-  agents.
+- **Lean 4.32.1 only.** Checking, proof steps, views, evidence and decisions use
+  that toolchain; a project on another Lean version can be read but not checked.
+- **Local macOS and Linux only.** Windows, remote windows (SSH, WSL, containers)
+  and virtual or untrusted workspaces are unsupported. On Linux, the sandbox
+  needs an x86-64 or ARM64 machine.
+- **Lean always runs in the platform sandbox.** Lake configuration that needs
+  subprocesses is unavailable on macOS.
+- **Glitnir does not prepare projects.** It never builds or downloads
+  dependencies; run `lake build` yourself.
+- **Simulation is evidence, never proof.** Evidence never changes a claim's
+  status or the check's exit code, and a decision provider only proposes a Lean
+  block that the kernel check must accept.
 
-With Python 3.12+, uv and Node 22+, run from the repository root:
+## Troubleshooting
 
-```sh
-uv build backend --wheel --out-dir backend/dist
-uv venv --python 3.12 --no-python-downloads .venv
-uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
-  'backend/dist/glitnir-0.1.1-py3-none-any.whl[dev]'
-(cd backend && ../.venv/bin/python -m pytest && ../.venv/bin/black --check src tests \
-  && ../.venv/bin/isort --check-only src tests && ../.venv/bin/flake8 src tests \
-  && ../.venv/bin/mypy src)
+Start with **Output → Glitnir**, which logs the environment Glitnir found, setup
+and package installs, and each preview's backend output.
 
-# Optional: the Forseti view and evidence provider and its tests (as in CI). Its dependencies
-# are named explicitly because glitnir is not on an index.
-uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
-uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
-uv pip install --python .venv/bin/python --no-deps \
-  plugins/forseti/dist/glitnir_forseti-0.1.1-py3-none-any.whl
-(cd plugins/forseti && ../../.venv/bin/python -m pytest -q && ../../.venv/bin/black --check src tests tools \
-  && ../../.venv/bin/isort --check-only src tests tools && ../../.venv/bin/flake8 src tests tools \
-  && ../../.venv/bin/mypy src)
+- **"No Python environment with the Glitnir backend was found"**: run **Glitnir:
+  Set Up Environment** ([Install](#set-up-environment)).
+- **"Install uv first"**: install uv into one of the locations under
+  [Requirements](#requirements), then run Set Up Environment again.
+- **"The installed Glitnir runtime is incompatible with this Glitnir build"**: the
+  backend is from another release; see [Upgrading](#upgrading).
+- **"Install leanprover/lean4:v4.32.1 with elan"**: install the toolchain with
+  `elan toolchain install leanprover/lean4:v4.32.1`.
+- **"no working sandbox"** on Linux: install bubblewrap and allow unprivileged
+  user namespaces (see [Requirements](#requirements)). Do not disable confinement
+  to work around it.
+- **"Views need a Lake project"** (or evidence, decisions, or imports of other
+  notebooks): these need the notebook inside a built Lake project; a loose
+  `.lean` file has no prepared imports.
+- **Large proofs run out of memory.** Every Lean run is limited to
+  `glitnir.memoryLimitMb` (8 GB by default). A large proof, a big decision block,
+  or an incremental replay on top of a recorded Mathlib replay (about 4.7 GB) can
+  exceed a lower limit and fail. Raise the setting (up to 32768) and reopen the
+  preview.
+- **Checks time out.** Raise `glitnir.elaborationTimeoutMs` (up to 30 minutes)
+  and reopen the preview. The first replay of a new set of imports has its own
+  60-minute limit and can take long for Mathlib; later checks reuse it.
+- **Results show as out of date after an upgrade.** The replay program changed;
+  check again (see [Imports and caches](#imports-and-caches)).
+- **The cache uses a lot of disk.** Delete `glitnir/replay` and
+  `glitnir/artifacts` in your user cache directory at any time; the next check
+  rebuilds what it needs.
+- **"Backend setup is already in progress"**: wait for the other setup to finish.
+  If it was interrupted, remove the `.lock` directory the message names once no
+  setup is running.
 
-npm ci
-export GLITNIR_BUILD_PYTHON="$PWD/.venv/bin/python"
-npm test
-npm run package
-```
+If that does not help, [report an issue](https://github.com/arnovich/glitnir/issues)
+with your OS, Glitnir version and a minimal example.
 
-Backend tests import the installed wheel, so rebuild and reinstall it after
-changing `backend/src`; likewise rebuild the plugin wheel after changing
-`plugins/forseti/src`. Live Lean tests skip locally unless the environment
-variables in [AGENTS.md](AGENTS.md) are set; CI runs them in a separate job.
-`pytest -m "not live"` leaves them out.
+## More
 
-Release instructions for maintainers are in [AGENTS.md](AGENTS.md#releases).
-
-## Help and license
-
-Check **Output → Glitnir**, then [report an issue](https://github.com/arnovich/glitnir/issues)
-with your OS, Glitnir version and a minimal example. Report vulnerabilities
-[privately](SECURITY.md).
-
-[MIT licensed](LICENSE), with [third-party notices](THIRD_PARTY_NOTICES.md).
-Pull requests are limited to [invited collaborators](CONTRIBUTING.md).
+- [DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md):
+  building, testing and releasing Glitnir, and the static export for galleries.
+- [SECURITY.md](https://github.com/arnovich/glitnir/blob/main/SECURITY.md): report
+  vulnerabilities privately.
+- [MIT licensed](https://github.com/arnovich/glitnir/blob/main/LICENSE), with
+  [third-party notices](https://github.com/arnovich/glitnir/blob/main/THIRD_PARTY_NOTICES.md).
+  Pull requests are limited to
+  [invited collaborators](https://github.com/arnovich/glitnir/blob/main/CONTRIBUTING.md).

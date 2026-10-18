@@ -24,4 +24,6 @@ The editor's **Check saved file** additionally saves results to
 `<Notebook>.glitnir.json`.
 
 See the [Glitnir README](https://github.com/arnovich/glitnir#readme) for
-installation, the notebook format and development.
+installation and the notebook format, and
+[DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md)
+for development.

@@ -8,7 +8,8 @@ maintaining your own fork. It does not require the maintainers to accept changes
 or provide support.
 
 For installation and troubleshooting, start with the [README](README.md) and
-[environment setup guide](extension/media/setup.md). When reporting a problem through
+[environment setup guide](extension/media/setup.md). Building and testing Glitnir
+is described in [DEVELOPMENT.md](DEVELOPMENT.md). When reporting a problem through
 [GitHub Issues](https://github.com/arnovich/glitnir/issues), include the Glitnir version and a minimal example.
 Remove credentials, private notebook content and sensitive paths from logs.
 
