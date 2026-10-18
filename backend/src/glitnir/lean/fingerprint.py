@@ -39,6 +39,10 @@ _NOT_REACHED = f"git was not read within the {FINGERPRINT_SECONDS} s limit"
 _clock = time.monotonic
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
+#: Source hashes and imports by path and stat, so polls reread only changed files.
+_DIGESTS: dict[tuple[str, int, int, int, int], tuple[str, list[str]]] = {}
+_DIGESTS_GUARD = threading.Lock()
+_MAX_DIGESTS = 50_000
 
 
 def _without_comments(text: str) -> str:
@@ -222,18 +226,55 @@ def _package_dirs(root: Path) -> list[tuple[dict[str, Any], Path]]:
     return found
 
 
-def project_sources(root: Path, notebook: Path) -> dict[str, Any]:
-    """List size and modification time of the project's own Lean sources.
+def _module_key(module: str) -> str:
+    """Spell a module name as its file path spells it, without «» quotes."""
+    return ".".join(
+        part.removeprefix("«").removesuffix("»") for part in module.split(".")
+    )
+
+
+def _source_digest(path: str, info: os.stat_result) -> tuple[str, list[str]] | None:
+    """Hash a source file and read its imports, reused while its stat is unchanged.
+
+    Returns None if the file cannot be read.
+    """
+    key = (path, info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+    with _DIGESTS_GUARD:
+        found = _DIGESTS.get(key)
+    if found is not None:
+        return found
+    try:
+        data = read_regular(Path(path), _MAX_FILE)
+    except OSError:
+        return None
+    imports = [_module_key(m) for m in direct_imports(data.decode("utf-8", "replace"))]
+    result = (hashlib.sha256(data).hexdigest(), imports)
+    with _DIGESTS_GUARD:
+        if len(_DIGESTS) >= _MAX_DIGESTS:
+            _DIGESTS.clear()
+        _DIGESTS[key] = result
+    return result
+
+
+def project_sources(root: Path, notebook: Path, text: str = "") -> dict[str, Any]:
+    """Hash the project's own Lean sources that the notebook may import.
 
     A fresh check never rebuilds (setup uses ``--no-build``), so an edited
     module that Lake has not rebuilt yet makes it unavailable while traces
-    still match. Dot-directories such as ``.lake`` and ``.git`` are skipped,
+    still match. Only sources in the notebook's import closure count: those
+    whose path ends with the path of a module `text` imports, and those such
+    a source imports, transitively. A module may match more than one file;
+    all of them count. Each counts by the SHA-256 of its bytes, so a rewrite
+    with the same contents (a re-save, a branch switched back) changes
+    nothing, and another notebook of the project changes nothing unless it
+    is imported. Dot-directories such as ``.lake`` and ``.git`` are skipped,
     symbolic links are never followed, and the notebook itself is left out:
     its text is covered by each claim's prefix hash. Never raises.
     """
-    files: list[list[Any]] = []
+    candidates: dict[str, list[tuple[str, str, os.stat_result]]] = {}
     errors: list[str] = []
     truncated = False
+    listed = 0
     try:
         own = os.lstat(notebook)
         own_id: tuple[int, int] | None = (own.st_dev, own.st_ino)
@@ -259,14 +300,34 @@ def project_sources(root: Path, notebook: Path) -> dict[str, Any]:
                 continue
             if (info.st_dev, info.st_ino) == own_id:
                 continue
-            if len(files) >= _MAX_SOURCES:
+            if listed >= _MAX_SOURCES:
                 truncated = True
                 break
-            files.append([relative, info.st_size, info.st_mtime_ns])
+            listed += 1
+            # Index the file under every module name its path could spell.
+            parts = Path(relative).with_suffix("").parts
+            for start in range(len(parts)):
+                module = ".".join(parts[start:])
+                candidates.setdefault(module, []).append((relative, path, info))
         if truncated:
             break
-    files.sort()
-    return {"files": files, "errors": sorted(errors), "truncated": truncated}
+    files: dict[str, str | None] = {}
+    pending = [_module_key(module) for module in direct_imports(text)]
+    while pending:
+        for relative, path, info in candidates.get(pending.pop(), []):
+            if relative in files:
+                continue
+            read = _source_digest(path, info)
+            files[relative] = None if read is None else read[0]
+            if read is None:
+                errors.append(relative)
+            else:
+                pending.extend(read[1])
+    return {
+        "files": sorted([name, digest] for name, digest in files.items()),
+        "errors": sorted(errors),
+        "truncated": truncated,
+    }
 
 
 def checker_identity() -> dict[str, Any]:
@@ -318,7 +379,7 @@ def environment_fingerprint(source: Path, text: str) -> dict[str, Any]:
     if project["kind"] == "lake":
         root = Path(project["root"])
         roots.append(root)
-        sources = project_sources(root, source)
+        sources = project_sources(root, source, text)
         deadline = _clock() + FINGERPRINT_SECONDS
         for entry, base in _package_dirs(root):
             roots.append(base)
@@ -354,7 +415,7 @@ def environment_fingerprint(source: Path, text: str) -> dict[str, Any]:
     if any("reason" in package for package in packages):
         hashed["unknown"] = secrets.token_hex(16)
     digest = hashlib.sha256(
-        b"glitnir.environment-fingerprint/v2\0"
+        b"glitnir.environment-fingerprint/v3\0"
         + json.dumps(hashed, sort_keys=True).encode()
     ).hexdigest()
     return {"sha256": digest, **identity}

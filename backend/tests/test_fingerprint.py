@@ -195,11 +195,94 @@ def test_root_project_source_edit_changes_the_fingerprint(tmp_path):
 
 def test_new_transitive_project_module_changes_the_fingerprint(tmp_path):
     source = _project(tmp_path)
+    module = tmp_path / "Demo/Base.lean"
+    module.parent.mkdir()
+    module.write_text("import Demo.Deep.Leaf\ndef x : Nat := 1\n")
     text = source.read_text()
     before = environment_fingerprint(source, text)
     (tmp_path / "Demo/Deep").mkdir(parents=True)
     (tmp_path / "Demo/Deep/Leaf.lean").write_text("def y := 1\n")
+    after = environment_fingerprint(source, text)
+    assert after["sha256"] != before["sha256"]
+    assert [name for name, _ in after["sources"]["files"]] == [
+        "Demo/Base.lean",
+        "Demo/Deep/Leaf.lean",
+    ]
+    (tmp_path / "Demo/Deep/Leaf.lean").write_text("def y := 2\n")
+    assert environment_fingerprint(source, text)["sha256"] != after["sha256"]
+
+
+def test_a_module_in_a_source_directory_is_found_by_its_path(tmp_path):
+    """A lean_lib's srcDir is not read: any path ending in the module's counts."""
+    source = _project(tmp_path)
+    module = tmp_path / "src/lib/Demo/Base.lean"
+    module.parent.mkdir(parents=True)
+    module.write_text("def x : Nat := 1\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    assert [name for name, _ in before["sources"]["files"]] == [
+        "src/lib/Demo/Base.lean"
+    ]
+    module.write_text("def x : Nat := 2\n")
     assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
+
+
+def test_quoted_module_names_find_their_files(tmp_path):
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/odd-name.lean").write_text("def q := 1\n")
+    source.write_text("import Demo.«odd-name»\n")
+    found = environment_fingerprint(source, source.read_text())["sources"]
+    assert [name for name, _ in found["files"]] == ["Demo/odd-name.lean"]
+
+
+def test_reopening_after_unrelated_or_identical_writes_keeps_the_fingerprint(
+    tmp_path,
+):
+    """Saved results stay current unless an imported source's bytes change.
+
+    Before 0.1.1 every project source counted by size and modification time,
+    so another notebook's edit, or a rewrite with the same bytes (a re-save, a
+    branch switched back), made every saved result read as out of date.
+    """
+    source = _project(tmp_path)
+    module = tmp_path / "Demo/Base.lean"
+    module.parent.mkdir()
+    module.write_text("def x : Nat := 1\n")
+    sibling = tmp_path / "Other.lean"
+    sibling.write_text("def unrelated := 1\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    os.utime(module, ns=(10**18, 10**18))
+    module.write_bytes(module.read_bytes())
+    sibling.write_text("def unrelated := 2\n")
+    os.utime(sibling, ns=(10**18, 10**18))
+    after = environment_fingerprint(source, text)
+    assert after["sha256"] == before["sha256"]
+    assert after["sources"] == before["sources"]
+
+
+def test_a_sibling_notebook_the_notebook_imports_counts(tmp_path):
+    source = _project(tmp_path)
+    sibling = tmp_path / "Other.lean"
+    sibling.write_text("def used := 1\n")
+    source.write_text("import Other\ntheorem t : True := True.intro\n")
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    sibling.write_text("def used := 2\n")
+    assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
+
+
+def test_import_cycles_end(tmp_path):
+    source = _project(tmp_path)
+    (tmp_path / "Demo").mkdir()
+    (tmp_path / "Demo/Base.lean").write_text("import Demo.Loop\n")
+    (tmp_path / "Demo/Loop.lean").write_text("import Demo.Base\n")
+    found = environment_fingerprint(source, source.read_text())["sources"]
+    assert [name for name, _ in found["files"]] == [
+        "Demo/Base.lean",
+        "Demo/Loop.lean",
+    ]
 
 
 def test_saving_the_notebook_itself_keeps_the_fingerprint(tmp_path):
@@ -254,6 +337,7 @@ def test_source_walk_is_bounded(tmp_path, monkeypatch):
     source = _project(tmp_path)
     for index in range(5):
         (tmp_path / f"M{index}.lean").write_text("def a := 1\n")
+    source.write_text("".join(f"import M{index}\n" for index in range(5)))
     monkeypatch.setattr(fingerprint, "_MAX_SOURCES", 3)
     result = environment_fingerprint(source, source.read_text())
     assert len(result["sources"]["files"]) == 3
