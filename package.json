@@ -5,6 +5,16 @@
   "version": "0.1.1",
   "publisher": "gimle",
   "license": "MIT",
+  "icon": "extension/icon/glitnir-128.png",
+  "galleryBanner": {
+    "color": "#15171a",
+    "theme": "dark"
+  },
+  "preview": true,
+  "homepage": "https://github.com/arnovich/glitnir#readme",
+  "bugs": {
+    "url": "https://github.com/arnovich/glitnir/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/arnovich/glitnir.git"
@@ -13,7 +23,16 @@
     "vscode": "^1.96.0"
   },
   "categories": [
-    "Other"
+    "Notebooks",
+    "Programming Languages",
+    "Visualization"
+  ],
+  "keywords": [
+    "lean",
+    "lean4",
+    "theorem prover",
+    "mathlib",
+    "notebook"
   ],
   "extensionKind": [
     "workspace"
