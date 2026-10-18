@@ -148,21 +148,6 @@ def provider_source_parts(
     return header + prefix + "\n", preamble + "\n", command + "\n"
 
 
-def compose_provider_source(
-    text: str,
-    line: int,
-    imports: tuple[str, ...],
-    preamble: str,
-    command: str,
-    *,
-    needs: str,
-) -> str:
-    """Return provider imports, the notebook before `line`, preamble and command."""
-    return "".join(
-        provider_source_parts(text, line, imports, preamble, command, needs=needs)
-    )
-
-
 def _saved(source: Path) -> str:
     return read_regular(source, SOURCE_BYTES).decode().replace("\r\n", "\n")
 

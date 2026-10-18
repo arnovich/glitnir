@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any, NoReturn
 
-from glitnir.lean import axiom_report, project_checking
+from glitnir.lean import axiom_report, project_checking, provider_lean
 from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 
@@ -558,13 +558,15 @@ def checker_identity() -> dict[str, Any]:
     """Identify the checking code shipped with Glitnir and what it accepts.
 
     The helper programs are the exact files a check copies into its snapshot,
-    so an upgrade that changes checking invalidates every saved result.
+    and the program that elaborates provider Lean for views and evidence, so
+    an upgrade that changes checking or evidence invalidates every saved result.
     """
     paths = [
         project_checking.PROGRAMS / name
         for name in ("ProjectRead.lean", "ProjectReport.lean", "ProjectReplay.lean")
     ]
     paths.append(axiom_report.REPORT_PROGRAM)
+    paths.append(provider_lean.PROGRAM)
     programs: dict[str, str | None] = {}
     for path in paths:
         try:

@@ -81,9 +81,9 @@ def _run(source, **overrides):
 
 
 def test_compose_puts_provider_imports_first_and_command_last():
-    from glitnir.lean.provider_lean import compose_provider_source
+    from glitnir.lean.provider_lean import provider_source_parts
 
-    composed = compose_provider_source(
+    notebook, preamble, command = provider_source_parts(
         NOTEBOOK,
         4,
         ("Demo.View",),
@@ -91,20 +91,19 @@ def test_compose_puts_provider_imports_first_and_command_last():
         "#demo_view circuit c a",
         needs="evidence",
     )
-    assert composed.startswith("import Demo.View\n")
-    assert "def c := 1" in composed and "def later" not in composed
-    assert "open Demo" in composed
-    assert composed.rstrip().endswith("#demo_view circuit c a")
+    assert notebook == "import Demo.View\nimport Demo.View\n\ndef c := 1\n\n"
+    assert preamble == "open Demo\n"
+    assert command == "#demo_view circuit c a\n"
 
 
 @pytest.mark.parametrize("line", [0, 7])
 @pytest.mark.parametrize("needs, word", [("view", "View"), ("evidence", "Evidence")])
 def test_compose_rejects_a_line_outside_the_notebook(line, needs, word):
-    from glitnir.lean.provider_lean import compose_provider_source
+    from glitnir.lean.provider_lean import provider_source_parts
 
     message = f"^{word} directive line {line} is outside the notebook.$"
     with pytest.raises(ValueError, match=message):
-        compose_provider_source(NOTEBOOK, line, (), "", "", needs=needs)
+        provider_source_parts(NOTEBOOK, line, (), "", "", needs=needs)
 
 
 def test_marker_payload_is_the_last_marked_message_and_unvalidated():

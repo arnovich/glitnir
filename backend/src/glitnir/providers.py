@@ -12,10 +12,14 @@ GROUP = "glitnir.providers"
 class ViewProvider:
     """Draws `-- @view <kind> <name>` directives with a Lean adapter.
 
-    Lean elaborates the notebook before the directive, then `preamble` at the
-    top level, outside the notebook's namespaces and `open`s, then
-    `command(kind, name, using)` back in the notebook's scope. The command
-    prints `marker` followed by the drawing.
+    Lean elaborates the notebook before the directive, then `preamble`, then
+    `command(kind, name, using)`, which prints `marker` followed by the
+    drawing. The preamble starts in a fresh top-level scope, without the
+    notebook's namespaces, `open`s, options (it has the project's) or
+    variables. Environment extensions the notebook activated, such as its
+    local and scoped notation, instances and attributes, still apply to it.
+    The command runs in the notebook's scope, with the `open`s the preamble
+    left at its end added; a name both resolve is ambiguous, as Lean reports.
     """
 
     name: str
@@ -45,9 +49,9 @@ class EvidenceProvider:
     `parse(verb, target, options_text)` raises `ValueError` on bad input.
     `command(request)` is Lean that prints `marker` followed by JSON, which
     `compute(request, payload)` turns into an evidence snapshot; a `ValueError`
-    it raises is shown on the card as its message alone. As for views,
-    `preamble` is elaborated outside the notebook's scope and the command in
-    it. `unavailable()` names a missing optional dependency, or returns None.
+    it raises is shown on the card as its message alone. `preamble` and the
+    command are elaborated in the scopes `ViewProvider` describes.
+    `unavailable()` names a missing optional dependency, or returns None.
     `parse` and `unavailable` run on every preview refresh, so they must be
     cheap and free of side effects.
     """
