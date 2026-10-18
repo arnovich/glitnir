@@ -5,6 +5,7 @@
 !THIRD_PARTY_NOTICES.md
 !CONTRIBUTING.md
 !SECURITY.md
+!extension/icon/glitnir-128.png
 !dist/*.js
 !dist/probe.py
 !dist/providers.py
