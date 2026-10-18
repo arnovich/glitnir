@@ -204,6 +204,21 @@ uv installs a copy that Glitnir writes from exactly the files it checked. Only
 extras whose packages Glitnir knows to be published on PyPI are offered (for now
 `z3-solver`).
 
+The package picker's entries come from `extension/src/known-packages.ts`, which
+is data only: an entry names a distribution, its release asset, the questions
+for its extras and notes, and adds no trust. Release downloads, used by the
+picker and by the backend upgrade, go through `extension/src/release-assets.ts`:
+it fetches `glitnir-candidate.json` and `SHA256SUMS` from the release the VSIX's
+backend pin names and refuses a manifest whose schema, repository, tag, version,
+backend asset, asset digests or plugin binding differ from the pin or from
+`SHA256SUMS`. A new provider asset needs a binding there (today the manifest's
+single `plugin` field) before the picker or the upgrade can download it.
+`extension/scripts/providers.py packages` reports each provider's installed
+extras (those whose requirements are all installed), which the upgrade carries
+over. **Install uv** runs Homebrew or the official installer of `UV_VERSION` in
+`extension/src/backend-install.ts`; bump it, and the version shown in the README
+and `extension/media/setup.md`, to a uv release at least two weeks old.
+
 ## Static export (galleries)
 
 A gallery can publish notebooks from their committed `<Notebook>.glitnir.json`
