@@ -150,12 +150,16 @@ The optional `glitnir-forseti` package adds Forseti views, evidence and decision
 (see [Extensions](#extensions)). It is not on PyPI; each release has its wheel,
 built from the same commit and tested with that release's backend.
 
-1. Download `glitnir_forseti-VERSION-py3-none-any.whl` and `SHA256SUMS` from the
-   same release as the VSIX, and verify it with
+1. Run **Glitnir: Install Extension Package… → Forseti → Download from this
+   release** (also offered in **Glitnir: Set Up Environment**), and answer Yes to
+   "Install z3 for decision procedures?" for decisions. Glitnir downloads the
+   wheel from the same release as the backend and verifies it against that
+   release's `SHA256SUMS` and `glitnir-candidate.json`.
+2. To use a file instead, download `glitnir_forseti-VERSION-py3-none-any.whl` and
+   `SHA256SUMS` from the same release as the VSIX, verify it with
    `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
-   `sha256sum -c --ignore-missing SHA256SUMS`).
-2. Run **Glitnir: Install Extension Package…** (also offered in **Glitnir: Set Up
-   Environment**), select the wheel, and choose the `z3` extra for decisions.
+   `sha256sum -c --ignore-missing SHA256SUMS`), and choose **Choose downloaded
+   wheel** in step 1.
 3. For `iterate` evidence, install Python Asgard (`gimle-asgard`, not on PyPI)
    into the backend yourself, for example
    `uv pip install --python <backend python> <gimle-asgard wheel>`.
@@ -558,8 +562,27 @@ environment as the Glitnir backend.
 ### Installing extension packages
 
 To install one, run **Glitnir: Install Extension Package…** (also offered in
-**Glitnir: Set Up Environment**) in a trusted workspace with the backend set up,
-and select the package's `.whl` file. Glitnir reads the wheel's metadata without
+**Glitnir: Set Up Environment**) in a trusted workspace with the backend set up:
+
+1. **Pick a package.** The list shows the packages Glitnir knows about (for now
+   **Forseti**: circuit, model and dynamics diagrams, simulation evidence and
+   decision procedures), marked "installed (version)" when they are, and last
+   **Other wheel file…** for third-party or development wheels.
+2. **Choose the source** of a known package. **Download from this release
+   (recommended)** fetches its wheel from the GitHub release the extension's
+   backend comes from and verifies it against that release's `SHA256SUMS` and
+   the plugin binding in `glitnir-candidate.json`, whose tag, version and backend
+   must match the extension (a mismatch is refused). **Choose downloaded wheel**
+   selects a file, which must be that package's wheel. For an installed package
+   this reinstalls or updates it.
+3. **Answer its questions**, such as "Install z3 for decision procedures? (adds
+   the z3-solver package from PyPI)", asked only for extras the wheel offers.
+   Notes say what cannot be installed from here.
+4. **Confirm**, and Glitnir installs it and lists the providers now available.
+
+The list of known packages is data only and grants no trust: every wheel goes
+through the same checks, and a downloaded one is verified against the release
+first. With **Other wheel file…**, select the package's `.whl` file. Glitnir reads the wheel's metadata without
 running it and refuses a file that declares no `glitnir.providers` entry point or
 is the backend itself. Pick any optional extras (none are preselected), confirm,
 and uv installs the wheel into the backend's Python. Its dependencies, and those

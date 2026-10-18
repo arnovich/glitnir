@@ -8,8 +8,11 @@ import {pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {crc32, deflateRaw} from 'node:zlib';
 import * as vscode from 'vscode';
-import {backendStore, findUv, runUv, UvNotStartedError} from './backend-install';
+import {BackendDescriptor, backendDescriptor, backendStore, findUv, runUv, UvNotStartedError} from './backend-install';
 import {Environment} from './discovery';
+import {KNOWN_PACKAGES, KnownPackage} from './known-packages';
+import {fetchPlugin, fetchRelease, ReleaseFetch} from './release-assets';
+import {githubToken} from './setup';
 
 export interface WheelLimits {wheelBytes: number; expandedBytes: number; entries: number; metadataBytes: number; recordBytes: number}
 /** Provider wheels are small Python packages; their dependencies come from the index. */
@@ -656,8 +659,13 @@ export interface PackageDependencies {
   report?: (python: string, mode: 'packages' | 'providers', signal: AbortSignal) => Promise<ProviderReport>;
   /** Where managed backends live; their setup lock also guards package changes. */
   store?: () => string;
+  /** Replaces release downloads, for tests. */
+  download?: ReleaseFetch['download'];
 }
 interface Discovery {discovered(uri: vscode.Uri): Promise<Environment | undefined>}
+/** The Other wheel file… choice. */
+const OTHER = 'other';
+interface SelectedWheel {fileName: string; bytes: Buffer; source?: string}
 /** The outcome of installing an already verified wheel. */
 export interface VerifiedInstall {info: WheelInfo; extras: string[]; dropped: string[]; after: ProviderReport}
 
@@ -806,25 +814,37 @@ export class ExtensionPackages {
     const before = await this.report(python, 'packages', this.controller.signal);
     if (!before.core) throw new Error(`The backend at ${python} has no installed glitnir package metadata. Install extension packages into it manually (see the README's Extensions section).`);
     this.check();
-    const files = await vscode.window.showOpenDialog({title: 'Select a Glitnir extension package wheel', canSelectMany: false, canSelectFiles: true, canSelectFolders: false, openLabel: 'Inspect Package', filters: {'Python wheel': ['whl']}});
-    if (!files?.[0]) return;
-    if (files[0].scheme !== 'file') throw new Error('Select a local .whl file.');
-    const fileName = path.basename(files[0].fsPath);
-    if (!fileName.endsWith('.whl')) throw new Error(`Cannot install ${fileName}: select a Python wheel (.whl) file.`);
-    const {info, wheel: inspected} = await prepareWheel(fileName, await readWheel(files[0].fsPath));
+    const known = await this.pickPackage(before);
+    if (!known) return;
+    this.check();
+    const selected = known === OTHER ? await this.chooseWheel() : await this.knownWheel(known, before);
+    if (!selected) return;
+    const {info, wheel: inspected} = await prepareWheel(selected.fileName, selected.bytes);
+    if (known !== OTHER && normalized(info.name) !== known.distribution) throw new Error(`Cannot install ${selected.fileName}: it is ${info.name}, not ${known.distribution}.`);
     checkCommands(info, before.commands ?? missingCommands(python));
     this.check();
     const offered = info.extras.filter(extra => !extra.unavailable), withheld = info.extras.filter(extra => extra.unavailable);
     const notOffered = withheld.map(extra => `${extra.name}: ${extra.unavailable}`);
     let extras: string[] = [];
-    if (offered.length) {
-      const picked = await vscode.window.showQuickPick(offered.map(extra => ({
+    // A known package asks its own questions, only about extras the wheel offers.
+    const asked = known === OTHER ? [] : known.extras.filter(extra => offered.some(o => o.name === extra.name));
+    for (const extra of asked) {
+      const requirements = offered.find(o => o.name === extra.name)!.requirements;
+      const answer = await vscode.window.showInformationMessage(extra.prompt, {
+        modal: true, detail: requirements.length ? `Downloads from PyPI: ${requirements.join(', ')}.` : 'Adds no packages.',
+      }, 'Yes', 'No');
+      if (!answer) return;
+      if (answer === 'Yes') extras.push(extra.name);
+    }
+    const rest = offered.filter(extra => !asked.some(a => a.name === extra.name));
+    if (rest.length) {
+      const picked = await vscode.window.showQuickPick(rest.map(extra => ({
         label: extra.name, picked: false, extra: extra.name,
         detail: extra.requirements.length ? `Downloads from PyPI: ${extra.requirements.join(', ')}` : 'Adds no packages.',
       })), {title: `Install ${info.name} ${info.version}: optional extras`, canPickMany: true,
         placeHolder: `Select extras to install with it, or none.${withheld.length ? ` Not offered: ${withheld.map(extra => extra.name).join(', ')} (see the confirmation).` : ''}`});
       if (!picked) return;
-      extras = picked.map(item => item.extra);
+      extras = [...extras, ...picked.map(item => item.extra)];
     }
     this.check();
     const downloads = [...info.requirements, ...offered.filter(extra => extras.includes(extra.name)).flatMap(extra => extra.requirements)];
@@ -832,18 +852,78 @@ export class ExtensionPackages {
       modal: true,
       detail: [
         `Python: ${python}`,
+        ...(selected.source ? [selected.source] : []),
         `Provider entry points: ${info.entryPoints.join(', ')}.`,
         extras.length ? `Extras: ${extras.join(', ')}.` : 'No extras.',
         ...(notOffered.length ? [`Extras not offered: ${notOffered.join(' ')}`] : []),
         downloads.length ? `Its dependencies come from PyPI as prebuilt wheels: ${downloads.join(', ')}.` : 'It needs no packages from PyPI.',
+        ...(known === OTHER ? [] : known.notes),
         `The installed Glitnir backend ${before.core} is kept. This changes the environment for every window using it; previews in this window that use it are closed.`,
       ].join('\n'),
     }, 'Install');
     if (accepted !== 'Install') return;
     this.check();
     const core = before.core;
-    const result = await this.progress(`Installing ${info.name}`, (signal, report) => this.installInspected(python, core, fileName, info, inspected, extras, signal, report));
+    const result = await this.progress(`Installing ${info.name}`, (signal, report) => this.installInspected(python, core, selected.fileName, info, inspected, extras, signal, report));
     await this.announce(`Installed ${info.name} ${info.version}`, result.after, result.closed);
+  }
+
+  /** Step 1: a known package, marked when installed, or any other wheel file. */
+  private async pickPackage(before: ProviderReport): Promise<KnownPackage | typeof OTHER | undefined> {
+    const choice = await vscode.window.showQuickPick([
+      ...KNOWN_PACKAGES.map(known => {
+        const installed = before.packages.find(p => normalized(p.name) === known.distribution);
+        return {label: known.label, description: installed ? `installed (${installed.version})` : known.distribution, detail: known.description, known: known as KnownPackage | typeof OTHER};
+      }),
+      {label: 'Other wheel file…', description: '', detail: 'Select a third-party or development .whl file.', known: OTHER as KnownPackage | typeof OTHER},
+    ], {title: 'Install Extension Package', placeHolder: 'Choose a package to install, reinstall or update'});
+    return choice?.known;
+  }
+
+  /** Today's flow: any local wheel file, read once. */
+  private async chooseWheel(): Promise<SelectedWheel | undefined> {
+    const files = await vscode.window.showOpenDialog({title: 'Select a Glitnir extension package wheel', canSelectMany: false, canSelectFiles: true, canSelectFolders: false, openLabel: 'Inspect Package', filters: {'Python wheel': ['whl']}});
+    if (!files?.[0]) return undefined;
+    if (files[0].scheme !== 'file') throw new Error('Select a local .whl file.');
+    const fileName = path.basename(files[0].fsPath);
+    if (!fileName.endsWith('.whl')) throw new Error(`Cannot install ${fileName}: select a Python wheel (.whl) file.`);
+    return {fileName, bytes: await readWheel(files[0].fsPath)};
+  }
+
+  /** Step 2: a known package from this build's release (verified), or from a wheel the user downloaded. */
+  private async knownWheel(known: KnownPackage, before: ProviderReport): Promise<SelectedWheel | undefined> {
+    const version: string = this.context.extension?.packageJSON.version;
+    let pin: BackendDescriptor | undefined;
+    try { pin = backendDescriptor(this.context.extension?.packageJSON.glitnirBackend); } catch { /* A build without a pin has no release. */ }
+    const installed = before.packages.find(p => normalized(p.name) === known.distribution);
+    const asset = known.asset(version);
+    const action = !installed ? `Install ${version}` : installed.version === version ? `Reinstall ${version}` : `Update ${installed.version} → ${version}`;
+    const source = await vscode.window.showQuickPick([
+      ...(pin?.tag ? [{label: 'Download from this release (recommended)', description: action, detail: `${asset} from GitHub release ${pin.tag}, verified against its SHA256SUMS and glitnir-candidate.json.`, download: true}] : []),
+      {label: 'Choose downloaded wheel', description: '', detail: `Select a ${known.distribution} .whl file you downloaded or built.`, download: false},
+    ], {title: `Install ${known.label}`});
+    if (!source) return undefined;
+    this.check();
+    if (!source.download) {
+      const selected = await this.chooseWheel();
+      const name = selected && WHEEL_FILE.exec(selected.fileName)?.[1];
+      if (selected && (!name || normalized(name) !== known.distribution)) throw new Error(`Cannot install ${selected.fileName}: select a ${known.distribution} wheel for ${known.label}.`);
+      return selected;
+    }
+    const tag = pin!.tag!;
+    return this.progress(`Downloading ${known.label}`, async (signal, report) => {
+      const scratch = await mkdtemp(path.join(os.tmpdir(), 'glitnir-release-'));
+      try {
+        const download: ReleaseFetch = {signal, githubToken, download: this.dependencies.download};
+        report('Verifying the release');
+        const release = await fetchRelease(pin!, version, scratch, download);
+        const plugin = release.plugins.find(p => p.name === known.distribution && p.asset === asset);
+        if (!plugin) throw new Error(`Release ${tag} does not publish ${asset}. Choose a downloaded wheel instead.`);
+        report(`Downloading ${asset}`);
+        const file = await fetchPlugin(pin!, plugin, scratch, download);
+        return {fileName: asset, bytes: await readWheel(file), source: `Source: ${asset} from release ${tag}, verified against its SHA256SUMS and glitnir-candidate.json.`};
+      } finally { await rm(scratch, {recursive: true, force: true}); }
+    });
   }
 
   /**

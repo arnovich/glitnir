@@ -41,7 +41,14 @@ Then set `glitnir.pythonPath` to that environment's `bin/python`.
 Optional views, evidence and decisions come from provider packages such as
 `glitnir-forseti`, installed into the same environment as the backend. Run
 **Glitnir: Install Extension Package…** (also offered in **Glitnir: Set Up
-Environment**) and select the package's `.whl` file. Glitnir checks that the
+Environment**) and pick a package: **Forseti** (marked "installed (version)" when
+it is) or **Other wheel file…** for any other wheel. For Forseti, **Download from
+this release (recommended)** fetches its wheel from the same GitHub release as
+the backend and verifies it against `SHA256SUMS` and `glitnir-candidate.json`
+(which must match this VSIX); **Choose downloaded wheel** takes a Forseti wheel
+you downloaded or built. Glitnir then asks "Install z3 for decision procedures?".
+The list of known packages grants no trust: every wheel gets the same checks.
+For any wheel, Glitnir checks that the
 wheel declares a `glitnir.providers` entry point, offers the optional extras
 whose packages it knows are on PyPI (for `glitnir-forseti`, `z3` for decisions),
 installs it with uv while keeping the installed backend, closes this window's
@@ -70,7 +77,8 @@ with that release's backend; it is not on PyPI. Download it and `SHA256SUMS` fro
 the same release as the VSIX and backend, verify it with
 `shasum -a 256 -c --ignore-missing SHA256SUMS` (Linux:
 `sha256sum -c --ignore-missing SHA256SUMS`), then run **Glitnir: Install Extension
-Package…**, select the wheel and choose the `z3` extra for decisions. To install
+Package… → Forseti → Choose downloaded wheel**, select it and answer Yes to z3 for
+decisions; **Download from this release** does all of this for you. To install
 it by hand instead:
 
 ```sh

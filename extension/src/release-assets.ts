@@ -17,7 +17,7 @@ const PLUGIN_WHEEL = /^([A-Za-z0-9](?:[A-Za-z0-9._]*[A-Za-z0-9])?)-((?:0|[1-9]\d
 const BACKEND_WHEEL = /^glitnir-([\w.]+)-py3-none-any\.whl$/;
 
 /** Where to go when a release file cannot be downloaded or verified. */
-export const RELEASE_FALLBACK = 'download the wheel and SHA256SUMS from the release yourself, verify them, and run Glitnir: Install Extension Package…';
+export const RELEASE_FALLBACK = 'download the wheel and SHA256SUMS from the release yourself, verify them, and choose it with Glitnir: Install Extension Package… → Choose downloaded wheel';
 
 /** A provider wheel the release binds to its backend, by its normalized distribution name. */
 export interface ReleasePlugin {name: string; asset: string; version: string; size: number; sha256: string}
