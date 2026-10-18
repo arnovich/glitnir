@@ -70,7 +70,7 @@ uv pip install --python <backend python> \
 
 From a checkout of the repository, build the wheel first with
 `uv build plugins/forseti --wheel --out-dir plugins/forseti/dist` and select or
-install `plugins/forseti/dist/glitnir_forseti-0.1.0-py3-none-any.whl`.
+install `plugins/forseti/dist/glitnir_forseti-0.1.1-py3-none-any.whl`.
 
 The backend's Python is shown in **Output → Glitnir** ("Glitnir environment: …")
 or set by `glitnir.pythonPath`. After a manual install, close and reopen the
