@@ -14,10 +14,12 @@ import stat
 import subprocess
 import threading
 import time
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from glitnir.lean import axiom_report, project_checking
+from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 
 _IMPORT = re.compile(r"^(?:(?:public|private|meta)\s+)*import\s+(.+)$")
@@ -40,9 +42,11 @@ _clock = time.monotonic
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 #: Source hashes and imports by path and stat, so polls reread only changed files.
-_DIGESTS: dict[tuple[str, int, int, int, int], tuple[str, list[str]]] = {}
+_DIGESTS: dict[tuple[str, int, int, int, int, int], tuple[str, list[str] | None]] = {}
 _DIGESTS_GUARD = threading.Lock()
 _MAX_DIGESTS = 50_000
+#: How much of each source is read for its header's imports.
+_HEADER_BYTES = 64 * 1024
 
 
 def _without_comments(text: str) -> str:
@@ -233,48 +237,246 @@ def _module_key(module: str) -> str:
     )
 
 
-def _source_digest(path: str, info: os.stat_result) -> tuple[str, list[str]] | None:
+#: Words of a module header before the first `import`, and before each one.
+_HEADER_START = ("module", "prelude")
+_IMPORT_MODIFIERS = ("public", "private", "meta")
+#: A later line that looks like an import: the header may have been misread.
+_LATE_IMPORT = re.compile(r"^\s*(?:(?:public|private|meta)\s+)*import\b", re.M)
+
+
+class _Incomplete(Exception):
+    """The header may continue past the text read so far."""
+
+
+def _header_tokens(
+    text: str, tokens: list[tuple[int, int]], final: bool
+) -> tuple[list[str], int]:
+    """Read `module`, `prelude` and the imports from Lean's code tokens.
+
+    Returns the imported modules and the number of tokens the header uses.
+    `final` says the tokens end where the file does.
+
+    Raises:
+        ValueError: The tokens are not a header this reads as Lean does.
+        _Incomplete: The tokens end where the header might continue.
+    """
+
+    def more() -> NoReturn:
+        raise ValueError("the file ends inside an import") if final else _Incomplete
+
+    words = [text[start:end] for start, end in tokens]
+    index = 0
+    seen: set[str] = set()
+    while index < len(words) and words[index] in _HEADER_START:
+        if words[index] in seen:
+            raise ValueError("repeated header keyword")
+        seen.add(words[index])
+        index += 1
+    modules: list[str] = []
+    while index < len(words):
+        start = index
+        while index < len(words) and words[index] in _IMPORT_MODIFIERS:
+            index += 1
+        if index == len(words):
+            more()
+        if words[index] != "import":
+            # A command such as `public section` starts after the header.
+            return modules, start
+        index += 1
+        if index < len(words) and words[index] == "all":
+            index += 1
+        parts: list[str] = []
+        while True:
+            if index == len(words):
+                more()
+            part = words[index]
+            if not _COMPONENT.fullmatch(part):
+                raise ValueError("not a module name")
+            parts.append(part)
+            index += 1
+            # A name continues only through a dot glued to both components.
+            if (
+                index + 1 < len(words)
+                and words[index] == "."
+                and tokens[index][0] == tokens[index - 1][1]
+                and tokens[index + 1][0] == tokens[index][1]
+            ):
+                index += 1
+                continue
+            if index < len(words) and words[index] == ".":
+                raise ValueError("a dot that does not join a module name")
+            break
+        modules.append(".".join(parts))
+    if not final:
+        raise _Incomplete  # another import may follow
+    return modules, len(words)
+
+
+def header_imports(text: str, complete: bool = True) -> list[str] | None:
+    """Return the modules a Lean file's header imports, read with the lexer.
+
+    The header is read from Lean's code tokens (`lexing.code_tokens`), so
+    comments, ``«»`` names and the ``module``, ``prelude``, ``public``,
+    ``private`` and ``meta`` modifiers are read as Lean reads them, from the
+    shortest prefix of whole lines that holds the whole header. Returns None
+    when the header is not fully understood: the lexer is unsettled there, a
+    word stands where an import may follow, a name is not plain components,
+    or a later line looks like another import. Without `complete`, `text`
+    is only the start of a file: a header that reaches its end is not
+    understood.
+    """
+    found = _header_imports(text, complete)
+    return None if found is None else list(found)
+
+
+@lru_cache(maxsize=64)
+def _header_imports(text: str, complete: bool) -> tuple[str, ...] | None:
+    """`header_imports`, kept for the texts polls read again and again."""
+    if not complete:
+        text = text[: text.rfind("\n") + 1]  # the last line may be cut
+    lines = text.split("\n")
+    count = 1
+    while True:
+        prefix = "\n".join(lines[:count]) + ("\n" if count < len(lines) else "")
+        final = count >= len(lines) and complete
+        tokens = code_tokens(prefix)
+        if tokens is None:
+            if count < len(lines) and scan(prefix).open_at_end:
+                count = min(len(lines), count * 2)  # inside a comment or literal
+                continue
+            return None
+        try:
+            modules, used = _header_tokens(prefix, tokens, final)
+        except _Incomplete:
+            if count >= len(lines):
+                return None  # the header may continue past what was read
+            # Line by line, so the prefix rarely reaches code the lexer
+            # cannot settle; a long run of comment lines is read faster.
+            count = min(len(lines), count + 1 if count < 64 else count * 2)
+            continue
+        except ValueError:
+            return None
+        return None if _later_import(text, prefix, tokens, used) else tuple(modules)
+
+
+def _later_import(
+    text: str, prefix: str, tokens: list[tuple[int, int]], used: int
+) -> bool:
+    """Whether an `import` follows the header, so the header was misread.
+
+    Lean rejects such a file, but its imports might then be wider than read.
+    Where the whole text's tokens are known, only an `import` token counts;
+    otherwise any later line that looks like one does.
+    """
+    every = code_tokens(text)
+    if every is not None:
+        return any(
+            text[start:end] == "import" and text[start - 1 : start] != "."
+            for start, end in every[used:]
+        )
+    start = tokens[used][0] if used < len(tokens) else len(prefix)
+    return _LATE_IMPORT.search(text, start) is not None
+
+
+def _read_source(
+    path: str,
+) -> tuple[str | None, list[str] | None, tuple[str, int, int, int, int, int] | None]:
+    """Hash a regular file by streaming it and read its header's imports.
+
+    Returns the SHA-256 (None if the file could not be read whole), the
+    header's imports (None if not understood) and the file's identity from an
+    fstat after the read, or None when it changed while being read. Never
+    raises, and never follows a symbolic link.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None, None, None
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            return None, None, None
+        digest = hashlib.sha256()
+        head = bytearray()
+        while chunk := os.read(descriptor, 1024 * 1024):
+            digest.update(chunk)
+            if len(head) < _HEADER_BYTES:
+                head += chunk[: _HEADER_BYTES - len(head)]
+        after = os.fstat(descriptor)
+    except OSError:
+        return None, None, None
+    finally:
+        os.close(descriptor)
+    identity: tuple[str, int, int, int, int, int] | None = _stat_key(path, after)
+    if identity != _stat_key(path, before):
+        identity = None  # written during the read: hashed bytes may be mixed
+    text = bytes(head).decode("utf-8", "replace")
+    imports = header_imports(text, complete=len(head) < _HEADER_BYTES)
+    return digest.hexdigest(), imports, identity
+
+
+def _stat_key(path: str, info: os.stat_result) -> tuple[str, int, int, int, int, int]:
+    return (
+        path,
+        info.st_dev,
+        info.st_ino,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _source_digest(
+    path: str, info: os.stat_result
+) -> tuple[str | None, list[str] | None]:
     """Hash a source file and read its imports, reused while its stat is unchanged.
 
-    Returns None if the file cannot be read.
+    The digest is None when the file could not be read whole, or changed while
+    it was read: its state is then unknown, and is not kept.
     """
-    key = (path, info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
     with _DIGESTS_GUARD:
-        found = _DIGESTS.get(key)
+        found = _DIGESTS.get(_stat_key(path, info))
     if found is not None:
         return found
-    try:
-        data = read_regular(Path(path), _MAX_FILE)
-    except OSError:
-        return None
-    imports = [_module_key(m) for m in direct_imports(data.decode("utf-8", "replace"))]
-    result = (hashlib.sha256(data).hexdigest(), imports)
+    digest, imports, identity = _read_source(path)
+    if digest is None or identity is None:
+        return None, imports
     with _DIGESTS_GUARD:
         if len(_DIGESTS) >= _MAX_DIGESTS:
             _DIGESTS.clear()
-        _DIGESTS[key] = result
-    return result
+        _DIGESTS[identity] = (digest, imports)
+    return digest, imports
 
 
-def project_sources(root: Path, notebook: Path, text: str = "") -> dict[str, Any]:
+def project_sources(
+    root: Path, notebook: Path, imports: list[str] | None = None
+) -> dict[str, Any]:
     """Hash the project's own Lean sources that the notebook may import.
 
     A fresh check never rebuilds (setup uses ``--no-build``), so an edited
     module that Lake has not rebuilt yet makes it unavailable while traces
-    still match. Only sources in the notebook's import closure count: those
-    whose path ends with the path of a module `text` imports, and those such
-    a source imports, transitively. A module may match more than one file;
-    all of them count. Each counts by the SHA-256 of its bytes, so a rewrite
-    with the same contents (a re-save, a branch switched back) changes
-    nothing, and another notebook of the project changes nothing unless it
-    is imported. Dot-directories such as ``.lake`` and ``.git`` are skipped,
+    still match. With `imports`, the notebook's header imports and any
+    provider modules, only sources in the import closure count: those whose
+    path ends with the path of an imported module, and those such a source
+    imports, transitively. A module may match more than one file; all of them
+    count. If any header in the closure is not fully understood
+    (`header_imports`), or `imports` is None, every project source counts.
+
+    Each counts by the SHA-256 of its bytes, streamed whatever its size, so a
+    rewrite with the same contents (a re-save, a branch switched back) changes
+    nothing, and another notebook of the project changes nothing unless it is
+    imported. Dot-directories such as ``.lake`` and ``.git`` are skipped,
     symbolic links are never followed, and the notebook itself is left out:
-    its text is covered by each claim's prefix hash. Never raises.
+    its text is covered by each claim's prefix hash. A source that cannot be
+    read whole or changes while read, and a walk cut short at `_MAX_SOURCES`
+    files, are listed under ``unknown``: `environment_fingerprint` then
+    matches nothing. Never raises.
     """
     candidates: dict[str, list[tuple[str, str, os.stat_result]]] = {}
+    every: list[tuple[str, str, os.stat_result]] = []
     errors: list[str] = []
+    unknown: list[str] = []
     truncated = False
-    listed = 0
     try:
         own = os.lstat(notebook)
         own_id: tuple[int, int] | None = (own.st_dev, own.st_ino)
@@ -300,10 +502,10 @@ def project_sources(root: Path, notebook: Path, text: str = "") -> dict[str, Any
                 continue
             if (info.st_dev, info.st_ino) == own_id:
                 continue
-            if listed >= _MAX_SOURCES:
+            if len(every) >= _MAX_SOURCES:
                 truncated = True
                 break
-            listed += 1
+            every.append((relative, path, info))
             # Index the file under every module name its path could spell.
             parts = Path(relative).with_suffix("").parts
             for start in range(len(parts)):
@@ -311,22 +513,32 @@ def project_sources(root: Path, notebook: Path, text: str = "") -> dict[str, Any
                 candidates.setdefault(module, []).append((relative, path, info))
         if truncated:
             break
+    if truncated:
+        unknown.append(f"more than {_MAX_SOURCES} project sources")
     files: dict[str, str | None] = {}
-    pending = [_module_key(module) for module in direct_imports(text)]
-    while pending:
+    closure = imports is not None
+    pending = [_module_key(module) for module in imports or []]
+    while closure and pending:
         for relative, path, info in candidates.get(pending.pop(), []):
             if relative in files:
                 continue
-            read = _source_digest(path, info)
-            files[relative] = None if read is None else read[0]
-            if read is None:
-                errors.append(relative)
-            else:
-                pending.extend(read[1])
+            digest, found = _source_digest(path, info)
+            files[relative] = digest
+            if found is None:
+                closure = False  # a header not understood: count every source
+                break
+            pending.extend(_module_key(module) for module in found)
+    if not closure:
+        for relative, path, info in every:
+            if relative not in files:
+                files[relative] = _source_digest(path, info)[0]
+    unknown.extend(name for name, digest in sorted(files.items()) if digest is None)
     return {
         "files": sorted([name, digest] for name, digest in files.items()),
         "errors": sorted(errors),
         "truncated": truncated,
+        "closure": closure,
+        "unknown": unknown,
     }
 
 
@@ -355,18 +567,32 @@ def checker_identity() -> dict[str, Any]:
     }
 
 
-def environment_fingerprint(source: Path, text: str) -> dict[str, Any]:
+def environment_fingerprint(
+    source: Path,
+    text: str,
+    imports: tuple[str, ...] = (),
+    known_packages: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Identify toolchain, Lake files, builds, project sources and dependencies.
 
+    `imports` are modules loaded besides the notebook's own, as a view or
+    evidence provider's are: their project sources and build traces count as
+    the notebook's imports do. `known_packages`, the dependency states of another
+    fingerprint of the same notebook taken just before, are reused rather
+    than asking git again.
+
     Saved results keep only the digest. When the HEAD or cleanliness of a
-    git dependency is unknown (see `git_state`), the digest also covers a
-    fresh random value, so it matches no saved result, not even one saved
-    while the state was unknown, and nothing saved under it is ever current.
-    Results then read as out of date until git answers again; an unknown
-    state is never taken for a clean one that may in fact be dirty.
-    `unknown_git_note` explains such a fingerprint. Git gets
-    `FINGERPRINT_SECONDS` in total; dependencies it does not reach in time
-    are unknown.
+    git dependency is unknown (see `git_state`), or a project source could
+    not be read (see `project_sources`), the digest also covers a fresh random
+    value, so it matches no saved result, not even one saved while the state
+    was unknown, and nothing saved under it is ever current. Results then
+    read as out of date until the state is known again; an unknown state is
+    never taken for a known one. `unknown_git_note` explains such a
+    fingerprint. ``stable_sha256`` is the same identity without the random
+    value, with each unknown state marked as unknown: it names work done for
+    an environment (a drawing, say) but never says a saved result is current.
+    Git gets `FINGERPRINT_SECONDS` in total; dependencies it does not reach in
+    time are unknown.
     """
     project = describe_project(source)
     files = {
@@ -376,26 +602,38 @@ def environment_fingerprint(source: Path, text: str) -> dict[str, Any]:
     packages: list[dict[str, Any]] = []
     roots: list[Path] = []
     sources: dict[str, Any] | None = None
+    header = header_imports(text)
+    named = [*(direct_imports(text) if header is None else header)]
+    named += [module for module in imports if module not in named]
     if project["kind"] == "lake":
         root = Path(project["root"])
         roots.append(root)
-        sources = project_sources(root, source, text)
+        sources = project_sources(root, source, None if header is None else named)
         deadline = _clock() + FINGERPRINT_SECONDS
+        known = {
+            (package.get("name"), package.get("rev")): package
+            for package in known_packages or []
+            if isinstance(package, dict)
+        }
         for entry, base in _package_dirs(root):
             roots.append(base)
+            reused = known.get((entry["name"], entry.get("rev")))
+            if reused is not None:
+                packages.append(dict(reused))
+                continue
             state = (
                 git_state(base, entry.get("rev"), deadline)
                 if entry.get("type") == "git" and (base / ".git").exists()
                 else {"head": None, "at_manifest": False, "clean": False}
             )
             packages.append({"name": entry["name"], "rev": entry.get("rev"), **state})
-    imports: dict[str, str | None] = {}
-    for module in direct_imports(text):
+    traces: dict[str, str | None] = {}
+    for module in named:
         relative = _trace_relative(module)
-        imports[module] = None
+        traces[module] = None
         if relative is None:
             continue
-        imports[module] = next(
+        traces[module] = next(
             (
                 digest
                 for base in roots
@@ -407,18 +645,36 @@ def environment_fingerprint(source: Path, text: str) -> dict[str, Any]:
         "toolchain": project.get("toolchain"),
         "files": files,
         "packages": packages,
-        "imports": imports,
+        "imports": traces,
         "sources": sources,
         "checker": checker_identity(),
     }
+    unknown = any("reason" in package for package in packages) or bool(
+        sources and sources["unknown"]
+    )
+    stable: dict[str, Any] = {
+        **identity,
+        "packages": [
+            {**package, "reason": "unknown"} if "reason" in package else package
+            for package in packages
+        ],
+    }
     hashed: dict[str, Any] = dict(identity)
-    if any("reason" in package for package in packages):
+    if unknown:
         hashed["unknown"] = secrets.token_hex(16)
-    digest = hashlib.sha256(
+    return {
+        "sha256": _digest(hashed),
+        "stable_sha256": _digest(stable),
+        "unknown": unknown,
+        **identity,
+    }
+
+
+def _digest(identity: dict[str, Any]) -> str:
+    return hashlib.sha256(
         b"glitnir.environment-fingerprint/v3\0"
-        + json.dumps(hashed, sort_keys=True).encode()
+        + json.dumps(identity, sort_keys=True).encode()
     ).hexdigest()
-    return {"sha256": digest, **identity}
 
 
 def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
@@ -431,9 +687,14 @@ def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
     for package in fingerprint.get("packages", []):
         if "reason" in package:
             names.setdefault(package["reason"], []).append(package["name"])
-    if not names:
+    sources = (fingerprint.get("sources") or {}).get("unknown") or []
+    notes = []
+    if names:
+        parts = "; ".join(f"{', '.join(found)}: {why}" for why, found in names.items())
+        notes.append(f"Could not read the git state of {parts}")
+    if sources:
+        shown = ", ".join(sources[:5]) + (", …" if len(sources) > 5 else "")
+        notes.append(f"Could not read the project sources ({shown})")
+    if not notes:
         return None
-    parts = "; ".join(f"{', '.join(found)}: {why}" for why, found in names.items())
-    return (
-        f"Could not read the git state of {parts}; " "results are saved as out of date."
-    )
+    return "; ".join(notes) + "; results are saved as out of date."
