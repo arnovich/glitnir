@@ -10,6 +10,11 @@ on:
         description: Tag of a published release, for example v0.1.2
         required: true
         type: string
+      allow_older:
+        description: Publish even if the version is not newer than the latest listed on its channel
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -19,24 +24,22 @@ env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
   # A release event carries the commit its tag named when it was published.
   RELEASE_EVENT_SHA: ${{ github.event_name == 'release' && github.sha || '' }}
+  ALLOW_OLDER: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_older }}
 jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      version: ${{ steps.release.outputs.version }}
-      prerelease: ${{ steps.release.outputs.prerelease }}
       sha256: ${{ steps.release.outputs.sha256 }}
       listed: ${{ steps.marketplace.outputs.listed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Download the published release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,10 +54,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node extension/scripts/marketplace-release.cjs verify "$RUNNER_TEMP/release"
-      - name: Check whether the Marketplace already lists this version
+      - name: Check the version against the Marketplace listing
         id: marketplace
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          PRE_RELEASE: ${{ steps.release.outputs.prerelease }}
         run: node extension/scripts/marketplace-release.cjs marketplace "$VERSION"
       - name: Report a version that is already listed
         if: steps.marketplace.outputs.listed == 'true'
@@ -68,14 +72,14 @@ jobs:
     timeout-minutes: 15
     environment: marketplace
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      # No dependency cache in a job that holds the publishing token.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       # Verify again in this job, so the bytes it publishes are the ones it checked.
       - name: Download the published release assets
         env:
@@ -87,10 +91,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERIFIED_VSIX_SHA256: ${{ needs.verify.outputs.sha256 }}
         run: node extension/scripts/marketplace-release.cjs verify "$RUNNER_TEMP/release"
-      - name: Check whether the Marketplace already lists this version
+      - name: Check the version against the Marketplace listing
         id: marketplace
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          PRE_RELEASE: ${{ steps.release.outputs.prerelease }}
         run: node extension/scripts/marketplace-release.cjs marketplace "$VERSION"
       - name: Publish the verified VSIX
         if: steps.marketplace.outputs.listed != 'true'
@@ -112,54 +117,3 @@ jobs:
         run: |
           if [ "$LISTED" = true ]; then action="Already listed; skipped"; else action="Published"; fi
           echo "$action gimle.glitnir $VERSION (pre-release: $PRE_RELEASE) from $RELEASE_TAG, VSIX sha256 $SHA256." >> "$GITHUB_STEP_SUMMARY"
-  open-vsx:
-    needs: verify
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    environment: marketplace
-    steps:
-      - name: Skip unless an Open VSX token is configured
-        id: token
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: |
-          if [ -n "$OVSX_PAT" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "No OVSX_PAT secret; Open VSX publication skipped." >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - uses: actions/checkout@v4
-        if: steps.token.outputs.present == 'true'
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        if: steps.token.outputs.present == 'true'
-        with:
-          node-version: '22'
-          cache: npm
-      - if: steps.token.outputs.present == 'true'
-        run: npm ci
-      - name: Download the published release assets
-        if: steps.token.outputs.present == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
-      - name: Verify checksums, tag, version and VSIX binding
-        if: steps.token.outputs.present == 'true'
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERIFIED_VSIX_SHA256: ${{ needs.verify.outputs.sha256 }}
-        run: node extension/scripts/marketplace-release.cjs verify "$RUNNER_TEMP/release"
-      - name: Check whether Open VSX already lists this version
-        if: steps.token.outputs.present == 'true'
-        id: listing
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: node extension/scripts/marketplace-release.cjs open-vsx "$VERSION"
-      - name: Publish the verified VSIX to Open VSX
-        if: steps.token.outputs.present == 'true' && steps.listing.outputs.listed != 'true'
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-          VSIX: ${{ steps.release.outputs.vsix }}
-        # ovsx takes the pre-release channel from the VSIX itself.
-        run: npx --yes ovsx@1.2.0 publish "$VSIX" --skip-duplicate

@@ -8,7 +8,7 @@ const {pipeline} = require('node:stream/promises');
 const {test} = require('node:test');
 const {ZipFile} = require('yazl');
 const {candidateIdentity, collectCandidate} = require('../scripts/release-candidate.cjs');
-const {releaseVersion, vsixPreRelease, verifyPublishedRelease, marketplaceListing, openVsxListing} = require('../scripts/marketplace-release.cjs');
+const {releaseVersion, vsixPreRelease, verifyPublishedRelease, marketplaceVersions, publicationPlan} = require('../scripts/marketplace-release.cjs');
 
 const identity = candidateIdentity('0.1.0', {GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_SHA: 'a'.repeat(40), GITHUB_RUN_ID: '1234', GITHUB_RUN_NUMBER: '27', GITHUB_REPOSITORY: 'owner/glitnir'});
 const PRE_RELEASE = '<Property Id="Microsoft.VisualStudio.Code.PreRelease" Value="true" />';
@@ -105,22 +105,47 @@ test('refuses drafts, missing or moved tags and assets that differ from the rele
   await assert.rejects(verifyPublishedRelease(api, directory, options), /size|checksum/);
 });
 
-test('marketplace lookups find existing versions, including pre-releases, and fail closed', async () => {
+test('the Marketplace listing reports every version with its channel and fails closed', async () => {
   const requests = [];
   const gallery = versions => async (url, init) => {
     requests.push({url, body: JSON.parse(init.body)});
     return {ok: true, status: 200, async json() { return {results: [{extensions: versions ? [{publisher: {publisherName: 'Gimle'}, extensionName: 'glitnir', versions}] : []}]}; }};
   };
-  assert.equal(await marketplaceListing('0.1.2', gallery()), undefined);
+  assert.deepEqual(await marketplaceVersions(gallery()), []);
   assert.equal(requests[0].body.filters[0].criteria[0].value, 'gimle.glitnir');
-  assert.equal(await marketplaceListing('0.1.2', gallery([{version: '0.1.1', properties: []}])), undefined);
-  assert.deepEqual(await marketplaceListing('0.1.2', gallery([{version: '0.1.2', properties: []}])), {preRelease: false});
-  assert.deepEqual(await marketplaceListing('0.1.2', gallery([{version: '0.1.2', properties: [{key: 'Microsoft.VisualStudio.Code.PreRelease', value: 'true'}]}])), {preRelease: true});
-  assert.equal(await marketplaceListing('0.1.2', gallery([{version: '0.1.2', targetPlatform: 'linux-x64'}])), undefined);
-  await assert.rejects(marketplaceListing('0.1.2', async () => ({ok: false, status: 503})), /HTTP 503/);
-  await assert.rejects(marketplaceListing('0.1.2', async () => ({ok: true, status: 200, async json() { return {}; }})), /Unexpected/);
-  const openVsx = status => async url => { assert.equal(url, 'https://open-vsx.org/api/gimle/glitnir/0.1.2'); return {ok: status === 200, status}; };
-  assert.equal(await openVsxListing('0.1.2', openVsx(200)), true);
-  assert.equal(await openVsxListing('0.1.2', openVsx(404)), false);
-  await assert.rejects(openVsxListing('0.1.2', openVsx(500)), /HTTP 500/);
+  assert.deepEqual(await marketplaceVersions(gallery([
+    {version: '0.1.1', properties: []},
+    {version: '0.1.2', properties: [{key: 'Microsoft.VisualStudio.Code.PreRelease', value: 'true'}]},
+    {version: '0.1.3', targetPlatform: 'linux-x64'},
+  ])), [
+    {version: '0.1.1', targetPlatform: undefined, preRelease: false},
+    {version: '0.1.2', targetPlatform: undefined, preRelease: true},
+    {version: '0.1.3', targetPlatform: 'linux-x64', preRelease: false},
+  ]);
+  await assert.rejects(marketplaceVersions(async () => ({ok: false, status: 503})), /HTTP 503/);
+  await assert.rejects(marketplaceVersions(async () => ({ok: true, status: 200, async json() { return {}; }})), /Unexpected/);
+});
+
+const release = version => ({version, preRelease: false});
+const pre = version => ({version, preRelease: true});
+
+test('a version already listed on its channel is skipped; on the other channel it fails', () => {
+  assert.deepEqual(publicationPlan('0.1.2', false, [release('0.1.2')]), {publish: false});
+  assert.deepEqual(publicationPlan('0.1.2', true, [pre('0.1.2')]), {publish: false});
+  assert.throws(() => publicationPlan('0.1.2', true, [release('0.1.2')]), /already lists 0\.1\.2 as a release, not a pre-release/);
+  assert.throws(() => publicationPlan('0.1.2', false, [pre('0.1.2')]), /already lists 0\.1\.2 as a pre-release, not a release/);
+  assert.throws(() => publicationPlan('0.1.2', false, [pre('0.1.2')], {allowOlder: true}), /already lists/, 'allow_older never permits a channel mismatch');
+  assert.throws(() => publicationPlan('0.1.2', false, [{version: '0.1.2', targetPlatform: 'linux-x64', preRelease: false}]), /not newer/, 'a platform-specific listing is not skipped as universal');
+});
+
+test('a version must be newer than the latest listed on its own channel unless allowed', () => {
+  assert.deepEqual(publicationPlan('0.1.2', false, []), {publish: true, latest: undefined});
+  assert.deepEqual(publicationPlan('0.1.10', false, [release('0.1.9'), release('0.1.2')]), {publish: true, latest: '0.1.9'}, 'numeric, not string, order');
+  assert.deepEqual(publicationPlan('0.1.2', false, [pre('0.3.0'), release('0.1.1')]), {publish: true, latest: '0.1.1'}, 'the other channel does not count');
+  assert.deepEqual(publicationPlan('0.2.1', true, [pre('0.2.0'), release('0.9.0')]), {publish: true, latest: '0.2.0'});
+  assert.throws(() => publicationPlan('0.1.2', false, [release('0.1.3')]), /0\.1\.2 is not newer than the latest listed release 0\.1\.3; run the workflow with allow_older/);
+  assert.throws(() => publicationPlan('0.1.9', true, [pre('0.1.10')]), /not newer than the latest listed pre-release 0\.1\.10/);
+  assert.deepEqual(publicationPlan('0.1.2', false, [release('0.1.3')], {allowOlder: true}), {publish: true, latest: '0.1.3'});
+  assert.deepEqual(publicationPlan('0.1.4', false, [release('0.1.3'), release('1.0.0-beta')]), {publish: true, latest: '0.1.3'}, 'nonnumeric listings are ignored');
+  assert.throws(() => publicationPlan('0.1', false, []), /Not a release tag/);
 });

@@ -125,26 +125,36 @@ a tag that moved off the manifest's commit and a VSIX whose channel differs from
 the release. Only then does the `marketplace` environment job run
 `vsce publish --packagePath` with the `vsce` locked in `package-lock.json`,
 adding `--pre-release` for a GitHub pre-release. A version the Marketplace already
-lists is reported and skipped, so a retry is safe: run the workflow manually with
-the release's `tag`. A release event runs the workflow from the tag's commit;
-releases made before it existed are published, if at all, by a manual run.
+lists on the same channel is reported and skipped, so a retry is safe: run the
+workflow manually with the release's `tag`. A version listed on the other channel
+fails. A version that is not newer than the latest listed on its own channel is
+refused unless a manual run sets `allow_older`. A release event runs the workflow
+from the tag's commit; releases made before it existed are published, if at all,
+by a manual run. The workflow installs dependencies with `npm ci --ignore-scripts`,
+pins its actions to commit SHAs and uses no dependency cache in the job holding
+the token.
 
 The channel is fixed when the VSIX is packaged, and candidates are packaged as
 releases, so a GitHub release meant for the Marketplace is published as a full
 release: clear the draft's pre-release flag first. A pre-release with such a VSIX
-is refused, never repackaged. The
-listing's `"preview": true` marks it as a preview. The Marketplace accepts each
+is refused, never repackaged. The listing's `"preview": true` marks it as a preview. The Marketplace accepts each
 version once, as either a pre-release or a release, and no semver pre-release
 suffixes: a pre-release cannot be promoted, so a release needs a new version.
 
-The owner sets up, once: the `marketplace` environment with required reviewers
-(Marketplace publication is its own approval gate) and deployment limited to `v*`
-tags and `main`; the `VSCE_PAT` secret in that environment, an Azure DevOps token
-for all accessible organizations with Marketplace (Manage) scope for publisher
-`Gimle`. The extension ID stays `gimle.glitnir` (IDs are case-insensitive); keep
-`"publisher": "gimle"`. Before the first publication, with the token in the
-`VSCE_PAT` environment variable, confirm it with `npx @vscode/vsce@4.0.0
-verify-pat gimle` (fall back to `Gimle`). The optional `open-vsx` job publishes the
-same VSIX to Open VSX with an `OVSX_PAT` secret in the same environment (so it
-waits for the same approval), and is skipped without one; the `gimle` namespace must exist there first. Never pass a
-token on a command line or print it.
+Before the first publication, the owner enables these repository settings:
+
+1. GitHub immutable releases, so a published release's assets and tag are frozen.
+2. A tag ruleset restricting who may create or update `v*` tags.
+3. The `marketplace` environment, with required reviewers (Marketplace
+   publication is its own approval gate), "prevent self-review" where practical,
+   and deployment limited to `v*` tags and `main`.
+4. The environment secret `VSCE_PAT`: an Azure DevOps token for all accessible
+   organizations with Marketplace (Manage) scope for publisher `Gimle`.
+5. With that token in the `VSCE_PAT` environment variable, confirm it with
+   `npx @vscode/vsce@4.0.0 verify-pat gimle` (fall back to `Gimle`).
+
+The extension ID stays `gimle.glitnir` (IDs are case-insensitive); keep
+`"publisher": "gimle"`. Never pass a token on a command line or print it. Open
+VSX is not published. Adding it needs `ovsx` in `devDependencies`, so it is locked
+in `package-lock.json`, run with `npx --no` like `vsce`, never an unlocked
+`npx --yes`.
