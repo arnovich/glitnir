@@ -255,7 +255,7 @@ def test_project_inspection_http_is_explicit_and_bound(tmp_path, monkeypatch):
     service = SourcePreviewService(source)
     calls = []
     monkeypatch.setattr(
-        service, "inspect", lambda sha: calls.append(sha) or {"status": "resolved"}
+        service, "inspect", lambda sha: calls.append(sha) or {"status": "running"}
     )
     httpd = make_server(service, 0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -280,8 +280,9 @@ def test_project_inspection_http_is_explicit_and_bound(tmp_path, monkeypatch):
             json.dumps({"sha256": digest}),
             headers,
         )
-        assert response.status == 200
-        assert json.loads(data)["status"] == "resolved"
+        # Accepted, then reported through snapshots like a check.
+        assert response.status == 202
+        assert json.loads(data)["status"] == "running"
         assert calls == [digest]
     finally:
         service.close()
@@ -401,6 +402,57 @@ def test_serve_consumes_capability_before_constructing_workers(tmp_path, monkeyp
         module.serve(tmp_path / "A.lean", 0)
 
 
+def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
+    """`/api/view/cancel` takes an empty JSON object and stops the drawing."""
+    from glitnir.notebook import source_preview
+    from glitnir.notebook.source_preview import (
+        NOTHING_DRAWING,
+        VIEW_CANCELLED,
+        SourcePreviewService,
+    )
+    from glitnir.providers import Providers, ViewProvider
+
+    provider = ViewProvider("demo", frozenset({"circuit"}), (), "", "m:", lambda *a: "")
+    monkeypatch.setattr(
+        source_preview,
+        "load_providers",
+        lambda: Providers({"circuit": provider}, {}, {}, {}),
+    )
+    started = threading.Event()
+
+    def render(*_args, cancel, **_options):
+        started.set()
+        cancel.wait(30)
+        return {"error": "View drawing cancelled.", "transient": True}
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
+    path = tmp_path / "A.lean"
+    path.write_text("def c := 1\n\n-- @view circuit c\n")
+    service = SourcePreviewService(path)
+    httpd = make_server(service, 0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    headers = {"Content-Type": "application/json"}
+    try:
+        response, data = _request(httpd, "POST", "/api/view/cancel", "{}", headers)
+        assert response.status == 409
+        assert json.loads(data) == {"error": NOTHING_DRAWING}
+        cell = service.snapshot()["views"][0]["cell"]
+        _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
+        assert started.wait(30)
+        bad = _request(httpd, "POST", "/api/view/cancel", '{"line": 3}', headers)
+        assert bad[0].status == 400
+        response, _ = _request(httpd, "POST", "/api/view/cancel", "{}", headers)
+        assert response.status == 202
+        service._view_worker.join(timeout=30)
+        _, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
+        assert json.loads(data) == {"error": VIEW_CANCELLED}
+    finally:
+        service.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_project_view_http_draws_directives(tmp_path, monkeypatch):
     """Project mode answers /api/view for listed directives only."""
     from glitnir.notebook import source_preview
@@ -424,6 +476,10 @@ def test_project_view_http_draws_directives(tmp_path, monkeypatch):
     thread.start()
     try:
         cell = service.snapshot()["views"][0]["cell"]
+        response, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
+        # The first request starts the drawing and answers at once.
+        assert response.status == 200 and json.loads(data)["status"] == "drawing"
+        service._view_worker.join(timeout=30)
         response, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
         assert response.status == 200 and json.loads(data) == {"svg": "<svg/>"}
         assert _request(httpd, "GET", f"/api/view?cell={cell}&line=99")[0].status == 404

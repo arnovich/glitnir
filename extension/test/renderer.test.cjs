@@ -1938,6 +1938,66 @@ test('project inspection runs only on click and unsaved files stay off the wire'
   } finally { window.close(); }
 });
 
+test('project inspection is reported from snapshots for the saved source it read', async () => {
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/project', toolchain: 't'},
+    inspection: {status: 'running', source_sha256: 'a'.repeat(64), message: 'Inspecting the saved project setup'}}};
+  const window = await renderSnapshot(snapshot);
+  const $ = id => window.document.getElementById(id);
+  try {
+    assert.equal($('inspect-project').disabled, true, 'one inspection or check at a time');
+    assert.equal($('inspect-project').textContent, 'Inspecting…');
+    assert.equal($('check-project').disabled, true);
+    assert.match($('project-inspection').textContent, /Inspecting the saved project setup… Close this preview to cancel\./);
+    snapshot.preview.inspection = {status: 'resolved', source_sha256: 'a'.repeat(64), message: 'Module setup resolved for <A>.', resolution: {kind: 'prepared_local', packages: [{name: 'dep', path: 'p', entry: {}}]}};
+    await window.glitnirPoll();
+    assert.equal($('inspect-project').disabled, false);
+    assert.match($('project-inspection').textContent, /^Last inspection: Module setup resolved for <A>\./);
+    assert.match($('project-inspection').innerHTML, /&lt;A&gt;/, 'the message is escaped');
+    snapshot.preview.inspection.source_sha256 = 'b'.repeat(64);
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, true, 'an inspection of another saved source is not shown');
+  } finally { window.close(); }
+});
+
+test('views are drawn in the background: progress, Stop and Draw again', async () => {
+  const requests = [];
+  const answers = [
+    {status: 'drawing', message: 'Waiting for another Lean run to finish.'},
+    {error: 'View drawing cancelled.'},
+    {status: 'queued', message: 'Waiting for another view to finish drawing.'},
+    {svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'},
+  ];
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
+    cells: [{index: 0, kind: 'source', start: 1, end: 1, text: '-- @view circuit c'}], views: [{cell: 0, line: 1, kind: 'circuit', name: 'c', using: [], error: ''}],
+    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+  const window = await renderSnapshot(snapshot, {onMessage: message => requests.push(message), onView: () => answers.shift()});
+  const view = () => window.document.querySelector('#doc .view-cell');
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  try {
+    assert.equal(view().querySelector('.view-wait').textContent, 'Waiting for another Lean run to finish.');
+    const stop = view().querySelector('[data-act="view-cancel"]');
+    assert.ok(stop, 'a drawing in progress can be stopped');
+    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
+    stop.click();
+    await wait(30);
+    const cancel = requests.filter(r => r.path === '/api/view/cancel');
+    assert.equal(cancel.length, 1, 'stopping is sent even with unsaved Lean files');
+    assert.deepEqual([cancel[0].method, JSON.parse(cancel[0].body)], ['POST', {}]);
+    await wait(900);
+    assert.match(view().textContent, /No drawing: View drawing cancelled\./);
+    assert.equal(view().querySelector('[data-act="view-cancel"]'), null);
+    await window.glitnirPoll();
+    assert.match(view().textContent, /cancelled/, 'a cancelled drawing is not asked again unasked');
+    view().querySelector('[data-act="view-retry"]').click();
+    await wait(30);
+    assert.equal(view().querySelector('.view-wait').textContent, 'Waiting for another view to finish drawing.');
+    assert.equal(view().querySelector('[data-act="view-cancel"]'), null, 'a queued view has nothing to stop');
+    await wait(900);
+    assert.match(view().querySelector('img').getAttribute('src'), /^data:image\/svg\+xml/);
+    assert.equal(requests.filter(r => r.path?.startsWith('/api/view?')).length, 4);
+  } finally { window.close(); }
+});
+
 test('project checks show historical compiled propositions separately from source', async () => {
   const requests = [];
   const snapshot = {file: 'A.lean', sha256: 'b'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'loose'}, check: {status: 'checked_snapshot', source_sha256: 'a'.repeat(64), environment_sha256: 'c'.repeat(64), message: 'Last checked snapshot', resolution: {kind: 'prepared_local', packages: [{name: '<dep>', path: 'vendor/dep', entry: {rev: 'abc'}}]}, theorems: [{name: 'N.result', type: '<script>x</script>', status: 'assumptions', axioms: [{name: 'custom', module: 'A'}]}, {name: '_private.A.0._glitnir_example_40', example: true, start_line: 3, end_line: 3, type: '1 = 1', status: 'checked', axioms: []}]}}};

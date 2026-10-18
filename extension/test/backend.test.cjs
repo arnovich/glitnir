@@ -5,7 +5,7 @@ const {readFileSync} = require('node:fs');
 const path = require('node:path');
 
 test('unsaved Lean files hold back preview actions except stopping work, in the host and the webview alike', () => {
-  for (const stop of ['/api/proof/cancel', '/api/decide/stop']) assert.equal(heldWhileDirty(stop, 'POST', true), false, stop);
+  for (const stop of ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel']) assert.equal(heldWhileDirty(stop, 'POST', true), false, stop);
   for (const action of ['/api/decide/run', '/api/decide/discard', '/api/evidence/run', '/api/project/check', '/api/proof/start']) {
     assert.equal(heldWhileDirty(action, 'POST', true), true, action);
     assert.equal(heldWhileDirty(action, 'POST', false), false, action);
@@ -90,6 +90,12 @@ test('preview bridge permits decision runs, stops and discards only with exact b
     }
   }
   assert.equal(validateRequest('/api/decide/stop', 'POST', '{}'), '/api/decide/stop');
+  // Stopping a view names nothing: one view is drawn at a time.
+  assert.equal(validateRequest('/api/view/cancel', 'POST', '{}'), '/api/view/cancel');
+  assert.throws(() => validateRequest('/api/view/cancel', 'GET'));
+  for (const body of [undefined, '', 'null', '[]', 'not json', JSON.stringify({line: 1})]) {
+    assert.throws(() => validateRequest('/api/view/cancel', 'POST', body), String(body));
+  }
   assert.throws(() => validateRequest('/api/decide/stop', 'GET', '{}'));
   for (const body of [undefined, '', 'null', '[]', 'not json', named, JSON.stringify({run: 'x'})]) {
     assert.throws(() => validateRequest('/api/decide/stop', 'POST', body), String(body));

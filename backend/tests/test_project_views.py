@@ -29,8 +29,11 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _lake(tmp_path, monkeypatch, import_arts):
-    """A Lake notebook whose inspected setup provides `import_arts`."""
+def _lake(tmp_path, monkeypatch, import_arts, asked=None):
+    """A Lake notebook whose inspected setup provides `import_arts`.
+
+    The modules each inspection was asked to add are appended to `asked`.
+    """
     from glitnir.lean import provider_lean
 
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
@@ -40,8 +43,10 @@ def _lake(tmp_path, monkeypatch, import_arts):
     toolchain.mkdir()
     monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
 
-    def inspect(path, *, expected_sha256, cancel):
+    def inspect(path, *, expected_sha256, cancel, imports=()):
         assert path == source and expected_sha256 == _sha(NOTEBOOK)
+        if asked is not None:
+            asked.append(imports)
         return {
             "status": "resolved",
             "setup": {
@@ -100,7 +105,104 @@ def test_missing_provider_import_is_reported_without_lean(tmp_path, monkeypatch)
 
     monkeypatch.setattr(provider_lean, "run_observer", run)
     result = _render(source)
-    assert result == {"error": "This view needs `import Demo.View` in the notebook."}
+    assert result == {
+        "error": "This view needs the module `Demo.View`, which no package of this "
+        "Lake project provides. Add the package that provides it to the project's "
+        "dependencies."
+    }
+
+
+def test_provider_imports_are_set_up_from_the_project_build(tmp_path, monkeypatch):
+    """The notebook need not import the provider's modules; Lake sets them up."""
+    asked: list[tuple[str, ...]] = []
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]}, asked=asked)
+    calls: list = []
+    _reporting(monkeypatch, {"information": ["demoView:{}"], "errors": []}, calls)
+    _render(source, provider=_provider(("Lean", "Demo.View")))
+    # Toolchain libraries need no Lake setup; project modules are added to it.
+    assert asked == [("Demo.View",)]
+    assert len(calls) == 1
+
+
+def _needs_build(tmp_path, monkeypatch, own_resolves):
+    """A notebook whose setup with the provider's modules finds one unbuilt."""
+    from glitnir.lean import provider_lean
+
+    source, _ = _lake(tmp_path, monkeypatch, {})
+    asked: list[tuple[str, ...]] = []
+
+    def inspect(path, *, expected_sha256, cancel, imports=()):
+        asked.append(imports)
+        if imports or not own_resolves:
+            return {
+                "status": "unavailable",
+                "message": "Lake could not inspect this prepared project.",
+                "needs_build": True,
+            }
+        return {
+            "status": "resolved",
+            "setup": {"name": "Note", "importArts": {"Other": ["O.olean"]}},
+            "resolution": {"inputs": []},
+        }
+
+    def run(*_arguments, **_options):
+        raise AssertionError("Lean must not run")
+
+    monkeypatch.setattr(provider_lean, "inspect_project", inspect)
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+    return source, asked
+
+
+def test_an_unbuilt_provider_module_names_the_build_to_run(tmp_path, monkeypatch):
+    source, asked = _needs_build(tmp_path, monkeypatch, own_resolves=True)
+    result = _render(source)
+    assert result == {
+        "error": "This view needs `Demo.View`, which this project has not built or "
+        f"has out of date. Run `lake build Demo.View` in {tmp_path.resolve()}, "
+        "then try again."
+    }
+    assert asked == [("Demo.View",), ()]
+
+
+def test_an_unbuilt_notebook_import_keeps_lakes_message(tmp_path, monkeypatch):
+    source, asked = _needs_build(tmp_path, monkeypatch, own_resolves=False)
+    result = _render(source)
+    assert result == {"error": "Lake could not inspect this prepared project."}
+    assert asked == [("Demo.View",), ()]
+
+
+def test_drawing_waits_for_a_busy_slot_and_says_so(tmp_path, monkeypatch):
+    """A view waits for another Lean run rather than failing at once."""
+    import threading
+
+    from glitnir.lean import provider_lean
+
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    _reporting(monkeypatch, {"information": ["demoView:{}"], "errors": []})
+    waited: list[dict] = []
+    messages: list[str] = []
+    monkeypatch.setattr(provider_lean, "snapshot_slot", _waiting_slot(waited))
+    _render(source, progress=messages.append, cancel=threading.Event())
+    assert len(waited) == 1 and waited[0]["cancel"] is not None
+    assert messages == [
+        provider_lean.WAITING,
+        provider_lean.PREPARING,
+        provider_lean.RUNNING["view"],
+    ]
+
+
+def _waiting_slot(calls):
+    """A slot that reports it was busy, then is taken at once."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def slot(**options):
+        calls.append(options)
+        if options.get("waiting") is not None:
+            options["waiting"]()
+        yield
+
+    return slot
 
 
 def test_invalid_provider_import_is_rejected_before_composing(tmp_path, monkeypatch):
@@ -262,9 +364,9 @@ def test_toolchain_modules_need_no_import_artifacts(tmp_path, monkeypatch, modul
 def test_lookalike_modules_still_need_import_artifacts(tmp_path, monkeypatch):
     source, _ = _lake(tmp_path, monkeypatch, {})
     result = _render(source, provider=_provider(imports=("LeanDemo.View",)))
-    assert result == {
-        "error": "This view needs `import LeanDemo.View` in the notebook."
-    }
+    assert result["error"].startswith(
+        "This view needs the module `LeanDemo.View`, which no package"
+    )
 
 
 def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
@@ -318,22 +420,89 @@ def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
     assert "<title>c</title>" in result["svg"]
 
 
-def test_busy_slot_is_a_transient_error(tmp_path, monkeypatch):
+def test_live_view_loads_provider_modules_the_notebook_does_not_import(
+    prepared_lean_project,
+):
+    """Provider modules come from the project's build; unbuilt ones are named."""
+    import os
+    import subprocess
+    import threading
+
+    from glitnir.lean.project_inspection import _toolchain
+    from glitnir.lean.project_views import render_project_view
+
+    root = prepared_lean_project
+    toolchain = _toolchain()
+    (root / "src/Example/Draw.lean").write_text('def drawTitle : String := "drawn"\n')
+    (root / "src/Example/Unbuilt.lean").write_text("def unbuilt : Nat := 1\n")
+    subprocess.run(
+        [str(toolchain / "bin/lake"), "--keep-toolchain", "build", "Example.Draw"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(toolchain)},
+    )
+    source = root / "src/Example.lean"
+    text = source.read_text() + "-- @view demo result\n"
+    source.write_text(text)
+    line = text.count("\n")
+
+    def provider(imports):
+        return ViewProvider(
+            name="demo",
+            kinds=frozenset({"demo"}),
+            imports=imports,
+            preamble=(
+                "open Lean Elab Command in\n"
+                'elab "#demo_view " n:ident : command => logInfo m!"demoView:'
+                '<svg xmlns=\\"http://www.w3.org/2000/svg\\">'
+                '<title>{drawTitle} {n.getId}</title></svg>"'
+            ),
+            marker="demoView:",
+            command=lambda kind, name, using: f"#demo_view {name}",
+        )
+
+    def draw(imports):
+        return render_project_view(
+            source,
+            expected_sha256=_sha(text),
+            line=line,
+            provider=provider(imports),
+            kind="demo",
+            name="result",
+            using=(),
+            cancel=threading.Event(),
+        )
+
+    drawn = draw(("Lean", "Example.Draw"))
+    assert set(drawn) == {"svg"}, drawn
+    assert "<title>drawn result</title>" in drawn["svg"]
+    unbuilt = draw(("Lean", "Example.Draw", "Example.Unbuilt"))
+    assert unbuilt["error"] == (
+        "This view needs `Example.Draw`, `Example.Unbuilt`, which this project has "
+        "not built or has out of date. Run `lake build Example.Draw "
+        f"Example.Unbuilt` in {root.resolve()}, then try again."
+    ), unbuilt
+    assert not (root / ".lake/build/lib/lean/Example/Unbuilt.olean").exists()
+
+
+def test_a_slot_busy_past_the_time_limit_is_a_transient_error(tmp_path, monkeypatch):
     import contextlib
 
     from glitnir.lean import provider_lean
-    from glitnir.lean.project_snapshot import SLOT_BUSY, SnapshotError
+    from glitnir.lean.project_snapshot import SLOT_WAIT_TIMED_OUT, SnapshotError
 
     source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
 
     @contextlib.contextmanager
-    def busy():
-        raise SnapshotError(SLOT_BUSY)
+    def busy(**options):
+        raise SnapshotError(SLOT_WAIT_TIMED_OUT)
         yield
 
     monkeypatch.setattr(provider_lean, "snapshot_slot", busy)
     result = _render(source)
-    assert result == {"error": SLOT_BUSY, "transient": True}
+    assert result == {"error": SLOT_WAIT_TIMED_OUT, "transient": True}
 
 
 @pytest.mark.parametrize(

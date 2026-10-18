@@ -21,6 +21,12 @@ export interface Reply {
   contentType?: string;
 }
 
+/**
+ * How long one request may take. No route waits for Lean: checks, inspections, view drawings, proof steps,
+ * evidence and decisions run in backend workers bounded by the check time limit, and the preview polls them.
+ */
+export const REQUEST_TIMEOUT_MS = 130000;
+
 /** Image types the preview shows; anything else from `/asset` is refused. */
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
 
@@ -59,14 +65,14 @@ function empty(body: string | undefined): boolean {
 /** Exact body shapes of the routes that start or end provider work, and of checks. */
 const BODIES: Record<string, (body: string | undefined) => boolean> = {
   '/api/evidence/run': directive, '/api/decide/run': directive, '/api/decide/discard': directive,
-  '/api/decide/stop': empty, '/api/project/check': check,
+  '/api/decide/stop': empty, '/api/view/cancel': empty, '/api/project/check': check,
 };
 
 /**
  * Posts that only stop work; they never depend on the editor's text, so unsaved
  * Lean files do not hold them back. `media/bridge.js` keeps the same list.
  */
-export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop'];
+export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel'];
 
 /** Whether a preview request must wait until unsaved Lean files are saved or reverted. */
 export function heldWhileDirty(path: string, method: string, dirty: boolean): boolean {
@@ -190,7 +196,7 @@ export class Backend {
       this.requests.add(request);
       request.once('close', () => this.requests.delete(request));
       request.once('error', reject);
-      request.setTimeout(130000, () => request.destroy(new Error('Glitnir request timed out')));
+      request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy(new Error('Glitnir request timed out')));
       request.end(body);
     });
   }

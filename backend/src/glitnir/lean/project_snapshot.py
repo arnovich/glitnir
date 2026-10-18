@@ -23,7 +23,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator
+from typing import Any, BinaryIO, Callable, Iterator
 
 from glitnir.lean import artifact_store
 from glitnir.lean.artifact_store import ArtifactStore, StoreError
@@ -48,9 +48,27 @@ class SnapshotError(ValueError):
     """The checker could not capture a bounded environment."""
 
 
+SLOT_WAIT_CANCELLED = "Waiting for another Lean run was cancelled."
+SLOT_WAIT_TIMED_OUT = "Waiting for another Lean run timed out."
+#: Seconds between attempts to take a busy slot while waiting for it.
+_SLOT_POLL_SECONDS = 0.25
+
+
 @contextmanager
-def snapshot_slot() -> Iterator[None]:
-    """Serialize expensive checks across backend processes in this user temp area."""
+def snapshot_slot(
+    *,
+    cancel: threading.Event | None = None,
+    deadline: float | None = None,
+    waiting: Callable[[], None] | None = None,
+) -> Iterator[None]:
+    """Serialize expensive checks across backend processes in this user temp area.
+
+    Without `cancel`, a busy slot is refused at once with `SLOT_BUSY`. With it,
+    the caller waits for the slot: `waiting` is called once if it is busy, and
+    the wait ends when the slot is free, when `cancel` is set
+    (`SLOT_WAIT_CANCELLED`) or at the `time.monotonic` `deadline`, by default
+    the check time limit from now (`SLOT_WAIT_TIMED_OUT`).
+    """
     path = Path(tempfile.gettempdir()) / f"glitnir-project-check-{os.getuid()}.lock"
     fd = artifact_store.open_lock_file(path)
     try:
@@ -59,10 +77,25 @@ def snapshot_slot() -> Iterator[None]:
             raise SnapshotError(
                 "The project-check lock is not a user-owned regular file."
             )
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise SnapshotError(SLOT_BUSY) from error
+        if deadline is None:
+            deadline = time.monotonic() + check_seconds()
+        told = False
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as error:
+                if cancel is None:
+                    raise SnapshotError(SLOT_BUSY) from error
+            if not told and waiting is not None:
+                waiting()
+            told = True
+            if cancel.wait(
+                max(0.0, min(_SLOT_POLL_SECONDS, deadline - time.monotonic()))
+            ):
+                raise SnapshotError(SLOT_WAIT_CANCELLED)
+            if time.monotonic() >= deadline:
+                raise SnapshotError(SLOT_WAIT_TIMED_OUT)
         yield
     finally:
         os.close(fd)

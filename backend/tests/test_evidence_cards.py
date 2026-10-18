@@ -183,6 +183,28 @@ def test_a_missing_dependency_is_reported_as_unavailable():
     assert card["error"] == ""
 
 
+def test_snapshot_says_which_listed_verbs_cannot_run(tmp_path: Path, monkeypatch):
+    """A verb whose provider lacks a dependency is listed with the reason."""
+    from glitnir.notebook import source_preview
+    from glitnir.providers import Providers
+
+    ready = _provider()
+    lacking = _provider(unavailable=lambda: "Needs Python Asgard.")
+    loaded = Providers({}, {"simulate": ready, "iterate": lacking}, {}, {})
+    monkeypatch.setattr(source_preview, "load_providers", lambda: loaded)
+    path = tmp_path / "A.lean"
+    path.write_text(f"def M := 1\n\n{DIRECTIVE}\n-- @evidence iterate M\n")
+    snapshot = SourcePreviewService(path).snapshot()
+    assert snapshot["directive_providers"]["evidence"] == ["iterate", "simulate"]
+    assert snapshot["directive_unavailable"] == {
+        "evidence": {"iterate": "Needs Python Asgard."},
+        "decide": {},
+    }
+    simulate, iterate = snapshot["evidence"]
+    assert simulate["unavailable"] is None
+    assert (iterate["unavailable"], iterate["error"]) == ("Needs Python Asgard.", "")
+
+
 def test_a_verb_without_a_provider_names_failed_providers():
     [card] = _cards(f"{DIRECTIVE}\n", _loaded(errors={"broken": "ImportError: x"}))
     assert card["provider"] is None and card["unavailable"] is None

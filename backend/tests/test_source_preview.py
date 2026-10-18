@@ -163,6 +163,8 @@ def test_deeply_nested_configuration_is_diagnostic(tmp_path: Path, config: str) 
 
 def test_inspection_is_explicit_serialized_and_cancelled(tmp_path, monkeypatch):
     """Polling never launches inspection; close and concurrent requests are safe."""
+    import threading
+
     from glitnir.notebook import source_preview
     from glitnir.notebook.document import NotebookError
 
@@ -170,42 +172,71 @@ def test_inspection_is_explicit_serialized_and_cancelled(tmp_path, monkeypatch):
     path.write_text("example : True := True.intro\n")
     service = SourcePreviewService(path)
     calls = []
+    started, finish = threading.Event(), threading.Event()
 
-    def inspect(source, *, expected_sha256, cancel, timeout_seconds):
+    def inspect(source, *, expected_sha256, cancel, **options):
+        # The check time limit bounds each Lake run: no shorter request bound.
+        assert options == {}
         calls.append((source, expected_sha256, cancel.is_set()))
-        with pytest.raises(NotebookError, match="already running"):
-            service.inspect(expected_sha256)
-        return {"status": "unavailable", "message": "fixture"}
+        started.set()
+        assert finish.wait(5)
+        return {
+            "status": "unavailable",
+            "message": "fixture",
+            "setup": {"importArts": {"Big": ["x"]}},
+            "resolution": {"kind": "prepared_local", "packages": [], "inputs": [1]},
+        }
 
     monkeypatch.setattr(source_preview, "inspect_project", inspect)
     snapshot = service.snapshot()
-    assert not calls
-    service.inspect(snapshot["sha256"])
+    assert not calls and snapshot["preview"]["inspection"] is None
+    state = service.inspect(snapshot["sha256"])
+    assert state == {
+        "status": "running",
+        "source_sha256": snapshot["sha256"],
+        "message": source_preview.INSPECTING,
+    }
+    assert started.wait(5)
+    # Requests never wait for Lake; one inspection or check at a time.
+    assert service.snapshot()["preview"]["inspection"]["status"] == "running"
+    with pytest.raises(NotebookError, match="already running"):
+        service.inspect(snapshot["sha256"])
+    with pytest.raises(NotebookError, match="already running"):
+        service.check(snapshot["sha256"])
+    finish.set()
+    service._inspection_worker.join(timeout=5)
     assert calls == [(path, snapshot["sha256"], False)]
+    # The setup and the bytes Lake read stay out of every snapshot.
+    assert service.snapshot()["preview"]["inspection"] == {
+        "status": "unavailable",
+        "source_sha256": snapshot["sha256"],
+        "message": "fixture",
+        "resolution": {"kind": "prepared_local", "packages": []},
+    }
     service.close()
-    service.inspect(snapshot["sha256"])
-    assert calls[-1][2] is True
+    with pytest.raises(NotebookError, match="closed"):
+        service.inspect(snapshot["sha256"])
 
 
-@pytest.mark.parametrize(
-    "configured, expected", [("", 120), ("30000", 30), ("3600000", 120)]
-)
-def test_inspect_request_stays_quick(tmp_path, monkeypatch, configured, expected):
-    """The synchronous inspect request never waits past the editor's request timeout."""
+def test_a_failing_inspection_always_ends(tmp_path, monkeypatch):
     from glitnir.notebook import source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("example : True := True.intro\n")
     service = SourcePreviewService(path)
-    limits = []
-    monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", configured)
-    monkeypatch.setattr(
-        source_preview,
-        "inspect_project",
-        lambda *a, timeout_seconds, **k: limits.append(timeout_seconds) or {},
-    )
-    service.inspect(service.snapshot()["sha256"])
-    assert limits == [expected]
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(source_preview, "inspect_project", broken)
+    sha = service.snapshot()["sha256"]
+    service.inspect(sha)
+    service._inspection_worker.join(timeout=5)
+    found = service.snapshot()["preview"]["inspection"]
+    assert found["status"] == "unavailable"
+    assert found["message"] == "Project inspection failed: boom"
+    service.inspect(sha)  # the gate is open again
+    service.close()
 
 
 def test_project_check_is_explicit_historical_and_cancelled(tmp_path, monkeypatch):
@@ -884,6 +915,16 @@ def _demo_provider():
     )
 
 
+def _drawn(service, cell: int, line: int) -> dict:
+    """Ask for a view until its background drawing has ended; return the answer."""
+    answer = service.view(cell, line)
+    if answer.get("status") in ("drawing", "queued"):
+        service._view_worker.join(timeout=30)
+        assert not service._view_worker.is_alive()
+        answer = service.view(cell, line)
+    return answer
+
+
 def _view_service(tmp_path: Path, monkeypatch, text=VIEW_TEXT, errors=None):
     from glitnir.notebook import source_preview
 
@@ -959,7 +1000,7 @@ def test_view_renders_once_per_source(tmp_path: Path, monkeypatch) -> None:
     service = _view_service(tmp_path, monkeypatch)
     monkeypatch.setattr(source_preview, "render_project_view", render)
     cell = service.snapshot()["views"][0]["cell"]
-    assert service.view(cell, 4) == {"svg": "<svg/>"}
+    assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
     assert service.view(cell, 4) == {"svg": "<svg/>"}
     assert len(calls) == 1
     assert calls[0]["using"] == ("a", "b") and calls[0]["line"] == 4
@@ -996,25 +1037,146 @@ def test_view_cache_key_includes_the_environment_fingerprint(
     monkeypatch.setattr(
         source_preview, "environment_fingerprint", lambda *a, **k: fingerprint
     )
-    service.view(cell, 4)
-    service.view(cell, 4)
+    _drawn(service, cell, 4)
+    _drawn(service, cell, 4)
     assert len(calls) == 1
     fingerprint["sha256"] = "two"
-    service.view(cell, 4)
+    _drawn(service, cell, 4)
     assert len(calls) == 2
 
 
-def test_view_cache_hit_does_not_wait_for_the_lock(tmp_path: Path, monkeypatch) -> None:
+def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> None:
+    """Drawing runs in a worker; requests report its progress until it ends."""
+    import threading
+
     from glitnir.notebook import source_preview
 
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
-    )
+    started, finish = threading.Event(), threading.Event()
+    calls = []
+
+    def render(path, *, progress, cancel, **options):
+        calls.append(options["line"])
+        progress("Waiting for another Lean run to finish.")
+        started.set()
+        assert finish.wait(10)
+        return {"svg": f"<svg>{options['line']}</svg>"}
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
+    text = "def c := 1\n\n-- @view circuit c\n-- @view circuit c\n"
+    service = _view_service(tmp_path, monkeypatch, text)
+    cell = service.snapshot()["views"][0]["cell"]
+    first = service.view(cell, 3)
+    assert first == {"status": "drawing", "message": source_preview.VIEW_STARTING}
+    assert started.wait(10)
+    assert service.view(cell, 3) == {
+        "status": "drawing",
+        "message": "Waiting for another Lean run to finish.",
+    }
+    # One view at a time: another waits, without starting Lean.
+    assert service.view(cell, 4) == {
+        "status": "queued",
+        "message": source_preview.VIEW_QUEUED,
+    }
+    finish.set()
+    service._view_worker.join(timeout=10)
+    assert service.view(cell, 3) == {"svg": "<svg>3</svg>"}
+    assert _drawn(service, cell, 4) == {"svg": "<svg>4</svg>"}
+    assert calls == [3, 4]
+    service.close()
+
+
+def test_a_cancelled_view_says_so_once_and_draws_again_on_request(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import threading
+
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.notebook import source_preview
+
+    started = threading.Event()
+    calls = []
+
+    def render(path, *, cancel, **options):
+        calls.append(1)
+        if len(calls) == 1:
+            started.set()
+            assert cancel.wait(10)
+            return {"error": "View drawing cancelled.", "transient": True}
+        return {"svg": "<svg/>"}
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    with pytest.raises(SnapshotError, match="No view is drawing"):
+        service.cancel_view()
+    service.view(cell, 4)
+    assert started.wait(10)
+    service.cancel_view()
+    service._view_worker.join(timeout=10)
+    # Not transient: the reader asked for it, so nothing redraws it unasked.
+    assert service.view(cell, 4) == {"error": source_preview.VIEW_CANCELLED}
+    assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
+    assert len(calls) == 2
+
+
+def test_a_view_of_a_replaced_source_is_cancelled(tmp_path: Path, monkeypatch) -> None:
+    """Its drawing would be refused anyway: the saved source it read is gone."""
+    import threading
+
+    from glitnir.notebook import source_preview
+
+    started = threading.Event()
+    cancelled = []
+
+    def render(path, *, cancel, **options):
+        started.set()
+        cancelled.append(cancel.wait(10))
+        return {"error": "Saved source changed; refresh and retry."}
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     service.view(cell, 4)
-    with service._view_lock:  # another view is rendering
-        assert service.view(cell, 4) == {"svg": "<svg/>"}
+    assert started.wait(10)
+    service.path.write_text(VIEW_TEXT + "-- edited\n")
+    assert service.view(cell, 4)["status"] == "queued"
+    service._view_worker.join(timeout=10)
+    assert cancelled == [True]
+
+
+def test_close_stops_a_view_being_drawn(tmp_path: Path, monkeypatch) -> None:
+    import threading
+
+    from glitnir.notebook import source_preview
+
+    started = threading.Event()
+
+    def render(path, *, cancel, **options):
+        started.set()
+        assert cancel.wait(10)
+        return {"error": "View drawing cancelled.", "transient": True}
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    service.view(cell, 4)
+    assert started.wait(10)
+    service.close()
+    assert not service._view_worker.is_alive()
+    assert service.view(cell, 4) == {"error": source_preview.CLOSED}
+
+
+def test_a_failing_view_worker_always_ends(tmp_path: Path, monkeypatch) -> None:
+    from glitnir.notebook import source_preview
+
+    def render(path, **options):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    assert _drawn(service, cell, 4) == {"error": "View drawing failed: boom"}
+    assert service._view_job is None
 
 
 INCOMPLETE = (
@@ -1099,7 +1261,7 @@ def test_providers_load_once_per_service(tmp_path: Path, monkeypatch) -> None:
     assert loads == []
     cell = service.snapshot()["views"][0]["cell"]
     service.snapshot()
-    service.view(cell, 4)
+    _drawn(service, cell, 4)
     service.view(cell, 4)
     assert len(loads) == 1
 
@@ -1128,6 +1290,10 @@ def test_view_reads_and_fingerprints_the_file_once(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(
         source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
     )
+    service.view(cell, 4)  # starts the drawing
+    service._view_worker.join(timeout=10)
+    reads.clear()
+    fingerprints.clear()
     assert service.view(cell, 4) == {"svg": "<svg/>"}
     assert len(reads) == 1 and len(fingerprints) == 1
 
@@ -1578,7 +1744,7 @@ def test_missing_provider_import_is_a_run_error_without_lean(tmp_path, monkeypat
     monkeypatch.setattr(
         provider_lean,
         "inspect_project",
-        lambda path, *, expected_sha256, cancel: {
+        lambda path, *, expected_sha256, cancel, imports=(): {
             "status": "resolved",
             "setup": {
                 "name": "A",
@@ -1601,8 +1767,8 @@ def test_missing_provider_import_is_a_run_error_without_lean(tmp_path, monkeypat
         card = _card(service)
     finally:
         service.close()
-    assert card["run_error"] == (
-        "This evidence needs `import Demo.Evidence` in the notebook."
+    assert card["run_error"].startswith(
+        "This evidence needs the module `Demo.Evidence`, which no package"
     )
 
 

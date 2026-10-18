@@ -15,7 +15,6 @@ from typing import Any, Callable
 
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
 from glitnir.lean.lexing import code_tokens, scan
-from glitnir.lean.limits import check_seconds
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -64,6 +63,7 @@ from glitnir.notebook.evidence_cards import (
     evidence_directives,
     evidence_request,
     provider_failure,
+    provider_unavailable,
 )
 from glitnir.notebook.proof_steps import ProofSteps
 from glitnir.providers import (
@@ -121,10 +121,13 @@ CLOSE_SECONDS = 55
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 #: The longest link to another notebook the preview resolves.
 MAX_LINK_CHARACTERS = 1024
-# The explicit "inspect" request is answered synchronously and the editor gives up
-# on a request after 130 s, so it keeps this shorter bound. Checks, which run in
-# a worker and report through snapshot polling, use the full check time limit.
-REQUEST_INSPECTION_SECONDS = 120
+INSPECTING = "Inspecting the saved project setup"
+BUSY = "Project inspection or checking is already running."
+# Views are drawn one at a time in a worker; the editor polls `view` for them.
+VIEW_STARTING = "Preparing the view."
+VIEW_QUEUED = "Waiting for another view to finish drawing."
+VIEW_CANCELLED = "View drawing cancelled."
+NOTHING_DRAWING = "No view is drawing."
 
 
 def _directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
@@ -332,6 +335,21 @@ def _with_saved_decisions(
             else {**verification, "axioms": list(verification["axioms"])}
         )
     return cards
+
+
+def _unavailable_words(providers: Providers | None, section: str) -> dict[str, str]:
+    """Map each evidence verb or decision kind that cannot run to the reason."""
+    if providers is None:
+        return {}
+    table: dict[str, EvidenceProvider] | dict[str, DecisionProvider] = (
+        providers.evidence if section == "evidence" else providers.decisions
+    )
+    reasons: dict[str, str] = {}
+    for word in sorted(table):
+        missing, error = provider_unavailable(table[word])
+        if missing or error:
+            reasons[word] = missing or error
+    return reasons
 
 
 def _with_runs(
@@ -675,6 +693,36 @@ def _expected_theorem(name: str, status: str) -> str:
     return name if status == "proven" else f"{name}_refuted"
 
 
+@dataclass
+class _ViewJob:
+    """The view being drawn: its cache key, its cancel and what it is doing."""
+
+    key: tuple[str, str, int]
+    cancel: threading.Event
+    message: str = VIEW_STARTING
+
+
+def _inspection_summary(result: dict[str, Any], sha256: str) -> dict[str, Any]:
+    """Keep what the preview shows of an inspection; never the setup itself.
+
+    The setup lists every module of the import closure (megabytes with
+    Mathlib) and the resolution the bytes of each configuration file it read,
+    so only the message and the packages are kept for the snapshot.
+    """
+    summary: dict[str, Any] = {
+        "status": str(result.get("status", "unavailable")),
+        "source_sha256": sha256,
+        "message": str(result.get("message", "")),
+    }
+    resolution = result.get("resolution")
+    if isinstance(resolution, dict):
+        summary["resolution"] = {
+            "kind": resolution.get("kind"),
+            "packages": resolution.get("packages", []),
+        }
+    return summary
+
+
 class SourcePreviewService:
     """Preview source; inspect and check confined projects only on request."""
 
@@ -696,8 +744,14 @@ class SourcePreviewService:
         self._state_lock = threading.Lock()
         self._check: dict[str, Any] | None = None
         self._worker: threading.Thread | None = None
-        self._view_lock = threading.Lock()
+        self._inspection: dict[str, Any] | None = None
+        self._inspection_worker: threading.Thread | None = None
+        # Drawn views and failed attempts by (source, environment, line); the
+        # view being drawn, if any, and its worker. All under `_state_lock`.
         self._drawings: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self._view_failures: dict[tuple[str, str, int], dict[str, Any]] = {}
+        self._view_job: _ViewJob | None = None
+        self._view_worker: threading.Thread | None = None
         self._providers_lock = threading.Lock()
         self._loaded_providers: Providers | None = None
         # Held for a whole provider run, evidence or decision: one at a time
@@ -728,25 +782,72 @@ class SourcePreviewService:
             self._cancel.set()
             if self._decision_cancel is not None:
                 self._decision_cancel.set()
-            workers = [self._worker, self._evidence_worker, self._decision_worker]
+            if self._view_job is not None:
+                self._view_job.cancel.set()
+            workers = [
+                self._worker,
+                self._inspection_worker,
+                self._evidence_worker,
+                self._decision_worker,
+                self._view_worker,
+            ]
         deadline = time.monotonic() + CLOSE_SECONDS
         for worker in workers:
             if worker is not None:
                 worker.join(timeout=max(0.0, deadline - time.monotonic()))
 
     def inspect(self, sha256: str) -> dict[str, Any]:
-        """Inspect saved source once at a time, without retaining proof state."""
+        """Start inspecting the saved source's project setup; return its state.
+
+        The inspection runs in a worker, one at a time and never beside a
+        check, and is reported through snapshots as `preview.inspection`, so
+        no request waits for Lake; each Lake run is bounded by the check time
+        limit. Nothing about proof is retained.
+        """
+        if self._cancel.is_set():
+            raise NotebookError(CLOSED)
         if not self._inspection_lock.acquire(blocking=False):
-            raise NotebookError("Project inspection is already running.")
-        try:
-            return inspect_project(
-                self.path,
-                expected_sha256=sha256,
-                cancel=self._cancel,
-                timeout_seconds=min(REQUEST_INSPECTION_SECONDS, check_seconds()),
+            raise NotebookError(BUSY)
+        with self._state_lock:
+            if self._cancel.is_set():
+                self._inspection_lock.release()
+                raise NotebookError(CLOSED)
+            self._inspection = {
+                "status": "running",
+                "source_sha256": sha256,
+                "message": INSPECTING,
+            }
+            self._inspection_worker = threading.Thread(
+                target=self._inspect_work, args=(sha256,), daemon=False
             )
-        finally:
-            self._inspection_lock.release()
+            try:
+                self._inspection_worker.start()
+            except RuntimeError as error:
+                self._inspection = {
+                    "status": "unavailable",
+                    "source_sha256": sha256,
+                    "message": str(error),
+                }
+                self._inspection_worker = None
+                self._inspection_lock.release()
+            return dict(self._inspection)
+
+    def _inspect_work(self, sha256: str) -> None:
+        """Inspect, keep the summary for snapshots, and always open the gate."""
+        try:
+            result = _inspection_summary(
+                inspect_project(self.path, expected_sha256=sha256, cancel=self._cancel),
+                sha256,
+            )
+        except Exception as error:  # a background failure must end the run
+            result = {
+                "status": "unavailable",
+                "source_sha256": sha256,
+                "message": f"Project inspection failed: {error}",
+            }
+        with self._state_lock:
+            self._inspection = result
+        self._inspection_lock.release()
 
     def check(self, sha256: str, through_line: int | None = None) -> None:
         """Queue an explicit check, retaining historical results in memory.
@@ -765,7 +866,7 @@ class SourcePreviewService:
             if through_line_end(data, through_line) >= len(data):
                 through_line = None  # nothing after it: a check of the whole file
         if not self._inspection_lock.acquire(blocking=False):
-            raise NotebookError("Project inspection or checking is already running.")
+            raise NotebookError(BUSY)
         with self._state_lock:
             if self._cancel.is_set():
                 self._inspection_lock.release()
@@ -935,6 +1036,7 @@ class SourcePreviewService:
         sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
         with self._state_lock:
             observation = self._check
+            inspection = self._inspection
             running, run_errors = self._running, dict(self._run_errors)
         records = load_records(self.path)
         project_claims: list[dict[str, Any]] = []
@@ -968,6 +1070,7 @@ class SourcePreviewService:
                 "mode": "project",
                 "notice": NOTICE,
                 "check": observation,
+                "inspection": inspection,
                 "project": describe_project(self.path),
             },
             "cells": cells,
@@ -1004,6 +1107,11 @@ class SourcePreviewService:
             "directive_providers": {
                 "evidence": [] if providers is None else sorted(providers.evidence),
                 "decide": [] if providers is None else sorted(providers.decisions),
+            },
+            # Of those, the words that cannot run yet, with what is missing.
+            "directive_unavailable": {
+                "evidence": _unavailable_words(providers, "evidence"),
+                "decide": _unavailable_words(providers, "decide"),
             },
             "links": [],
             "references": sibling_references(self.path),
@@ -1050,7 +1158,17 @@ class SourcePreviewService:
         return assets.read(self.path, found, reference, sha256)
 
     def view(self, cell: int, line: int) -> dict[str, Any]:
-        """Draw one listed directive, one at a time; raise KeyError if unlisted."""
+        """Report one listed directive's drawing, starting it if needed.
+
+        Never waits for Lean. A drawing is made in a worker, one view at a
+        time and bounded by the check time limit; until it is done the answer
+        is `{"status": "drawing", "message": ...}` (or `"queued"` while
+        another view is drawn), and the caller asks again. A finished drawing
+        is kept for its saved source and environment; a failure, `{"error":
+        ...}` and `transient` if it says nothing about the notebook, is
+        answered once, so asking again draws it again. Raises KeyError if no
+        directive is listed at `cell` and `line`.
+        """
         text = self._text()
         fingerprint = self._fingerprint(text)
         snapshot = self._snapshot(text, fingerprint)
@@ -1063,27 +1181,77 @@ class SourcePreviewService:
         if entry["error"]:
             return {"error": entry["error"]}
         key = (snapshot["sha256"], fingerprint(), line)
-        cached = self._drawings.get(key)
-        if cached is not None:  # a cache hit never waits for a running render
-            return cached
-        with self._view_lock:
-            if key not in self._drawings:
-                drawing = render_project_view(
-                    self.path,
-                    expected_sha256=snapshot["sha256"],
-                    line=line,
-                    provider=self._providers().views[entry["kind"]],
-                    kind=entry["kind"],
-                    name=entry["name"],
-                    using=tuple(entry["using"]),
-                    cancel=self._cancel,
-                )
-                if "error" in drawing:  # failures may be transient; retry later
-                    return drawing
-                self._drawings[key] = drawing
-                while len(self._drawings) > MAX_CACHED_VIEWS:
-                    del self._drawings[next(iter(self._drawings))]
-            return self._drawings[key]
+        with self._state_lock:
+            cached = self._drawings.get(key)
+            if cached is not None:
+                return cached
+            job = self._view_job
+            if job is not None:
+                if job.key == key:
+                    return {"status": "drawing", "message": job.message}
+                if job.key[0] != key[0]:
+                    # Its saved source is gone, so its drawing would be refused.
+                    job.cancel.set()
+                return {"status": "queued", "message": VIEW_QUEUED}
+            failure = self._view_failures.pop(key, None)
+            if failure is not None:
+                return failure
+            if self._cancel.is_set():
+                return {"error": CLOSED}
+            job = _ViewJob(key, threading.Event())
+            worker = threading.Thread(
+                target=self._draw_view, args=(job, entry), daemon=False
+            )
+            self._view_job, self._view_worker = job, worker
+            try:
+                worker.start()
+            except RuntimeError as error:
+                self._view_job = self._view_worker = None
+                return {"error": f"View drawing could not start: {error}"}
+            return {"status": "drawing", "message": job.message}
+
+    def _draw_view(self, job: _ViewJob, entry: dict[str, Any]) -> None:
+        """Draw one view and keep its drawing or failure; always end the job."""
+
+        def progress(message: str) -> None:
+            with self._state_lock:
+                job.message = message
+
+        try:
+            drawing = render_project_view(
+                self.path,
+                expected_sha256=job.key[0],
+                line=job.key[2],
+                provider=self._providers().views[entry["kind"]],
+                kind=entry["kind"],
+                name=entry["name"],
+                using=tuple(entry["using"]),
+                cancel=job.cancel,
+                progress=progress,
+            )
+        except Exception as error:  # the job must always end
+            drawing = {"error": f"View drawing failed: {error}"}
+        with self._state_lock:
+            if "error" in drawing and job.cancel.is_set():
+                # Asked for, so not transient: drawing it again needs a request.
+                closed = self._cancel.is_set()
+                drawing = {"error": CLOSED if closed else VIEW_CANCELLED}
+            table = self._view_failures if "error" in drawing else self._drawings
+            table[job.key] = drawing
+            while len(table) > MAX_CACHED_VIEWS:
+                del table[next(iter(table))]
+            self._view_job = None
+
+    def cancel_view(self) -> None:
+        """Stop the view being drawn; its card then says it was cancelled.
+
+        Raises:
+            SnapshotError: No view is being drawn.
+        """
+        with self._state_lock:
+            if self._view_job is None:
+                raise SnapshotError(NOTHING_DRAWING)
+            self._view_job.cancel.set()
 
     def run_evidence(self, sha256: str, line: int) -> str:
         """Start running the evidence directive at `line`; return its card key.

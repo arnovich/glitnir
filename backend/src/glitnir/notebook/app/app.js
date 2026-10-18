@@ -135,14 +135,19 @@
   // A transient view failure (busy checker, cancellation, timeout) is asked
   // again on the next snapshot; any failure is asked again once a check
   // starts or finishes, because the environment it saw may have changed.
-  function forgetFailedDrawings(all) {
-    for (const [key, drawing] of Object.entries(UI.drawings)) if (drawing.error && (all || drawing.transient)) delete UI.drawings[key];
+  // A drawing still being polled for another saved source is forgotten, so
+  // returning to that source asks for it again.
+  function forgetFailedDrawings(all, sha256) {
+    for (const [key, drawing] of Object.entries(UI.drawings)) {
+      if (drawing.error && (all || drawing.transient)) delete UI.drawings[key];
+      else if (drawing.loading && sha256 && !key.endsWith(sha256)) delete UI.drawings[key];
+    }
   }
 
   function acceptSnapshot(data) {
     const anchor = readingAnchor();
     const changed = readableSnapshot && readableSnapshot.sha256 !== data.sha256;
-    forgetFailedDrawings(Boolean(UI.data) && UI.data.preview?.check?.status !== data.preview?.check?.status);
+    forgetFailedDrawings(Boolean(UI.data) && UI.data.preview?.check?.status !== data.preview?.check?.status, data.sha256);
     forgetImages(data);
     UI.data = data;
     UI.connected = true;
@@ -158,7 +163,6 @@
       highlightUntil = Date.now() + 2400;
       clearTimeout(highlightTimer);
       highlightTimer = setTimeout(markLiveChanges, 2450);
-      UI.inspection = null;
       liveMessage('Saved edits received · checking is manual');
     } else if (opening) liveMessage(linkedPath() && !mainChanged ? `Reading ${data.file} read-only · its saved results only` : upToDate());
     else if (heldRendering) liveMessage('Saved source is readable again');
@@ -207,7 +211,7 @@
         }
       } finally {
         inFlight = null;
-        const busy = UI.data && (UI.data.checking.length || UI.data.preview?.check?.status === 'running' || [...(UI.data.decisions || []), ...(UI.data.evidence || [])].some(e => e.status === 'running'));
+        const busy = UI.data && (UI.data.checking.length || UI.data.preview?.check?.status === 'running' || UI.data.preview?.inspection?.status === 'running' || [...(UI.data.decisions || []), ...(UI.data.evidence || [])].some(e => e.status === 'running'));
         scheduleLoad(reloadPending ? 250 : busy ? 1000 : 4000);
       }
     })();
@@ -227,15 +231,21 @@
     UI.notice = response.ok ? '' : `Refused: ${answer.error || response.status}.`;
     return response.ok ? answer : null;
   }
+  // The server inspects in the background, as it checks, and reports the last
+  // inspection in each snapshot; it is shown for the saved source it read.
+  function inspection() {
+    const found = UI.data?.preview?.inspection;
+    return found && (found.status === 'running' || found.source_sha256 === UI.data.sha256) ? found : null;
+  }
+  const inspecting = () => Boolean(UI.inspecting || inspection()?.status === 'running');
   async function inspectProject() {
-    if (UI.inspecting || UI.data?.preview?.mode !== 'project' || linkedPath()) return;
+    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath()) return;
     UI.inspecting = true;
-    UI.inspection = null;
     const sha256 = UI.data.sha256;
     renderChrome();
     try {
-      const answer = await post('/api/project/inspect', {sha256});
-      if (UI.data.sha256 === sha256) UI.inspection = answer;
+      await post('/api/project/inspect', {sha256});
+      await refresh();
     } finally {
       UI.inspecting = false;
       renderChrome();
@@ -254,7 +264,7 @@
     try { await post('/api/project/check', body); await refresh(); }
     finally { UI.checkRequested = false; render(); }
   }
-  const checkBusy = () => Boolean(UI.inspecting || UI.checkRequested || UI.data?.preview?.check?.status === 'running');
+  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running');
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note) {
@@ -452,7 +462,7 @@
     if (!linkedPath()) mainChanged = false;
     clearTimeout(highlightTimer);
     highlighted = new Set();
-    Object.assign(UI, {selected: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: '', inspection: null});
+    Object.assign(UI, {selected: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
     closeDiagram();
     document.body.classList.toggle('glitnir-linked-view', Boolean(linkedPath()));
     const cached = snapshots.get(linkedPath() ?? '');
@@ -683,8 +693,10 @@
     let body;
     if (linked) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Lean draws this view in the notebook's own preview.</span></div>`;
     else if (view.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>${esc(view.error)}</span></div>`;
-    else if (!drawing || drawing.loading) body = '<p class="small muted view-wait">Lean is drawing it…</p>';
-    else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>No drawing: ${esc(drawing.error)}</span></div>`;
+    else if (!drawing || drawing.loading) body = `<p class="small muted view-wait" role="status">${esc(drawing?.message || 'Lean is drawing it…')}</p>`
+      + (drawing?.drawing ? `<div class="claim-actions"><button type="button" class="secondary" data-act="view-cancel">${icon('x')}Stop</button><span class="small muted">Drawing is bounded by the check time limit.</span></div>` : '');
+    else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>No drawing: ${esc(drawing.error)}</span></div>`
+      + `<div class="claim-actions"><button type="button" class="secondary" data-act="view-retry" data-key="${esc(key)}">${icon('replay')}Draw again</button></div>`;
     else if (drawing.graph || drawing.model) body = diagramHTML(key);
     else body = `<div class="view-body"><img alt="${esc(view.kind)} view of ${esc(view.name)}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing.svg)}"></div>`;
     return `<section data-document-start="${line}" data-document-end="${line}" class="cell box view-cell">${head}${body}</section>`;
@@ -766,15 +778,28 @@
     }
   }
 
+  // The server draws views in the background, one at a time: until a drawing
+  // is done it answers with what it is doing, and the view is asked again.
+  const VIEW_POLL_MS = 750;
   async function loadView(key, view) {
-    UI.drawings[key] = {loading: true};
+    UI.drawings[key] = {loading: true, ...(UI.drawings[key]?.loading ? UI.drawings[key] : {})};
+    let next;
     try {
       const response = await fetch(`/api/view?cell=${view.cell}&line=${view.line}`, {cache: 'no-store', headers: API});
       const answer = await response.json().catch(() => ({}));
-      UI.drawings[key] = response.ok ? answer : {error: answer.error || `the server answered ${response.status}`, transient: response.status >= 500};
+      if (response.ok && (answer.status === 'drawing' || answer.status === 'queued')) next = {loading: true, drawing: answer.status === 'drawing', message: String(answer.message || '')};
+      else next = response.ok ? answer : {error: answer.error || `the server answered ${response.status}`, transient: response.status >= 500};
     } catch (error) {
-      UI.drawings[key] = {error: 'the server did not answer', transient: true};
+      next = {error: 'the server did not answer', transient: true};
     }
+    // A drawing forgotten meanwhile (Draw again, a changed source) is not revived.
+    if (!UI.drawings[key]?.loading) return;
+    UI.drawings[key] = next;
+    render();
+    if (next.loading) setTimeout(() => { if (UI.drawings[key]?.loading && UI.data?.sha256 && key.endsWith(UI.data.sha256)) loadView(key, view); }, VIEW_POLL_MS);
+  }
+  async function cancelView() {
+    await post('/api/view/cancel', {});
     render();
   }
 
@@ -2016,14 +2041,15 @@
     $('load-error').textContent = problem || '';
     // A linked notebook is checked in its own preview, never from this one.
     $('inspect-project').hidden = !project || linked;
-    $('inspect-project').disabled = Boolean(UI.inspecting || UI.checkRequested || d.preview?.check?.status === 'running');
+    $('inspect-project').disabled = checkBusy();
     $('check-project').hidden = !project || linked;
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
-    $('inspect-project').textContent = UI.inspecting ? 'Inspecting…' : 'Inspect project environment';
-    $('project-inspection').hidden = !project || linked || (!UI.inspection && !UI.inspecting);
-    $('project-inspection').innerHTML = UI.inspecting ? 'Inspecting the saved project setup…' : UI.inspection ? `Last inspection: ${esc(UI.inspection.message)}` + projectResolutionHTML(UI.inspection.resolution) : '';
+    const inspected = inspection();
+    $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
+    $('project-inspection').hidden = !project || linked || (!inspected && !inspecting());
+    $('project-inspection').innerHTML = inspecting() ? 'Inspecting the saved project setup… Close this preview to cancel.' : inspected ? `Last inspection: ${esc(inspected.message)}` + projectResolutionHTML(inspected.resolution) : '';
     if (project) {
       // The check actions live in the banner, so it stays; it is amber only
       // when a result needs attention: out of date, withheld or unavailable.
@@ -2308,6 +2334,8 @@
       case 'source-lines': e.preventDefault(); showSourceLines(Number(b.dataset.start), Number(b.dataset.end)); break;
       case 'source': if (linkedPath()) break; if (b.dataset.start && HOST) HOST.openSource({index: Number(b.dataset.index), sha256: b.dataset.sha, range: {start: Number(b.dataset.start), end: Number(b.dataset.end)}}); else openSource(Number(b.dataset.index)); break;
       case 'evidence-run': runEvidence(Number(b.dataset.line), b.dataset.sha); break;
+      case 'view-cancel': cancelView(); break;
+      case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
       case 'decision-run': decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;

@@ -87,6 +87,81 @@ def test_explicit_inspection_timeout_overrides_check_limit(tmp_path, monkeypatch
     assert limits == [7]
 
 
+def _inspectable(tmp_path, monkeypatch, run):
+    source = tmp_path / "A.lean"
+    source.write_text("example : True := True.intro\n")
+    (tmp_path / "lakefile.toml").write_text('name = "test"')
+    (tmp_path / "lean-toolchain").write_text(inspection.TOOLCHAIN)
+    (tmp_path / "lake-manifest.json").write_text("{}")
+    monkeypatch.setattr(inspection, "_toolchain", lambda: tmp_path)
+    monkeypatch.setattr(inspection, "_run", run)
+    return source
+
+
+def test_extra_imports_are_named_to_the_setup_program(tmp_path, monkeypatch):
+    arguments = []
+
+    def run(args, *rest, program=None, **kwargs):
+        arguments.append(args)
+        if program is None:
+            return "Lake version 5.0.0-src+x (Lean version 4.32.1)"
+        raise ValueError("stop here")
+
+    source = _inspectable(tmp_path, monkeypatch, run)
+    inspection.inspect_project(source, imports=("Gimle.Asgard.Visualization.Model",))
+    assert arguments[-1] == [
+        "setup-file",
+        str(source.absolute()),
+        "Gimle.Asgard.Visualization.Model",
+    ]
+    arguments.clear()
+    inspection.inspect_project(source)
+    assert arguments[-1] == ["setup-file", str(source.absolute())]
+
+
+@pytest.mark.parametrize("module", ["-x", "A..B", "A B", "A\n#eval 1", ""])
+def test_invalid_extra_imports_never_reach_lake(tmp_path, monkeypatch, module):
+    source = _inspectable(tmp_path, monkeypatch, lambda *a, **k: pytest.fail("ran"))
+    result = inspection.inspect_project(source, imports=(module,))
+    assert result["status"] == "unavailable"
+    assert "Invalid module name" in result["message"]
+
+
+def test_an_out_of_date_import_is_marked_as_needing_a_build(tmp_path, monkeypatch):
+    """Lake's `--no-build` exit status says a build is needed; nothing is built."""
+
+    def run(args, *rest, program=None, **kwargs):
+        if program is None:
+            return "Lake version 5.0.0-src+x (Lean version 4.32.1)"
+        raise inspection.NeedsBuild("Lake could not inspect this prepared project.")
+
+    source = _inspectable(tmp_path, monkeypatch, run)
+    result = inspection.inspect_project(source, imports=("Demo.View",))
+    assert result == {
+        "status": "unavailable",
+        "message": "Lake could not inspect this prepared project.",
+        "needs_build": True,
+    }
+
+
+@pytest.mark.parametrize("code, kind", [(3, "NeedsBuild"), (1, "ValueError")])
+def test_only_the_no_build_exit_status_needs_a_build(tmp_path, monkeypatch, code, kind):
+    class Process:
+        returncode = code
+
+        def poll(self):
+            return code
+
+    monkeypatch.setattr(inspection, "confine", lambda command, **kwargs: command)
+    monkeypatch.setattr(inspection.subprocess, "Popen", lambda *a, **k: Process())
+    monkeypatch.setattr(inspection, "kill_and_reap", lambda process: None)
+    with pytest.raises(ValueError) as raised:
+        inspection._run(
+            ["setup-file"], tmp_path, tmp_path, threading.Event(), program=tmp_path
+        )
+    assert type(raised.value).__name__ == kind
+
+
 def test_sandbox_opt_out_is_never_honored(tmp_path, monkeypatch):
     """Even the legacy opt-out cannot start project code without confinement."""
     from glitnir.lean import sandbox
