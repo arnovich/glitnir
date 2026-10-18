@@ -74,8 +74,8 @@ install `plugins/forseti/dist/glitnir_forseti-0.1.0-py3-none-any.whl`.
 
 The backend's Python is shown in **Output → Glitnir** ("Glitnir environment: …")
 or set by `glitnir.pythonPath`. After a manual install, close and reopen the
-preview. Its views need a notebook that imports `Gimle.Forseti` and
-`Gimle.Asgard.Visualization.Model` in a Lake project with built imports.
+preview. Its views need a notebook in a Lake project whose packages build
+`Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`.
 
 If something fails, check **Output → Glitnir**, then open an
 [issue](https://github.com/arnovich/glitnir/issues). See the

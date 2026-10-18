@@ -7,14 +7,16 @@ and the repository README's Extensions section explains verifying and installing
 it, or building it from a checkout.
 
 **What it provides now:** Forseti circuit, model and dynamics views for
-`-- @view circuit|model|dynamics <name>` directives. The notebook must import
-`Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`, and sit in a Lake project
-with built imports.
+`-- @view circuit|model|dynamics <name>` directives. The notebook must sit in a
+Lake project whose packages build `Gimle.Forseti` and
+`Gimle.Asgard.Visualization.Model`; Glitnir loads both from the project's build
+for the view, so the notebook need not import them. An unbuilt or out-of-date one
+is named on the card with the `lake build` command to run.
 
 It also provides evidence for `-- @evidence simulate|iterate <target>` directives,
 shown as cards with a **Run** button; a run only happens when clicked. The notebook
-must import `Gimle.Asgard.Compile.RationalInterchange` and
-`Gimle.Asgard.Model.Continuous`.
+loads `Gimle.Asgard.Compile.RationalInterchange` and
+`Gimle.Asgard.Model.Continuous` from the project's build, as views load theirs.
 
 ```lean
 -- @evidence simulate dissipative (h := 1/100) (steps := 400) (solver := rk4)

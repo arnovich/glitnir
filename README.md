@@ -301,7 +301,7 @@ the preview for this list. Moving never starts a check.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check (`import Mathlib` makes that take minutes); the editor's explicit inspect request stays at most 120 s. Applies to previews opened after the change. |
+| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds each Lake run of the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and a view's wait for another Lean run. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout. Applies to previews opened after the change. |
 | `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
 
@@ -394,15 +394,20 @@ creates a new environment; install the extension packages into it again.
 
 `glitnir-forseti` (in [`plugins/forseti`](plugins/forseti)) draws Forseti
 circuit, model and dynamics views for `-- @view circuit|model|dynamics <name>`
-directives. The notebook must import `Gimle.Forseti` and
-`Gimle.Asgard.Visualization.Model` and sit in a Lake project with built imports;
-a loose `.lean` file has no prepared imports to draw from.
+directives. The notebook must sit in a Lake project whose packages build
+`Gimle.Forseti` and `Gimle.Asgard.Visualization.Model`; the notebook need not
+import the visualization module, which the view loads from the project's build. If that build is missing or out of date,
+the card names the `lake build` command to run. A loose `.lean` file has no
+prepared imports to draw from. A view is drawn in the background, one at a time:
+its card says what it is doing, including waiting for another Lean run, and
+**Stop** cancels it.
 
-It also runs `-- @evidence simulate|iterate <target>` directives. The notebook
-must import `Gimle.Asgard.Compile.RationalInterchange` and
-`Gimle.Asgard.Model.Continuous`. `simulate` needs nothing more; `iterate` needs
-Python Asgard (`gimle-asgard`), which is not on PyPI: install it into the
-backend's environment from its own wheel or checkout.
+It also runs `-- @evidence simulate|iterate <target>` directives, loading
+`Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
+from the project's build in the same way. `simulate` needs nothing more; `iterate`
+needs Python Asgard (`gimle-asgard`), which is not on PyPI: install it into the
+backend's environment from its own wheel or checkout. Without it, `iterate` cards
+say so and cannot run, and the provider list shows `iterate` as unavailable.
 Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 
 It also decides `-- @decide <name> : <goal>` directives of kind `entailment`,
