@@ -1,5 +1,7 @@
 # Glitnir: A simple notebook format for Lean
 
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/gimle.glitnir?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir)
+
 Glitnir is a simple notebook format that makes it easier for a standard human mathematician to follow agent-generated proofs in Lean.
 
 A notebook is an ordinary `.lean` file: the prose lives in a specific Markdown format inside its `/-! … -/` comment blocks, so it builds with Lean like any other file.
@@ -71,8 +73,10 @@ Glitnir runs in local VS Code windows on **macOS and Linux** (see
 
 Then:
 
-1. Install **Glitnir — Lean Notebooks** from the Extensions view once it is on
-   the Visual Studio Marketplace, or download `glitnir-VERSION.vsix` from a
+1. Install **Glitnir — Lean Notebooks** from the
+   [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir): search for it in the Extensions view, or
+   run `code --install-extension gimle.glitnir`. For a specific version or an
+   offline machine, download `glitnir-VERSION.vsix` from a
    [release](https://github.com/arnovich/glitnir/releases) and run
    **Extensions: Install from VSIX…**.
 2. Open a Lean file in a trusted workspace and run **Glitnir: Set Up
@@ -80,6 +84,10 @@ Then:
    downloads the backend wheel of the extension's own release, verifies its
    checksum and installs it with uv into its own environment.
 3. Run **Glitnir: Open in Glitnir**.
+
+Marketplace installs update automatically. After an update, Glitnir offers once
+to set up the new version's backend and reinstall your extension packages, in
+one click.
 
 Views, evidence and decisions come from the optional **Forseti plugin**, an
 extension package (a Python package installed into Glitnir's backend, not a VS
