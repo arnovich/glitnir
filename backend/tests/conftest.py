@@ -49,6 +49,12 @@ def no_startup_sweep(monkeypatch):
     monkeypatch.setattr("glitnir.notebook.server.sweep_stale_scratch", lambda: None)
 
 
+@pytest.fixture(autouse=True)
+def no_caffeinate(monkeypatch):
+    """Start no caffeinate, which tests patching `subprocess.Popen` would catch."""
+    monkeypatch.setattr("glitnir.lean.awake._enabled", lambda: False)
+
+
 @pytest.fixture(scope="session")
 def session_replay_cache(tmp_path_factory):
     """One private replay cache directory shared by this session's live tests."""

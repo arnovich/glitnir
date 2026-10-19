@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean import replay_cache
+from glitnir.lean.awake import awake
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.environment import (
     LEAN_AXIOM_ALLOWLIST,
@@ -189,7 +190,7 @@ def run_observer(
         cwd=cwd,
         required=True,
     )
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, awake():
         process = subprocess.Popen(
             command,
             cwd=cwd,

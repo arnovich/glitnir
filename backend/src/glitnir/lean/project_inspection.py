@@ -17,6 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from glitnir.lean.awake import awake
 from glitnir.lean.environment import bind_to_parent, kill_and_reap
 from glitnir.lean.limits import check_seconds
 from glitnir.lean.prepared_packages import PROGRAM, validate_resolution
@@ -104,7 +105,7 @@ def _run(
         "HOME": "/nonexistent",
         "LANG": "C.UTF-8",
     }
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, awake():
         process = subprocess.Popen(
             command,
             cwd=root,
