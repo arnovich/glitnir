@@ -703,7 +703,7 @@
     else if (view.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>${esc(view.error)}</span></div>`;
     else if (!drawing || drawing.loading) body = `<p class="small muted view-wait" role="status">${esc(drawing?.message || 'Lean is drawing it…')}</p>`
       + (drawing?.drawing ? `<div class="claim-actions"><button type="button" class="secondary" data-act="view-cancel" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('x')}Stop</button><span class="small muted">Drawing is bounded by the check time limit.</span></div>` : '');
-    else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>No drawing: ${esc(drawing.error)}</span></div>`
+    else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span class="lean-message">No drawing: ${esc(drawing.error)}</span></div>`
       + `<div class="claim-actions"><button type="button" class="secondary" data-act="view-retry" data-key="${esc(key)}">${icon('replay')}Draw again</button></div>`;
     else if (drawing.graph || drawing.model) body = diagramHTML(key);
     else body = `<div class="view-body"><img alt="${esc(view.kind)} view of ${esc(view.name)}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing.svg)}"></div>`;
@@ -879,7 +879,7 @@
     // An errored card shows its error, then at most the last run's failure;
     // a card errored only by its missing provider still says it is out of date.
     if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() ? ' Run it again to update it.' : ''}`) + body;
-    if (entry.run_error) body = note('red', `The last run failed: ${esc(entry.run_error)}`) + body;
+    if (entry.run_error) body = note('red', `<span class="lean-message">The last run failed: ${esc(entry.run_error)}</span>`) + body;
     if (entry.unavailable && !entry.error) body = note('amber', `${esc(entry.unavailable)} Saved evidence remains viewable.`) + body;
     if (entry.error) body = note('red', esc(entry.error) + (snap ? ' Saved evidence remains viewable.' : '')) + body;
     if (!staticPage && runnable && !running && !linkedPath() && !recorded()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;

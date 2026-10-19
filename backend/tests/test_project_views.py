@@ -237,8 +237,6 @@ def test_loose_files_need_a_lake_project(tmp_path, monkeypatch, imports):
 
 
 def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
-    from glitnir.lean.provider_lean import compose_provider_source
-
     source, toolchain = _lake(
         tmp_path, monkeypatch, {"Demo.View": [".lake/build/Demo/View.olean"]}
     )
@@ -256,18 +254,21 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
     assert runtime == toolchain
     assert arguments[:3] == ["lean", arguments[1], "--run"]
     assert arguments[1].startswith("-M")
-    helper, composed, setup, report = map(Path, arguments[3:])
+    helper, composed, setup, preamble, command, report = arguments[3:]
+    helper, composed, setup, report = map(Path, (helper, composed, setup, report))
     assert helper.name == "ViewElab.lean"
     assert composed != source
     assert inputs["ViewElab.lean"].startswith("/- Elaborate a composed view")
-    assert inputs[composed.name] == compose_provider_source(
-        NOTEBOOK,
-        4,
-        ("Demo.View",),
-        "open Demo",
-        "#demo_view circuit c",
-        needs="view",
+    assert inputs[composed.name] == (
+        "import Demo.View\nimport Demo.View\n\ndef c := 1\n\n"
+        "open Demo\n#demo_view circuit c\n"
     )
+    # The program elaborates the preamble outside the notebook's scope and
+    # the command in it; `test_live_view_preamble_scope_is_pinned` runs it.
+    written_source = inputs[composed.name].encode()
+    assert written_source[: int(preamble)].endswith(b"def c := 1\n\n")
+    assert written_source[int(preamble) : int(command)] == b"open Demo\n"
+    assert written_source[int(command) :] == b"#demo_view circuit c\n"
     written = json.loads(inputs[setup.name])
     assert written["importArts"]["Demo.View"] == [
         str(tmp_path.resolve() / ".lake/build/Demo/View.olean")
@@ -291,7 +292,7 @@ def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
         monkeypatch,
         {"information": ["hello"], "errors": ["unknown c\nmore detail", "second"]},
     )
-    assert _render(source) == {"error": "unknown c"}
+    assert _render(source) == {"error": "unknown c\nmore detail"}
 
     _reporting(monkeypatch, {"information": ["hello"], "errors": []})
     assert _render(source) == {"error": "The provider printed no drawing."}
@@ -423,7 +424,10 @@ def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
 def test_live_view_loads_provider_modules_the_notebook_does_not_import(
     prepared_lean_project,
 ):
-    """Provider modules come from the project's build; unbuilt ones are named."""
+    """Provider modules come from the project's build; unbuilt ones are named.
+
+    The command uses `title` through the `open` its preamble ends with.
+    """
     import os
     import subprocess
     import threading
@@ -454,13 +458,18 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
             kinds=frozenset({"demo"}),
             imports=imports,
             preamble=(
-                "open Lean Elab Command in\n"
-                'elab "#demo_view " n:ident : command => logInfo m!"demoView:'
-                '<svg xmlns=\\"http://www.w3.org/2000/svg\\">'
-                '<title>{drawTitle} {n.getId}</title></svg>"'
+                "namespace DemoView\n"
+                "def title (name : String) : String :=\n"
+                '  s!"<svg xmlns=\\"http://www.w3.org/2000/svg\\">'
+                '<title>{drawTitle} {name}</title></svg>"\n'
+                "end DemoView\n"
+                "open DemoView\n"
             ),
             marker="demoView:",
-            command=lambda kind, name, using: f"#demo_view {name}",
+            command=lambda kind, name, using: (
+                "#eval show Lean.Elab.Command.CommandElabM Unit from "
+                f'Lean.logInfo ("demoView:" ++ title "{name}")'
+            ),
         )
 
     def draw(imports):
@@ -485,6 +494,67 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
         f"Example.Unbuilt` in {root.resolve()}, then try again."
     ), unbuilt
     assert not (root / ".lake/build/lib/lean/Example/Unbuilt.olean").exists()
+
+
+def test_live_view_preamble_is_elaborated_outside_the_notebooks_scope(
+    prepared_lean_project,
+):
+    """The notebook's opens cannot make a preamble's names ambiguous.
+
+    The notebook opens two namespaces that both declare `Circuit`, as a
+    notebook opening `Gimle.Asgard` and `Gimle.Asgard.Dynamics` does, so the
+    preamble's `Circuit` was ambiguous in the notebook's scope; as a quoted
+    name in the elaborator, that left the command without one. The command
+    still names `target` as the notebook does, inside its namespace.
+    """
+    import threading
+
+    from glitnir.lean.project_views import render_project_view
+
+    root = prepared_lean_project
+    source = root / "src/Example.lean"
+    text = (
+        "import Example.Helper\n\n"
+        "namespace Left\ndef Circuit : Type := Nat\nend Left\n"
+        "namespace Right\ndef Circuit : Type := Nat\nend Right\n\n"
+        "-- Navier–Stokes, “quoted”: byte offsets are not character offsets.\n"
+        "namespace Notebook\nopen Left Right\n"
+        "def target : Nat := helper + 1\n"
+        "-- @view demo target\n"
+    )
+    source.write_text(text)
+    preamble = (
+        "namespace DemoView\nopen Left\n"
+        "def width (_c : Circuit) : Nat := 40\n"
+        "open Lean Elab Command in\n"
+        'elab "#demo_view " n:ident : command => do\n'
+        "  let value ← liftTermElabM do\n"
+        "    let e ← Term.elabTerm n (some (mkConst ``Nat))\n"
+        "    unsafe Meta.evalExpr Nat (mkConst ``Nat) e\n"
+        '  logInfo m!"demoView:<svg xmlns=\\"http://www.w3.org/2000/svg\\">'
+        '<title>{value + width (0 : Nat)} {``Circuit}</title></svg>"\n'
+        "end DemoView\n"
+    )
+    provider = ViewProvider(
+        name="demo",
+        kinds=frozenset({"demo"}),
+        imports=("Lean",),
+        preamble=preamble,
+        marker="demoView:",
+        command=lambda kind, name, using: f"#demo_view {name}",
+    )
+    result = render_project_view(
+        source,
+        expected_sha256=_sha(text),
+        line=text.count("\n"),
+        provider=provider,
+        kind="demo",
+        name="target",
+        using=(),
+        cancel=threading.Event(),
+    )
+    assert set(result) == {"svg"}, result
+    assert "<title>42 Left.Circuit</title>" in result["svg"]
 
 
 def test_a_slot_busy_past_the_time_limit_is_a_transient_error(tmp_path, monkeypatch):
@@ -561,17 +631,12 @@ def test_a_drawing_wins_over_unrelated_errors(tmp_path, monkeypatch):
     assert _render(source) == {"svg": "<svg/>"}
 
 
-@pytest.mark.parametrize(
-    "text,expected",
-    [
-        ("import Missing.Module\ndef c : Nat := 1\n", "unknown module"),
-        ("def b : Nat := (\ndef c : Nat := 1\n", "expected"),
-    ],
-)
-def test_live_view_elaboration_keeps_header_and_parse_errors(
-    tmp_path, project_toolchain, text, expected
-):
-    """Import and parse failures surface instead of an empty, successful report."""
+def _elaborate(tmp_path, toolchain, parts, offsets=None):
+    """Run the view program on `parts` (notebook, preamble, command) in the sandbox.
+
+    Returns its report. Nothing is imported without a Lake setup. `offsets`
+    replaces the preamble's and command's byte offsets the parts give.
+    """
     import threading
 
     from glitnir.lean.project_checking import run_observer
@@ -581,7 +646,7 @@ def test_live_view_elaboration_keeps_header_and_parse_errors(
     inputs.mkdir()
     output.mkdir()
     source = inputs / "Source.lean"
-    source.write_text(text)
+    source.write_bytes("".join(parts).encode())
     setup = {
         "name": "Source",
         "isModule": False,
@@ -594,18 +659,113 @@ def test_live_view_elaboration_keeps_header_and_parse_errors(
     helper = inputs / PROGRAM.name
     helper.write_bytes(PROGRAM.read_bytes())
     report = output / "view.json"
+    preamble = len(parts[0].encode())
+    command = preamble + len(parts[1].encode())
+    preamble, command = offsets or (preamble, command)
     run_observer(
-        project_toolchain,
+        toolchain,
         ["lean", "--run", str(helper), str(source), str(inputs / "setup.json")]
-        + [str(report)],
+        + [str(preamble), str(command), str(report)],
         cwd=output,
-        readable=[inputs, project_toolchain],
+        readable=[inputs, toolchain],
         writable=True,
         cancel=threading.Event(),
         deadline=time.monotonic() + 90,
     )
-    errors = json.loads(report.read_text())["errors"]
+    return json.loads(report.read_text())
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("import Missing.Module\ndef c : Nat := 1\n", "unknown module"),
+        ("def b : Nat := (\ndef c : Nat := 1\n", "expected"),
+    ],
+)
+def test_live_view_elaboration_keeps_header_and_parse_errors(
+    tmp_path, project_toolchain, text, expected
+):
+    """Import and parse failures surface instead of an empty, successful report."""
+    # No preamble and no command: the whole source is the notebook's.
+    errors = _elaborate(tmp_path, project_toolchain, (text, "", ""))["errors"]
     assert any(expected in error["text"] for error in errors), errors
+
+
+# The notebook's scope: `open`s, an option, a variable and a local notation.
+SCOPED_NOTEBOOK = """namespace Left
+def Circuit : Type := Nat
+end Left
+namespace Right
+def Circuit : Type := Nat
+end Right
+namespace Up
+def value : Nat := 1
+end Up
+namespace Down
+def value : Nat := 2
+def target : Nat := 100
+end Down
+
+namespace Notebook
+open Left Right Up
+set_option autoImplicit false
+variable (hidden : Nat)
+local notation "twice " x => x + x
+def target : Nat := 7
+
+"""
+SCOPED_PREAMBLE = """namespace DemoView
+open Left
+def width (_c : Circuit) : Nat := twice 20
+def same (x : α) : α := x
+def sees : Nat := hidden
+end DemoView
+open Nat Down
+
+"""
+SCOPED_COMMAND = """#eval IO.println s!"mark:{succ (target + DemoView.width (0 : Nat))}"
+#eval value
+"""
+
+
+def test_live_view_preamble_scope_is_pinned(tmp_path, project_toolchain):
+    """What reaches the preamble from the notebook, and the command from both.
+
+    In the preamble, `Circuit` is not ambiguous (the notebook's `open`s are
+    left out), `α` is bound (its options are) and `hidden` is unknown (its
+    variables are), but its local notation `twice` still applies. In the
+    command, `succ` comes from the preamble's `open Nat`, `target` is still
+    the notebook's own, and `value`, which `open Up` and `open Down` both
+    resolve, is ambiguous.
+    """
+    report = _elaborate(
+        tmp_path,
+        project_toolchain,
+        (SCOPED_NOTEBOOK, SCOPED_PREAMBLE, SCOPED_COMMAND),
+    )
+    assert report["information"] == ["mark:48\n"], report
+    preamble_line = SCOPED_NOTEBOOK.count("\n") + 5
+    [hidden, ambiguous] = report["errors"]
+    assert hidden == {"line": preamble_line, "text": "Unknown identifier `hidden`"}
+    assert ambiguous["text"].startswith("Ambiguous term\n  value\n"), report
+    assert "Down.value" in ambiguous["text"] and "Up.value" in ambiguous["text"]
+
+
+@pytest.mark.parametrize("preamble, command", [(5, 4), (0, 10_000)])
+def test_live_view_program_refuses_offsets_outside_the_source(
+    tmp_path, project_toolchain, preamble, command
+):
+    """Offsets out of order or past the source fail closed, before any Lean."""
+    from glitnir.lean.project_snapshot import SnapshotError
+
+    with pytest.raises(SnapshotError, match="offsets must satisfy PREAMBLE"):
+        _elaborate(
+            tmp_path,
+            project_toolchain,
+            ("def c : Nat := 1\n", "", ""),
+            (preamble, command),
+        )
+    assert not (tmp_path / "output/view.json").exists()
 
 
 @pytest.mark.parametrize(

@@ -46,6 +46,10 @@ RUNNING = {"view": "Lean is drawing it.", "evidence": "Lean is running it."}
 TOOLCHAIN_LIBRARIES = frozenset({"Init", "Std", "Lean", "Lake"})
 
 
+#: How much of a provider's first Lean error a card shows.
+ERROR_LINES = 12
+ERROR_CHARACTERS = 2000
+
 # Failures that say nothing about the output: a later request may succeed.
 INTERRUPTED = ("cancelled.", "timed out.")
 
@@ -118,7 +122,7 @@ def _project_modules(imports: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(m for m in imports if m.split(".")[0] not in TOOLCHAIN_LIBRARIES)
 
 
-def compose_provider_source(
+def provider_source_parts(
     text: str,
     line: int,
     imports: tuple[str, ...],
@@ -126,8 +130,13 @@ def compose_provider_source(
     command: str,
     *,
     needs: str,
-) -> str:
-    """Return provider imports, the notebook before `line`, preamble and command."""
+) -> tuple[str, str, str]:
+    """Return the composed source's notebook part, preamble and command.
+
+    The notebook part is the provider imports and the notebook before `line`.
+    The program elaborates the preamble outside the notebook's scope and the
+    command inside it, so it is told where each part starts.
+    """
     lines = text.split("\n")
     if not 1 <= line <= len(lines):
         raise ValueError(
@@ -136,7 +145,7 @@ def compose_provider_source(
     prefix = "".join(item + "\n" for item in lines[: line - 1])
     # Imports must precede every command; Lean accepts duplicated imports.
     header = "".join(f"import {module}\n" for module in imports)
-    return header + prefix + "\n" + preamble + "\n" + command + "\n"
+    return header + prefix + "\n", preamble + "\n", command + "\n"
 
 
 def _saved(source: Path) -> str:
@@ -205,10 +214,26 @@ def _errors(value: Any, needs: str) -> list[tuple[int | None, str]]:
     return errors
 
 
+def _bounded(text: str) -> str:
+    """Return a Lean error's non-blank lines, bounded; a last line `…` marks a cut.
+
+    At most `ERROR_LINES` lines and `ERROR_CHARACTERS` characters are kept:
+    Lean's first line alone can hide the cause, such as an ambiguous name's
+    "Possible interpretations". The text is plain; whoever shows it escapes it.
+    """
+    lines = [part.rstrip() for part in text.splitlines() if part.strip()]
+    shown = "\n".join(lines[:ERROR_LINES])[:ERROR_CHARACTERS].rstrip()
+    if not shown:
+        return "error"
+    if len(lines) > ERROR_LINES or len("\n".join(lines)) > ERROR_CHARACTERS:
+        return shown + "\n…"
+    return shown
+
+
 def _marker_payload(
     report: Any, marker: str, imports: int, line: int, needs: str
 ) -> dict[str, Any]:
-    """Prefer the provider's marked output; else the first line of the first error.
+    """Prefer the provider's marked output; else the first error, bounded.
 
     The payload is returned unvalidated. An error's line is in the composed
     source: `imports` provider imports, then the notebook before the directive
@@ -222,13 +247,13 @@ def _marker_payload(
             return {"payload": message[len(marker) :]}
     if errors:
         error_line, text = errors[0]
-        first = next((part for part in text.splitlines() if part.strip()), "error")
+        shown = _bounded(text)
         if error_line is None:
-            return {"error": first}
+            return {"error": shown}
         notebook_line = error_line - imports
         if not 1 <= notebook_line < line:
             notebook_line = line
-        return {"error": f"Line {notebook_line}: {first}"}
+        return {"error": f"Line {notebook_line}: {shown}"}
     return {"error": NO_OUTPUT[needs]}
 
 
@@ -267,7 +292,7 @@ def run_provider_lean(
             invalid = _invalid_import(imports)
             if invalid is not None:
                 return invalid
-            composed = compose_provider_source(
+            notebook, own, last = provider_source_parts(
                 saved, line, imports, preamble, command, needs=needs
             )
         except ValueError:
@@ -305,7 +330,7 @@ def run_provider_lean(
             setup_path = programs / "setup.json"
             setup_path.write_text(json.dumps(setup))
             input_path = programs / "Source.lean"
-            input_path.write_text(composed)
+            input_path.write_bytes((notebook + own + last).encode())
             output = root / "output"
             output.mkdir()
             report_path = output / "view.json"
@@ -319,6 +344,9 @@ def run_provider_lean(
                     str(helper),
                     str(input_path),
                     str(setup_path),
+                    # Where the preamble and the command start, in bytes.
+                    str(len(notebook.encode())),
+                    str(len((notebook + own).encode())),
                     str(report_path),
                 ],
                 cwd=output,

@@ -4,13 +4,33 @@ import Lean.Elab.Import
 open Lean Elab
 
 /-- Elaborate the composed source and report its information and error messages.
-Each error is `{"line": n, "text": t}`, `line` being its 1-based line in SOURCE. -/
+Each error is `{"line": n, "text": t}`, `line` being its 1-based line in SOURCE.
+
+SOURCE is the notebook before the directive, the provider's preamble from byte
+PREAMBLE and its command from byte COMMAND. The preamble is the provider's own
+code, so it starts in a fresh top-level scope: none of the notebook's
+namespaces, `open`s, options (it has the setup's) or variables, which could
+otherwise make its names ambiguous. Only that scope is swapped. Extensions the
+notebook activated in the environment, such as its local and scoped notation,
+instances and attributes, still apply to the preamble.
+
+The command is elaborated back in the notebook's scopes, where the directive's
+names are written, with the `open`s of the preamble's final scope added: a
+command may use what its preamble opened. Names in the notebook's namespaces
+still resolve first; one that both the notebook's and the preamble's `open`s
+resolve is ambiguous, as Lean reports. -/
 def main (args : List String) : IO UInt32 := do
-  let [source, setupFile, report] := args
-    | IO.eprintln "usage: ViewElab SOURCE SETUP REPORT"; return 2
+  let [source, setupFile, preambleArg, commandArg, report] := args
+    | IO.eprintln "usage: ViewElab SOURCE SETUP PREAMBLE COMMAND REPORT"; return 2
+  let (some preambleStart, some commandStart) := (preambleArg.toNat?, commandArg.toNat?)
+    | IO.eprintln "ViewElab: PREAMBLE and COMMAND must be byte offsets"; return 2
+  let input ← IO.FS.readFile source
+  unless preambleStart ≤ commandStart && commandStart ≤ input.utf8ByteSize do
+    IO.eprintln s!"ViewElab: offsets must satisfy PREAMBLE ≤ COMMAND ≤ {input.utf8ByteSize}, \
+      the size of SOURCE; got {preambleStart} and {commandStart}"
+    return 2
   initSearchPath (← findSysroot)
   let setup ← ModuleSetup.load ⟨setupFile⟩
-  let input ← IO.FS.readFile source
   let inputCtx := Parser.mkInputContext input source
   let (header, parserState, headerLog) ← Parser.parseHeader inputCtx
   let opts := Elab.async.set (maxHeartbeats.set setup.options.toOptions 1000000) false
@@ -27,7 +47,23 @@ def main (args : List String) : IO UInt32 := do
   let mut parser := parserState
   let mut information : Array String := #[]
   let mut errors : Array Json := #[]
+  -- The notebook's scopes while the preamble is elaborated at the top level.
+  let mut notebookScopes : Option (List Command.Scope) := none
+  let mut commandReached := false
   repeat
+    -- Switch scopes before parsing, which reads the namespace and `open`s.
+    let position := parser.pos.byteIdx
+    if !commandReached && position ≥ commandStart then
+      commandReached := true
+      if let some scopes := notebookScopes then
+        let opened := state.scopes.head!.openDecls
+        state := { state with scopes := match scopes with
+          | top :: rest => { top with openDecls := opened ++ top.openDecls } :: rest
+          | [] => [] }
+        notebookScopes := none
+    else if !commandReached && notebookScopes.isNone && position ≥ preambleStart then
+      notebookScopes := some state.scopes
+      state := { state with scopes := [{ header := "", opts := opts }] }
     let scope := state.scopes.head!
     let context := {
       env := state.env, options := scope.opts,

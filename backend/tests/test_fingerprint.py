@@ -370,6 +370,7 @@ def test_checker_helper_sources_are_identified(tmp_path):
         "ProjectRead.lean",
         "ProjectReplay.lean",
         "ProjectReport.lean",
+        "ViewElab.lean",
     ]
     assert all(len(digest) == 64 for digest in checker["programs"].values())
 

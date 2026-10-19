@@ -81,9 +81,9 @@ def _run(source, **overrides):
 
 
 def test_compose_puts_provider_imports_first_and_command_last():
-    from glitnir.lean.provider_lean import compose_provider_source
+    from glitnir.lean.provider_lean import provider_source_parts
 
-    composed = compose_provider_source(
+    notebook, preamble, command = provider_source_parts(
         NOTEBOOK,
         4,
         ("Demo.View",),
@@ -91,20 +91,19 @@ def test_compose_puts_provider_imports_first_and_command_last():
         "#demo_view circuit c a",
         needs="evidence",
     )
-    assert composed.startswith("import Demo.View\n")
-    assert "def c := 1" in composed and "def later" not in composed
-    assert "open Demo" in composed
-    assert composed.rstrip().endswith("#demo_view circuit c a")
+    assert notebook == "import Demo.View\nimport Demo.View\n\ndef c := 1\n\n"
+    assert preamble == "open Demo\n"
+    assert command == "#demo_view circuit c a\n"
 
 
 @pytest.mark.parametrize("line", [0, 7])
 @pytest.mark.parametrize("needs, word", [("view", "View"), ("evidence", "Evidence")])
 def test_compose_rejects_a_line_outside_the_notebook(line, needs, word):
-    from glitnir.lean.provider_lean import compose_provider_source
+    from glitnir.lean.provider_lean import provider_source_parts
 
     message = f"^{word} directive line {line} is outside the notebook.$"
     with pytest.raises(ValueError, match=message):
-        compose_provider_source(NOTEBOOK, line, (), "", "", needs=needs)
+        provider_source_parts(NOTEBOOK, line, (), "", "", needs=needs)
 
 
 def test_marker_payload_is_the_last_marked_message_and_unvalidated():
@@ -138,9 +137,9 @@ def test_no_marker_and_no_errors_is_an_error(needs, message):
 @pytest.mark.parametrize(
     "position, expected",
     [
-        (3, "Line 2: unknown c"),  # notebook line 2, after one provider import
-        (7, "Line 4: unknown c"),  # the provider's command: the directive line
-        (None, "unknown c"),
+        (3, "Line 2: unknown c\nmore detail"),  # after one provider import
+        (7, "Line 4: unknown c\nmore detail"),  # the provider's: the directive
+        (None, "unknown c\nmore detail"),
     ],
 )
 def test_first_error_names_its_notebook_line(position, expected):
@@ -151,6 +150,46 @@ def test_first_error_names_its_notebook_line(position, expected):
         error["line"] = position
     report = {"information": [], "errors": [error, {"line": 1, "text": "later"}]}
     assert _marker_payload(report, "m:", 1, 4, "view") == {"error": expected}
+
+
+def test_an_ambiguous_names_interpretations_are_shown():
+    """Lean's first line hides the cause; blank lines are left out."""
+    from glitnir.lean.provider_lean import _marker_payload
+
+    # Lean 4.32.1's message (Lean/Elab/App.lean) for a preamble line.
+    ambiguous = (
+        "Ambiguous term\n  Circuit\nPossible interpretations:\n"
+        "  Dynamics.Circuit n m : Type\n  \n  Gimle.Asgard.Circuit n m : Type"
+    )
+    report = {"information": [], "errors": [{"line": 99, "text": ambiguous}]}
+    assert _marker_payload(report, "m:", 3, 69, "view") == {
+        "error": "Line 69: Ambiguous term\n  Circuit\nPossible interpretations:\n"
+        "  Dynamics.Circuit n m : Type\n  Gimle.Asgard.Circuit n m : Type"
+    }
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "\n".join(f"line {n}" for n in range(30)),
+            "\n".join(f"line {n}" for n in range(12)) + "\n…",
+        ),
+        ("x" * 5000, "x" * 2000 + "\n…"),
+        ("first\n" + "y" * 3000, "first\n" + "y" * 1994 + "\n…"),
+        (" \n\t\n", "error"),
+    ],
+)
+def test_an_error_is_cut_to_a_bounded_text(text, expected):
+    from glitnir.lean.provider_lean import (
+        ERROR_CHARACTERS,
+        ERROR_LINES,
+        _marker_payload,
+    )
+
+    assert (ERROR_LINES, ERROR_CHARACTERS) == (12, 2000)
+    report = {"information": [], "errors": [text]}
+    assert _marker_payload(report, "m:", 0, 4, "evidence") == {"error": expected}
 
 
 @pytest.mark.parametrize(
