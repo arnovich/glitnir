@@ -1914,6 +1914,27 @@ test('a view inside a saved claim cell is drawn under the claim card', async () 
   } finally { window.close(); }
 });
 
+test('a view drawn with the notebook\'s proofs skipped says so', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+  for (const [drawing, shown] of [[{svg, proofs_skipped: true}, true], [{svg}, false]]) {
+    const snapshot = {file: 'A.lean', sha256: 'd'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
+      cells: [{index: 0, kind: 'source', start: 1, end: 1, text: '-- @view circuit c'}], views: [{cell: 0, line: 1, kind: 'circuit', name: 'c', using: [], error: ''}],
+      preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+    const window = await renderSnapshot(snapshot, {onView: () => drawing});
+    try {
+      await new Promise(resolve => setTimeout(resolve, 30));
+      const view = window.document.querySelector('#doc .view-cell');
+      assert.match(view.querySelector('img').getAttribute('src'), /^data:image\/svg\+xml/);
+      const note = [...view.querySelectorAll('.note-line')].find(line => /proofs/.test(line.textContent));
+      assert.equal(Boolean(note), shown);
+      if (shown) {
+        assert.equal(note.textContent, 'Drawn without re-running the notebook\'s proofs.');
+        assert.equal(note.dataset.tone, 'muted');
+      }
+    } finally { window.close(); }
+  }
+});
+
 test('a failed view keeps the lines of its Lean error, as text', async () => {
   const snapshot = {file: 'A.lean', sha256: 'c'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
     cells: [{index: 0, kind: 'source', start: 1, end: 1, text: '-- @view model m'}], views: [{cell: 0, line: 1, kind: 'model', name: 'm', using: [], error: ''}],

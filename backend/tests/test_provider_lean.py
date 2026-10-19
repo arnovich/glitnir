@@ -44,10 +44,27 @@ def _lake(tmp_path, monkeypatch, import_arts):
 
 
 def _reporting(monkeypatch, report):
-    """Replace the sandbox with one that writes `report` to the report path."""
+    """Replace the sandbox with one that reports `report` as the only view's."""
     from glitnir.lean import provider_lean
 
     def run(runtime, arguments, **options):
+        view = {"proofs_skipped": False, **report}
+        Path(arguments[-1]).write_text(json.dumps({"views": [view]}))
+
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+
+
+def _answering(monkeypatch, report, requests=None):
+    """Replace the sandbox with one that writes `report` as the whole REPORT.
+
+    Each run's REQUEST, its SOURCE and its arguments are appended to `requests`.
+    """
+    from glitnir.lean import provider_lean
+
+    def run(runtime, arguments, **options):
+        request = json.loads(Path(arguments[-2]).read_text())
+        if requests is not None:
+            requests.append((request, Path(request["source"]).read_text(), arguments))
         Path(arguments[-1]).write_text(json.dumps(report))
 
     monkeypatch.setattr(provider_lean, "run_observer", run)
@@ -80,30 +97,22 @@ def _run(source, **overrides):
     return run_provider_lean(source, **arguments)
 
 
-def test_compose_puts_provider_imports_first_and_command_last():
-    from glitnir.lean.provider_lean import provider_source_parts
+def test_source_puts_provider_imports_first_and_ends_at_the_last_view():
+    from glitnir.lean.provider_lean import provider_source
 
-    notebook, preamble, command = provider_source_parts(
-        NOTEBOOK,
-        4,
-        ("Demo.View",),
-        "open Demo",
-        "#demo_view circuit c a",
-        needs="evidence",
-    )
-    assert notebook == "import Demo.View\nimport Demo.View\n\ndef c := 1\n\n"
-    assert preamble == "open Demo\n"
-    assert command == "#demo_view circuit c a\n"
+    source, offsets = provider_source(NOTEBOOK, [3, 4], ("Demo.View",), needs="view")
+    assert source == "import Demo.View\nimport Demo.View\n\ndef c := 1\n"
+    assert offsets == [len("import Demo.View\nimport Demo.View\n\n"), len(source)]
 
 
 @pytest.mark.parametrize("line", [0, 7])
 @pytest.mark.parametrize("needs, word", [("view", "View"), ("evidence", "Evidence")])
-def test_compose_rejects_a_line_outside_the_notebook(line, needs, word):
-    from glitnir.lean.provider_lean import provider_source_parts
+def test_source_rejects_a_line_outside_the_notebook(line, needs, word):
+    from glitnir.lean.provider_lean import provider_source
 
     message = f"^{word} directive line {line} is outside the notebook.$"
     with pytest.raises(ValueError, match=message):
-        provider_source_parts(NOTEBOOK, line, (), "", "", needs=needs)
+        provider_source(NOTEBOOK, [4, line], (), needs=needs)
 
 
 def test_marker_payload_is_the_last_marked_message_and_unvalidated():
@@ -139,7 +148,7 @@ def test_no_marker_and_no_errors_is_an_error(needs, message):
     [
         (3, "Line 2: unknown c\nmore detail"),  # after one provider import
         (7, "Line 4: unknown c\nmore detail"),  # the provider's: the directive
-        (None, "unknown c\nmore detail"),
+        (None, "Line 4: unknown c\nmore detail"),  # the provider's own
     ],
 )
 def test_first_error_names_its_notebook_line(position, expected):
@@ -173,11 +182,11 @@ def test_an_ambiguous_names_interpretations_are_shown():
     [
         (
             "\n".join(f"line {n}" for n in range(30)),
-            "\n".join(f"line {n}" for n in range(12)) + "\n…",
+            "Line 4: " + "\n".join(f"line {n}" for n in range(12)) + "\n…",
         ),
-        ("x" * 5000, "x" * 2000 + "\n…"),
-        ("first\n" + "y" * 3000, "first\n" + "y" * 1994 + "\n…"),
-        (" \n\t\n", "error"),
+        ("x" * 5000, "Line 4: " + "x" * 2000 + "\n…"),
+        ("first\n" + "y" * 3000, "Line 4: first\n" + "y" * 1994 + "\n…"),
+        (" \n\t\n", "Line 4: error"),
     ],
 )
 def test_an_error_is_cut_to_a_bounded_text(text, expected):
@@ -215,7 +224,7 @@ def test_malformed_information_is_rejected(needs):
 def test_runner_returns_the_payload_for_the_caller_to_validate(tmp_path, monkeypatch):
     source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
     _reporting(monkeypatch, {"information": ['demoMark:{"a":1}'], "errors": []})
-    assert _run(source) == {"payload": '{"a":1}'}
+    assert _run(source) == {"payload": '{"a":1}', "proofs_skipped": False}
 
 
 @pytest.mark.parametrize(
@@ -275,9 +284,8 @@ def test_source_edited_during_the_run_is_an_error(tmp_path, monkeypatch):
     source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
 
     def run(runtime, arguments, **options):
-        Path(arguments[-1]).write_text(
-            json.dumps({"information": ["demoMark:x"], "errors": []})
-        )
+        view = {"information": ["demoMark:x"], "errors": [], "proofs_skipped": True}
+        Path(arguments[-1]).write_text(json.dumps({"views": [view]}))
         source.write_text(NOTEBOOK + "-- edited\n")
 
     monkeypatch.setattr(provider_lean, "run_observer", run)
@@ -302,6 +310,143 @@ def test_cancellation_is_transient_and_worded_for_the_caller(tmp_path, monkeypat
         "error": "View drawing cancelled.",
         "transient": True,
     }
+
+
+# Ten lines; the second is not ASCII, so its bytes are not its characters.
+TEN = "def l1 := 1\n-- “quoted” Navier–Stokes\n" + "".join(
+    f"def l{n} := {n}\n" for n in range(3, 11)
+)
+
+
+def _batch(source, **overrides):
+    from glitnir.lean.provider_lean import run_provider_batch
+
+    arguments = {
+        "expected_sha256": _sha(TEN),
+        "provider_name": "demo",
+        "imports": ("A",),
+        "preamble": "open Demo",
+        "marker": "demoMark:",
+        "needs": "view",
+        "views": [(4, "#demo four"), (9, "#demo nine")],
+        "cancel": threading.Event(),
+        **overrides,
+    }
+    return run_provider_batch(source, **arguments)
+
+
+def _ten(tmp_path, monkeypatch):
+    source = _lake(tmp_path, monkeypatch, {"A": ["A.olean"]})
+    source.write_text(TEN)
+    return source
+
+
+def test_batch_request_splices_each_view_at_its_line(tmp_path, monkeypatch):
+    source = _ten(tmp_path, monkeypatch)
+    requests: list = []
+    view = {"information": [], "errors": [], "proofs_skipped": True}
+    _answering(monkeypatch, {"views": [view, view]}, requests)
+    _batch(source)
+    [(request, text, arguments)] = requests
+    lines = [line + "\n" for line in TEN.split("\n")]
+    assert text == "import A\n" + "".join(lines[:8])
+    assert [view["at"] for view in request["views"]] == [
+        len(("import A\n" + "".join(lines[:3])).encode()),
+        len(("import A\n" + "".join(lines[:8])).encode()),
+    ]
+    assert [view["command"] for view in request["views"]] == [
+        "#demo four",
+        "#demo nine",
+    ]
+    assert [view["preamble"] for view in request["views"]] == ["open Demo"] * 2
+    assert request["marker"] == "demoMark:"
+    assert Path(request["setup"]).parent == Path(request["source"]).parent
+    assert Path(request["source"]).name == "Source.lean"
+    assert Path(arguments[-2]) == Path(request["source"]).with_name("request.json")
+    assert arguments[:3] == ["lean", arguments[1], "--run"]
+    assert arguments[1].startswith("-M")
+    assert Path(arguments[3]).name == "ViewElab.lean" and len(arguments) == 6
+
+
+def test_batch_maps_results_in_order(tmp_path, monkeypatch):
+    source = _ten(tmp_path, monkeypatch)
+    report = {
+        "views": [
+            {
+                "information": ["other", "demoMark:<svg/>"],
+                "errors": [{"line": 3, "text": "ignored"}],
+                "proofs_skipped": True,
+            },
+            {
+                "information": [],
+                "errors": [{"line": 7, "text": "boom"}],
+                "proofs_skipped": False,
+            },
+        ]
+    }
+    _answering(monkeypatch, report)
+    assert _batch(source) == {
+        "views": [
+            {"payload": "<svg/>", "proofs_skipped": True},
+            {"error": "Line 6: boom"},
+        ]
+    }
+
+
+def test_error_without_line_is_reported_at_the_directive(tmp_path, monkeypatch):
+    source = _ten(tmp_path, monkeypatch)
+    empty = {"information": [], "errors": [], "proofs_skipped": False}
+    bad = {"information": [], "errors": [{"text": "bad"}], "proofs_skipped": False}
+    _answering(monkeypatch, {"views": [empty, bad]})
+    assert _batch(source) == {
+        "views": [
+            {"error": "The provider printed no drawing."},
+            {"error": "Line 9: bad"},
+        ]
+    }
+
+
+def test_whole_run_failure_is_one_error(tmp_path, monkeypatch):
+    from glitnir.lean import provider_lean
+    from glitnir.lean.project_snapshot import SnapshotError
+
+    source = _ten(tmp_path, monkeypatch)
+    message = "lean did not complete successfully (exit 1).\n…"
+
+    def run(*_arguments, **_options):
+        raise SnapshotError(message)
+
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+    assert _batch(source) == {"error": message}
+
+
+@pytest.mark.parametrize(
+    "views",
+    [
+        [{"information": [], "errors": [], "proofs_skipped": True}],
+        [{"information": [], "errors": [], "proofs_skipped": 1}] * 2,
+        [{"information": [], "errors": []}] * 2,
+        "x",
+    ],
+)
+def test_malformed_batch_reports_are_rejected(tmp_path, monkeypatch, views):
+    source = _ten(tmp_path, monkeypatch)
+    _answering(monkeypatch, {"views": views})
+    assert _batch(source) == {"error": "Malformed view report."}
+
+
+@pytest.mark.parametrize("lines", [(9, 4), (4, 12)])
+def test_batch_views_must_be_in_order_and_in_the_notebook(tmp_path, monkeypatch, lines):
+    source = _ten(tmp_path, monkeypatch)
+    _forbid_lean(monkeypatch)
+    result = _batch(source, views=[(line, "#demo") for line in lines])
+    assert set(result) == {"error"}
+
+
+def test_a_batch_of_no_views_runs_nothing(tmp_path, monkeypatch):
+    source = _ten(tmp_path, monkeypatch)
+    _forbid_lean(monkeypatch)
+    assert _batch(source, views=[]) == {"views": []}
 
 
 def _imports_error(source, **overrides):

@@ -25,7 +25,8 @@ def render_project_view(
 
     The provider's imports come from the project's own build, so the notebook
     need not import them. A busy Lean slot is waited for, up to the check
-    time limit; `progress` is told what the drawing is doing.
+    time limit; `progress` is told what the drawing is doing. A drawing made
+    with the notebook's proofs skipped carries `"proofs_skipped": True`.
     """
     try:  # provider code must never break the preview
         imports = tuple(provider.imports)
@@ -53,4 +54,7 @@ def render_project_view(
     )
     if "payload" not in result:
         return result
-    return checked_drawing(result["payload"])
+    drawing = checked_drawing(result["payload"])
+    if result.get("proofs_skipped") and "error" not in drawing:
+        return {**drawing, "proofs_skipped": True}
+    return drawing

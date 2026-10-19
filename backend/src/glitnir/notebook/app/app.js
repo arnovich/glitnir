@@ -707,6 +707,9 @@
       + `<div class="claim-actions"><button type="button" class="secondary" data-act="view-retry" data-key="${esc(key)}">${icon('replay')}Draw again</button></div>`;
     else if (drawing.graph || drawing.model) body = diagramHTML(key);
     else body = `<div class="view-body"><img alt="${esc(view.kind)} view of ${esc(view.name)}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing.svg)}"></div>`;
+    // Lean drew it with the notebook's proofs replaced by `sorry`; a drawing
+    // never changes a status either way.
+    if (drawing?.proofs_skipped && !drawing.error && !drawing.loading) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Drawn without re-running the notebook's proofs.</span></div>` + body;
     // Drawn while a dependency's state could not be read: it is not redrawn
     // on every poll, so it may be out of date.
     if (drawing?.uncertain && !drawing.error && !drawing.loading) body = `<div class="note-line" data-tone="amber">${icon('branch')}<span>May be out of date: the state of a dependency could not be read when this was drawn.</span></div>` + body;

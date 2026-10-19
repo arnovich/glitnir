@@ -122,30 +122,31 @@ def _project_modules(imports: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(m for m in imports if m.split(".")[0] not in TOOLCHAIN_LIBRARIES)
 
 
-def provider_source_parts(
-    text: str,
-    line: int,
-    imports: tuple[str, ...],
-    preamble: str,
-    command: str,
-    *,
-    needs: str,
-) -> tuple[str, str, str]:
-    """Return the composed source's notebook part, preamble and command.
+def provider_source(
+    text: str, lines: list[int], imports: tuple[str, ...], *, needs: str
+) -> tuple[str, list[int]]:
+    """Return SOURCE and the byte offset in it of each directive line in `lines`.
 
-    The notebook part is the provider imports and the notebook before `line`.
-    The program elaborates the preamble outside the notebook's scope and the
-    command inside it, so it is told where each part starts.
+    SOURCE is the provider imports and the notebook before the last of
+    `lines`. Each view is spliced in at the start of its directive line: the
+    program elaborates the notebook up to there, then the provider's preamble
+    and command, which it is given separately.
     """
-    lines = text.split("\n")
-    if not 1 <= line <= len(lines):
-        raise ValueError(
-            f"{needs.capitalize()} directive line {line} is outside the notebook."
-        )
-    prefix = "".join(item + "\n" for item in lines[: line - 1])
+    split = text.split("\n")
+    for line in lines:
+        if not 1 <= line <= len(split):
+            raise ValueError(
+                f"{needs.capitalize()} directive line {line} is outside the notebook."
+            )
     # Imports must precede every command; Lean accepts duplicated imports.
     header = "".join(f"import {module}\n" for module in imports)
-    return header + prefix + "\n", preamble + "\n", command + "\n"
+    last = max(lines, default=1)
+    source = header + "".join(item + "\n" for item in split[: last - 1])
+    # starts[n] is the byte offset of notebook line n + 1 in SOURCE.
+    starts = [len(header.encode())]
+    for item in split[: last - 1]:
+        starts.append(starts[-1] + len(item.encode()) + 1)
+    return source, [starts[line - 1] for line in lines]
 
 
 def _saved(source: Path) -> str:
@@ -235,10 +236,10 @@ def _marker_payload(
 ) -> dict[str, Any]:
     """Prefer the provider's marked output; else the first error, bounded.
 
-    The payload is returned unvalidated. An error's line is in the composed
-    source: `imports` provider imports, then the notebook before the directive
-    `line`, then the provider's own code, which is reported at the directive.
-    `needs` words the errors, as in `run_provider_lean`.
+    The payload is returned unvalidated. An error's line is in SOURCE:
+    `imports` provider imports, then the notebook before the directive `line`.
+    An error without a line is in the provider's own code, and is reported at
+    the directive. `needs` words the errors, as in `run_provider_lean`.
     """
     information = _messages(report, "information", needs)
     errors = _errors(report, needs)
@@ -248,38 +249,67 @@ def _marker_payload(
     if errors:
         error_line, text = errors[0]
         shown = _bounded(text)
-        if error_line is None:
-            return {"error": shown}
-        notebook_line = error_line - imports
+        notebook_line = line if error_line is None else error_line - imports
         if not 1 <= notebook_line < line:
             notebook_line = line
         return {"error": f"Line {notebook_line}: {shown}"}
     return {"error": NO_OUTPUT[needs]}
 
 
-def run_provider_lean(
+def _view_reports(report: Any, count: int, needs: str) -> list[dict[str, Any]]:
+    """Return the report's `count` views; `_marker_payload` reads the rest."""
+    views = report.get("views") if isinstance(report, dict) else None
+    if not isinstance(views, list) or len(views) != count:
+        raise ValueError(f"Malformed {needs} report.")
+    for view in views:
+        if not isinstance(view, dict) or type(view.get("proofs_skipped")) is not bool:
+            raise ValueError(f"Malformed {needs} report.")
+    return views
+
+
+def _view_result(
+    view: dict[str, Any], marker: str, imports: int, line: int, needs: str
+) -> dict[str, Any]:
+    """One view's payload, saying whether it was drawn with proofs skipped."""
+    result = _marker_payload(view, marker, imports, line, needs)
+    if "payload" in result:
+        return {**result, "proofs_skipped": view["proofs_skipped"]}
+    return result
+
+
+def run_provider_batch(
     source: Path,
     *,
     expected_sha256: str,
-    line: int,
     provider_name: str,
     imports: tuple[str, ...],
     preamble: str,
-    command: str,
     marker: str,
     needs: str,
+    views: list[tuple[int, str]],
     cancel: threading.Event,
     progress: Callable[[str], None] | None = None,
     wait: bool = False,
+    environment_sha256: str | None = None,
 ) -> dict[str, Any]:
-    """Elaborate the notebook prefix and a provider command in the sandbox.
+    """Elaborate the notebook and several provider commands in one Lean run.
 
-    Returns the text after `marker` in the last message that carries it, as
-    `{"payload": text}`, or `{"error": message}`. `needs` is `"view"` or
-    `"evidence"` and words the messages. The provider's `imports` are loaded
-    from the project's existing build, whether or not the notebook imports
-    them. With `wait`, a busy Lean slot is waited for, up to the check time
-    limit, rather than refused. `progress` is told what the run is doing.
+    `views` holds `(directive line, command)` pairs, lines ascending. Each
+    command is elaborated after the notebook before its line and the
+    provider's `preamble`, all in one sandboxed Lean process. The notebook is
+    first elaborated with its proofs skipped; a view whose marked output is
+    then missing is drawn again with them.
+
+    Returns `{"views": [result, ...]}` in the order of `views`, each result
+    being `{"payload": text, "proofs_skipped": bool}`, with the text after
+    `marker` in the last message that carries it, or `{"error": message}`.
+    A failure of the whole run is `{"error": message}`, marked `transient`
+    when a later request may succeed. `needs` is `"view"` or `"evidence"`
+    and words the messages. The provider's `imports` are loaded from the
+    project's existing build, whether or not the notebook imports them. With
+    `wait`, a busy Lean slot is waited for, up to the check time limit,
+    rather than refused. `progress` is told what the run is doing.
+    `environment_sha256` is not used yet.
     """
     report = progress or (lambda _message: None)
     try:
@@ -288,13 +318,18 @@ def run_provider_lean(
         saved = _saved(source)
         if hashlib.sha256(saved.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
+        lines = [line for line, _command in views]
+        if lines != sorted(lines):
+            raise ValueError(f"{needs.capitalize()} directives must be in order.")
         try:  # provider code must never break the preview
             invalid = _invalid_import(imports)
             if invalid is not None:
                 return invalid
-            notebook, own, last = provider_source_parts(
-                saved, line, imports, preamble, command, needs=needs
-            )
+            if not isinstance(preamble, str) or not all(
+                isinstance(command, str) for _line, command in views
+            ):
+                raise TypeError("the preamble and commands must be text")
+            text, offsets = provider_source(saved, lines, imports, needs=needs)
         except ValueError:
             raise
         except Exception as error:
@@ -302,6 +337,8 @@ def run_provider_lean(
                 "error": f"Provider {provider_name} failed: "
                 f"{type(error).__name__}: {error}"
             }
+        if not views:
+            return {"views": []}
         slot = (
             snapshot_slot(cancel=cancel, waiting=lambda: report(WAITING))
             if wait
@@ -330,7 +367,21 @@ def run_provider_lean(
             setup_path = programs / "setup.json"
             setup_path.write_text(json.dumps(setup))
             input_path = programs / "Source.lean"
-            input_path.write_bytes((notebook + own + last).encode())
+            input_path.write_bytes(text.encode())
+            request_path = programs / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "source": str(input_path),
+                        "setup": str(setup_path),
+                        "marker": marker,
+                        "views": [
+                            {"at": at, "preamble": preamble, "command": command}
+                            for at, (_line, command) in zip(offsets, views)
+                        ],
+                    }
+                )
+            )
             output = root / "output"
             output.mkdir()
             report_path = output / "view.json"
@@ -342,11 +393,7 @@ def run_provider_lean(
                     f"-M{memory_limit_mb()}",
                     "--run",
                     str(helper),
-                    str(input_path),
-                    str(setup_path),
-                    # Where the preamble and the command start, in bytes.
-                    str(len(notebook.encode())),
-                    str(len((notebook + own).encode())),
+                    str(request_path),
                     str(report_path),
                 ],
                 cwd=output,
@@ -357,19 +404,61 @@ def run_provider_lean(
             )
             if cancel.is_set():
                 raise SnapshotError(CANCELLED[needs])
-            result = _marker_payload(
-                json.loads(read_regular(report_path, OUTPUT_BYTES)),
-                marker,
-                len(imports),
-                line,
-                needs,
+            reports = _view_reports(
+                json.loads(read_regular(report_path, OUTPUT_BYTES)), len(views), needs
             )
+            results = [
+                _view_result(view, marker, len(imports), line, needs)
+                for view, line in zip(reports, lines)
+            ]
             if _saved(source) != saved:
                 raise SnapshotError("Saved source changed; refresh and retry.")
             _check_configuration(project_root, resolution)
-            return result
+            return {"views": results}
     except (OSError, ValueError, KeyError, SandboxUnavailable) as error:
         return _failure(error)
+
+
+def run_provider_lean(
+    source: Path,
+    *,
+    expected_sha256: str,
+    line: int,
+    provider_name: str,
+    imports: tuple[str, ...],
+    preamble: str,
+    command: str,
+    marker: str,
+    needs: str,
+    cancel: threading.Event,
+    progress: Callable[[str], None] | None = None,
+    wait: bool = False,
+    environment_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Elaborate the notebook prefix and one provider command in the sandbox.
+
+    Returns the one view's result from `run_provider_batch`: `{"payload":
+    text, "proofs_skipped": bool}` or `{"error": message}`, which a failure
+    of the whole run also is.
+    """
+    result = run_provider_batch(
+        source,
+        expected_sha256=expected_sha256,
+        provider_name=provider_name,
+        imports=imports,
+        preamble=preamble,
+        marker=marker,
+        needs=needs,
+        views=[(line, command)],
+        cancel=cancel,
+        progress=progress,
+        wait=wait,
+        environment_sha256=environment_sha256,
+    )
+    if "views" not in result:
+        return result
+    view: dict[str, Any] = result["views"][0]
+    return view
 
 
 def provider_imports_error(

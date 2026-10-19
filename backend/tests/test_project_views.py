@@ -82,15 +82,26 @@ def _render(source, provider=None, **overrides):
     return render_project_view(source, **arguments)
 
 
-def _reporting(monkeypatch, report, calls=None):
-    """Replace the sandbox with one that writes `report` to the report path."""
+def _reporting(monkeypatch, report, calls=None, proofs_skipped=False):
+    """Replace the sandbox with one that reports `report` as the only view's.
+
+    Each run's arguments and the text of its inputs, by file name, are
+    appended to `calls`.
+    """
     from glitnir.lean import provider_lean
 
     def run(runtime, arguments, **options):
         if calls is not None:
-            inputs = {Path(a).name: Path(a).read_text() for a in arguments[3:6]}
+            helper, request = map(Path, arguments[3:5])
+            written = json.loads(request.read_text())
+            inputs = {
+                path.name: path.read_text()
+                for path in (helper, request, Path(written["source"]))
+                + (Path(written["setup"]),)
+            }
             calls.append((runtime, arguments, options, inputs))
-        Path(arguments[-1]).write_text(json.dumps(report))
+        view = {"proofs_skipped": proofs_skipped, **report}
+        Path(arguments[-1]).write_text(json.dumps({"views": [view]}))
 
     monkeypatch.setattr(provider_lean, "run_observer", run)
 
@@ -254,21 +265,25 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
     assert runtime == toolchain
     assert arguments[:3] == ["lean", arguments[1], "--run"]
     assert arguments[1].startswith("-M")
-    helper, composed, setup, preamble, command, report = arguments[3:]
-    helper, composed, setup, report = map(Path, (helper, composed, setup, report))
+    helper, request, report = map(Path, arguments[3:])
     assert helper.name == "ViewElab.lean"
-    assert composed != source
     assert inputs["ViewElab.lean"].startswith("/- Elaborate a composed view")
-    assert inputs[composed.name] == (
-        "import Demo.View\nimport Demo.View\n\ndef c := 1\n\n"
-        "open Demo\n#demo_view circuit c\n"
-    )
     # The program elaborates the preamble outside the notebook's scope and
     # the command in it; `test_live_view_preamble_scope_is_pinned` runs it.
-    written_source = inputs[composed.name].encode()
-    assert written_source[: int(preamble)].endswith(b"def c := 1\n\n")
-    assert written_source[int(preamble) : int(command)] == b"open Demo\n"
-    assert written_source[int(command) :] == b"#demo_view circuit c\n"
+    written_request = json.loads(inputs[request.name])
+    composed = Path(written_request["source"])
+    assert composed != source and composed.parent == helper.parent
+    assert inputs[composed.name] == "import Demo.View\nimport Demo.View\n\ndef c := 1\n"
+    assert written_request["marker"] == "demoView:"
+    assert written_request["views"] == [
+        {
+            "at": len(inputs[composed.name].encode()),
+            "preamble": "open Demo",
+            "command": "#demo_view circuit c",
+        }
+    ]
+    setup = Path(written_request["setup"])
+    assert setup.parent == helper.parent
     written = json.loads(inputs[setup.name])
     assert written["importArts"]["Demo.View"] == [
         str(tmp_path.resolve() / ".lake/build/Demo/View.olean")
@@ -292,7 +307,7 @@ def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
         monkeypatch,
         {"information": ["hello"], "errors": ["unknown c\nmore detail", "second"]},
     )
-    assert _render(source) == {"error": "unknown c\nmore detail"}
+    assert _render(source) == {"error": "Line 4: unknown c\nmore detail"}
 
     _reporting(monkeypatch, {"information": ["hello"], "errors": []})
     assert _render(source) == {"error": "The provider printed no drawing."}
@@ -417,7 +432,8 @@ def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
         using=(),
         cancel=threading.Event(),
     )
-    assert set(result) == {"svg"}, result
+    assert result.get("proofs_skipped") is True, result
+    assert set(result) == {"svg", "proofs_skipped"}
     assert "<title>c</title>" in result["svg"]
 
 
@@ -485,7 +501,8 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
         )
 
     drawn = draw(("Lean", "Example.Draw"))
-    assert set(drawn) == {"svg"}, drawn
+    assert drawn.get("proofs_skipped") is True, drawn
+    assert set(drawn) == {"svg", "proofs_skipped"}
     assert "<title>drawn result</title>" in drawn["svg"]
     unbuilt = draw(("Lean", "Example.Draw", "Example.Unbuilt"))
     assert unbuilt["error"] == (
@@ -553,7 +570,8 @@ def test_live_view_preamble_is_elaborated_outside_the_notebooks_scope(
         using=(),
         cancel=threading.Event(),
     )
-    assert set(result) == {"svg"}, result
+    assert result.get("proofs_skipped") is True, result
+    assert set(result) == {"svg", "proofs_skipped"}
     assert "<title>42 Left.Circuit</title>" in result["svg"]
 
 
@@ -622,6 +640,23 @@ def test_provider_code_failures_become_errors(tmp_path, monkeypatch, changes):
     assert result["error"].startswith("Provider demo failed: ")
 
 
+def test_a_drawing_drawn_with_proofs_skipped_says_so(tmp_path, monkeypatch):
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    _reporting(
+        monkeypatch,
+        {"information": ["demoView:<svg/>"], "errors": []},
+        proofs_skipped=True,
+    )
+    assert _render(source) == {"svg": "<svg/>", "proofs_skipped": True}
+    # An invalid drawing is only an error, however it was drawn.
+    _reporting(
+        monkeypatch,
+        {"information": ["demoView:<html/>"], "errors": []},
+        proofs_skipped=True,
+    )
+    assert set(_render(source)) == {"error"}
+
+
 def test_a_drawing_wins_over_unrelated_errors(tmp_path, monkeypatch):
     source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
     _reporting(
@@ -631,11 +666,12 @@ def test_a_drawing_wins_over_unrelated_errors(tmp_path, monkeypatch):
     assert _render(source) == {"svg": "<svg/>"}
 
 
-def _elaborate(tmp_path, toolchain, parts, offsets=None):
+def _elaborate(tmp_path, toolchain, parts, offsets=None, marker="mark:"):
     """Run the view program on `parts` (notebook, preamble, command) in the sandbox.
 
-    Returns its report. Nothing is imported without a Lake setup. `offsets`
-    replaces the preamble's and command's byte offsets the parts give.
+    The notebook is SOURCE and the one view is spliced at its end. Returns
+    the report. Nothing is imported without a Lake setup. `offsets` replaces
+    the views' byte offsets, one view per offset.
     """
     import threading
 
@@ -646,7 +682,7 @@ def _elaborate(tmp_path, toolchain, parts, offsets=None):
     inputs.mkdir()
     output.mkdir()
     source = inputs / "Source.lean"
-    source.write_bytes("".join(parts).encode())
+    source.write_bytes(parts[0].encode())
     setup = {
         "name": "Source",
         "isModule": False,
@@ -659,13 +695,19 @@ def _elaborate(tmp_path, toolchain, parts, offsets=None):
     helper = inputs / PROGRAM.name
     helper.write_bytes(PROGRAM.read_bytes())
     report = output / "view.json"
-    preamble = len(parts[0].encode())
-    command = preamble + len(parts[1].encode())
-    preamble, command = offsets or (preamble, command)
+    request = {
+        "source": str(source),
+        "setup": str(inputs / "setup.json"),
+        "marker": marker,
+        "views": [
+            {"at": at, "preamble": parts[1], "command": parts[2]}
+            for at in (offsets or [len(parts[0].encode())])
+        ],
+    }
+    (inputs / "request.json").write_text(json.dumps(request))
     run_observer(
         toolchain,
-        ["lean", "--run", str(helper), str(source), str(inputs / "setup.json")]
-        + [str(preamble), str(command), str(report)],
+        ["lean", "--run", str(helper), str(inputs / "request.json"), str(report)],
         cwd=output,
         readable=[inputs, toolchain],
         writable=True,
@@ -687,8 +729,12 @@ def test_live_view_elaboration_keeps_header_and_parse_errors(
 ):
     """Import and parse failures surface instead of an empty, successful report."""
     # No preamble and no command: the whole source is the notebook's.
-    errors = _elaborate(tmp_path, project_toolchain, (text, "", ""))["errors"]
-    assert any(expected in error["text"] for error in errors), errors
+    report = _elaborate(tmp_path, project_toolchain, (text, "", ""))
+    [view] = report["views"]
+    assert any(
+        expected in error["text"] and error["line"] in (1, 2)
+        for error in view["errors"]
+    ), report
 
 
 # The notebook's scope: `open`s, an option, a variable and a local notation.
@@ -736,36 +782,96 @@ def test_live_view_preamble_scope_is_pinned(tmp_path, project_toolchain):
     variables are), but its local notation `twice` still applies. In the
     command, `succ` comes from the preamble's `open Nat`, `target` is still
     the notebook's own, and `value`, which `open Up` and `open Down` both
-    resolve, is ambiguous.
+    resolve, is ambiguous. The provider's own errors carry no line.
     """
     report = _elaborate(
         tmp_path,
         project_toolchain,
         (SCOPED_NOTEBOOK, SCOPED_PREAMBLE, SCOPED_COMMAND),
     )
-    assert report["information"] == ["mark:48\n"], report
-    preamble_line = SCOPED_NOTEBOOK.count("\n") + 5
-    [hidden, ambiguous] = report["errors"]
-    assert hidden == {"line": preamble_line, "text": "Unknown identifier `hidden`"}
+    [view] = report["views"]
+    assert view["information"] == ["mark:48\n"], report
+    assert view["proofs_skipped"] is True
+    [hidden, ambiguous] = view["errors"]
+    assert hidden == {"text": "Unknown identifier `hidden`"}
     assert ambiguous["text"].startswith("Ambiguous term\n  value\n"), report
     assert "Down.value" in ambiguous["text"] and "Up.value" in ambiguous["text"]
 
 
-@pytest.mark.parametrize("preamble, command", [(5, 4), (0, 10_000)])
+@pytest.mark.parametrize(
+    "offsets, message",
+    [
+        ([8, 7], "offsets must be non-decreasing"),
+        ([0, 10_000], "offsets must be non-decreasing"),
+        ([4], "inside a character"),
+    ],
+)
 def test_live_view_program_refuses_offsets_outside_the_source(
-    tmp_path, project_toolchain, preamble, command
+    tmp_path, project_toolchain, offsets, message
 ):
-    """Offsets out of order or past the source fail closed, before any Lean."""
+    """Offsets out of order, past the source or in a character fail closed."""
     from glitnir.lean.project_snapshot import SnapshotError
 
-    with pytest.raises(SnapshotError, match="offsets must satisfy PREAMBLE"):
+    with pytest.raises(SnapshotError, match=message):
         _elaborate(
             tmp_path,
             project_toolchain,
-            ("def c : Nat := 1\n", "", ""),
-            (preamble, command),
+            ("-- “\ndef c : Nat := 1\n", "", ""),
+            offsets,
         )
     assert not (tmp_path / "output/view.json").exists()
+
+
+def test_live_view_skips_proofs_and_falls_back(prepared_lean_project):
+    """One Lean run draws one view with proofs skipped and one without.
+
+    The notebook is first elaborated with its proofs skipped, then again with
+    them for the view that printed nothing. The second view prints only when
+    `t`'s value is not `sorryAx`, the value a skipped proof gets, so only the
+    full pass draws it.
+    """
+    import threading
+
+    from glitnir.lean.provider_lean import run_provider_batch
+
+    root = prepared_lean_project
+    source = root / "src/Example.lean"
+    text = (
+        "import Example.Helper\n\n"
+        "theorem t : 2 + 2 = 4 := by decide\n"
+        "-- @view demo first\n"
+        "example : 1 + 1 = 2 := rfl\n"
+        "-- @view demo second\n"
+    )
+    source.write_text(text)
+    svg = '<svg xmlns=\\"http://www.w3.org/2000/svg\\"/>'
+    first = f'run_cmd Lean.logInfo "demoView:{svg}"'
+    second = (
+        "run_cmd do\n"
+        "  let some info := (← Lean.getEnv).find? `t | return\n"
+        "  let some value := info.value? (allowOpaque := true) | return\n"
+        "  unless value.isAppOf ``sorryAx do\n"
+        f'    Lean.logInfo "demoView:{svg}"'
+    )
+    result = run_provider_batch(
+        source,
+        expected_sha256=_sha(text),
+        provider_name="demo",
+        imports=("Lean",),
+        preamble="",
+        marker="demoView:",
+        needs="view",
+        views=[(4, first), (6, second)],
+        cancel=threading.Event(),
+        wait=True,
+    )
+    drawn = '<svg xmlns="http://www.w3.org/2000/svg"/>'
+    assert result == {
+        "views": [
+            {"payload": drawn, "proofs_skipped": True},
+            {"payload": drawn, "proofs_skipped": False},
+        ]
+    }, result
 
 
 @pytest.mark.parametrize(
