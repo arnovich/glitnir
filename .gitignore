@@ -7,3 +7,8 @@ dist/
 .venv-core/
 __pycache__/
 release/
+
+# Local agent and editor working files; never part of the repository.
+.claude/
+.superpowers/
+docs/superpowers/
