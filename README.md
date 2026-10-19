@@ -14,8 +14,9 @@ I built Glitnir to fit how I work with Lean and coding agents.
 
 My usual setup is VS Code, split into three panes: one for the Lean code itself, one for the Glitnir rendering and one for the coding agents. As the agents work, the Glitnir window updates live and highlights the newest changes, so I can follow their reasoning, intervene when they go the wrong way, or, more often, ask them to explain something better in the notebook or dig deeper into something.
 
-<!-- Here is what my setup typically looks like:
-(INSERT SCREENSHOT) -->
+Here is what my setup typically looks like:
+
+![VS Code with a Lean notebook's source on the left, its Glitnir preview in the middle and a coding agent on the right](https://raw.githubusercontent.com/arnovich/glitnir/main/docs/images/glitnir-setup.png)
 
 Generally I am not a believer in new agent harnesses for math. I think coding agents, with the right skills and tools, are the perfect agents for mathematical research. So that is what I am trying to improve with Glitnir.
 
