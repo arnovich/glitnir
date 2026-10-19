@@ -5,7 +5,7 @@
 // `x - 1` is a subtraction where a polynomial is. The tree is converted to the
 // exact goal values by hand in `text.py`; nothing here assigns meaning.
 
-start: entailment | trajectory | short_trajectory | stream
+start: entailment | trajectory | short_trajectory | stepped | stream
 
 // entailment x, y : x^2 + y^2 <= 1 |- x <= 1
 entailment: "entailment" names ":" formula TURNSTILE formula
@@ -32,6 +32,22 @@ QUANTIFIER: "always" | "at-start" | "eventually"
 // trajectory forced-decay from (0) at 0 within 1 observe x always : x <= 2
 short_trajectory: "trajectory" ID "from" "(" SIGNED ("," SIGNED)* ")" "at" SIGNED within? "observe" NAME QUANTIFIER ":" formula
 within: "within" SIGNED
+
+// stepped hedged-spread from (0, 0) at 0 step 1/256 shocks variance 64
+//   within 256 observe s breach 1 probability <= 1/4
+// A stepped model starts from the values in its state order at a time, takes
+// fixed steps, and is hit each step by a shock of the given law and variance
+// (`variance` for a law known by its variance alone, `subgaussian` for a
+// sub-Gaussian one). The claim is one of three: the breach of a barrier within
+// the horizon, the same at every mark up to it, or an expected value at a step.
+//   ... at every mark within 256 observe s breach 1 probability <= 1/100
+//   ... observe V expected <= 33/256 at 256
+stepped: "stepped" ID "from" "(" SIGNED ("," SIGNED)* ")" "at" SIGNED "step" SIGNED "shocks" law_class SIGNED stepped_claim
+law_class: "variance" -> two_moment
+         | "subgaussian" -> sub_gaussian
+stepped_claim: "within" SIGNED "observe" NAME "breach" SIGNED "probability" "<=" SIGNED -> horizon
+             | "at" "every" "mark" "within" SIGNED "observe" NAME "breach" SIGNED "probability" "<=" SIGNED -> fixed_date
+             | "observe" NAME "expected" "<=" SIGNED "at" SIGNED -> expected
 
 // stream formal-heat interpretation evaluated-field basis ogf profile x*x
 //   field u over t in [0, 1], x in [-1, 1] : u >= 0 and u <= 3
