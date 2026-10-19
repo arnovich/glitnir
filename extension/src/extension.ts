@@ -91,6 +91,9 @@ export function activate(context: vscode.ExtensionContext): void {
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     const cwd = folder?.uri.fsPath ?? path.dirname(uri.fsPath);
     const config = vscode.workspace.getConfiguration('glitnir', uri);
+    const memorySetting = config.inspect<number>('memoryLimitMb');
+    const memoryLimitChosen = memorySetting?.globalValue !== undefined
+      || memorySetting?.workspaceValue !== undefined || memorySetting?.workspaceFolderValue !== undefined;
     const epoch = environmentEpoch;
     const environment = await setup!.resolve(uri);
     if (!environment || shuttingDown) return;
@@ -101,7 +104,8 @@ export function activate(context: vscode.ExtensionContext): void {
       python: environment.python, cwd, args: ['-I', '-B', '-u', '-m', 'glitnir.notebook', 'serve', uri.fsPath, '--port', '0'],
       env: {...(environment.processEnv ?? process.env), PYTHONUNBUFFERED: '1',
         GLITNIR_ELABORATION_TIMEOUT_MS: String(config.get<number>('elaborationTimeoutMs', 600000)),
-        GLITNIR_MEMORY_LIMIT_MB: String(config.get<number>('memoryLimitMb', 8192))},
+        // Left unset unless the user chose a value: the backend then sizes the default to the machine.
+        ...(memoryLimitChosen ? {GLITNIR_MEMORY_LIMIT_MB: String(config.get<number>('memoryLimitMb', 16384))} : {})},
       // Project cancellation stops Lean first, then removes its large snapshot.
       shutdownTimeoutMs: 60000,
       log: text => output.append(`[${path.basename(uri.fsPath)}] ${text}`),

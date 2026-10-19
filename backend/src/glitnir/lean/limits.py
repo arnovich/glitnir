@@ -61,13 +61,35 @@ def check_seconds() -> float:
 #: Environment variable overriding Lean's memory limit (`lean -M`), in megabytes.
 MEMORY_LIMIT_VARIABLE = "GLITNIR_MEMORY_LIMIT_MB"
 
-#: Lean's memory limit when nothing overrides it. Decision candidate checks
-#: exceed 4096 MB in Lean's interpreter.
-DEFAULT_MEMORY_LIMIT_MB = 8192
+#: The most memory Lean gets when nothing overrides it. Decision candidate
+#: checks exceed 4096 MB in Lean's interpreter, and a view or replay on top of
+#: Mathlib holds about 4-5 GB of library files before any work begins.
+DEFAULT_MEMORY_LIMIT_MB = 16384
+
+#: Memory left to the rest of the machine when the default is reduced to fit.
+RESERVED_MEMORY_MB = 2048
 
 #: The smallest and largest memory limit a setting can choose.
 MIN_MEMORY_LIMIT_MB = 1024
 MAX_MEMORY_LIMIT_MB = 32768
+
+
+def physical_memory_mb() -> int | None:
+    """Return the machine's physical memory in megabytes, or None if unknown."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // 2**20
+    except (ValueError, OSError, AttributeError):
+        return None
+
+
+def _default_memory_limit_mb() -> int:
+    physical = physical_memory_mb()
+    if physical is None:
+        return DEFAULT_MEMORY_LIMIT_MB
+    return max(
+        MIN_MEMORY_LIMIT_MB,
+        min(DEFAULT_MEMORY_LIMIT_MB, physical - RESERVED_MEMORY_MB),
+    )
 
 
 def memory_limit_mb() -> int:
@@ -77,9 +99,11 @@ def memory_limit_mb() -> int:
     `GLITNIR_MEMORY_LIMIT_MB`; the command-line check reads the same variable.
     A value that is not a positive decimal integer of at most six digits falls
     back to the default, and a valid value is clamped to the supported range.
+    The default is 16384, or 2048 less than the machine's physical memory when
+    that is smaller, but never below 1024.
 
     Returns:
-        The configured limit, between 1024 and 32768, or 8192.
+        The configured limit, between 1024 and 32768, or the default.
     """
     configured = os.environ.get(MEMORY_LIMIT_VARIABLE, "")
     if (
@@ -87,7 +111,7 @@ def memory_limit_mb() -> int:
         or not (configured.isascii() and configured.isdigit())
         or int(configured) <= 0
     ):
-        return DEFAULT_MEMORY_LIMIT_MB
+        return _default_memory_limit_mb()
     return min(max(int(configured), MIN_MEMORY_LIMIT_MB), MAX_MEMORY_LIMIT_MB)
 
 

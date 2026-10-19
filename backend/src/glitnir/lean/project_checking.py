@@ -44,6 +44,11 @@ from glitnir.lean.scratch import scratch_directory
 
 PROGRAMS = Path(__file__).parent
 OUTPUT_BYTES = 16 * 1024**2
+MEMORY_EXHAUSTED = (
+    "Lean reached its memory limit of {limit} MB. The limit includes the library "
+    "files Lean loads (about 4–5 GB with Mathlib) as well as its working memory. "
+    "Raise the glitnir.memoryLimitMb setting and try again."
+)
 MODULE_BYTES = 256 * 1024**2
 #: The one-time replay of an import closure has its own, longer deadline; the
 #: check's own budget starts again after it.
@@ -223,6 +228,11 @@ def run_observer(
                     stream.read(OUTPUT_BYTES + 1).decode("utf-8", errors="replace")
                 )
             if process.returncode != 0:
+                limit = next(
+                    (a[2:] for a in arguments if re.fullmatch(r"-M\d+", a)), None
+                )
+                if limit and "excessive memory consumption detected" in texts[1]:
+                    raise SnapshotError(MEMORY_EXHAUSTED.format(limit=limit))
                 raise SnapshotError(
                     f"{arguments[0]} did not complete successfully "
                     f"(exit {process.returncode}).\n" + (texts[1] or texts[0])[-6000:]

@@ -10,6 +10,7 @@ const {tmpdir} = require('node:os');
 test('preview tabs deduplicate, restrict dirty-file checks and reject injected routes', async () => {
   const commands = new Map(), panels = [], servers = [], events = {}, writes = [];
   const gitFiles = [], gitDiffs = [], sourceWatchers = [];
+  let memoryInspect = {defaultValue: 16384, globalValue: 12288};
   let saveTarget, dialogs = 0, clipboard;
   let references = [];
   let candidateReply;
@@ -58,7 +59,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
       fs: {writeFile: async (uri, bytes) => { writes.push([uri, bytes.toString()]); }},
       openTextDocument: async uri => documents.find(d => d.uri.fsPath === uri.fsPath) || {uri},
       getWorkspaceFolder: () => ({uri: file('/workspace')}),
-      getConfiguration: namespace => (assert.equal(namespace, 'glitnir'), {get: (key, fallback) => ({pythonPath: '.venv/bin/python', memoryLimitMb: 12288})[key] ?? fallback}),
+      getConfiguration: namespace => (assert.equal(namespace, 'glitnir'), {get: (key, fallback) => ({pythonPath: '.venv/bin/python', memoryLimitMb: memoryInspect.globalValue ?? memoryInspect.defaultValue})[key] ?? fallback, inspect: key => (assert.equal(key, 'memoryLimitMb'), memoryInspect)}),
       onDidChangeTextDocument: fn => { events.change = fn; return {}; },
       onDidSaveTextDocument: fn => { events.save = fn; return {}; },
       onDidCloseTextDocument: () => ({}),
@@ -277,6 +278,10 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.equal(servers[3].closed, undefined);
   assert.equal(packageRestart('/workspace/.venv/bin/python'), true);
   assert.equal(servers[3].closed, true, 'changing extension packages closes the previews of that backend');
+  memoryInspect = {defaultValue: 16384};
+  await open(file(fixture));
+  assert.equal(servers.length, 5);
+  assert.ok(!('GLITNIR_MEMORY_LIMIT_MB' in servers[4].options.env), 'a defaulted memory setting leaves the backend to size its own');
   let resume;
   fake.workspace.openTextDocument = uri => new Promise(resolve => { resume = () => resolve({uri}); });
   const opening = open(file(path.join(path.dirname(fixture), 'DissipativeModel.lean')));
@@ -289,6 +294,6 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   resume();
   await opening;
   assert.equal(servers[2].closed, true);
-  assert.equal(servers.length, 4, 'deactivation prevents a pending open from spawning');
+  assert.equal(servers.length, 5, 'deactivation prevents a pending open from spawning');
   assert.deepEqual(packageCalls.at(-1), ['dispose'], 'deactivation cancels package changes');
 });

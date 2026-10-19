@@ -258,7 +258,7 @@ recorded theorem and its copy wins Lean's merge of the two (it is loaded later
 and is not identical), all of its imports are replayed instead; an identical
 or earlier restatement keeps the incremental replay. Building on a recorded
 replay holds both rebuilt environments in memory at once: for Mathlib about
-4.7 GB, within the 8 GB default of `glitnir.memoryLimitMb`.
+4.7 GB, within the 16 GB default of `glitnir.memoryLimitMb`.
 A result's `replay` field is `full`, `imports cached`, or `imports cached (+N
 modules)`. The notebook's own declarations are replayed either way, in an
 environment rebuilt from nothing but the replayed imports' declarations (no
@@ -298,7 +298,7 @@ status. Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in
 | Setting | Default | Purpose |
 |---|---|---|
 | `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
-| `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
+| `glitnir.memoryLimitMb` | `16384` (16 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
 | `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend and carry over extension packages (see [Upgrading](../extension/media/setup.md#upgrading)). Nothing downloads until you click **Set Up**. |
 

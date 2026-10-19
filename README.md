@@ -193,7 +193,7 @@ notebooks and the claim graph.
 | Setting | Default | Purpose |
 |---|---|---|
 | `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks, proof-step recording, views, evidence and decisions, in milliseconds, capped at 30 minutes. Applies to previews opened after the change. |
-| `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for every Lean run, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
+| `glitnir.memoryLimitMb` | `16384` (16 GB) | Memory limit for every Lean run, in megabytes, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. Changing it closes open previews. |
 | `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend. Nothing downloads until you click **Set Up**. |
 

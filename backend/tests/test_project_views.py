@@ -769,17 +769,20 @@ def test_live_view_program_refuses_offsets_outside_the_source(
 
 
 @pytest.mark.parametrize(
-    "configured, expected", [(None, "-M8192"), ("12288", "-M12288")]
+    "configured, expected", [(None, "-M16384"), ("12288", "-M12288")]
 )
 def test_provider_lean_uses_the_configured_memory_limit(
     tmp_path, monkeypatch, configured, expected
 ):
-    """Provider Lean runs with `GLITNIR_MEMORY_LIMIT_MB`, or 8192 MB by default."""
+    """Provider Lean runs with `GLITNIR_MEMORY_LIMIT_MB`, or 16384 MB by default."""
     source, _ = _lake(
         tmp_path, monkeypatch, {"Demo.View": [".lake/build/Demo/View.olean"]}
     )
     calls: list = []
     _reporting(monkeypatch, {"information": ["demoView:<svg/>"], "errors": []}, calls)
+    from glitnir.lean import limits
+
+    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
     if configured is None:
         monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
     else:
