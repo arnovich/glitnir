@@ -1,6 +1,6 @@
 # Glitnir: A simple notebook format for Lean
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/gimle.glitnir?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir)
+[![Visual Studio Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-install-007ACC)](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir)
 
 Glitnir is a simple notebook format that makes it easier for a standard human mathematician to follow agent-generated proofs in Lean.
 
@@ -210,9 +210,6 @@ notebooks and the claim graph.
   dependencies; run `lake build` yourself. Views, evidence, decisions and
   imports of other notebooks need the notebook inside a built Lake project; a
   loose `.lean` file has no prepared imports.
-- **Simulation is evidence, never proof.** Evidence never changes a claim's
-  status or the check's exit code, and a decision provider only proposes a Lean
-  block that the kernel check must accept.
 
 ## Where next
 
