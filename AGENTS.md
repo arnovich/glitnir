@@ -1,9 +1,8 @@
 # Glitnir
 
-Until this repository is public, commit directly to `main`; the history is squashed
-into one commit before the first public release. Once it is public, work on feature
-branches and merge through pull requests. Release candidates are created only when
-the `RELEASE_CANDIDATES` repository variable is `true`.
+Work on feature branches and merge through pull requests; never commit directly
+to `main`. Release candidates are created only when the `RELEASE_CANDIDATES`
+repository variable is `true`.
 
 This repository owns the VS Code integration and the extracted backend in
 `backend/`, including its canonical renderer and Python checking services.
