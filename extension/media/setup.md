@@ -28,8 +28,12 @@ describes the notebook format, the preview and checking.
 
 ## Install the extension
 
-Install **Glitnir — Lean Notebooks** from the Extensions view once it is on the
-Visual Studio Marketplace, or from a GitHub release:
+Install **Glitnir — Lean Notebooks** from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir): search for it in the Extensions view, or run
+`code --install-extension gimle.glitnir`.
+
+For a specific version or an offline machine, install it from a GitHub release
+instead:
 
 1. Download `glitnir-VERSION.vsix` from
    [Releases](https://github.com/arnovich/glitnir/releases).
@@ -131,6 +135,11 @@ section describes the package picker, the checks every wheel goes through and
 what each Forseti feature needs.
 
 ## Upgrading
+
+An extension installed from the Marketplace updates automatically, like any
+other. One installed from a VSIX does not: download the new release's VSIX and
+install it the same way. Either way, the backend then follows as described
+below.
 
 Each release pins its own backend wheel, and each backend lives in its own
 environment, `~/.local/share/glitnir/backends/<wheel SHA-256>`. When the
