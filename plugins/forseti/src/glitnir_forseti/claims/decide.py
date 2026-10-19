@@ -1,10 +1,12 @@
-"""One front door to the three deciders, for the agent and the notebook.
+"""One front door to the four deciders, for the agent and the notebook.
 
 `read_goal` accepts a goal as text (`glitnir_forseti.claims.text`) or as its
 JSON encoding; `decide` hands it to the decider for its kind, unchanged, and
 reports that decider's own answer: ``PROVEN`` or ``REFUTED`` with a replayable
 artifact, or ``UNKNOWN`` with a reason. Nothing here searches, checks or
-decides; a status is only ever copied from a service result.
+decides; a status is only ever copied from a service result. The stepped
+decider keeps no artifact: it answers only without a replay, below, and a
+replayed request about a stepped goal ends ``UNKNOWN: lean-unavailable``.
 
 For a decided goal the checked Lean statement and script are regenerated from
 the artifact by the kind's ``regenerate_application``, the same regeneration a
@@ -33,6 +35,8 @@ from glitnir_forseti.entailment import replay as entailment_replay
 from glitnir_forseti.entailment import syntax as entailment_syntax
 from glitnir_forseti.entailment.limits import CEILINGS, EntailmentLimits
 from glitnir_forseti.entailment.syntax import Goal, GoalError, Tru
+from glitnir_forseti.stepped import service as stepped_service
+from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams import goal as stream_goal
 from glitnir_forseti.streams import replay as stream_replay
 from glitnir_forseti.streams.examples import EXAMPLES as STREAM_EXAMPLES
@@ -120,11 +124,20 @@ _KINDS: dict[type, _Kind] = {
         _decide_stream,
         stream_replay.regenerate_application,
     ),
+    SteppedGoal: _Kind(
+        "stepped",
+        "glitnir_forseti.stepped",
+        SteppedGoal.SCHEMA,
+        SteppedGoal.from_json,
+        SteppedGoal.to_json,
+        stepped_service.decide_stepped,
+        stepped_service.regenerate_application,
+    ),
 }
 
 
 def goal_kind(goal: AnyGoal) -> str:
-    """Name a parsed goal's kind: ``entailment``, ``trajectory`` or ``stream``."""
+    """Name a parsed goal's kind: entailment, trajectory, stream or stepped."""
     return _KINDS[type(goal)].name
 
 
@@ -173,7 +186,7 @@ class Decision:
     """A decider's answer about one goal, as that decider gave it.
 
     Attributes:
-        kind: ``entailment``, ``trajectory`` or ``stream``.
+        kind: ``entailment``, ``trajectory``, ``stream`` or ``stepped``.
         goal: The goal decided.
         status: ``PROVEN``, ``REFUTED`` or ``UNKNOWN``.
         reason: For ``UNKNOWN``, the decider's reason.
@@ -237,7 +250,9 @@ def decide(
     """
     kind = _KINDS.get(type(goal))
     if kind is None:
-        raise TypeError("goal must be an entailment, trajectory or stream goal")
+        raise TypeError(
+            "goal must be an entailment, trajectory, stream or stepped goal"
+        )
     if replay:
         result = kind.decide(goal, limits, project=project, cancel=cancel)
     else:

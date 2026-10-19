@@ -32,6 +32,11 @@ its bridge rewrites the contract's output constants with the identities the
 root proves beside it; a truncation claim states convergence and the bound at
 every real point of the box. Nothing in them is assumed: each bridge proves
 the statement equivalent to the lane's proposition.
+
+A stepped claim is already a statement about the model's Lean constants, for
+every shock law of its class; the lane's ``forsetiClaim`` is that very
+proposition, so its bridge is definitional. What it adds is the sentence that
+says the claim in words.
 """
 
 from __future__ import annotations
@@ -59,6 +64,9 @@ from glitnir_forseti.entailment.syntax import (
     Var,
     walk,
 )
+from glitnir_forseti.stepped import render as stepped_render
+from glitnir_forseti.stepped.goal import SteppedGoal
+from glitnir_forseti.stepped.models import MODELS as STEPPED_MODELS
 from glitnir_forseti.streams.goal import (
     CLASSICAL_EULER,
     FIELD_CONTEXT,
@@ -205,7 +213,8 @@ def readable(goal: object) -> Readable | None:
     statement is then kept as it is.
 
     Raises:
-        KeyError: If a trajectory or stream goal names an unknown model.
+        KeyError: If a trajectory, stream or stepped goal names an unknown
+            model, or a stepped goal an observation its model lacks.
         ValueError: If a trajectory goal's initial ports are not its model's,
             or a coefficient claim observes a port the model's circuit lacks,
             or a truncation goal's profile is not an exponential sum, or the
@@ -215,6 +224,8 @@ def readable(goal: object) -> Readable | None:
         return _entailment(goal)
     if type(goal) is TrajectoryGoal:
         return _trajectory(goal)
+    if type(goal) is SteppedGoal:
+        return _stepped(goal)
     if type(goal) is StreamGoal:
         claim = goal.claim
         if type(claim) is FieldClaim and goal.interpretation == "analytic-field":
@@ -565,6 +576,56 @@ def _trajectory(goal: TrajectoryGoal) -> Readable:
             f"⟨realizable u {given}, unique u {given}, holds u {given}⟩",
         ),
         **_ROOTED,
+    )
+
+
+# --- stepped ------------------------------------------------------------------
+
+
+def _stepped(goal: SteppedGoal) -> Readable:
+    """State a stepped claim as the lane's proposition, with what it says."""
+    entry = STEPPED_MODELS[goal.model]
+    observation = entry.observations[goal.observation]
+    if goal.law == "two-moment":
+        laws = f"centred shock law with variance {number(goal.variance)}"
+    else:
+        laws = f"shock law sub-Gaussian with proxy {number(goal.variance)}"
+    quantity = f"{observation.kind} {goal.observation}"
+    bound = number(goal.bound)
+    if goal.barrier is None:
+        said = f"the expected {quantity} at mark {goal.horizon} is at most {bound}"
+    elif goal.claim == "horizon":
+        said = (
+            f"the probability that the {quantity} breaches {number(goal.barrier)}"
+            f" within {goal.horizon} marks is at most {bound}"
+        )
+    else:
+        said = (
+            f"at each mark up to {goal.horizon}, taken separately, the probability"
+            f" that the {quantity} breaches {number(goal.barrier)} is at most {bound}"
+        )
+    step = stepped_render.short(entry, entry.step_name)
+    start = stepped_render.short(entry, entry.initial_name)
+    names = (
+        f"`{step}` is the model's step of size {number(entry.delta)} with the shock"
+        f" in its driver slot, from `{start}` = "
+        f"({', '.join(number(value) for value in entry.initial)})"
+    )
+    if goal.barrier is not None:
+        safe = stepped_render.short(entry, observation.safe_name)
+        names += (
+            f"; `{safe} {number(goal.barrier)}` is the band"
+            f" |{goal.observation}| ≤ {number(goal.barrier)}"
+        )
+    return Readable(
+        ":\n    " + stepped_render.claim(goal, entry, "      "),
+        f"For every {laws}, {said}. {names}.",
+        lane=stepped_render.CLAIM,
+        root="root",
+        refuted="refuted",
+        setup=(),
+        to_lane=("exact claim",),
+        from_lane=("exact lane",),
     )
 
 
