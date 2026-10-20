@@ -434,7 +434,8 @@ def catalog() -> str:
         )
         lines.append(
             f"  {stepped.key}: from ({initial}) at {_number(stepped.start)}"
-            f" step {_number(stepped.delta)}, at most {stepped.horizon_cap} steps;"
+            f" step {_number(stepped.delta)}, at most {stepped.horizon_cap} steps"
+            f" ({stepped.unrolled_cap} for fixed-date and expected claims);"
             f" observe {observed}"
         )
     return "\n".join(lines)

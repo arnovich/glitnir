@@ -299,7 +299,8 @@ def test_the_catalog_names_every_registered_model() -> None:
         " `observe X expected <= c at N`):"
     ) in text
     assert (
-        "  hedged-spread: from (0, 0) at 0 step 1/256, at most 4096 steps;"
+        "  hedged-spread: from (0, 0) at 0 step 1/256, at most 4096 steps"
+        " (1024 for fixed-date and expected claims);"
         " observe s (breach claims), V (expected claims)"
     ) in text
     assert "initial initial-x = 1, initial-y = 2, initial-z = -1" in text

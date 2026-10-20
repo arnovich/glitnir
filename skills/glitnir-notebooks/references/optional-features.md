@@ -85,12 +85,13 @@ plus at least two spaces, asks a decision provider for a Lean proof or refutatio
 of the goal. `glitnir-forseti` decides kinds `entailment`, `trajectory`, `stream`
 and `stepped`; it needs `glitnir-forseti[z3]`, and the notebook must import the
 Forseti/Asgard modules the goal uses (a missing one shows as an unknown-identifier
-rejection on the card). Forseti `entailment` and `trajectory` decision blocks have passed Glitnir's
-check in the opt-in live tests (2026-10-15); `stream` decisions have not been
-verified yet, so do not present them as working. `stepped` decisions and `sample`
-need a forseti-lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release does not have
-them yet. The first check of a Forseti
+rejection on the card). Forseti `entailment`, `trajectory` and `stepped` decision
+blocks and the `sample` card have passed Glitnir's check in the opt-in live tests
+against Forseti Lean v0.3.0, the pinned release (2026-10-20); `stream` decisions
+have not been verified yet, so do not present them as working. `stepped`
+decisions and `sample` need a Forseti Lean build that contains
+`Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as
+Forseti Lean v0.3.0 does. The first check of a Forseti
 project takes about 18 minutes (a one-time import replay); later checks take a
 few minutes.
 

@@ -108,6 +108,10 @@ class SteppedEntry:
         theorems: The Lean names a block cites.
         start: The time the chain starts at.
         horizon_cap: The most steps a claim may range over.
+        unrolled_cap: The most steps a fixed-date or expected claim may range
+            over. Their proofs may have the kernel unroll a recursion over
+            every step (``proxyRec``, ``geomSum``), and the independent
+            replay's kernel hits its recursion limit well below ``horizon_cap``.
     """
 
     key: str
@@ -125,6 +129,7 @@ class SteppedEntry:
     theorems: SteppedTheorems
     start: Fraction = Fraction(0)
     horizon_cap: int = 4096
+    unrolled_cap: int = 1024
 
 
 HEDGED_SPREAD_STEPPED = SteppedEntry(

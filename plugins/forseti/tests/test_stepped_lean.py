@@ -13,10 +13,18 @@ library, and fails instead of skipping under the gate::
         uv run python -m pytest tests/test_stepped_lean.py
 
 Beside the examples, which fix the constants at the catalogue's (variance 64,
-a year of 256 marks, the barrier 1), three variants reach template branches
-those constants do not: a fixed-date bound whose ``r`` is lowered to
-`service.EXP_CAP`, a fixed-date claim at a fractional barrier, and a horizon
-hold at the lane's horizon cap of 4096 marks.
+a year of 256 marks, the barrier 1), variants reach template branches those
+constants do not: a fixed-date bound whose ``r`` is lowered to
+`service.EXP_CAP`, a fixed-date claim at a fractional barrier, and the lane's
+caps. At the horizon cap of 4096 marks a horizon hold and an exact refutation
+are checked; the refutation makes the kernel evaluate a power over all 4096
+marks, where the hold does no work that long. The proofs of a fixed-date bound
+and an expectation may unroll a recursion over every mark (``proxyRec``,
+``geomSum``), so their cap is lower, and each is checked at it.
+
+A check is held to a budget of `CHECK_BUDGET_MS`, two minutes unless the
+environment variable ``FORSETI_CHECK_BUDGET_MS`` names another number of
+milliseconds, as a loaded machine may need.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
@@ -29,6 +37,7 @@ provider turns it into the card Glitnir would save.
 
 import hashlib
 import json
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -46,11 +55,13 @@ from glitnir_forseti.decision_provider import decide, parse
 from glitnir_forseti.notebook import evidence
 from glitnir_forseti.stepped import service
 from glitnir_forseti.stepped.examples import EXAMPLES, Example
+from glitnir_forseti.stepped.models import HEDGED_SPREAD_STEPPED
 
 #: The axioms Lean itself provides; a block may rest on nothing else.
 STANDARD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
-#: The longest a block may take to check, in milliseconds.
-CHECK_BUDGET_MS = 60_000
+#: The longest a block may take to check, in milliseconds, unless the
+#: environment says otherwise (`_check_budget_ms`).
+CHECK_BUDGET_MS = 120_000
 #: A block that needs nothing, to have the checker replay a notebook's imports.
 WARM_BLOCK = "theorem warm_up : True := trivial"
 #: The compiled hedged spread a ``sample`` directive names, and its options. The
@@ -68,6 +79,36 @@ import Gimle.Forseti.Examples.HedgedSpreadStepped
 
 {SAMPLE_DIRECTIVE}
 """
+
+
+def _check_budget_ms() -> int:
+    """Return the budget a check is held to.
+
+    An unset or empty ``FORSETI_CHECK_BUDGET_MS`` means `CHECK_BUDGET_MS`.
+
+    Raises:
+        pytest.fail.Exception: If the variable is not a positive whole number.
+    """
+    value = os.environ.get("FORSETI_CHECK_BUDGET_MS", "").strip()
+    if not value:
+        return CHECK_BUDGET_MS
+    try:
+        budget = int(value)
+    except ValueError:
+        budget = 0
+    if budget <= 0:
+        pytest.fail(
+            "FORSETI_CHECK_BUDGET_MS must be a positive whole number of"
+            f" milliseconds, got {value!r}",
+            pytrace=False,
+        )
+    return budget
+
+
+@pytest.fixture(autouse=True)
+def check_budget_ms() -> int:
+    """Return the check budget, failing a test at once if the variable is bad."""
+    return _check_budget_ms()
 
 
 @dataclass(frozen=True)
@@ -161,7 +202,9 @@ def _status(outcome: dict) -> str:
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
-def test_emitted_block_checks(check_block, example: Example) -> None:
+def test_emitted_block_checks(
+    check_block, check_budget_ms: int, example: Example
+) -> None:
     outcome = _decided(example)
     assert _status(outcome) == example.expected, outcome["stages"]
     if example.expected.startswith("UNKNOWN"):
@@ -173,50 +216,115 @@ def test_emitted_block_checks(check_block, example: Example) -> None:
     result = check_block(outcome)
     assert result.ok, result.message
     assert set(result.axioms) <= STANDARD_AXIOMS
-    assert result.check_ms < CHECK_BUDGET_MS
+    assert result.check_ms < check_budget_ms
     print(f"{example.name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
 
 
 #: The hedged spread from the flat book in steps of 1/256, as every goal starts.
 _HEDGED_GOAL = "stepped hedged-spread from (0, 0) at 0 step 1/256"
-#: Goals whose blocks take template branches no example takes, with a piece of
-#: text each block must hold to show it took that branch.
+#: The most marks a fixed-date or expected claim ranges over.
+_UNROLLED_CAP = HEDGED_SPREAD_STEPPED.unrolled_cap
+#: Goals whose blocks take template branches no example takes, with the status
+#: the decider gives each and a piece of text its block must hold to show it
+#: took that branch.
 VARIANTS = {
     # r = 8² / (2·c_up) ≈ 350.7, so ⌊r⌋ is above the cap and lowered to it:
     # `norm_num at hE` faces e₋^256.
     "capped_exponent": (
         f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within 256"
         " observe s breach 8 probability <= 1/100",
+        "PROVEN",
         f"exp_ge_floor_cubic {service.EXP_CAP} (r := {service.EXP_CAP})",
     ),
     # The band |s| ≤ 3/2: the barrier is a fraction in the numeric core.
     "fractional_barrier": (
         f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within 256"
         " observe s breach 3/2 probability <= 1/100",
+        "PROVEN",
         "2 * Real.exp (-(3/2) ^ 2 / (2 * c))",
     ),
     # N·Δ²·v/B² = 4096 · 4 / 256² = 1/4 at the lane's horizon cap.
     "horizon_cap": (
         f"{_HEDGED_GOAL} shocks variance 4 within 4096 observe s breach 1"
         " probability <= 1/4",
+        "PROVEN",
         "(breach_within h (by norm_num) 4096).mono",
+    ),
+    # The proxy at mark 1024 is the 1024-step recursion `proxyRec`, which
+    # `decide +kernel` evaluates before the numeric core. The independent
+    # replay's kernel runs out of depth between 1936 and 2176 marks.
+    "fixed_date_cap": (
+        f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within {_UNROLLED_CAP}"
+        " observe s breach 1 probability <= 1/100",
+        "PROVEN",
+        f"have hc : proxy 64 {_UNROLLED_CAP} ≤",
+    ),
+    # The expected energy at mark 1024 is the partial sum `geomSum 1024`
+    # (≈ 0.1254, below 33/256), which `decide +kernel` evaluates. The replay's
+    # kernel runs out of depth between 1216 and 1456 marks.
+    "expectation_cap": (
+        f"{_HEDGED_GOAL} shocks variance 64 observe V expected <= 33/256"
+        f" at {_UNROLLED_CAP}",
+        "PROVEN",
+        f"Δ ^ 2 * 64 * geomSum {_UNROLLED_CAP} ≤ 33/256",
+    ),
+    # 9/10 is below the three-point law's 1 − (1 − 2ε)^4096 ≈ 0.9811 and above
+    # Bernoulli's ≈ 0.7987: the exact refutation, whose power `decide +kernel`
+    # evaluates over 4096 factors.
+    "exact_refutation_cap": (
+        f"{_HEDGED_GOAL} shocks variance 64 within 4096 observe s breach 1"
+        " probability <= 9/10",
+        "REFUTED",
+        "(1 - 2 * (64 / (2 * 257 ^ 2) : ℚ)) ^ 4096 := by decide +kernel",
     ),
 }
 
 
 @pytest.mark.parametrize("name", sorted(VARIANTS))
-def test_a_template_variant_checks(check_block, name: str) -> None:
+def test_a_template_variant_checks(
+    check_block, check_budget_ms: int, name: str
+) -> None:
     """Each variant is decided by the real decider and checked like an example."""
-    text, needle = VARIANTS[name]
+    text, status, needle = VARIANTS[name]
     outcome = decide(parse(name, "stepped", text), threading.Event())
-    assert _status(outcome) == "PROVEN", outcome["stages"]
+    assert _status(outcome) == status, outcome["stages"]
     assert needle in outcome["block"]
     assert checked_decision(outcome)["block"] == outcome["block"]
     result = check_block(outcome)
     print(f"{name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
     assert result.ok, result.message
     assert set(result.axioms) <= STANDARD_AXIOMS
-    assert result.check_ms < CHECK_BUDGET_MS
+    assert result.check_ms < check_budget_ms
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_an_unset_or_empty_budget_is_the_default(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is None:
+        monkeypatch.delenv("FORSETI_CHECK_BUDGET_MS", raising=False)
+    else:
+        monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
+    assert _check_budget_ms() == CHECK_BUDGET_MS == 120_000
+
+
+def test_a_budget_is_a_whole_number_of_milliseconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", " 600000 ")
+    assert _check_budget_ms() == 600_000
+
+
+@pytest.mark.parametrize("value", ["abc", "1.5", "10s", "0", "-5"])
+def test_any_other_budget_fails_with_a_message(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
+    with pytest.raises(pytest.fail.Exception) as raised:
+        _check_budget_ms()
+    message = str(raised.value)
+    assert "FORSETI_CHECK_BUDGET_MS" in message and repr(value) in message
+    assert "positive whole number of milliseconds" in message
 
 
 def test_a_false_block_is_rejected(check_block) -> None:
