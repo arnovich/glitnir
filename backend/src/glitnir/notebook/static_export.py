@@ -15,9 +15,11 @@ file. Drawing a view (`~SavedNotebook.draw_view`) answers with the drawing saved
 in ``<Notebook>.glitnir.json`` (its ``views`` section) when its saved source
 and provider hash match, as recorded: without running Lean and without
 comparing the environment. Otherwise it runs Lean in the sandbox to draw, as
-the editor does; it checks nothing and writes nothing in the notebook's
-project, so a drawing made here is not saved. `export_styles` is the CSS the
-renderer's Export HTML embeds (``GET /api/export/styles``). Export reports
+the editor does, unless the project's Lean version is not the one Glitnir
+checks (`glitnir.lean.project_inspection.lean_support`): then there is no
+drawing and the refusal is returned. It checks nothing and writes nothing in
+the notebook's project, so a drawing made here is not saved. `export_styles` is
+the CSS the renderer's Export HTML embeds (``GET /api/export/styles``). Export reports
 recorded observations: it neither runs Lean for checks nor updates records.
 """
 
@@ -182,10 +184,14 @@ class SavedNotebook:
         recorded while the source through its directive and its provider's
         hash (`glitnir.lean.project_views.view_provider_sha256`) match: no
         Lean runs and the environment is not compared, as for every saved
-        result in `snapshot`. Otherwise the view is drawn as the editor draws
+        result in `snapshot`, also for a project on a Lean version Glitnir
+        does not check. Otherwise the view is drawn as the editor draws
         it, by its provider with Lean in the sandbox, from the notebook
         project's own build, bounded by the check time limit; that drawing is
-        not saved. Nothing is checked, and a drawing never changes a result.
+        not saved. For a project on a Lean version Glitnir does not check, a
+        view without a matching saved drawing is refused (``{"error":
+        message}``, the editor's refusal) and nothing is drawn. Nothing is
+        checked, and a drawing never changes a result.
         Reading the notebook or its environment for the drawing may fail;
         that failure is returned like a failed drawing.
 

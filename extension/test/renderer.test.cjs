@@ -2998,9 +2998,9 @@ test('proof goals say when they are cancelled or failed, join a running observat
     assert.match(section(), /cancelled\. No goals were recorded/);
     assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof goals');
     // A failed observation says why.
-    start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'Proof steps currently require leanprover/lean4:v4.32.1.', nodes: []});
+    start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
-    assert.match(section(), /No proof goals: Proof steps currently require/);
+    assert.match(section(), /No proof goals: This project uses Lean 4\.31\.0\./);
     // Proof steps' running observation of this saved file is joined, not restarted.
     trace = {id: 'steps', status: 'running', source_sha256: snapshot.sha256, message: 'Resolving project environment', nodes: []};
     const before = starts;
@@ -3717,5 +3717,87 @@ test('saved results shown as recorded get their own banner state and never read 
     assert.notEqual(claimCard.dataset.tone, 'muted');
     assert.doesNotMatch(claimCard.querySelector('.claim-head').textContent, /As recorded/);
     assert.doesNotMatch(window.document.getElementById('insp-sub').textContent, /recorded/);
+  } finally { window.close(); }
+});
+
+// A project notebook with one saved claim, an evidence card, a decision candidate
+// the kernel checked and a view: every place a Lean command could start.
+const LEAN_MESSAGE = 'This project uses Lean 4.31.0. Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and decisions are off; reading works as usual.';
+function leanSupportNotebook({lean, recorded = false, toolchainError = null} = {}) {
+  const claimText = 'theorem t : True := by\n  trivial\n';
+  const rest = 'def M := 1\n-- @evidence simulate M (h := 1/10)\n-- @decide band : entailment x : x > 0 |- x >= 0\n-- @view circuit c\n';
+  const files = toolchainError ? {'lean-toolchain': {error: toolchainError}} : {};
+  return evidenceSnapshot(claimText + rest, [evidenceEntry({cell: 1, line: 4, status: 'current', unavailable: null, snapshot: evidenceBody()})], {
+    cells: [{index: 0, kind: 'source', start: 1, end: 2, text: claimText, claim: 't'}, {index: 1, kind: 'source', start: 3, end: 6, text: rest}],
+    project_claims: [{name: 't', status: 'checked', current: false, axioms: [], start_line: 1, end_line: 2}],
+    decisions: [servedDecision({cell: 1, line: 5, end_line: 5, status: 'candidate', outcome: decisionOutcome(), verification: checkedVerification()})],
+    views: [{cell: 1, line: 6, kind: 'circuit', name: 'c', using: [], error: ''}],
+    directive_providers: {evidence: ['simulate'], decide: ['entailment']},
+    preview: {mode: 'project', notice: recorded ? 'Saved results, shown as recorded.' : 'Saved-source preview.', ...(recorded ? {recorded: true} : {}),
+      project: {kind: 'lake', root: '/p', toolchain: 'leanprover/lean4:v4.31.0', files}, ...(lean ? {lean} : {})}});
+}
+const UNSUPPORTED = {supported: false, declared: 'leanprover/lean4:v4.31.0', toolchain: 'leanprover/lean4:v4.32.1', message: LEAN_MESSAGE};
+const SUPPORTED = {supported: true, declared: 'leanprover/lean4:v4.32.1', toolchain: 'leanprover/lean4:v4.32.1', message: null};
+const RUN_CONTROLS = '[data-act="evidence-run"], [data-act="decision-run"], [data-act="accept"], [data-act="check-through"], [data-act="goal"], [data-act="view-retry"]';
+
+test('a project on another Lean version shows one banner, no enabled Lean control and no view request', async () => {
+  const messages = [];
+  const window = await renderSnapshot(leanSupportNotebook({lean: UNSUPPORTED}), {onMessage: m => messages.push(m), onView: () => ({svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'})});
+  try {
+    const d = window.document, $ = id => d.getElementById(id);
+    assert.equal($('lean-unsupported').hidden, false);
+    assert.equal($('lean-unsupported').dataset.tone, 'amber');
+    assert.equal($('lean-unsupported').textContent, LEAN_MESSAGE);
+    assert.equal($('check-project').hidden, true);
+    assert.equal($('inspect-project').hidden, true);
+    assert.equal(d.querySelectorAll(`#doc ${RUN_CONTROLS.split(', ').join(', #doc ')}, #insp [data-act="goal"], #insp [data-act="check-through"]`).length, 0, 'no Lean control is offered');
+    assert.match(d.querySelector('#doc .view-cell').textContent, /Views need Lean 4\.32\.1\./);
+    assert.equal(messages.filter(m => m.path?.startsWith('/api/view')).length, 0, 'nothing is drawn');
+    // The saved result still reads, out of date.
+    assert.deepEqual([...d.querySelectorAll('#doc .project-claim .claim-head .pill')].map(p => p.textContent), ['Kernel checked', 'Out of date']);
+    assert.ok(d.querySelector('#doc .evidence .evidence-series, #doc .evidence'), 'the saved evidence stays');
+    assert.match(d.querySelector('#doc .decision').textContent, /band/);
+  } finally { window.close(); }
+});
+
+test('the unsupported-version banner names a lean-toolchain read error and escapes everything', async () => {
+  const hostile = {...UNSUPPORTED, message: 'This project declares no Lean version. <b>x</b> Glitnir checks Lean 4.32.1.'};
+  const snapshot = leanSupportNotebook({lean: hostile, toolchainError: 'cannot read <i>it</i>'});
+  const window = await renderSnapshot(snapshot);
+  try {
+    const banner = window.document.getElementById('lean-unsupported');
+    assert.equal(banner.textContent, `${hostile.message} (lean-toolchain: cannot read <i>it</i>)`);
+    assert.equal(banner.querySelector('b, i'), null);
+  } finally { window.close(); }
+});
+
+test('a view card names the version from the snapshot, not a fixed one', async () => {
+  const window = await renderSnapshot(leanSupportNotebook({lean: {...UNSUPPORTED, toolchain: 'leanprover/lean4:v4.40.2'}}));
+  try {
+    assert.match(window.document.querySelector('#doc .view-cell').textContent, /Views need Lean 4\.40\.2\./);
+  } finally { window.close(); }
+});
+
+test('a supported project shows no Lean banner and keeps its controls', async () => {
+  const messages = [];
+  const window = await renderSnapshot(leanSupportNotebook({lean: SUPPORTED}), {onMessage: m => messages.push(m), onView: () => ({svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'})});
+  try {
+    const d = window.document, $ = id => d.getElementById(id);
+    assert.equal($('lean-unsupported').hidden, true);
+    assert.equal($('check-project').hidden, false);
+    assert.equal($('inspect-project').hidden, false);
+    for (const act of ['evidence-run', 'decision-run', 'accept']) assert.ok(d.querySelector(`#doc [data-act="${act}"]`), act);
+    assert.ok(d.querySelector('#doc [data-act="check-through"]'));
+    assert.equal(messages.filter(m => m.path?.startsWith('/api/view')).length, 1);
+  } finally { window.close(); }
+});
+
+test('saved results shown as recorded never show the Lean banner, even when the snapshot carries lean.supported false', async () => {
+  const window = await renderSnapshot(leanSupportNotebook({lean: UNSUPPORTED, recorded: true}));
+  try {
+    const d = window.document;
+    assert.equal(d.getElementById('lean-unsupported').hidden, true);
+    assert.doesNotMatch(d.body.textContent, /Glitnir checks Lean/);
+    assert.equal(d.querySelector(RUN_CONTROLS), null);
   } finally { window.close(); }
 });

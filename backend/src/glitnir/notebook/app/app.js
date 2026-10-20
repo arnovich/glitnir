@@ -52,6 +52,11 @@
   // with its saved source only, never with an environment: its results are
   // shown as recorded, never called current, and nothing checks or runs them.
   const recorded = () => UI.data?.preview?.recorded === true;
+  // Glitnir checks one Lean version; a project on another reads as usual but
+  // runs no Lean (the server refuses every such request with the same words).
+  // Saved results shown as recorded run nothing and say nothing about it.
+  const leanOff = () => UI.data?.preview?.lean?.supported === false;
+  const leanVersion = toolchain => String(toolchain || '').replace(/^leanprover\/lean4:/, '').replace(/^v(?=\d)/, '');
   const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
   let readableSnapshot, heldRendering = false, highlightTimer;
   let highlighted = new Set(), highlightUntil = 0;
@@ -243,7 +248,7 @@
   }
   const inspecting = () => Boolean(UI.inspecting || inspection()?.status === 'running');
   async function inspectProject() {
-    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath() || recorded()) return;
+    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath() || recorded() || leanOff()) return;
     UI.inspecting = true;
     const sha256 = UI.data.sha256;
     renderChrome();
@@ -258,7 +263,7 @@
   // A check of the whole saved file, or, with `throughLine`, of its lines 1
   // through that line only: the end of a chosen claim.
   async function checkProject(throughLine = null) {
-    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded()) return;
+    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff()) return;
     UI.checkRequested = true;
     render();
     const body = {sha256: UI.data.sha256};
@@ -272,7 +277,7 @@
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note) {
-    if (linkedPath() || recorded() || !projectMode()) return '';
+    if (linkedPath() || recorded() || leanOff() || !projectMode()) return '';
     return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button><span class="small muted">${note}</span>`;
   }
   // Where a check stopped because it was asked to, not at a failing command.
@@ -696,11 +701,12 @@
     const key = `${cell.index}:${line}:${UI.data.sha256}`;
     const drawing = UI.drawings[key];
     const linked = Boolean(linkedPath());
-    if (!drawing && !linked) loadView(key, view);
+    if (!drawing && !linked && !leanOff()) loadView(key, view);
     const head = window.glitnirCards.header({label: `${view.kind} diagram`, name: view.name, locationHTML: lineLinkHTML(line, line)});
     let body;
     if (linked) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Lean draws this view in the notebook's own preview.</span></div>`;
     else if (view.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>${esc(view.error)}</span></div>`;
+    else if (leanOff() && (!drawing || drawing.loading || drawing.error)) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Views need Lean ${esc(leanVersion(UI.data.preview.lean.toolchain))}.</span></div>`;
     else if (!drawing || drawing.loading) body = `<p class="small muted view-wait" role="status">${esc(drawing?.message || 'Lean is drawing it…')}</p>`
       + (drawing?.drawing ? `<div class="claim-actions"><button type="button" class="secondary" data-act="view-cancel" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('x')}Stop</button><span class="small muted">Drawing is bounded by the check time limit.</span></div>` : '');
     else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span class="lean-message">No drawing: ${esc(drawing.error)}</span></div>`
@@ -885,7 +891,7 @@
     if (entry.run_error) body = note('red', `<span class="lean-message">The last run failed: ${esc(entry.run_error)}</span>`) + body;
     if (entry.unavailable && !entry.error) body = note('amber', `${esc(entry.unavailable)} Saved evidence remains viewable.`) + body;
     if (entry.error) body = note('red', esc(entry.error) + (snap ? ' Saved evidence remains viewable.' : '')) + body;
-    if (!staticPage && runnable && !running && !linkedPath() && !recorded()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
+    if (!staticPage && runnable && !running && !linkedPath() && !recorded() && !leanOff()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
     return `<section data-document-start="${line}" data-document-end="${line}" class="cell box evidence">${head}${body}${action}</section>`;
   }
 
@@ -960,10 +966,10 @@
     if (entry.status === 'running') buttons.push('<button type="button" class="secondary" data-act="decision-stop">Stop</button>');
     else {
       const acceptable = served && entry.status === 'candidate' && entry.verification?.status === 'checked' && !entry.missing_imports?.length;
-      if (acceptable && HOST) buttons.push(`<button type="button" class="primary" data-act="accept" data-key="${esc(entry.key)}">${icon('check')}Accept</button>`);
-      if (served && !entry.unavailable && RUN_AGAIN.has(entry.status)) buttons.push(`<button type="button" class="${acceptable || entry.status === 'accepted' ? 'secondary' : 'primary'}" data-act="decision-run" data-line="${line}" data-sha="${sha}">${icon('replay')}${entry.outcome ? 'Run again' : 'Run'}</button>`);
+      if (acceptable && HOST && !leanOff()) buttons.push(`<button type="button" class="primary" data-act="accept" data-key="${esc(entry.key)}">${icon('check')}Accept</button>`);
+      if (served && !entry.unavailable && !leanOff() && RUN_AGAIN.has(entry.status)) buttons.push(`<button type="button" class="${acceptable || entry.status === 'accepted' ? 'secondary' : 'primary'}" data-act="decision-run" data-line="${line}" data-sha="${sha}">${icon('replay')}${entry.outcome ? 'Run again' : 'Run'}</button>`);
       if (entry.outcome) buttons.push(`<button type="button" class="secondary" data-act="decision-discard" data-line="${line}" data-sha="${sha}">Discard</button>`);
-      if (acceptable && !HOST) buttons.push('<span class="small muted">Accept it from the editor\'s preview.</span>');
+      if (acceptable && !HOST && !leanOff()) buttons.push('<span class="small muted">Accept it from the editor\'s preview.</span>');
     }
     return buttons.length ? `<div class="claim-actions">${buttons.join('')}<span class="small muted">A provider proposes; only the kernel check makes a candidate.</span></div>` : '';
   }
@@ -1817,7 +1823,7 @@
   // change was recorded under the current dependencies.
   const reusable = (trace, sha256) => traceFinished(trace) && trace.source_sha256 === sha256 && trace.id && traceSeen.get(trace.id) === environmentEpoch;
   async function inspectGoals(refresh = false) {
-    if (!UI.data || linkedPath() || !projectMode() || UI.goals?.starting || traceRunning(UI.goals?.trace)) return;
+    if (!UI.data || linkedPath() || !projectMode() || leanOff() || UI.goals?.starting || traceRunning(UI.goals?.trace)) return;
     const sha256 = UI.data.sha256, epoch = ++goalEpoch, environment = environmentEpoch;
     clearTimeout(goalTimer);
     UI.goals = {starting: true, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
@@ -1885,6 +1891,7 @@
   function goalSectionHTML(c) {
     const head = '<h5>Proof goals</h5>';
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
+    if (leanOff()) return `<div class="insp-section goal-section">${head}<p class="small muted">Proof steps need Lean ${esc(leanVersion(UI.data.preview.lean.toolchain))}. The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
     const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}>${label}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
@@ -2080,6 +2087,12 @@
     $('inspect-project').hidden = !project || linked;
     $('inspect-project').disabled = checkBusy();
     $('check-project').hidden = !project || linked;
+    // One banner for a project Glitnir does not check; never on a static page.
+    const unsupported = leanOff() && !recorded();
+    const toolchainError = d.preview?.project?.files?.['lean-toolchain']?.error;
+    $('lean-unsupported').hidden = !unsupported;
+    $('lean-unsupported-text').textContent = unsupported ? `${d.preview.lean.message}${toolchainError ? ` (lean-toolchain: ${toolchainError})` : ''}` : '';
+    if (unsupported) { $('check-project').hidden = true; $('inspect-project').hidden = true; }
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';

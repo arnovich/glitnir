@@ -15,9 +15,13 @@ describes the notebook format, the preview and checking.
   shell's `PATH`, so setup looks for `uv` in `~/.local/bin`, `/opt/homebrew/bin`,
   `/usr/local/bin`, `/usr/bin` and `/bin`. Without it, setup offers **Install
   uv** (see [Set Up Environment](#set-up-environment)).
-- **Lean 4.32.1**, installed with [elan](https://github.com/leanprover/elan):
+- **Lean 4.32.1**, the one Lean version Glitnir checks, installed with
+  [elan](https://github.com/leanprover/elan):
   `elan toolchain install leanprover/lean4:v4.32.1`. Reading a notebook needs only
   the backend; checking, proof steps, views, evidence and decisions need Lean.
+  A notebook on another Lean version still opens and reads, with a banner saying
+  those are off. Glitnir moves the supported version forward as new Lean
+  releases are tested.
   Glitnir never builds or downloads a project's dependencies: build the
   notebook's Lake project first (`lake build`, after `lake exe cache get` for
   Mathlib).

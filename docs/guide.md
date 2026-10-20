@@ -176,6 +176,12 @@ in DEVELOPMENT.md.
 A notebook is ordinary Lean that builds with its Lake project (or, for a loose
 file, the standard library). Checks are explicit: **Check saved file** checks the
 whole saved file, and nothing is checked when you only move around.
+Glitnir checks one Lean version, today 4.32.1. A notebook whose project is on
+another version still opens and reads, with a banner at the top saying that
+checking, proof steps, views, evidence and decisions are off; its saved results
+show, marked out of date, and none of those controls is offered. A loose file with
+no declared version counts as 4.32.1. Glitnir adopts new Lean versions by moving
+that one version forward.
 Results are saved beside the notebook in `<Notebook>.glitnir.json`; a result goes
 out of date when anything above the claim changes (any edit above it, not only
 to declarations it uses), when an edit below it continues its command (another

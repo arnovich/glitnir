@@ -290,6 +290,37 @@ def test_draw_view_uses_saved_drawing_as_recorded(saved: Path, nothing_runs) -> 
     assert _tree(saved.parent) == before
 
 
+def test_an_unsupported_project_still_shows_saved_results_and_drawings(
+    saved: Path, nothing_runs
+) -> None:
+    """Another Lean version: saved results read as recorded, nothing is drawn."""
+    entry = _with_saved_drawing(saved)
+    (saved.parent / "lean-toolchain").write_text("leanprover/lean4:v4.31.0\n")
+    before = _tree(saved.parent)
+    with SavedNotebook(saved) as notebook:
+        snapshot = notebook.snapshot()
+        [view] = snapshot["views"]
+        assert snapshot["preview"]["recorded"] is True
+        assert snapshot["preview"]["lean"]["supported"] is False
+        [claim] = snapshot["project_claims"]
+        assert (claim["status"], claim["current"]) == ("checked", True)
+        [card] = snapshot["evidence"]
+        assert card["snapshot"] == _evidence_body()
+        # A saved drawing is returned as recorded, without asking Lean.
+        assert notebook.draw_view(view["cell"], view["line"]) == entry["drawing"]
+    assert _tree(saved.parent) == before
+
+
+def test_an_unsupported_project_draws_no_view_without_a_saved_drawing(
+    saved: Path, nothing_runs
+) -> None:
+    (saved.parent / "lean-toolchain").write_text("leanprover/lean4:v4.31.0\n")
+    with SavedNotebook(saved) as notebook:
+        [view] = notebook.snapshot()["views"]
+        answer = notebook.draw_view(view["cell"], view["line"])
+    assert answer["error"].startswith("This project uses Lean 4.31.0.")
+
+
 def test_draw_view_draws_when_saved_prefix_differs(
     saved: Path, monkeypatch, draw_each_alone
 ) -> None:

@@ -72,11 +72,12 @@ Glitnir runs in local VS Code windows on **macOS and Linux** (see
   **Python 3.12 or newer**, for the Python backend. Without uv, setup offers
   **Install uv**, which shows its command before running it: Homebrew, or the
   official installer `https://astral.sh/uv/0.12.23/install.sh`.
-- **Lean 4.32.1**, for checking, proof steps, views, evidence and decisions;
-  reading needs only the backend. Checking needs the notebook's project to be on
-  that toolchain (`elan toolchain install leanprover/lean4:v4.32.1`): a project
-  on another Lean version renders but cannot be checked. Build the project
-  yourself first (`lake build`, after `lake exe cache get` for Mathlib).
+- **Lean 4.32.1**, the one Lean version Glitnir checks, for checking, proof
+  steps, views, evidence and decisions; reading needs only the backend. Install
+  it with `elan toolchain install leanprover/lean4:v4.32.1`, and have the
+  notebook's project use it. A project on another Lean version still opens and
+  reads, with a banner saying checking is off. Build the project yourself first
+  (`lake build`, after `lake exe cache get` for Mathlib).
 - **On Linux, bubblewrap** with unprivileged user namespaces, which Lean runs
   in; the setup guide has the Ubuntu commands. macOS uses its built-in sandbox.
 
@@ -208,8 +209,12 @@ notebooks and the claim graph.
 
 ## Limits
 
-- **Lean 4.32.1 only.** Checking, proof steps, views, evidence and decisions use
-  that toolchain; a project on another Lean version can be read but not checked.
+- **One supported Lean version, today 4.32.1.** Checking, proof steps, views,
+  evidence and decisions run only on it. A notebook on another Lean version
+  opens and reads as usual, with a banner saying those are off; saved results
+  still show, marked out of date. Glitnir moves the supported version forward
+  as new Lean releases are tested, so a project on a newer Lean reads until
+  then.
 - **Local macOS and Linux only.** Windows, remote windows (SSH, WSL, containers)
   and virtual or untrusted workspaces are unsupported. On Linux, the sandbox
   needs an x86-64 or ARM64 machine.
