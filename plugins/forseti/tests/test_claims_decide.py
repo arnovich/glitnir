@@ -50,6 +50,10 @@ from glitnir_forseti.trajectory.service import Status, TrajectoryResult
 LIMITS = EntailmentLimits()
 GOALS = {example.name: example.goal for example in EXAMPLES}
 ONE = Const(Fraction(1))
+STEPPED = (
+    "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks variance 64"
+    " within 256 observe s breach 1 probability <= 1/4"
+)
 BAND_CERTIFICATE = Certificate(
     (
         Row(SquareSum(()), (SquareSum(((Fraction(1), ONE),)), SquareSum(()))),
@@ -281,12 +285,23 @@ def test_a_goal_without_text_is_reported_as_json() -> None:
 
 
 def test_the_catalog_names_every_registered_model() -> None:
+    from glitnir_forseti.stepped.models import MODELS as steppeds
     from glitnir_forseti.streams.models import MODELS as streams
     from glitnir_forseti.trajectory.models import MODELS as trajectories
 
     text = catalog()
-    for key in (*streams, *trajectories):
+    for key in (*streams, *trajectories, *steppeds):
         assert f"  {key}:" in text
+    assert (
+        "Stepped models (shocks `variance v` or `subgaussian v`; claims"
+        " `within N observe X breach B probability <= q`,"
+        " `at every mark within N observe X breach B probability <= q`,"
+        " `observe X expected <= c at N`):"
+    ) in text
+    assert (
+        "  hedged-spread: from (0, 0) at 0 step 1/256, at most 4096 steps;"
+        " observe s (breach claims), V (expected claims)"
+    ) in text
     assert "initial initial-x = 1, initial-y = 2, initial-z = -1" in text
     assert (
         "short: trajectory three-state from (1, 2, -1) at 2 observe V always"
@@ -296,6 +311,7 @@ def test_the_catalog_names_every_registered_model() -> None:
 
 def test_every_registered_model_has_an_example_that_reads() -> None:
     from glitnir_forseti.claims.decide import examples
+    from glitnir_forseti.stepped.models import MODELS as steppeds
     from glitnir_forseti.streams.models import MODELS as streams
     from glitnir_forseti.trajectory.models import MODELS as trajectories
 
@@ -304,6 +320,7 @@ def test_every_registered_model_has_an_example_that_reads() -> None:
         ("entailment", ""),
         *(("trajectory", key) for key in trajectories),
         *(("stream", key) for key in streams),
+        *(("stepped", key) for key in steppeds),
     }
     for example in listed:
         goal = read_goal(example["goal"])
@@ -317,6 +334,12 @@ def test_every_registered_model_has_an_example_that_reads() -> None:
     assert band["goal"] == (
         "trajectory three-state from (1, 2, -1) at 2 observe V always"
         " : -V <= 0 and V <= 6"
+    )
+    # A stepped example sits at the exact horizon bound N·Δ²·v/B² = 1/4.
+    [stepped] = [e for e in listed if e["kind"] == "stepped"]
+    assert stepped["goal"] == (
+        "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks variance 64"
+        " within 256 observe s breach 1 probability <= 1/4"
     )
 
 
@@ -334,6 +357,31 @@ def test_names_that_do_not_exist_are_errors_with_the_catalog(change, match) -> N
     with pytest.raises(GoalTextError, match=match) as raised:
         check_names(goal)
     assert "three-state:" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("change", "match"),
+    [
+        ({"model": "roessler"}, "no stepped model 'roessler'"),
+        ({"observation": "W"}, "hedged-spread has no observation 'W'"),
+    ],
+)
+def test_stepped_names_that_do_not_exist_are_errors_with_the_catalog(
+    change, match
+) -> None:
+    goal = dataclasses.replace(read_goal(STEPPED), **change)
+    with pytest.raises(GoalTextError, match=match) as raised:
+        check_names(goal)
+    assert "Stepped models" in str(raised.value)
+    assert "  hedged-spread: from (0, 0)" in str(raised.value)
+
+
+def test_known_stepped_names_pass_even_when_the_claim_is_unsupported() -> None:
+    goal = read_goal(STEPPED)
+    check_names(goal)
+    check_names(dataclasses.replace(goal, law="sub-gaussian"))
+    check_names(dataclasses.replace(goal, step=Fraction(1, 100)))
+    check_names(dataclasses.replace(goal, initial=(Fraction(1), Fraction(0))))
 
 
 def test_known_names_pass_even_when_the_claim_is_unsupported() -> None:

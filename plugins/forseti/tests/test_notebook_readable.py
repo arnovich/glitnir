@@ -561,3 +561,33 @@ def test_an_euler_claim_states_the_start_as_a_table_of_modes() -> None:
     )
     with pytest.raises(ValueError, match="start of modes"):
         readable(squared)
+
+
+STEPPED = (
+    "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks {law} 64"
+    " within 256 observe s breach 1 probability <= 1/4"
+)
+
+
+@pytest.mark.parametrize(
+    ("law", "shocks"),
+    [
+        ("variance", "any centred law with variance 64"),
+        ("subgaussian", "any sub-Gaussian law with proxy 64"),
+    ],
+)
+def test_a_stepped_claim_describes_its_shocks_as_independent(law, shocks) -> None:
+    """The statement fixes one law for every step: the shocks are i.i.d."""
+    stated = readable(parse_goal(STEPPED.format(law=law)))
+    assert stated is not None
+    assert stated.description.startswith(
+        f"For independent, identically distributed shocks drawn from {shocks}, the"
+        " probability that the exposure s breaches 1 within 256 marks is at most"
+        " 1/4. "
+    )
+    assert "identically distributed" in stated.description
+    assert " from any " in stated.description
+    assert stated.statement.startswith(":\n    ∀ law : Measure ℝ, ")
+    assert stated.lane == "forsetiClaim"
+    # The statement is the lane's proposition, which the bridge restates as is.
+    assert stated.to_lane == ("exact claim",) and stated.from_lane == ("exact lane",)

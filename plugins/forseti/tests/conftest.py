@@ -107,6 +107,40 @@ def forseti_lake_project():
 
 
 @pytest.fixture
+def scratch_notebook(forseti_lake_project):
+    """Return ``write(prefix, text)``, which adds a notebook to the checkout.
+
+    Glitnir's runner reads imports only from a Lake workspace, so the notebook
+    is a new module ``<prefix><random hex>`` of the checkout's
+    ``Gimle.Forseti.Tests`` library, created exclusively so that no file of the
+    checkout is overwritten. Every notebook written, and its results file, is
+    removed afterwards.
+    """
+    import os
+    import secrets
+
+    from glitnir.notebook.check_records import records_path
+
+    written: list[Path] = []
+
+    def write(prefix: str, text: str) -> Path:
+        folder = forseti_lake_project / "Gimle/Forseti/Tests"
+        path = folder / f"{prefix}{secrets.token_hex(4)}.lean"
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        written.append(path)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        return path
+
+    try:
+        yield write
+    finally:
+        for path in written:
+            path.unlink(missing_ok=True)
+            records_path(path).unlink(missing_ok=True)
+
+
+@pytest.fixture
 def live_children():
     """List this process's live children from /proc, to assert none survive."""
     import os

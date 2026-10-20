@@ -175,7 +175,7 @@ def test_an_iterate_directive_is_read_with_its_ports() -> None:
         ("-- @evidence iterate u (state := 1) (steps := 0)", "steps must be"),
         ("-- @evidence iterate u (state := 1) (h := 1/2)", "unknown option 'h'"),
         ("-- @evidence iterate u (state := 1) (inputs := 2) (names := a)", "all 2"),
-        ("-- @evidence fly u (state := 1)", "use simulate or iterate"),
+        ("-- @evidence fly u (state := 1)", "use simulate, iterate or sample"),
     ],
 )
 def test_malformed_iterate_directives_carry_an_error(directive, error) -> None:
