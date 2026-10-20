@@ -798,6 +798,35 @@ def test_live_view_preamble_scope_is_pinned(tmp_path, project_toolchain):
     assert "Down.value" in ambiguous["text"] and "Up.value" in ambiguous["text"]
 
 
+ADJACENT_NOTEBOOK = "def c : Nat := 1\n-- @view a\n"
+
+
+@pytest.mark.parametrize(
+    "preamble, offsets",
+    [
+        # Adjacent directives: the part between them is only a comment.
+        ("", [len("def c : Nat := 1\n"), len(ADJACENT_NOTEBOOK)]),
+        # A preamble that is only a comment.
+        ("-- only a comment\n", None),
+    ],
+)
+def test_live_view_parts_holding_only_comments_are_no_error(
+    tmp_path, project_toolchain, preamble, offsets
+):
+    """A part with nothing but comments before its end parses as empty.
+
+    Lean's parser reads comments only before a command, so such a part once
+    ended in an "unexpected end of input" error.
+    """
+    command = '#eval IO.println s!"mark:{c}"'
+    report = _elaborate(
+        tmp_path, project_toolchain, (ADJACENT_NOTEBOOK, preamble, command), offsets
+    )
+    assert report["views"] == [
+        {"information": ["mark:1\n"], "errors": [], "proofs_skipped": True}
+    ] * len(offsets or [None]), report
+
+
 @pytest.mark.parametrize(
     "offsets, message",
     [
