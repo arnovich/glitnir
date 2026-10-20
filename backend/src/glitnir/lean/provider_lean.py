@@ -1,12 +1,16 @@
 """Run provider Lean code in the notebook's sandbox; its output is untrusted data."""
 
+import copy
 import hashlib
 import json
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
+from glitnir.lean import fingerprint
+from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import OUTPUT_BYTES, check_seconds, run_observer
@@ -49,6 +53,20 @@ TOOLCHAIN_LIBRARIES = frozenset({"Init", "Std", "Lean", "Lake"})
 #: How much of a provider's first Lean error a card shows.
 ERROR_LINES = 12
 ERROR_CHARACTERS = 2000
+
+#: How many prepared Lake setups views and evidence keep for reuse.
+MAX_SETUPS = 8
+_SetupKey = tuple[str, tuple[str, ...], tuple[str, ...], str]
+# Prepared setups by (notebook, its header imports, provider modules, environment
+# digest), oldest first. A setup is reused only while the environment digest,
+# which covers the import closure's sources, build traces and package git
+# states, is unchanged; `_check_configuration` still re-reads the Lake
+# configuration bytes before and after every run, and a mismatch drops the
+# entry. Project checks and decision candidate checks never use it.
+_SETUPS: OrderedDict[_SetupKey, tuple[dict[str, Any], dict[str, Any], Path]] = (
+    OrderedDict()
+)
+_SETUPS_LOCK = threading.Lock()
 
 # Failures that say nothing about the output: a later request may succeed.
 INTERRUPTED = ("cancelled.", "timed out.")
@@ -153,14 +171,52 @@ def _saved(source: Path) -> str:
     return read_regular(source, SOURCE_BYTES).decode().replace("\r\n", "\n")
 
 
+def _setup_key(
+    source: Path, imports: tuple[str, ...], environment_sha256: str | None
+) -> _SetupKey | None:
+    """Return the cache key of a setup, or None when it must not be kept."""
+    if not fingerprint_ok(environment_sha256):
+        return None
+    assert environment_sha256 is not None
+    try:
+        text = _saved(source)
+    except (OSError, ValueError):
+        return None
+    header = fingerprint.header_imports(text) or [
+        "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+    ]
+    return (
+        str(source.resolve()),
+        tuple(header),
+        _project_modules(imports),
+        environment_sha256,
+    )
+
+
+def _forget_setup(
+    source: Path, imports: tuple[str, ...], environment_sha256: str | None
+) -> None:
+    """Drop the kept setup for these arguments, if there is one."""
+    key = _setup_key(source, imports, environment_sha256)
+    if key is not None:
+        with _SETUPS_LOCK:
+            _SETUPS.pop(key, None)
+
+
 def _setup(
     source: Path,
     expected_sha256: str,
     cancel: threading.Event,
     needs: str,
     imports: tuple[str, ...] = (),
+    environment_sha256: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], Path]:
     """Prepare the notebook's Lake environment exactly as project tracing does.
+
+    With a valid `environment_sha256` the prepared setup is kept and handed
+    out again for the same notebook, imports and digest (see `_SETUPS`);
+    without one it is prepared every time. Callers drop a kept setup with
+    `_forget_setup` when its configuration no longer matches.
 
     With `imports`, the setup also loads those modules from the project's
     existing build, as if the notebook imported them. If Lake then finds an
@@ -172,6 +228,14 @@ def _setup(
         raise SnapshotError(LAKE_NEEDED[needs])
     root = Path(project["root"]).resolve()
     extra = _project_modules(imports)
+    key = _setup_key(source, imports, environment_sha256)
+    if key is not None:
+        with _SETUPS_LOCK:
+            kept = _SETUPS.get(key)
+            if kept is not None:
+                _SETUPS.move_to_end(key)
+        if kept is not None:
+            return copy.deepcopy(kept[0]), kept[1], kept[2]
     inspected = inspect_project(
         source, expected_sha256=expected_sha256, cancel=cancel, imports=extra
     )
@@ -184,7 +248,14 @@ def _setup(
             if own["status"] == "resolved":
                 raise SnapshotError(_unbuilt(extra, own["setup"], root, needs))
         raise SnapshotError(inspected["message"])
-    return inspected["setup"], inspected["resolution"], root
+    prepared = (inspected["setup"], inspected["resolution"], root)
+    if key is not None:
+        with _SETUPS_LOCK:
+            _SETUPS[key] = (copy.deepcopy(prepared[0]), prepared[1], root)
+            _SETUPS.move_to_end(key)
+            while len(_SETUPS) > MAX_SETUPS:
+                _SETUPS.popitem(last=False)
+    return prepared
 
 
 def _messages(value: Any, key: str, needs: str) -> list[str]:
@@ -277,6 +348,21 @@ def _view_result(
     return result
 
 
+def _check_configuration_or_forget(
+    project_root: Path,
+    resolution: dict[str, Any],
+    source: Path,
+    imports: tuple[str, ...],
+    environment_sha256: str | None,
+) -> None:
+    """Check the Lake configuration; a kept setup that fails is dropped."""
+    try:
+        _check_configuration(project_root, resolution)
+    except ValueError:
+        _forget_setup(source, imports, environment_sha256)
+        raise
+
+
 def run_provider_batch(
     source: Path,
     *,
@@ -309,7 +395,9 @@ def run_provider_batch(
     project's existing build, whether or not the notebook imports them. With
     `wait`, a busy Lean slot is waited for, up to the check time limit,
     rather than refused. `progress` is told what the run is doing.
-    `environment_sha256` is not used yet.
+    `environment_sha256` is the environment digest of the notebook with the
+    provider's imports; when it is a valid digest the prepared Lake setup is
+    reused for it (see `_SETUPS`), otherwise it is prepared for this run.
     """
     report = progress or (lambda _message: None)
     try:
@@ -352,14 +440,16 @@ def run_provider_batch(
             toolchain = _toolchain()
             report(PREPARING)
             setup, resolution, project_root = _setup(
-                source, expected_sha256, cancel, needs, imports
+                source, expected_sha256, cancel, needs, imports, environment_sha256
             )
             # The setup loads the provider's modules from the project's build.
             missing = _unprovided(imports, setup, needs)
             if missing is not None:
                 return missing
             setup = _absolute_setup(setup, project_root)
-            _check_configuration(project_root, resolution)
+            _check_configuration_or_forget(
+                project_root, resolution, source, imports, environment_sha256
+            )
             programs = root / "programs"
             programs.mkdir()
             helper = programs / PROGRAM.name
@@ -413,7 +503,9 @@ def run_provider_batch(
             ]
             if _saved(source) != saved:
                 raise SnapshotError("Saved source changed; refresh and retry.")
-            _check_configuration(project_root, resolution)
+            _check_configuration_or_forget(
+                project_root, resolution, source, imports, environment_sha256
+            )
             return {"views": results}
     except (OSError, ValueError, KeyError, SandboxUnavailable) as error:
         return _failure(error)

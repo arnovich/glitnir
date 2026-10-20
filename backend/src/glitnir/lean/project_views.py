@@ -20,12 +20,15 @@ def render_project_view(
     using: tuple[str, ...],
     cancel: threading.Event,
     progress: Callable[[str], None] | None = None,
+    environment_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Elaborate the notebook prefix and a provider command in the sandbox.
 
     The provider's imports come from the project's own build, so the notebook
     need not import them. A busy Lean slot is waited for, up to the check
-    time limit; `progress` is told what the drawing is doing. A drawing made
+    time limit; `progress` is told what the drawing is doing. With the
+    `environment_sha256` of the notebook and the provider's imports, the
+    project's Lake setup is reused while that digest is unchanged. A drawing made
     with the notebook's proofs skipped carries `"proofs_skipped": True`.
     """
     try:  # provider code must never break the preview
@@ -51,6 +54,7 @@ def render_project_view(
         cancel=cancel,
         progress=progress,
         wait=True,
+        environment_sha256=environment_sha256,
     )
     if "payload" not in result:
         return result

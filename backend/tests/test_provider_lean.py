@@ -591,3 +591,93 @@ def test_live_evidence_run_saves_a_current_snapshot(prepared_lean_project, monke
         "names": ["c"],
     }
     assert key in load_records(source)["evidence"]
+
+
+ENVIRONMENT = "a" * 64
+
+
+@pytest.fixture(autouse=True)
+def _no_cached_setups():
+    from glitnir.lean import provider_lean
+
+    provider_lean._SETUPS.clear()
+    yield
+    provider_lean._SETUPS.clear()
+
+
+def _counted(tmp_path, monkeypatch):
+    """Return a Lake notebook and the list of its inspections, one per setup."""
+    from glitnir.lean import provider_lean
+
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["V.olean"]})
+    inspect = provider_lean.inspect_project
+    calls: list[tuple[str, ...]] = []
+
+    def counting(path, *, expected_sha256, cancel, imports=()):
+        calls.append(tuple(imports))
+        return inspect(
+            path, expected_sha256=expected_sha256, cancel=cancel, imports=imports
+        )
+
+    monkeypatch.setattr(provider_lean, "inspect_project", counting)
+    _reporting(monkeypatch, {"information": ["demoMark:x"], "errors": []})
+    return source, calls
+
+
+def test_setup_reused_for_same_environment(tmp_path, monkeypatch):
+    source, calls = _counted(tmp_path, monkeypatch)
+    for _ in range(2):
+        result = _run(source, environment_sha256=ENVIRONMENT)
+        assert "error" not in result
+    assert len(calls) == 1
+
+
+def test_setup_not_reused_when_environment_changes(tmp_path, monkeypatch):
+    source, calls = _counted(tmp_path, monkeypatch)
+    _run(source, environment_sha256=ENVIRONMENT)
+    _run(source, environment_sha256="b" * 64)
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("environment", [None, "", "abc", "A" * 64, "g" * 64])
+def test_setup_not_cached_without_environment(tmp_path, monkeypatch, environment):
+    source, calls = _counted(tmp_path, monkeypatch)
+    _run(source, environment_sha256=environment)
+    _run(source, environment_sha256=environment)
+    assert len(calls) == 2
+
+
+def test_setup_dropped_when_configuration_changed(tmp_path, monkeypatch):
+    from glitnir.lean import provider_lean
+    from glitnir.lean.project_snapshot import SnapshotError
+
+    source, calls = _counted(tmp_path, monkeypatch)
+    _run(source, environment_sha256=ENVIRONMENT)
+    check = provider_lean._check_configuration
+
+    def changed(*_arguments):
+        raise SnapshotError("Project configuration changed; refresh proof steps.")
+
+    monkeypatch.setattr(provider_lean, "_check_configuration", changed)
+    result = _run(source, environment_sha256=ENVIRONMENT)
+    assert "configuration changed" in result["error"]
+    assert len(calls) == 1
+    monkeypatch.setattr(provider_lean, "_check_configuration", check)
+    _run(source, environment_sha256=ENVIRONMENT)
+    assert len(calls) == 2
+
+
+def test_setup_cache_key_includes_provider_imports(tmp_path, monkeypatch):
+    source, calls = _counted(tmp_path, monkeypatch)
+    _run(source, environment_sha256=ENVIRONMENT)
+    _run(source, environment_sha256=ENVIRONMENT, imports=("Demo.View", "Demo.More"))
+    assert len(calls) == 2
+
+
+def test_setup_cache_is_bounded(tmp_path, monkeypatch):
+    from glitnir.lean import provider_lean
+
+    source, calls = _counted(tmp_path, monkeypatch)
+    for number in range(provider_lean.MAX_SETUPS + 2):
+        _run(source, environment_sha256=f"{number:064x}")
+    assert len(provider_lean._SETUPS) == provider_lean.MAX_SETUPS

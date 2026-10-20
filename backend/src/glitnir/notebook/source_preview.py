@@ -759,6 +759,8 @@ class _ViewJob:
     key: tuple[str, str, int]
     cancel: threading.Event
     uncertain: bool
+    # The digest a kept Lake setup is bound to; None while the state is unknown.
+    environment_sha256: str | None = None
     id: str = field(default_factory=lambda: secrets.token_hex(16))
     message: str = VIEW_STARTING
 
@@ -1380,7 +1382,12 @@ class SourcePreviewService:
                 return {"status": "queued", "message": VIEW_QUEUED, "job": job.id}
             if self._cancel.is_set():
                 return {"error": CLOSED}
-            job = _ViewJob(key, threading.Event(), uncertain)
+            job = _ViewJob(
+                key,
+                threading.Event(),
+                uncertain,
+                None if uncertain else str(environment["sha256"]),
+            )
             worker = threading.Thread(
                 target=self._draw_view, args=(job, entry), daemon=False
             )
@@ -1426,6 +1433,7 @@ class SourcePreviewService:
                 using=tuple(entry["using"]),
                 cancel=job.cancel,
                 progress=progress,
+                environment_sha256=job.environment_sha256,
             )
         except Exception as error:  # the job must always end
             drawing = {"error": f"View drawing failed: {error}"}
@@ -1569,6 +1577,7 @@ class SourcePreviewService:
             needs="evidence",
             cancel=self._cancel,
             wait=True,
+            environment_sha256=None if environment.get("unknown") else fingerprint,
         )
         if "payload" not in result:
             return str(result["error"])

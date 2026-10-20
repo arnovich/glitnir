@@ -59,6 +59,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
@@ -102,19 +103,9 @@ MAX_MESSAGE = 2000
 # A checked statement's kernel form; a run saves a longer one shortened.
 MAX_TYPE = 20_000
 DecisionStatus = Literal["accepted", "stale", "unknown", "rejected", "candidate"]
-# An environment fingerprint is a SHA-256 digest; anything else, '' included
-# (what a failed fingerprint reads as), matches nothing and is never saved.
-_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
 UNKNOWN_FINGERPRINT = (
     "the environment fingerprint is unknown, so no result can be saved for it"
 )
-
-
-def fingerprint_ok(fingerprint: Any) -> bool:
-    """Whether `fingerprint` is an environment digest a result can match."""
-    return (
-        isinstance(fingerprint, str) and _FINGERPRINT.fullmatch(fingerprint) is not None
-    )
 
 
 def _matches(saved: Any, fingerprint: str, compare_environment: bool) -> bool:
