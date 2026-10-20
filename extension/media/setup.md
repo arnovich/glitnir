@@ -210,6 +210,15 @@ and package installs, and each preview's backend output.
   Version** (see [Upgrading](#upgrading)).
 - **"Install leanprover/lean4:v4.32.1 with elan"**: install the toolchain with
   `elan toolchain install leanprover/lean4:v4.32.1`.
+- **"This project uses Lean X. Glitnir checks Lean 4.32.1, so checking, proof
+  steps, views, evidence and decisions are off"** (or "declares no Lean
+  version", or "lean-toolchain could not be read"): Glitnir runs Lean only for a
+  project whose `lean-toolchain` declares Lean 4.32.1, as
+  `leanprover/lean4:v4.32.1` (a loose file may also declare none). Installing
+  4.32.1 does not help; the project itself must declare it. Saved results still
+  show, out of date, and the notebook reads as usual. Change `lean-toolchain`
+  only if the project builds with 4.32.1, then rebuild it with `lake build` and
+  reopen the preview.
 - **"no working sandbox"** on Linux: install bubblewrap and allow unprivileged
   user namespaces (see [Requirements](#requirements)). Do not disable confinement
   to work around it.

@@ -346,7 +346,7 @@
     const through = UI.data.project_withheld?.through_line;
     const notRechecked = saved.not_rechecked ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>Not rechecked: ${Number.isSafeInteger(through) ? `the last check covered lines 1–${esc(through)} only, so this` : 'this'} is the result of an earlier check.</span></div>` : '';
     const note = notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
-      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : 'the saved source above this claim or its environment changed since it was checked. Check the saved file to update it.'}</span></div>`);
+      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : `the saved source above this claim or its environment changed since it was checked.${leanOff() ? '' : ' Check the saved file to update it.'}`}</span></div>`);
     const actions = staticPage ? '' : checkThroughHTML(saved, 'Check through here', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
@@ -881,13 +881,13 @@
           + (snap.finite ? '' : note('amber', 'Some values were not finite; they are not drawn.'))
           + provenanceHTML(snap.provenance);
       } catch (error) {
-        body = note('red', 'The saved evidence is unreadable. Run it again.');
+        body = note('red', `The saved evidence is unreadable.${leanOff() ? '' : ' Run it again.'}`);
       }
     }
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any chart below is the previous saved evidence; its currency is not established here.</p>' + body;
     // An errored card shows its error, then at most the last run's failure;
     // a card errored only by its missing provider still says it is out of date.
-    if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() ? ' Run it again to update it.' : ''}`) + body;
+    if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() && !leanOff() ? ' Run it again to update it.' : ''}`) + body;
     if (entry.run_error) body = note('red', `<span class="lean-message">The last run failed: ${esc(entry.run_error)}</span>`) + body;
     if (entry.unavailable && !entry.error) body = note('amber', `${esc(entry.unavailable)} Saved evidence remains viewable.`) + body;
     if (entry.error) body = note('red', esc(entry.error) + (snap ? ' Saved evidence remains viewable.' : '')) + body;
@@ -924,7 +924,7 @@
     }
     if (outcome && (!running || staticPage)) body = decisionOutcomeHTML(entry, note);
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any outcome below is the previous saved one; its currency is not established here.</p>' + body;
-    if (entry.status === 'stale') body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : 'Out of date: the source through this directive or its environment changed since this run. Run it again to update it.') + body;
+    if (entry.status === 'stale') body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : `Out of date: the source through this directive or its environment changed since this run.${leanOff() ? '' : ' Run it again to update it.'}`) + body;
     if (entry.missing_imports?.length) body = note('amber', `Add ${entry.missing_imports.map(m => `<code>import ${esc(m)}</code>`).join(', ')} to the file's header before accepting.`) + body;
     if (entry.run_error) body = note('red', `The last run failed: ${esc(entry.run_error)}`) + body;
     if (entry.unavailable) body = note('amber', esc(entry.unavailable) + kept) + body;
@@ -1940,7 +1940,7 @@
       $('insp-title').textContent = project && UI.data.cells.length ? 'No saved results' : 'No claims';
       $('insp-sub').textContent = '';
       $('insp').innerHTML = project
-        ? '<p class="small muted">No claim of this file has a saved result. Check the saved file to see each claim\'s status here.</p>'
+        ? `<p class="small muted">No claim of this file has a saved result.${leanOff() ? '' : ' Check the saved file to see each claim\'s status here.'}</p>`
         : '<p class="small muted">This notebook has no theorems yet.</p>';
       return;
     }
@@ -2091,9 +2091,9 @@
     $('check-project').hidden = !project || linked;
     // One banner for a project Glitnir does not check; never on a static page.
     const unsupported = leanOff();
-    const toolchainError = d.preview?.project?.files?.['lean-toolchain']?.error;
     $('lean-unsupported').hidden = !unsupported;
-    $('lean-unsupported-text').textContent = unsupported ? `${d.preview.lean.message}${toolchainError && toolchainError !== 'missing' ? ` (lean-toolchain: ${toolchainError})` : ''}` : '';
+    // The message already names any lean-toolchain read error: shown verbatim.
+    $('lean-unsupported-text').textContent = unsupported ? d.preview.lean.message : '';
     if (unsupported) { $('check-project').hidden = true; $('inspect-project').hidden = true; }
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || !d.preview.check;
@@ -2119,7 +2119,7 @@
       $('banner').classList.toggle('recorded', recorded());
       $('banner').dataset.state = recorded() ? 'recorded' : '';
       if (recorded()) { $('check-project').hidden = true; $('inspect-project').hidden = true; $('project-check').hidden = true; }
-      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : d.preview.notice;
+      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : unsupported ? 'Saved-source preview.' : d.preview.notice;
       // A check through one claim is deliberate: said, not flagged.
       const scope = covered ? `The last check covered lines 1–${covered} only.` : '';
       $('banner-text').textContent = [...attention, scope, notice, where].filter(Boolean).join(' ');

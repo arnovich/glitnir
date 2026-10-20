@@ -3760,13 +3760,13 @@ test('a project on another Lean version shows one banner, no enabled Lean contro
   } finally { window.close(); }
 });
 
-test('the unsupported-version banner names a lean-toolchain read error and escapes everything', async () => {
-  const hostile = {...UNSUPPORTED, message: 'This project declares no Lean version. <b>x</b> Glitnir checks Lean 4.32.1.'};
+test('the unsupported-version banner shows the message verbatim, read errors included, and escapes everything', async () => {
+  const hostile = {...UNSUPPORTED, message: 'This project\'s lean-toolchain could not be read: cannot read <i>it</i>. <b>x</b> Glitnir checks Lean 4.32.1.'};
   const snapshot = leanSupportNotebook({lean: hostile, toolchainError: 'cannot read <i>it</i>'});
   const window = await renderSnapshot(snapshot);
   try {
     const banner = window.document.getElementById('lean-unsupported');
-    assert.equal(banner.textContent, `${hostile.message} (lean-toolchain: cannot read <i>it</i>)`);
+    assert.equal(banner.textContent, hostile.message);
     assert.equal(banner.querySelector('b, i'), null);
   } finally { window.close(); }
 });
@@ -3813,12 +3813,70 @@ test('a recorded static page of an unsupported project still asks for the saved 
   } finally { window.close(); }
 });
 
-test('the toolchain read error is appended only when it is a real read error, not a missing file', async () => {
-  const none = {...UNSUPPORTED, message: 'This project declares no Lean version. Glitnir checks Lean 4.32.1.'};
-  for (const [error, suffix] of [['missing', ''], ['unreadable', ' (lean-toolchain: unreadable)']]) {
-    const window = await renderSnapshot(leanSupportNotebook({lean: none, toolchainError: error}));
-    try { assert.equal(window.document.getElementById('lean-unsupported').textContent, none.message + suffix, error); } finally { window.close(); }
-  }
+test('nothing under the Lean banner asks to check or run again', async () => {
+  const stale = lean => {
+    const snapshot = leanSupportNotebook({lean});
+    snapshot.evidence[0].status = 'stale';
+    snapshot.decisions[0].status = 'stale';
+    return snapshot;
+  };
+  const prompts = /Check the saved file|Run it again|Check this file explicitly/;
+  let window = await renderSnapshot(stale(SUPPORTED));
+  try {
+    const d = window.document;
+    // A supported project still says how to update them.
+    assert.match(d.getElementById('doc').textContent, /Check the saved file to update it/);
+    assert.match(d.getElementById('doc').textContent, /Run it again to update it/);
+  } finally { window.close(); }
+  window = await renderSnapshot(stale(UNSUPPORTED));
+  try {
+    const d = window.document;
+    const doc = d.getElementById('doc').textContent;
+    assert.match(doc, /Out of date: the saved source above this claim or its environment changed since it was checked\./);
+    assert.match(doc, /Out of date: the source or its environment changed since this run\./);
+    assert.match(doc, /Out of date: the source through this directive or its environment changed since this run\./);
+    for (const id of ['doc', 'banner-text', 'insp']) assert.doesNotMatch(d.getElementById(id).textContent, prompts, id);
+    assert.match(d.getElementById('banner-text').textContent, /Saved-source preview\./);
+  } finally { window.close(); }
+  const empty = leanSupportNotebook({lean: UNSUPPORTED});
+  empty.project_claims = [];
+  window = await renderSnapshot(empty);
+  try {
+    assert.equal(window.document.getElementById('insp').textContent, 'No claim of this file has a saved result.');
+  } finally { window.close(); }
+});
+
+test('a linked notebook in another project shows its own project\'s Lean banner', async () => {
+  const navigate = async (main, linked) => {
+    const window = await renderSnapshot(main, {onLinked: path => (path === '/api/linked?path=ThreeState.lean' ? {json: linked} : undefined)});
+    window.HTMLElement.prototype.scrollIntoView = () => {};
+    window.scrollTo = () => {};
+    const d = window.document, $ = id => d.getElementById(id);
+    const banner = () => ($('lean-unsupported').hidden ? null : $('lean-unsupported').textContent);
+    const before = banner();
+    [...d.querySelectorAll('#doc a.notebook-reference')].find(a => a.textContent === 'the three states').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.ok(d.body.classList.contains('glitnir-linked-view'));
+    const inLinked = banner();
+    $('notebook-trail').querySelector('[data-act="notebook-back"]').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const after = banner();
+    window.close();
+    return [before, inLinked, after];
+  };
+  const other = {...UNSUPPORTED, declared: 'leanprover/lean4:v4.35.0', message: LEAN_MESSAGE.replace('4.31.0', '4.35.0')};
+  const pair = (mainLean, linkedLean) => {
+    const {main, linked} = linkedNotebooks();
+    main.preview.lean = mainLean;
+    linked.preview = {...linked.preview, project: {kind: 'lake', root: '/q', toolchain: linkedLean.declared}, linked: {...linked.preview.linked, compared: false}, lean: linkedLean};
+    return [main, linked];
+  };
+  // Supported here, another version there: only the linked notebook shows a banner.
+  assert.deepEqual(await navigate(...pair(SUPPORTED, other)), [null, other.message, null]);
+  // Another version here, supported there: the banner goes with this notebook.
+  assert.deepEqual(await navigate(...pair(UNSUPPORTED, SUPPORTED)), [LEAN_MESSAGE, null, LEAN_MESSAGE]);
+  // Two unsupported projects each name their own version.
+  assert.deepEqual(await navigate(...pair(UNSUPPORTED, other)), [LEAN_MESSAGE, other.message, LEAN_MESSAGE]);
 });
 
 test('the evidence and decision run handlers are inert on an unsupported project', async () => {
