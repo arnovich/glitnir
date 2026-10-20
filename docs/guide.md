@@ -66,8 +66,9 @@ reports an error instead of drawing.
 
 `-- @evidence <verb> <target> (options)` shows a simulation of an object defined
 earlier as a card with a chart, provenance and a **Run** button, for example
-`-- @evidence simulate dissipative (h := 1/100) (steps := 400)`. It runs only
-when you click **Run**, one run at a time, and the result is saved in
+`-- @evidence simulate dissipative (h := 1/100) (steps := 400)`, or sampled
+paths of a stepped model under random shocks (`-- @evidence sample`). It runs
+only when you click **Run**, one run at a time, and the result is saved in
 `<Notebook>.glitnir.json`. A card is Never run, Running, Current or Out of date
 (anything above the directive, or the environment, changed). Evidence is never
 proof: it changes no claim's status and not the check exit code. Without a
@@ -433,19 +434,31 @@ prepared Lake setup while the environment is unchanged (checks never do). On
 macOS the Mac is kept awake while Glitnir's checks, proof steps, views and
 evidence run Lean or Lake; decision runs are not covered.
 
-**Evidence.** It runs `-- @evidence simulate|iterate <target>` directives,
-loading `Gimle.Asgard.Compile.RationalInterchange` and
+**Evidence.** It runs `-- @evidence simulate|iterate|sample <target>`
+directives, loading `Gimle.Asgard.Compile.RationalInterchange` and
 `Gimle.Asgard.Model.Continuous` from the project's build in the same way.
 `simulate` needs nothing more; `iterate` needs Python Asgard (`gimle-asgard`),
 which is not on PyPI: install it into the backend's environment from its own
 wheel or checkout. Without it, `iterate` cards say so and cannot run, and the
-provider list shows `iterate` as unavailable. Numbers in options are plain
-decimals or fractions such as `0.01` or `1/100`.
+provider list shows `iterate` as unavailable. `sample` draws seeded shock paths
+in float64 through a stepped model the plugin knows: its target is
+`Gimle.Forseti.Examples.HedgedSpread.compiled`, and the notebook must import
+`Gimle.Forseti.Examples.HedgedSpreadStepped`, which defines its step. It needs
+nothing more, requires `(law := gaussian|twopoint|threepoint)`,
+`(variance := …)` and `(observe := …)`, and takes `paths` (4000, at most
+100000), `steps` (256), `seed` (7), `show` (8, or `paths` if fewer) and
+`barrier` (1) as options. Its card is sampled evidence beside a proved bound,
+never the bound.
+Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 
 **Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
-`entailment`, `trajectory` or `stream` (the `z3` extra, `glitnir-forseti[z3]`, is
-needed). Its blocks need the Forseti and Asgard modules the goal uses imported in
-the notebook; a missing one shows as the check's unknown-identifier rejection.
+`entailment`, `trajectory`, `stream` or `stepped` (the `z3` extra,
+`glitnir-forseti[z3]`, is needed). Its blocks need the Forseti and Asgard modules
+the goal uses imported in the notebook; a missing one shows as the check's
+unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
+forseti-lean build that contains `Gimle.Forseti.Stepped` and
+`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release gains them
+with its next re-pin, and until then the editor reports the missing module.
 
 `stream` decisions and `iterate` evidence have not been run through Glitnir's
 checker yet. The first check of a Forseti project replays Mathlib and Forseti

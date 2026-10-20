@@ -1,14 +1,15 @@
 """Read and write closed goals as text, for people and agents.
 
-The three deciders take goals as exact values, and their JSON encodings nest
-every polynomial as tagged lists, which nobody writes by hand. This module is
-a second, textual encoding of the same values:
+The four deciders take goals as exact values, and their JSON encodings (formulas
+as nested tagged lists, rationals as pairs) are not for writing by hand. This
+module is a second, textual encoding of the same values:
 
     entailment x : x*x = 2 |- x < 0
 
-`parse_goal` returns exactly the `Goal`, `TrajectoryGoal` or `StreamGoal` the
-text denotes, or raises `GoalTextError`; it never guesses. `render_goal` writes
-the forms the parser reads back, so ``parse_goal(render_goal(g)) == g``.
+`parse_goal` returns exactly the `Goal`, `TrajectoryGoal`, `StreamGoal` or
+`SteppedGoal` the text denotes, or raises `GoalTextError`; it never guesses.
+`render_goal` writes the forms the parser reads back, so
+``parse_goal(render_goal(g)) == g``.
 The mapping is structural, not algebraic: ``p <= q`` is the atom
 ``p - q <= 0`` and ``p <= 0`` (any spelling of zero) is the atom ``p <= 0``,
 which is how the goal corpora are written; ``x^2`` is sugar for ``x*x``;
@@ -34,7 +35,7 @@ from __future__ import annotations
 from fractions import Fraction
 from functools import cache
 from pathlib import Path
-from typing import Union
+from typing import Literal, Union
 
 from lark import Lark, Token, Tree
 from lark.exceptions import LarkError, UnexpectedInput
@@ -58,6 +59,7 @@ from glitnir_forseti.entailment.syntax import (
     Tru,
     Var,
 )
+from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams.goal import (
     AXES_CONTEXT,
     FIELD_CONTEXT,
@@ -81,7 +83,7 @@ from glitnir_forseti.trajectory.goal import TrajectoryGoal
 from glitnir_forseti.trajectory.models import MODELS as TRAJECTORY_MODELS
 from glitnir_forseti.trajectory.models import ModelEntry, ObservationBand
 
-AnyGoal = Union[Goal, TrajectoryGoal, StreamGoal]
+AnyGoal = Union[Goal, TrajectoryGoal, StreamGoal, SteppedGoal]
 
 #: The longest goal text accepted; the decoders' node limits apply after.
 MAX_TEXT = 65536
@@ -204,6 +206,8 @@ def _goal(tree: Tree) -> AnyGoal:
         return _trajectory(tree.children)
     if tree.data == "short_trajectory":
         return _short_trajectory(tree.children)
+    if tree.data == "stepped":
+        return _stepped(tree.children)
     return _stream(tree.children)
 
 
@@ -299,6 +303,41 @@ def _band_named(entry: ModelEntry, name: str) -> ObservationBand:
             f" its observations are {names}"
         )
     return bands[0]
+
+
+_LAWS: dict[str, Literal["two-moment", "sub-gaussian"]] = {
+    "two_moment": "two-moment",
+    "sub_gaussian": "sub-gaussian",
+}
+_LAW_WORDS = {"two-moment": "variance", "sub-gaussian": "subgaussian"}
+
+
+def _stepped(children: list) -> SteppedGoal:
+    """Read a stepped goal; its claim is one of three shapes."""
+    model, *rest = children
+    *values, start, step, law, variance, claim = rest
+    barrier: Fraction | None = None
+    kind: Literal["horizon", "fixed-date", "expected"]
+    if claim.data == "expected":
+        observation, bound, horizon = claim.children
+        kind = "expected"
+    else:
+        horizon, observation, level, bound = claim.children
+        barrier = _rational(level)
+        kind = "horizon" if claim.data == "horizon" else "fixed-date"
+    return SteppedGoal(
+        model=str(model),
+        initial=tuple(_rational(value) for value in values),
+        start=_rational(start),
+        step=_rational(step),
+        law=_LAWS[law.data],
+        variance=_rational(variance),
+        claim=kind,
+        horizon=_steps(horizon),
+        observation=str(observation),
+        barrier=barrier,
+        bound=_rational(bound),
+    )
 
 
 def _stream(children: list) -> StreamGoal:
@@ -470,6 +509,14 @@ def _integer(token: object) -> int:
         raise GoalTextError(f"not an integer mode index: {text!r}") from None
 
 
+def _steps(token: object) -> int:
+    """Read a horizon; a fraction is refused with its text."""
+    value = _rational(token)
+    if value.denominator != 1:
+        raise GoalTextError(f"not a whole number of steps: {str(token)!r}")
+    return value.numerator
+
+
 def _rational(token: object) -> Fraction:
     text = str(token)
     try:
@@ -510,6 +557,8 @@ def render_goal(goal: AnyGoal) -> str:
             f" initial {initial}{drivers} observe {goal.observation} as {goal.name}"
             f" {goal.quantifier} : {render_formula(goal.post, goal.context)}"
         )
+    if type(goal) is SteppedGoal:
+        return _render_stepped(goal)
     if type(goal) is StreamGoal:
         viscosity, declared = "", "profile"
         if goal.viscosity is not None:
@@ -537,7 +586,7 @@ def render_short_goal(goal: AnyGoal) -> str | None:
         TypeError: ``goal`` is not a goal.
         GoalTextError: The coordinate is a keyword (`RESERVED`).
     """
-    if type(goal) not in (Goal, TrajectoryGoal, StreamGoal):
+    if type(goal) not in (Goal, TrajectoryGoal, StreamGoal, SteppedGoal):
         raise TypeError("not a goal")
     if type(goal) is not TrajectoryGoal:
         return None
@@ -572,6 +621,23 @@ def render_short_goal(goal: AnyGoal) -> str | None:
         f"trajectory {goal.model} from ({initial}) at {_number(goal.start)}"
         f"{within} observe {goal.name} {goal.quantifier} :"
         f" {render_formula(goal.post, goal.context)}"
+    )
+
+
+def _render_stepped(goal: SteppedGoal) -> str:
+    initial = ", ".join(_number(value) for value in goal.initial)
+    head = (
+        f"stepped {goal.model} from ({initial}) at {_number(goal.start)}"
+        f" step {_number(goal.step)} shocks {_LAW_WORDS[goal.law]}"
+        f" {_number(goal.variance)}"
+    )
+    bound = f"<= {_number(goal.bound)}"
+    if goal.barrier is None:
+        return f"{head} observe {goal.observation} expected {bound} at {goal.horizon}"
+    mark = " at every mark" if goal.claim == "fixed-date" else ""
+    return (
+        f"{head}{mark} within {goal.horizon} observe {goal.observation}"
+        f" breach {_number(goal.barrier)} probability {bound}"
     )
 
 

@@ -29,6 +29,10 @@ ROOT_TWO = "entailment x : x*x = 2 |- x < 0"
 #: True, but outside both lanes' reach: neither a counterexample nor a
 #: certificate over the dictionary exists.
 CUBE = "entailment x : x*x*x >= 0 |- x >= 0"
+STEPPED = (
+    "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks variance 64"
+    " within 256 observe s breach 1 probability <= 1/4"
+)
 TRAJECTORIES = {example.name: example.goal for example in EXAMPLES}
 
 
@@ -43,10 +47,10 @@ def _decided(name: str, goal: str, cancel: threading.Event | None = None) -> dic
 # ----- the provider -----------------------------------------------------------------
 
 
-def test_the_provider_decides_three_kinds_of_goal() -> None:
+def test_the_provider_decides_four_kinds_of_goal() -> None:
     provider = forseti.decision_provider()
     assert isinstance(provider, DecisionProvider) and provider.name == "forseti"
-    assert provider.kinds == {"entailment", "trajectory", "stream"}
+    assert provider.kinds == {"entailment", "trajectory", "stream", "stepped"}
     # A block's imports depend on its goal; each outcome lists them instead.
     assert provider.imports == ()
     assert provider in providers()
@@ -79,8 +83,9 @@ def test_it_is_available_with_z3_and_names_the_extra_without(monkeypatch) -> Non
         "trajectory three-state from (1, 2, -1) at 2 observe V always : V <= 6",
         "stream formal-heat interpretation evaluated-field basis ogf profile x*x"
         " field u over t in [0, 1], x in [-1, 1] : u >= 0",
+        STEPPED,
     ],
-    ids=["entailment", "trajectory", "stream"],
+    ids=["entailment", "trajectory", "stream", "stepped"],
 )
 def test_parse_reads_each_kind_of_goal(goal: str) -> None:
     kind = goal.split()[0]
@@ -132,6 +137,7 @@ _BLOCK_TEMPLATES = (
     "streams/render.py",
     "streams/mild_render.py",
     "trajectory/render.py",
+    "stepped/render.py",
     "notebook/readable.py",
     "notebook/decisions.py",
 )
@@ -149,7 +155,12 @@ def _block_definitions() -> set[str]:
 
 def test_every_name_a_block_defines_is_reserved() -> None:
     defined = _block_definitions()
-    assert {"forsetiRoot", "forsetiContract", "forsetiAntecedent"} <= defined
+    assert {
+        "forsetiRoot",
+        "forsetiContract",
+        "forsetiAntecedent",
+        "forsetiClaim",
+    } <= defined
     reserved = forseti.RESERVED_PREFIX
     assert all(name.startswith(reserved) for name in defined), defined
     for name in sorted(defined) + [reserved, reserved + "Driver3"]:
@@ -232,6 +243,33 @@ def test_a_goal_neither_lane_decides_is_unknown() -> None:
         ["refutation", "none"],
         ["certificate", "none"],
     ]
+
+
+def test_a_stepped_goal_proposes_its_block_without_z3_or_lean() -> None:
+    outcome = _decided("year", STEPPED)
+    assert (outcome["status"], outcome["theorem"]) == ("proven", "year")
+    assert outcome["block"].startswith("namespace Decided_year\n\nopen MeasureTheory\n")
+    assert "def forsetiClaim : Prop :=" in outcome["block"]
+    assert outcome["stages"][-2][:2] == ["horizon", "found"]
+    assert outcome["stages"][-1] == [
+        "imports",
+        "needed",
+        "import Gimle.Forseti.Stepped\n"
+        "import Gimle.Forseti.Examples.HedgedSpreadStepped",
+    ]
+    assert outcome["reason"] == "Found by the horizon stage."
+    refuted = _decided("tight", STEPPED.replace("1/4", "1/10"))
+    assert (refuted["status"], refuted["theorem"]) == ("refuted", "tight_refuted")
+
+
+def test_an_undecided_stepped_goal_is_unknown_with_its_numbers() -> None:
+    outcome = _decided("gap", STEPPED.replace("1/4", "22/100"))
+    assert (outcome["status"], outcome["reason"]) == ("unknown", "gap")
+    assert "block" not in outcome
+    [_, said, detail] = outcome["stages"][-1]
+    assert said == "none" and "1/4" in detail and "0.1988" in detail
+    refused = _decided("sub", STEPPED.replace("variance", "subgaussian"))
+    assert (refused["status"], refused["reason"]) == ("unknown", "unsupported")
 
 
 def test_an_unsupported_trajectory_is_unknown_never_refuted() -> None:

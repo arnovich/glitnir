@@ -48,9 +48,9 @@ def _simulated(options: str = "(h := 1/100) (steps := 400)", payload=None):
 # ----- the provider -----------------------------------------------------------------
 
 
-def test_the_providers_run_simulate_and_iterate() -> None:
+def test_the_providers_run_simulate_sample_and_iterate() -> None:
     simulate, iterate = forseti.evidence_providers()
-    assert (simulate.verbs, iterate.verbs) == ({"simulate"}, {"iterate"})
+    assert (simulate.verbs, iterate.verbs) == ({"simulate", "sample"}, {"iterate"})
     for provider in (simulate, iterate):
         assert isinstance(provider, EvidenceProvider) and provider.name == "forseti"
         assert provider.imports == (
@@ -64,9 +64,8 @@ def test_the_providers_run_simulate_and_iterate() -> None:
 def test_glitnir_finds_it_through_the_entry_point() -> None:
     found = load_providers()
     assert "forseti" not in found.errors
-    assert {found.evidence[verb].name for verb in ("simulate", "iterate")} == {
-        "forseti"
-    }
+    verbs = ("simulate", "iterate", "sample")
+    assert {found.evidence[verb].name for verb in verbs} == {"forseti"}
 
 
 # ----- parse --------------------------------------------------------------------------
@@ -122,7 +121,11 @@ def test_parse_keeps_exact_options_as_json(fake_asgard) -> None:
         ("simulate", "(plane := x)", "Plane names two states, as (plane := x, z)."),
         ("iterate", "(steps := 3)", "Iterate needs an initial (state := …)."),
         ("iterate", "(state := 1) (steps := 0)", "Steps must be 1–100000."),
-        ("plot", "", "Unknown evidence 'plot'; use simulate or iterate."),
+        (
+            "plot",
+            "",
+            "Unknown evidence 'plot'; use simulate, iterate or sample.",
+        ),
     ],
 )
 def test_parse_refuses_what_cannot_run(verb, options, message) -> None:

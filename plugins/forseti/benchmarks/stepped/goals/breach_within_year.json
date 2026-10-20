@@ -1,0 +1,38 @@
+{
+  "schema": "gimle.forseti.stepped-goal/v1",
+  "model": "hedged-spread",
+  "initial": [
+    [
+      0,
+      1
+    ],
+    [
+      0,
+      1
+    ]
+  ],
+  "start": [
+    0,
+    1
+  ],
+  "step": [
+    1,
+    256
+  ],
+  "law": "two-moment",
+  "variance": [
+    64,
+    1
+  ],
+  "claim": "horizon",
+  "horizon": 256,
+  "observation": "s",
+  "bound": [
+    1,
+    4
+  ],
+  "barrier": [
+    1,
+    1
+  ]
+}
