@@ -3,9 +3,10 @@
 The decider runs no Lean and no solver. It binds the goal to a registered
 model, refusing (``UNKNOWN: unsupported``) what the model's theorems do not
 speak of: another model, step, start or initial state, no step or more than
-the model's cap, a non-positive step or barrier, an observation the model
-lacks, or a claim of the wrong kind for the observation. Then, for each law
-class and claim, one rule:
+the model's cap (fewer for a fixed-date or expected claim, whose proofs have the
+kernel unroll a recursion over every step), a non-positive step or barrier, an
+observation the model lacks, or a claim of the wrong kind for the observation.
+Then, for each law class and claim, one rule:
 
 * a probability claim (``horizon`` or ``fixed-date``) whose bound is at least
   ``1`` holds for every probability law, in either class;
@@ -67,6 +68,9 @@ from .numbers import (
 #: The largest ``⌊r⌋`` a fixed-date block evaluates ``e^⌊r⌋`` at. A larger
 #: ``r`` is replaced by this smaller one, which the proof accepts as well.
 EXP_CAP = 256
+#: The claims whose proofs have the kernel unroll a recursion over every step,
+#: which `SteppedEntry.unrolled_cap` bounds, with how a refusal names them.
+_UNROLLED = {"fixed-date": "a fixed-date claim", "expected": "an expected claim"}
 #: The model's theorems start from its initial state, where the energy is 0.
 INITIAL_ENERGY = Fraction(0)
 _PLACES = 4
@@ -296,6 +300,13 @@ def supported(goal: SteppedGoal) -> tuple[SteppedEntry, SteppedObservation] | st
         return (
             f"the horizon {goal.horizon} exceeds this lane's cap of"
             f" {entry.horizon_cap} steps"
+        )
+    if goal.claim in _UNROLLED and goal.horizon > entry.unrolled_cap:
+        return (
+            f"{_UNROLLED[goal.claim]}'s proof has the kernel unroll a recursion"
+            f" over every step, which it can check up to {entry.unrolled_cap}"
+            f" steps, not {goal.horizon}; a horizon claim (`within N`) goes up"
+            f" to {entry.horizon_cap}"
         )
     if goal.barrier is not None and goal.barrier <= 0:
         return f"the barrier must be positive, got {_figure(goal.barrier)}"

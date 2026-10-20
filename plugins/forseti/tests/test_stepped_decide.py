@@ -473,6 +473,54 @@ def test_refusals(text: str, needle: str) -> None:
     assert d.block is None and d.decision.lean is None
 
 
+#: The shapes whose proofs unroll the horizon, with their goals at 256 marks and
+#: the text that sets the number of marks, by the cap they are tried against.
+UNROLLED = (
+    ("fixed-date", FIXED, "within 256", "within {n}", "a fixed-date claim"),
+    ("expected", EXPECTED, "at 256", "at {n}", "an expected claim"),
+)
+
+
+@pytest.mark.parametrize(
+    "text,old,new,shape", [u[1:] for u in UNROLLED], ids=[u[0] for u in UNROLLED]
+)
+def test_an_unrolled_claim_is_decided_up_to_its_cap_only(
+    text: str, old: str, new: str, shape: str
+) -> None:
+    """At the cap the claim is decided; one mark past it, it is unsupported."""
+    cap = models.HEDGED_SPREAD_STEPPED.unrolled_cap
+    assert cap == 1024
+    at_cap = _decide(text.replace(old, new.format(n=cap)))
+    assert at_cap.status == "PROVEN" and at_cap.block is not None
+    past = _decide(text.replace(old, new.format(n=cap + 1)))
+    assert past.status == "UNKNOWN:unsupported"
+    assert past.block is None and past.decision.lean is None
+    assert shape in past.reason
+    assert f"{cap} steps, not {cap + 1}" in past.reason
+    # A horizon claim goes on up to the lane's cap, which the reason names.
+    assert f"goes up to {models.HEDGED_SPREAD_STEPPED.horizon_cap}" in past.reason
+
+
+def test_a_refuted_expected_claim_stops_at_the_same_cap() -> None:
+    cap = models.HEDGED_SPREAD_STEPPED.unrolled_cap
+    refuted = EXPECTED.replace("33/256", "1/10")
+    assert _decide(refuted.replace("at 256", f"at {cap}")).status == "REFUTED"
+    past = _decide(refuted.replace("at 256", f"at {cap + 1}"))
+    assert past.status == "UNKNOWN:unsupported" and past.block is None
+
+
+def test_a_horizon_claim_is_decided_up_to_the_horizon_cap() -> None:
+    """The unrolled cap does not bind a claim whose proof does not unroll."""
+    entry = models.HEDGED_SPREAD_STEPPED
+    assert entry.horizon_cap > entry.unrolled_cap
+    # N·Δ²·v/B² = 4096 · 4 / 256² = 1/4, exactly at the cap.
+    text = HORIZON.replace("within 256", f"within {entry.horizon_cap}")
+    held = _decide(text.replace("variance 64", "variance 4"))
+    assert held.status == "PROVEN"
+    past = _decide(text.replace("within 4096", "within 4097"))
+    assert past.status == "UNKNOWN:unsupported" and "4096" in past.reason
+
+
 def test_a_refusal_comes_before_a_trivial_bound() -> None:
     """A goal off the model's step is refused even when its bound is 1."""
     d = _decide(HORIZON.replace("step 1/256", "step 1/100").replace("1/4", "1"))
@@ -492,13 +540,23 @@ def test_a_cancelled_decision_is_unknown() -> None:
 
 
 #: Goals at the horizon cap, whose exact recursions take seconds: the proxy of
-#: the fixed-date claim about 7 s, the expected energy about 3 s.
+#: the fixed-date claim about 7 s, the expected energy about 3 s. Their own cap
+#: is lower, so the registered model is lifted to the horizon cap for these.
 AT_THE_CAP = (
     FIXED.replace("within 256", "within 4096"),
     EXPECTED.replace("at 256", "at 4096"),
 )
 
 
+@pytest.fixture
+def unrolled_to_the_horizon_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let fixed-date and expected goals range as far as horizon goals."""
+    entry = models.HEDGED_SPREAD_STEPPED
+    lifted = dataclasses.replace(entry, unrolled_cap=entry.horizon_cap)
+    monkeypatch.setitem(models.MODELS, entry.key, lifted)
+
+
+@pytest.mark.usefixtures("unrolled_to_the_horizon_cap")
 @pytest.mark.parametrize("text", AT_THE_CAP, ids=["fixed-date", "expected"])
 def test_a_cancel_stops_a_long_recursion(text: str) -> None:
     """A cancel set while the recursion runs ends the request at once."""
@@ -515,6 +573,7 @@ def test_a_cancel_stops_a_long_recursion(text: str) -> None:
     assert elapsed < 1.5, elapsed
 
 
+@pytest.mark.usefixtures("unrolled_to_the_horizon_cap")
 @pytest.mark.parametrize("text", AT_THE_CAP, ids=["fixed-date", "expected"])
 def test_the_wall_time_stops_a_long_recursion(text: str) -> None:
     started = time.monotonic()
@@ -550,6 +609,7 @@ def test_the_registry_matches_the_example_module() -> None:
     assert entry is models.HEDGED_SPREAD_STEPPED
     delta = Fraction(1, 256)
     assert entry.delta == delta and entry.horizon_cap == 4096
+    assert entry.unrolled_cap == 1024
     assert entry.matrix == ((1 - delta, -delta), (delta, 1 - delta))
     assert entry.shock == (Fraction(1), Fraction(0))
     assert entry.initial == (Fraction(0), Fraction(0)) and entry.start == 0
