@@ -3798,6 +3798,40 @@ test('saved results shown as recorded never show the Lean banner, even when the 
     const d = window.document;
     assert.equal(d.getElementById('lean-unsupported').hidden, true);
     assert.doesNotMatch(d.body.textContent, /Glitnir checks Lean/);
-    assert.equal(d.querySelector(RUN_CONTROLS), null);
+    assert.equal(d.querySelector(`#doc ${RUN_CONTROLS.split(', ').join(', #doc ')}`), null);
+  } finally { window.close(); }
+});
+
+test('a recorded static page of an unsupported project still asks for the saved drawing', async () => {
+  const asked = [];
+  const window = await renderSnapshot(leanSupportNotebook({lean: UNSUPPORTED, recorded: true}), {onView: path => { asked.push(path); return {svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'}; }});
+  try {
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(asked.length, 1);
+    assert.ok(window.document.querySelector('#doc .view-cell img'));
+    assert.doesNotMatch(window.document.querySelector('#doc .view-cell').textContent, /Views need Lean/);
+  } finally { window.close(); }
+});
+
+test('the toolchain read error is appended only when it is a real read error, not a missing file', async () => {
+  const none = {...UNSUPPORTED, message: 'This project declares no Lean version. Glitnir checks Lean 4.32.1.'};
+  for (const [error, suffix] of [['missing', ''], ['unreadable', ' (lean-toolchain: unreadable)']]) {
+    const window = await renderSnapshot(leanSupportNotebook({lean: none, toolchainError: error}));
+    try { assert.equal(window.document.getElementById('lean-unsupported').textContent, none.message + suffix, error); } finally { window.close(); }
+  }
+});
+
+test('the evidence and decision run handlers are inert on an unsupported project', async () => {
+  const messages = [];
+  const window = await renderSnapshot(leanSupportNotebook({lean: UNSUPPORTED}), {onMessage: m => messages.push(m)});
+  try {
+    const d = window.document;
+    for (const act of ['evidence-run', 'decision-run']) {
+      const b = d.createElement('button');
+      b.dataset.act = act; b.dataset.line = '4'; b.dataset.sha = 'a'.repeat(64);
+      d.getElementById('doc').append(b); b.click();
+    }
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(messages.filter(m => /^\/api\/(evidence|decide)\//.test(m.path || '')), []);
   } finally { window.close(); }
 });

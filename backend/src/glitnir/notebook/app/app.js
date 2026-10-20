@@ -55,7 +55,7 @@
   // Glitnir checks one Lean version; a project on another reads as usual but
   // runs no Lean (the server refuses every such request with the same words).
   // Saved results shown as recorded run nothing and say nothing about it.
-  const leanOff = () => UI.data?.preview?.lean?.supported === false;
+  const leanOff = () => UI.data?.preview?.lean?.supported === false && !recorded();
   const leanVersion = toolchain => String(toolchain || '').replace(/^leanprover\/lean4:/, '').replace(/^v(?=\d)/, '');
   const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
   let readableSnapshot, heldRendering = false, highlightTimer;
@@ -1046,10 +1046,12 @@
   // The button names the saved text it was drawn for; the server refuses a
   // run if that text has changed since.
   async function runEvidence(line, sha256) {
+    if (leanOff()) return;
     await post('/api/evidence/run', {sha256, line});
     refresh();
   }
   async function decisionAction(path, body) {
+    if (leanOff() && path === '/api/decide/run') return;
     await post(path, body);
     refresh();
   }
@@ -2088,10 +2090,10 @@
     $('inspect-project').disabled = checkBusy();
     $('check-project').hidden = !project || linked;
     // One banner for a project Glitnir does not check; never on a static page.
-    const unsupported = leanOff() && !recorded();
+    const unsupported = leanOff();
     const toolchainError = d.preview?.project?.files?.['lean-toolchain']?.error;
     $('lean-unsupported').hidden = !unsupported;
-    $('lean-unsupported-text').textContent = unsupported ? `${d.preview.lean.message}${toolchainError ? ` (lean-toolchain: ${toolchainError})` : ''}` : '';
+    $('lean-unsupported-text').textContent = unsupported ? `${d.preview.lean.message}${toolchainError && toolchainError !== 'missing' ? ` (lean-toolchain: ${toolchainError})` : ''}` : '';
     if (unsupported) { $('check-project').hidden = true; $('inspect-project').hidden = true; }
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || !d.preview.check;
@@ -2387,12 +2389,12 @@
       case 'document-line': e.preventDefault(); showDocument(Number(b.dataset.line), b.dataset.sha); break;
       case 'source-lines': e.preventDefault(); showSourceLines(Number(b.dataset.start), Number(b.dataset.end)); break;
       case 'source': if (linkedPath()) break; if (b.dataset.start && HOST) HOST.openSource({index: Number(b.dataset.index), sha256: b.dataset.sha, range: {start: Number(b.dataset.start), end: Number(b.dataset.end)}}); else openSource(Number(b.dataset.index)); break;
-      case 'evidence-run': runEvidence(Number(b.dataset.line), b.dataset.sha); break;
+      case 'evidence-run': if (leanOff()) break; runEvidence(Number(b.dataset.line), b.dataset.sha); break;
       case 'view-cancel': cancelView(b); break;
       case 'inspect-cancel': cancelInspection(); break;
       case 'check-cancel': cancelCheck(); break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
-      case 'decision-run': decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
+      case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'goto': closeDiagram(); select(id, true); break;
