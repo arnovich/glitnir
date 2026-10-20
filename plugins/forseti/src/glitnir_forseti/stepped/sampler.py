@@ -204,6 +204,32 @@ def shocks(law: str, variance: Fraction, barrier: Fraction, step: Fraction) -> S
     raise EvidenceError(f"unknown law {law!r}")
 
 
+def converted(payload: SamplePayload, plan: SamplePlan) -> list[Fraction]:
+    """Return the exact values a run takes into float64, in that order.
+
+    They are the field's coefficients, the initial state, the step, the
+    barrier and the law's parameters: the variance of a Gaussian or two-point
+    law, or the jump ``L`` and mass ``ε`` of a three-point one.
+
+    Raises:
+        EvidenceError: If the three-point law does not exist for the variance.
+    """
+    law: list[Fraction] = [plan.variance]
+    if plan.law == "threepoint":
+        try:
+            reach, eps = three_point(payload.step, plan.variance, plan.barrier)
+        except ValueError as error:
+            raise EvidenceError(str(error)) from None
+        law = [Fraction(reach), eps]
+    return [
+        *evidence.coefficients(payload.field),
+        *payload.initial,
+        payload.step,
+        plan.barrier,
+        *law,
+    ]
+
+
 def _three(u: float, jump: float, mass: float) -> float:
     """Map a uniform draw to ``+jump``, ``−jump`` or 0, ``mass`` each jump."""
     if u < mass:
@@ -247,12 +273,13 @@ def ensemble(payload: SamplePayload, plan: SamplePlan) -> Iterator[Mark]:
     finite exactly when it yields the mark ``plan.steps``.
 
     Raises:
-        EvidenceError: When called, before any step, if the run would take
-            more than `MAX_WORK` field-term evaluations, a value cannot be run
-            in float64, or the law cannot be drawn (see `shocks`).
+        EvidenceError: When called, before any column is allocated, if the run
+            would take more than `MAX_WORK` updates of the field's terms and
+            states (`check_sample_work`), a value cannot be run in float64, or
+            the law cannot be drawn (see `shocks`).
     """
     terms = sum(len(output) for output in payload.field.outputs)
-    check_sample_work(plan.paths, plan.steps, terms)
+    check_sample_work(plan.paths, plan.steps, terms, len(payload.states))
     draws = shocks(plan.law, plan.variance, plan.barrier, payload.step)
     field: list[_Row] = [
         [
@@ -300,9 +327,9 @@ def sample(payload: SamplePayload, plan: SamplePlan) -> SampleResult:
 
     Raises:
         EvidenceError: If ``plan.observe`` is not a state of the model, the
-            run would take more than `MAX_WORK` field-term evaluations, a
-            value cannot be run in float64, or the law cannot be drawn
-            (see `shocks`).
+            run would take more than `MAX_WORK` updates of the field's terms
+            and states, a value cannot be run in float64, or the law cannot be
+            drawn (see `shocks`).
     """
     if plan.observe not in payload.states:
         raise EvidenceError(

@@ -331,7 +331,8 @@ def _sampled(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
 
     The card shows the first paths of the observed state and the running
     breach fraction. The final fraction and its 95 % Wilson interval are
-    sampled evidence, kept in the provenance; no proved bound is drawn.
+    sampled evidence, kept in the provenance with the exact values float64
+    rounded, as for ``simulate``; no proved bound is drawn.
     """
     plan = simulation.sample
     if plan is None:
@@ -344,6 +345,7 @@ def _sampled(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
             "the run's times would exceed float64; use fewer steps"
         ) from None
     result = sampler.sample(payload, plan)
+    rounding = evidence.rounded(sampler.converted(payload, plan))
     trajectory = {
         "times": [mark * payload.step for mark in result.marks],
         "values": [*result.paths, result.breach_series],
@@ -363,6 +365,7 @@ def _sampled(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
         ("barrier", str(plan.barrier)),
         ("observe", plan.observe),
         ("arithmetic", "float64"),
+        ("rounded", _numbers(rounding) or "none"),
         ("breach fraction", f"{result.breach_fraction:.6g}"),
         ("sampling interval", f"{low:.4g} to {high:.4g} (95 %, Wilson)"),
         ("field sha256", _hash(emitted["field"])),

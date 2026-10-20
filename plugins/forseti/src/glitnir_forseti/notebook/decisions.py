@@ -21,6 +21,7 @@ from glitnir_forseti.claims.decide import Decision
 from glitnir_forseti.claims.text import render_goal
 from glitnir_forseti.entailment.syntax import Goal
 from glitnir_forseti.notebook.readable import Readable, readable
+from glitnir_forseti.stepped import render as stepped_render
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams.goal import StreamGoal
 from glitnir_forseti.trajectory.goal import TrajectoryGoal
@@ -45,7 +46,10 @@ _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
         "PROVEN": (": forsetiRoot",),
         "REFUTED": (_ROOT_REFUTATION, ": ¬ forsetiRoot"),
     },
-    SteppedGoal: {"PROVEN": (": forsetiClaim",), "REFUTED": (": ¬ forsetiClaim",)},
+    SteppedGoal: {
+        "PROVEN": (stepped_render.PROVED,),
+        "REFUTED": (stepped_render.REFUTED,),
+    },
 }
 
 

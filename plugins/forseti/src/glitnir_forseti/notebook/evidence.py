@@ -83,8 +83,12 @@ LAWS = ("gaussian", "twopoint", "threepoint")
 #: shown and the breach fraction.
 MAX_SHOWN = MAX_SERIES - 1
 MAX_STEPS = 100_000
+#: Most paths a ``sample`` run may draw; its default is 4000.
+MAX_PATHS = 100_000
 #: Most field-term evaluations one run may do (steps × terms × solver stages),
-#: so a large model cannot hold the server for minutes.
+#: so a large model cannot hold the server for minutes. A ``sample`` run also
+#: moves and checks every state of every path at every step, so it counts
+#: paths × steps × (terms + states).
 MAX_WORK = 20_000_000
 #: Most terms one expanded output polynomial may have, and across all outputs;
 #: highest total degree of a term; most term products one expansion may form;
@@ -210,9 +214,9 @@ def emission_command(verb: str, name: str) -> str:
 def _stepped_model(name: str) -> SteppedEntry:
     """Return the registered stepped model whose compiled model is ``name``."""
     for entry in MODELS.values():
-        if entry.initial_name == f"{name}.initial":
+        if entry.compiled_name == name:
             return entry
-    known = ", ".join(e.initial_name.removesuffix(".initial") for e in MODELS.values())
+    known = ", ".join(entry.compiled_name for entry in MODELS.values())
     raise EvidenceError(f"{name!r} is not a registered stepped model; sample {known}")
 
 
@@ -517,9 +521,8 @@ def read_directive(verb: str, model: str, rest: str) -> Simulation:
     options = dict(pairs)
     base = Simulation(model)
     if _OPTION.sub("", rest).strip():
-        return _with_error(
-            base, "options are written (h := 1/100) (steps := 400) (solver := rk4)"
-        )
+        hint = _SAMPLE_HINT if verb == "sample" else _SIMULATE_HINT
+        return _with_error(base, f"options are written {hint}")
     for index, (key, _) in enumerate(pairs):
         if any(key == earlier for earlier, _ in pairs[:index]):
             return _with_error(base, f"option {key!r} is given twice")
@@ -605,17 +608,46 @@ def _iteration(base: Simulation, options: dict[str, str]) -> Simulation:
     )
 
 
+#: How the options of a directive are written, for one that is malformed.
+_SIMULATE_HINT = "(h := 1/100) (steps := 400) (solver := rk4)"
+_SAMPLE_HINT = "(law := gaussian) (variance := 64) (observe := s)"
+
+
 def _sampling(base: Simulation, options: dict[str, str]) -> Simulation:
-    """Read a ``sample`` directive against its registered stepped model."""
+    """Read a ``sample`` directive against its registered stepped model.
+
+    An observation the registry knows is not a state, such as the hedged
+    spread's energy ``V``, is refused here, before Lean runs.
+    """
     base = Simulation(base.model, verb="sample")
     try:
         entry = _stepped_model(base.model)
         plan = sample_plan(options)
+        _check_observed_state(entry, plan.observe)
         if plan.law == "threepoint":
             three_point(entry.delta, plan.variance, plan.barrier)
     except ValueError as error:  # an `EvidenceError`, or no three-point law
         return _with_error(base, str(error))
     return Simulation(base.model, verb="sample", sample=plan)
+
+
+def _check_observed_state(entry: SteppedEntry, observe: str) -> None:
+    """Refuse an observation of the model that is not one of its states.
+
+    Raises:
+        EvidenceError: If ``observe`` names an observation of ``entry`` other
+            than a state's exposure, naming the state observations instead.
+    """
+    observation = entry.observations.get(observe)
+    if observation is None or observation.kind == "exposure":
+        return
+    states = ", ".join(
+        name for name, seen in entry.observations.items() if seen.kind == "exposure"
+    )
+    raise EvidenceError(
+        f"observe names a state, as (observe := {states}); {observe} is the"
+        f" model's {observation.kind}, not a state"
+    )
 
 
 #: The options ``sample`` reads, and those it may leave out, as written; an
@@ -632,15 +664,16 @@ _SAMPLE_DEFAULTS = {
 }
 
 
-def sample_plan(options: dict[str, str], terms: int = 1) -> SamplePlan:
+def sample_plan(options: dict[str, str]) -> SamplePlan:
     """Read a ``sample`` directive's options as written into its exact plan.
 
-    A run evaluates every term of the field once per step of every path;
-    ``terms``, the field's term count, is 1 before Lean has printed it.
+    Before Lean prints the field neither its terms nor its states are known,
+    so the work is counted here at its floor, one update per path-step
+    (`check_sample_work`); the run counts it in full.
 
     Raises:
         EvidenceError: If an option is unknown, missing or out of range, or the
-            run would take more than `MAX_WORK` field-term evaluations.
+            run would take more than `MAX_WORK` updates even at that floor.
     """
     unknown = sorted(set(options) - _SAMPLE_OPTIONS)
     if unknown:
@@ -675,31 +708,35 @@ def sample_plan(options: dict[str, str], terms: int = 1) -> SamplePlan:
         raise EvidenceError("the seed must not be negative")
     if not 0 < steps <= MAX_STEPS:
         raise EvidenceError(f"steps must be 1–{MAX_STEPS}")
-    if paths < 1:
-        raise EvidenceError("paths must be at least 1")
+    if not 0 < paths <= MAX_PATHS:
+        raise EvidenceError(f"paths must be 1–{MAX_PATHS}")
     if "show" not in options:
         show = min(show, paths)
-    check_sample_work(paths, steps, terms)
+    check_sample_work(paths, steps)
     shown = min(paths, MAX_SHOWN)
     if not 0 < show <= shown:
         raise EvidenceError(f"show must be 1–{shown}")
     return SamplePlan(law, variance, paths, steps, seed, show, observe, barrier)
 
 
-def check_sample_work(paths: int, steps: int, terms: int) -> None:
-    """Refuse a ``sample`` run of more than `MAX_WORK` field-term evaluations.
+def check_sample_work(paths: int, steps: int, terms: int = 0, states: int = 1) -> None:
+    """Refuse a ``sample`` run of more than `MAX_WORK` updates.
 
-    Every term of the field is evaluated once per step of every path; at
-    least one term is counted.
+    At every step of every path a run evaluates each term of the field and
+    moves and checks each state, so it costs ``terms + states`` per path-step,
+    even for a field with no terms. Lean's print is untrusted, so the run
+    counts both as printed; the defaults are the directive's floor of one per
+    path-step, before anything is printed.
 
     Raises:
-        EvidenceError: If ``paths × steps × max(terms, 1)`` exceeds `MAX_WORK`.
+        EvidenceError: If ``paths × steps × (terms + states)`` exceeds
+            `MAX_WORK`.
     """
-    work = paths * steps * max(terms, 1)
+    work = paths * steps * (terms + states)
     if work > MAX_WORK:
         raise EvidenceError(
-            f"this run would take {work:,} field-term evaluations, more than the "
-            f"{MAX_WORK:,} allowed; use fewer paths or steps"
+            f"this run would take {work:,} updates of field terms and states, "
+            f"more than the {MAX_WORK:,} allowed; use fewer paths or steps"
         )
 
 

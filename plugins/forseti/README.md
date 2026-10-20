@@ -36,11 +36,11 @@ wheel or checkout. Without it the card says so before anything runs.
 plugin knows (`hedged-spread`, named by its compiled model as above, with
 `Gimle.Forseti.Examples.HedgedSpreadStepped` imported) and needs nothing beyond
 this package; `law` (`gaussian`, `twopoint` or `threepoint`), `variance` and
-`observe` are required, and `paths` (4000), `steps` (256), `seed` (7), `show`
-(8, or `paths` if fewer) and `barrier` (1) are optional. Its card shows a few
-paths and the fraction that has left the band `|observe| ≤ barrier`: sampled
-evidence to read beside a proved bound, never the bound. Evidence is never
-proof and changes no claim's status.
+`observe` are required, and `paths` (4000, at most 100000), `steps` (256),
+`seed` (7), `show` (8, or `paths` if fewer) and `barrier` (1) are optional.
+Its card shows a few paths and the fraction that has left the band
+`|observe| ≤ barrier`: sampled evidence to read beside a proved bound, never
+the bound. Evidence is never proof and changes no claim's status.
 
 It also decides `-- @decide <name> : <goal>` directives whose goal starts with
 `entailment`, `trajectory`, `stream` or `stepped`, in the goal syntax of
@@ -50,7 +50,18 @@ It also decides `-- @decide <name> : <goal>` directives whose goal starts with
 -- @decide disk : entailment x, y : x^2 + y^2 <= 1 |- x^2 <= 1 and y^2 <= 1
 -- @decide energy_band : trajectory three-state from (1, 2, -1) at 2
 --   observe V always : V >= 0 and V <= 6
+-- @decide breach_within_year : stepped hedged-spread from (0, 0) at 0 step 1/256
+--   shocks variance 64 within 256 observe s breach 1 probability <= 1/4
 ```
+
+A `stepped` goal's law class goes with its claim: a breach within a horizon
+(`within N`) and an expectation (`expected <= c at N`) take the two-moment
+class (`shocks variance v`), and a breach at a fixed date, at every mark taken
+separately (`at every mark within N`), takes the sub-Gaussian class
+(`shocks subgaussian v`). `stepped` decisions and `sample` evidence need a
+forseti-lean build that contains `Gimle.Forseti.Stepped` and
+`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release gains them with
+its next re-pin, and until then the editor reports the missing module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
 so before anything runs. **Run** searches for a certificate or a counterexample and proposes a self-contained Lean block: a `Decided_<name>`
@@ -71,9 +82,12 @@ checkout the release and replay pins are cut from:
 `tests/test_decision_provider_lean.py` (proven and refuted `entailment` and
 `trajectory`, including a driven claim read through the project runner) passed
 with `FORSETI_LEAN_TEST_PROJECT` set. `tests/test_evidence_provider_lean.py`
-(`simulate`) last passed on 2026-10-15 against `c65dada`. `stream` decisions and
-`iterate` evidence are not yet verified; the unit tests run no Lean and CI skips
-these live tests, so re-run them after changes.
+(`simulate`) last passed on 2026-10-15 against `c65dada`. The stepped lane's ten
+examples, three template variants and the `sample` card
+(`tests/test_stepped_lean.py`) passed live on 2026-10-20 against the forseti-lean
+branch commit `d5de399`, a pre-release build, not the pinned release. `stream`
+decisions and `iterate` evidence are not yet verified; the unit tests run no Lean
+and CI skips these live tests, so re-run them after changes.
 
 Development: from the repository root, build it with
 `uv build plugins/forseti --wheel --out-dir plugins/forseti/dist`, install the

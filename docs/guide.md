@@ -427,16 +427,20 @@ in float64 through a stepped model the plugin knows: its target is
 `Gimle.Forseti.Examples.HedgedSpread.compiled`, and the notebook must import
 `Gimle.Forseti.Examples.HedgedSpreadStepped`, which defines its step. It needs
 nothing more, requires `(law := gaussian|twopoint|threepoint)`,
-`(variance := …)` and `(observe := …)`, and takes `paths` (4000), `steps`
-(256), `seed` (7), `show` (8, or `paths` if fewer) and `barrier` (1) as
-options. Its card is sampled evidence beside a proved bound, never the bound.
+`(variance := …)` and `(observe := …)`, and takes `paths` (4000, at most
+100000), `steps` (256), `seed` (7), `show` (8, or `paths` if fewer) and
+`barrier` (1) as options. Its card is sampled evidence beside a proved bound,
+never the bound.
 Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 
 **Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
 `entailment`, `trajectory`, `stream` or `stepped` (the `z3` extra,
 `glitnir-forseti[z3]`, is needed). Its blocks need the Forseti and Asgard modules
 the goal uses imported in the notebook; a missing one shows as the check's
-unknown-identifier rejection.
+unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
+forseti-lean build that contains `Gimle.Forseti.Stepped` and
+`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release gains them
+with its next re-pin, and until then the editor reports the missing module.
 
 `stream` decisions and `iterate` evidence have not been run through Glitnir's
 checker yet. The first check of a Forseti project replays Mathlib and Forseti

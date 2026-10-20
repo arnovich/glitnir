@@ -40,6 +40,7 @@ from glitnir_forseti.stepped.examples import BARRIER, VARIANCE, YEAR, breach_goa
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.stepped.models import MODELS as STEPPED_MODELS
 from glitnir_forseti.stepped.models import SteppedEntry
+from glitnir_forseti.stepped.numbers import horizon_bound
 from glitnir_forseti.streams import goal as stream_goal
 from glitnir_forseti.streams import replay as stream_replay
 from glitnir_forseti.streams.examples import EXAMPLES as STREAM_EXAMPLES
@@ -509,7 +510,9 @@ def _stepped(entry: SteppedEntry) -> SteppedGoal:
     """
     name = next(n for n, band in entry.observations.items() if band.kind == "exposure")
     horizon = min(YEAR, entry.horizon_cap)
-    bound = horizon * entry.delta**2 * VARIANCE / BARRIER**2
+    bound = horizon_bound(
+        stepped_service.INITIAL_ENERGY, horizon, entry.delta, VARIANCE, BARRIER
+    )
     return breach_goal(bound, entry=entry, horizon=horizon, observation=name)
 
 

@@ -618,7 +618,7 @@ def _stepped(goal: SteppedGoal) -> Readable:
         f"({', '.join(number(value) for value in entry.initial)})"
     )
     if goal.barrier is not None:
-        safe = stepped_render.short(entry, observation.safe_name)
+        safe = stepped_render.short(entry, observation.lean_name)
         names += (
             f"; `{safe} {number(goal.barrier)}` is the band"
             f" |{goal.observation}| ≤ {number(goal.barrier)}"

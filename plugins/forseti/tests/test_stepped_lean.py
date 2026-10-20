@@ -1,4 +1,4 @@
-r"""Live Lean check of every block the stepped lane proposes for its examples.
+r"""Live Lean check of every block template the stepped lane proposes.
 
 The stepped decider replays nothing: a decided goal is only a proposed block,
 and the project's Lean is what makes it a proof. This test takes each example
@@ -12,8 +12,15 @@ library, and fails instead of skipping under the gate::
     FORSETI_LEAN_PROJECT=/path/to/lean-checkout \
         uv run python -m pytest tests/test_stepped_lean.py
 
-The scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
-library, created exclusively and removed afterwards.
+Beside the examples, which fix the constants at the catalogue's (variance 64,
+a year of 256 marks, the barrier 1), three variants reach template branches
+those constants do not: a fixed-date bound whose ``r`` is lowered to
+`service.EXP_CAP`, a fixed-date claim at a fractional barrier, and a horizon
+hold at the lane's horizon cap of 4096 marks.
+
+Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
+library, written by the ``scratch_notebook`` fixture, which creates it
+exclusively and removes only what it created.
 
 The ``sample`` evidence verb's emission is run here too, through the runner
 Glitnir runs evidence with: what Lean prints is read for the sampler, and the
@@ -22,10 +29,9 @@ provider turns it into the card Glitnir would save.
 
 import hashlib
 import json
-import os
-import secrets
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +44,7 @@ from glitnir_forseti import evidence_provider
 from glitnir_forseti.claims.text import render_goal
 from glitnir_forseti.decision_provider import decide, parse
 from glitnir_forseti.notebook import evidence
+from glitnir_forseti.stepped import service
 from glitnir_forseti.stepped.examples import EXAMPLES, Example
 
 #: The axioms Lean itself provides; a block may rest on nothing else.
@@ -80,36 +87,28 @@ class Checked:
     check_ms: int
 
 
-def _check(project: Path, imports: str, block: str, theorem: str) -> Checked:
+def _check(
+    write: Callable[[str, str], Path], imports: str, block: str, theorem: str
+) -> Checked:
     """Check a block as the editor does, in a scratch notebook of the project.
 
     The notebook holds the imports, then a directive line; the block is checked
-    right after it. The file is created exclusively, so no file of the checkout
-    is overwritten, and removed afterwards.
+    right after it. ``write`` is the ``scratch_notebook`` fixture's, so no file
+    of the checkout is overwritten and only the scratch file is removed.
     """
     header = "".join(f"{line}\n" for line in imports.split("\n"))
     text = f"{header}\n-- @decide {theorem} : (scratch)\n"
-    path = (
-        project
-        / "Gimle/Forseti/Tests"
-        / f"GlitnirSteppedLive{secrets.token_hex(4)}.lean"
+    path = write("GlitnirSteppedLive", text)
+    started = time.monotonic()
+    verdict = check_candidate(
+        path,
+        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+        insert_after_line=text.count("\n"),
+        block=block,
+        theorem=theorem,
+        cancel=threading.Event(),
     )
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    try:
-        with os.fdopen(os.open(path, flags, 0o644), "w", encoding="utf-8") as stream:
-            stream.write(text)
-        started = time.monotonic()
-        verdict = check_candidate(
-            path,
-            expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
-            insert_after_line=text.count("\n"),
-            block=block,
-            theorem=theorem,
-            cancel=threading.Event(),
-        )
-        elapsed = round((time.monotonic() - started) * 1000)
-    finally:
-        path.unlink(missing_ok=True)
+    elapsed = round((time.monotonic() - started) * 1000)
     return Checked(
         verdict["status"] == "checked",
         verdict["message"],
@@ -125,7 +124,7 @@ def replayed() -> set[str]:
 
 
 @pytest.fixture
-def check_block(forseti_lake_project: Path, replayed: set[str]):
+def check_block(scratch_notebook, replayed: set[str]):
     """Return a function that checks a decision outcome's block, timed.
 
     The outcome's own last stage lists the imports the block needs, so a block
@@ -139,13 +138,11 @@ def check_block(forseti_lake_project: Path, replayed: set[str]):
         assert outcome["stages"][-1][:2] == ["imports", "needed"], outcome["stages"]
         imports = outcome["stages"][-1][2]
         if imports not in replayed:
-            warm = _check(forseti_lake_project, imports, WARM_BLOCK, "warm_up")
+            warm = _check(scratch_notebook, imports, WARM_BLOCK, "warm_up")
             assert warm.ok, warm.message
             replayed.add(imports)
             print(f"replay of {imports!r}: {warm.check_ms} ms")
-        return _check(
-            forseti_lake_project, imports, outcome["block"], outcome["theorem"]
-        )
+        return _check(scratch_notebook, imports, outcome["block"], outcome["theorem"])
 
     return check
 
@@ -178,6 +175,48 @@ def test_emitted_block_checks(check_block, example: Example) -> None:
     assert set(result.axioms) <= STANDARD_AXIOMS
     assert result.check_ms < CHECK_BUDGET_MS
     print(f"{example.name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
+
+
+#: The hedged spread from the flat book in steps of 1/256, as every goal starts.
+_HEDGED_GOAL = "stepped hedged-spread from (0, 0) at 0 step 1/256"
+#: Goals whose blocks take template branches no example takes, with a piece of
+#: text each block must hold to show it took that branch.
+VARIANTS = {
+    # r = 8² / (2·c_up) ≈ 350.7, so ⌊r⌋ is above the cap and lowered to it:
+    # `norm_num at hE` faces e₋^256.
+    "capped_exponent": (
+        f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within 256"
+        " observe s breach 8 probability <= 1/100",
+        f"exp_ge_floor_cubic {service.EXP_CAP} (r := {service.EXP_CAP})",
+    ),
+    # The band |s| ≤ 3/2: the barrier is a fraction in the numeric core.
+    "fractional_barrier": (
+        f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within 256"
+        " observe s breach 3/2 probability <= 1/100",
+        "2 * Real.exp (-(3/2) ^ 2 / (2 * c))",
+    ),
+    # N·Δ²·v/B² = 4096 · 4 / 256² = 1/4 at the lane's horizon cap.
+    "horizon_cap": (
+        f"{_HEDGED_GOAL} shocks variance 4 within 4096 observe s breach 1"
+        " probability <= 1/4",
+        "(breach_within h (by norm_num) 4096).mono",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(VARIANTS))
+def test_a_template_variant_checks(check_block, name: str) -> None:
+    """Each variant is decided by the real decider and checked like an example."""
+    text, needle = VARIANTS[name]
+    outcome = decide(parse(name, "stepped", text), threading.Event())
+    assert _status(outcome) == "PROVEN", outcome["stages"]
+    assert needle in outcome["block"]
+    assert checked_decision(outcome)["block"] == outcome["block"]
+    result = check_block(outcome)
+    print(f"{name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
+    assert result.ok, result.message
+    assert set(result.axioms) <= STANDARD_AXIOMS
+    assert result.check_ms < CHECK_BUDGET_MS
 
 
 def test_a_false_block_is_rejected(check_block) -> None:

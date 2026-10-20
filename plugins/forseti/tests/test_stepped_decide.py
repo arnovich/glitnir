@@ -11,6 +11,7 @@ import ast
 import dataclasses
 import json
 import threading
+import time
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -19,6 +20,7 @@ import pytest
 
 from glitnir_forseti.claims.decide import Decision, decide, goal_kind, read_goal
 from glitnir_forseti.claims.text import parse_goal, render_goal
+from glitnir_forseti.entailment.limits import EntailmentLimits
 from glitnir_forseti.notebook.decisions import block
 from glitnir_forseti.stepped import models, service
 from glitnir_forseti.stepped.examples import EXAMPLES, Example
@@ -313,6 +315,83 @@ def test_a_fractional_proxy_is_refused() -> None:
     assert d.status == "UNKNOWN:unsupported" and "whole number" in d.reason
 
 
+# ----- how reasons show figures -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        (Fraction(1, 4), "1/4"),
+        (Fraction(3), "3"),
+        (Fraction(16384, 82433), "16384/82433 (0.1988)"),
+        (Fraction(1, 10**10), "1/10000000000 (1.0e-10)"),
+        (Fraction(-1, 256), "-1/256 (-0.0039)"),
+        (Fraction(10**50 + 1, 10**50), "≈ 1.0000"),
+        (Fraction(1, 7) ** 60, "≈ 2.0e-51"),
+        (Fraction(7) ** 60 + Fraction(1, 3), "≈ 5.1e50"),
+        # Past what `str` writes for an integer: told long by its bit length.
+        (Fraction(1, 3**20000), "≈ 3.8e-9543"),
+    ],
+)
+def test_a_figure_is_exact_when_short_and_a_decimal_otherwise(value, shown) -> None:
+    assert service._figure(value) == shown
+
+
+def test_a_tiny_bound_never_reads_as_a_larger_one() -> None:
+    """``2/E(r) ≈ < 0.0001 ≤ 1/10000000000`` read as 0.0001 ≤ 10⁻¹⁰."""
+    d = _decide(
+        FIXED.replace("breach 1", "breach 64").replace("1/100", "1/10000000000")
+    )
+    assert d.status == "PROVEN"
+    detail = d.decision.stages[-1]["detail"]
+    assert "≈ <" not in detail and "< 0.0001" not in detail
+    assert detail == (
+        "2/E(r) ≈ 1.3e-111 ≤ 1/10000000000 (1.0e-10) at r = 256, from the proxy"
+        " bound c_up = 18251/200000 (0.0913) on the proxy at mark 256, which is"
+        " ≈ 0.0913"
+    )
+
+
+def test_a_tiny_three_point_mass_reads_as_a_number() -> None:
+    d = _decide(
+        HORIZON.replace("variance 64", f"variance 1/{10**30}").replace("1/4", "0")
+    )
+    assert d.status == "REFUTED"
+    assert d.decision.stages[-1]["detail"] == (
+        "the three-point law with jumps ±257 and ε ="
+        " 1/132098000000000000000000000000000000 (7.6e-36) breaches with"
+        " probability at least 1 − (1 − 2ε)^256 ≈ 3.9e-33, above 0"
+    )
+
+
+def test_a_long_figure_is_shown_by_its_decimal() -> None:
+    """A crafted variance's horizon bound is 146 characters as a fraction."""
+    variance = Fraction(10**70 + 1, 8 * 10**70 + 7)
+    d = _decide(HORIZON.replace("variance 64", f"variance {variance}"))
+    assert d.status == "PROVEN"
+    assert d.decision.stages[-1]["detail"] == "N·Δ²·v/B² ≈ 0.0005 ≤ 1/4"
+
+
+def test_the_gap_reasons_read_in_order() -> None:
+    horizon = _decide(HORIZON.replace("<= 1/4", "<= 22/100"))
+    assert horizon.decision.stages[-1]["detail"] == (
+        "the horizon bound N·Δ²·v/B² = 1/4 is above the claimed 11/50, and not"
+        " below the three-point threshold 1 − (1 − 2ε)^256 ≈ 0.2198 at ε ="
+        " 32/66049 (0.0005), nor Bernoulli's 2εN/(1 + 2εN) = 16384/82433 (0.1988)"
+    )
+    fixed = _decide(FIXED.replace("1/100", "1/1000"))
+    assert fixed.decision.stages[-1]["detail"] == (
+        "the fixed-date bound 2/E(r) ≈ 0.0084 is above the claimed 1/1000 at r ="
+        " 100000/18251 (5.4792), from the proxy bound c_up = 18251/200000 (0.0913)"
+        " on the proxy at mark 256, which is ≈ 0.0913; no refutation of a claim at"
+        " each mark is in this version"
+    )
+    expected = _decide(EXPECTED)
+    assert expected.decision.stages[-1]["detail"] == (
+        "Δ²·v·∑_(k<256) ρ^k ≈ 0.1085 ≤ 33/256 (0.1289)"
+    )
+
+
 # ----- the expectation claim ----------------------------------------------------------
 
 
@@ -411,6 +490,41 @@ def test_a_cancelled_decision_is_unknown() -> None:
     assert (decision.status, decision.reason) == ("UNKNOWN", "cancelled")
 
 
+#: Goals at the horizon cap, whose exact recursions take seconds: the proxy of
+#: the fixed-date claim about 7 s, the expected energy about 3 s.
+AT_THE_CAP = (
+    FIXED.replace("within 256", "within 4096"),
+    EXPECTED.replace("at 256", "at 4096"),
+)
+
+
+@pytest.mark.parametrize("text", AT_THE_CAP, ids=["fixed-date", "expected"])
+def test_a_cancel_stops_a_long_recursion(text: str) -> None:
+    """A cancel set while the recursion runs ends the request at once."""
+    cancel = threading.Event()
+    timer = threading.Timer(0.2, cancel.set)
+    timer.start()
+    try:
+        started = time.monotonic()
+        decision = decide(parse_goal(text), cancel=cancel, replay=False)
+        elapsed = time.monotonic() - started
+    finally:
+        timer.cancel()
+    assert (decision.status, decision.reason) == ("UNKNOWN", "cancelled")
+    assert elapsed < 1.5, elapsed
+
+
+@pytest.mark.parametrize("text", AT_THE_CAP, ids=["fixed-date", "expected"])
+def test_the_wall_time_stops_a_long_recursion(text: str) -> None:
+    started = time.monotonic()
+    decision = decide(
+        parse_goal(text), EntailmentLimits(wall_time_ms=200), replay=False
+    )
+    elapsed = time.monotonic() - started
+    assert (decision.status, decision.reason) == ("UNKNOWN", "timeout")
+    assert elapsed < 1.5, elapsed
+
+
 def test_with_a_replay_nothing_is_claimed() -> None:
     """The lane has no pinned replay: a replayed request never claims a proof."""
     decision = decide(parse_goal(HORIZON))
@@ -439,15 +553,20 @@ def test_the_registry_matches_the_example_module() -> None:
     assert entry.shock == (Fraction(1), Fraction(0))
     assert entry.initial == (Fraction(0), Fraction(0)) and entry.start == 0
     assert entry.observations["s"] == models.SteppedObservation(
-        0, "Gimle.Forseti.Examples.HedgedSpreadStepped.exposureWithin", "exposure"
+        "Gimle.Forseti.Examples.HedgedSpreadStepped.exposureWithin", "exposure", 0
     )
-    assert entry.observations["V"].kind == "energy"
+    # The energy is named once, by its observation, and has no component.
+    assert entry.observations["V"] == models.SteppedObservation(
+        "Gimle.Forseti.Examples.HedgedSpreadContract.energy", "energy"
+    )
+    assert entry.compiled_name == "Gimle.Forseti.Examples.HedgedSpread.compiled"
+    assert entry.initial_name == f"{entry.compiled_name}.initial"
     assert models.replay_imports() == (
         ("Gimle.Forseti.Stepped", "Gimle.Forseti.Examples.HedgedSpreadStepped"),
     )
     # Every Lean name is qualified, under one of the namespaces a block opens.
-    names = [entry.step_name, entry.initial_name, entry.energy_name, entry.delta_name]
-    names += [o.safe_name for o in entry.observations.values()]
+    names = [entry.step_name, entry.compiled_name, entry.initial_name]
+    names += [entry.delta_name, *(o.lean_name for o in entry.observations.values())]
     names += [
         getattr(entry.theorems, f.name) for f in dataclasses.fields(entry.theorems)
     ]

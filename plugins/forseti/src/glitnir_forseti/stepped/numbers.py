@@ -13,14 +13,31 @@ corresponding theorem states. The module computes:
   built from it;
 * the exact expected energy ``ρ^N·V₀ + Δ²·v·Σ_{k<N} ρ^k`` and its factor
   ``ρ = 1 − 2Δ + 2Δ²``.
+
+The two recursions over ``N`` steps take seconds at a horizon of thousands, so
+they ask an optional ``stop`` callback at every step and raise `Interrupted`
+when it answers true.
 """
 
+from collections.abc import Callable
 from fractions import Fraction
 
 #: A rational lower bound on Euler's number, ``e ≥ 2.7182818283``.
 E_LOWER = Fraction(27182818283, 10**10)
 #: The proxy is rounded up to a multiple of this before it is inverted.
 PROXY_GRID = Fraction(1, 10**6)
+#: Asked at every step of a long recursion: whether to stop it.
+Stop = Callable[[], bool]
+
+
+class Interrupted(Exception):
+    """Raised when a recursion's ``stop`` callback asks it to stop."""
+
+
+def _check(stop: Stop | None) -> None:
+    """Raise `Interrupted` if ``stop`` asks to stop."""
+    if stop is not None and stop():
+        raise Interrupted
 
 
 def _floor(value: Fraction) -> int:
@@ -96,12 +113,16 @@ def proxy(
     step: Fraction,
     variance: Fraction,
     steps: int,
+    stop: Stop | None = None,
 ) -> Fraction:
     """Return ``Δ²·v·Σ_{k<N} ((A^k B)_component)²`` by the ``(state, acc)`` recursion.
 
     The state starts at the shock vector ``B``. Each of the ``N`` rounds first
     adds ``state[component]²`` to the accumulator and then replaces the state
     by ``A·state``, so after ``N`` rounds the accumulator covers ``k < N``.
+
+    Raises:
+        Interrupted: If ``stop``, asked before every round, answers true.
     """
     _require_steps(steps)
     size = len(shock)
@@ -114,6 +135,7 @@ def proxy(
     state = shock
     acc = Fraction(0)
     for _ in range(steps):
+        _check(stop)
         acc += state[component] * state[component]
         state = tuple(
             sum((a * s for a, s in zip(row, state)), Fraction(0)) for row in matrix
@@ -135,18 +157,22 @@ def exp_lower(r: Fraction) -> Fraction:
 
 
 def fixed_date_bound(
-    proxy_value: Fraction, barrier: Fraction
-) -> tuple[Fraction, Fraction]:
-    """Return ``(r, bound)`` with ``r = B²/(2·c_up)`` and ``bound = 2/E(r)``.
+    proxy_value: Fraction, barrier: Fraction, cap: int | None = None
+) -> tuple[Fraction, Fraction, Fraction]:
+    """Return ``(c_up, r, bound)``: the proxy bound, ``r`` and ``2/E(r)``.
 
-    ``c_up`` is the proxy rounded up to a multiple of ``1/10⁶``, so ``r`` errs
-    low and the bound errs high.
+    ``c_up`` is the proxy rounded up to a multiple of ``1/10⁶`` and ``r`` is
+    ``B²/(2·c_up)``, lowered to ``cap`` when ``⌊r⌋`` exceeds it (a smaller
+    ``r`` bounds ``exp`` from below as well), so ``r`` errs low and the bound
+    errs high. A fixed-date block states exactly these ``c_up`` and ``r``.
     """
     _require_positive("proxy", proxy_value)
     _require_positive("barrier", barrier)
     c_up = _ceil(proxy_value / PROXY_GRID) * PROXY_GRID
     r = barrier * barrier / (2 * c_up)
-    return r, 2 / exp_lower(r)
+    if cap is not None and _floor(r) > cap:
+        r = Fraction(cap)
+    return c_up, r, 2 / exp_lower(r)
 
 
 def expected_energy(
@@ -155,12 +181,18 @@ def expected_energy(
     step: Fraction,
     variance: Fraction,
     steps: int,
+    stop: Stop | None = None,
 ) -> Fraction:
-    """Return ``ρ^N·V₀ + Δ²·v·Σ_{k<N} ρ^k`` exactly."""
+    """Return ``ρ^N·V₀ + Δ²·v·Σ_{k<N} ρ^k`` exactly.
+
+    Raises:
+        Interrupted: If ``stop``, asked before every step, answers true.
+    """
     _require_steps(steps)
     power = Fraction(1)
     total = Fraction(0)
     for _ in range(steps):
+        _check(stop)
         total += power
         power *= rho
     return power * initial_energy + step * step * variance * total

@@ -13,7 +13,9 @@ import hashlib
 import json
 import math
 import random
+import re
 import statistics
+import tracemalloc
 from fractions import Fraction
 from pathlib import Path
 
@@ -30,11 +32,13 @@ from glitnir_forseti import evidence_provider as forseti
 from glitnir_forseti.evidence_provider import _sampled
 from glitnir_forseti.notebook import evidence
 from glitnir_forseti.notebook.evidence import (
+    MAX_PATHS,
     MAX_STEPS,
     MAX_WORK,
     NOT_PLAIN,
     EvidenceError,
     SamplePlan,
+    check_sample_work,
     emission_command,
     read_directive,
     sample_plan,
@@ -148,6 +152,7 @@ def test_every_sample_option_is_read_exactly() -> None:
         "(law := gaussian) (variance := 64) (observe := s) "
         "(paths := 100000) (steps := 100000)",
         "(law := threepoint) (variance := 70000) (observe := s)",
+        "(law := gaussian) (variance := 64) (observe := V)",
     ],
 )
 def test_sample_directive_refusals(text: str) -> None:
@@ -169,11 +174,15 @@ def test_sample_directive_refusals(text: str) -> None:
         (f"{REQUIRED} (h := 1/100)", "unknown option 'h'"),
         (f"{REQUIRED} (steps := 0)", f"steps must be 1–{MAX_STEPS}"),
         (f"{REQUIRED} (steps := 100001)", f"steps must be 1–{MAX_STEPS}"),
-        (f"{REQUIRED} (paths := 0)", "paths must be at least 1"),
+        (f"{REQUIRED} (paths := 0)", f"paths must be 1–{MAX_PATHS}"),
+        (f"{REQUIRED} (paths := 100001)", f"paths must be 1–{MAX_PATHS}"),
         (
-            f"{REQUIRED} (paths := 100001) (steps := 200)",
-            f"this run would take 20,000,200 field-term evaluations, more than the "
-            f"{MAX_WORK:,} allowed",
+            # 70,922 × 282 is the least count over the cap that the step and
+            # path limits allow; neither the terms nor the states are known
+            # before Lean prints the field, so each path-step counts once.
+            f"{REQUIRED} (paths := 70922) (steps := 282)",
+            "this run would take 20,000,004 updates of field terms and states, "
+            f"more than the {MAX_WORK:,} allowed; use fewer paths or steps",
         ),
         (f"{REQUIRED} (show := 0)", "show must be 1–15"),
         (f"{REQUIRED} (show := 16)", "show must be 1–15"),
@@ -188,6 +197,11 @@ def test_sample_directive_refusals(text: str) -> None:
         (f"{REQUIRED} (paths := 1/2)", "write the variance and barrier as numbers"),
         ("(law := gaussian) (variance := 1e3) (observe := s)", NOT_PLAIN),
         ("(law := gaussian) (variance := 64) (observe := 2s)", "observe names a state"),
+        (
+            "(law := gaussian) (variance := 64) (observe := V)",
+            "observe names a state, as (observe := s); V is the model's energy,"
+            " not a state",
+        ),
         (
             "(law := threepoint) (variance := 66050) (observe := s)",
             "no three-point law",
@@ -205,8 +219,10 @@ def test_each_refusal_says_why(options: str, error: str) -> None:
 
 
 def test_the_work_and_three_point_limits_are_inclusive() -> None:
-    at_work = _sample(f"{REQUIRED} (paths := 100000) (steps := 200)")
+    # 100,000 paths, the most there may be, of 200 steps is the cap exactly.
+    at_work = _sample(f"{REQUIRED} (paths := {MAX_PATHS}) (steps := 200)")
     assert at_work.error == "" and at_work.sample is not None
+    assert MAX_PATHS * 200 == MAX_WORK
     # ε = v / (2·257²) is exactly 1/2 at v = 257²; the step 1/256 is the registry's.
     at_half = _sample("(law := threepoint) (variance := 66049) (observe := s)")
     assert at_half.error == ""
@@ -229,11 +245,25 @@ def test_a_sample_names_a_registered_stepped_model() -> None:
     assert HEDGED in simulation.error
 
 
-def test_the_plan_counts_the_fields_terms_in_its_work() -> None:
-    options = {"law": "gaussian", "variance": "64", "observe": "s"}
-    assert sample_plan(options, terms=19).paths == 4000
-    with pytest.raises(EvidenceError, match="20,480,000 field-term evaluations"):
-        sample_plan(options, terms=20)
+def test_the_run_counts_the_fields_terms_and_states_in_its_work() -> None:
+    # Every path-step evaluates each term and updates each state.
+    check_sample_work(4000, 256, terms=17, states=2)  # 19,456,000
+    with pytest.raises(EvidenceError, match="take 20,480,000 updates of field terms"):
+        check_sample_work(4000, 256, terms=18, states=2)
+    # A field of no terms still moves, draws and checks every state.
+    with pytest.raises(EvidenceError, match="take 64,512,000 updates of field terms"):
+        check_sample_work(4000, 256, terms=0, states=63)
+    # Before Lean prints the field, a path-step counts once.
+    check_sample_work(MAX_PATHS, 200)
+    with pytest.raises(EvidenceError, match="take 20,000,004 updates of field terms"):
+        check_sample_work(70922, 282)
+
+
+def test_a_malformed_sample_option_gets_the_sample_hint() -> None:
+    simulation = _sample("(law := gaussian) (variance := 64) observe s")
+    assert simulation.error == (
+        "options are written (law := gaussian) (variance := 64) (observe := s)"
+    )
 
 
 def test_the_plan_is_exact() -> None:
@@ -291,8 +321,16 @@ def test_the_stepped_template_prints_a_driven_model() -> None:
     printer = emission_command("simulate", "m").split(model)[0]
     assert cmd.startswith(printer + model)
     assert "_root_.forsetiExprJson (p.rates.expressions i)" in cmd
-    # The step and the driver's place come from Lean, not from Python.
-    assert "1/256" not in cmd and '"driver", Lean.toJson 0' not in cmd
+    # The step and the driver's place come from Lean, not from Python: the
+    # driver's index is looked up by the driver binding's stable ID among the
+    # runtime coordinates, and the only number in it is the one-driver test.
+    assert "1/256" not in cmd
+    assert "let ids := e.drivenIds ds" in cmd
+    driver = cmd.split('("driver", ')[1].split('("field", ')[0]
+    assert "(ds.head?.bind fun d => Gimle.Asgard.Model.index ids d.driverId)" in (
+        driver
+    )
+    assert re.findall(r"\d+", driver) == ["1"] and "width ds = 1" in driver
 
 
 def test_the_sample_emission_refuses_an_unregistered_model() -> None:
@@ -462,16 +500,75 @@ def test_an_observed_state_the_model_lacks_is_refused() -> None:
         sample(HEDGED_PAYLOAD, plan(observe="V"))
 
 
-def test_the_work_is_counted_with_the_fields_terms(monkeypatch) -> None:
-    # 16,000 × 256 passes the directive's floor of one term; the field has five.
-    request = forseti.parse("sample", HEDGED, f"{REQUIRED} (paths := 16000)")
-    monkeypatch.setattr(sampler, "shocks", lambda *_: pytest.fail("it ran"))
+class _Ran(Exception):
+    """Raised in place of drawing shocks: the run got past its work check."""
+
+
+def _ran(*_) -> None:
+    raise _Ran
+
+
+def test_the_work_is_counted_with_the_fields_terms_and_states(monkeypatch) -> None:
+    """The hedged field has five terms over two states: seven per path-step.
+
+    11,160 paths of 256 steps are 19,998,720 updates, within the cap; one path
+    more is 20,000,512, refused before a shock is drawn. Both pass the
+    directive's floor of one per path-step.
+    """
+    monkeypatch.setattr(sampler, "shocks", _ran)
+    within = forseti.parse("sample", HEDGED, f"{REQUIRED} (paths := 11160)")
+    with pytest.raises(_Ran):
+        forseti.compute(within, HEDGED_EMITTED)
+    over = forseti.parse("sample", HEDGED, f"{REQUIRED} (paths := 11161)")
     with pytest.raises(
         EvidenceError,
-        match="this run would take 20,480,000 field-term evaluations, more than the "
-        f"{MAX_WORK:,} allowed; use fewer paths or steps",
+        match="this run would take 20,000,512 updates of field terms and states, "
+        f"more than the {MAX_WORK:,} allowed; use fewer paths or steps",
     ):
-        forseti.compute(request, HEDGED_EMITTED)
+        forseti.compute(over, HEDGED_EMITTED)
+
+
+#: A print Lean's output cannot be trusted not to be: a notebook may define its
+#: own ``HedgedSpread.compiled`` with an ``s`` and 62 more states, 63 being the
+#: most a field has, whose right-hand sides are all zero, so the field has no
+#: terms at all.
+IDLE_STATES = ["state-s", *(f"state-x{i}" for i in range(1, 63))]
+IDLE_EMITTED = {
+    "coordinates": ["driver-d", *IDLE_STATES],
+    "driver": 0,
+    "field": [["const", "0", "1"]] * len(IDLE_STATES),
+    "initial": [["0", "1"]] * len(IDLE_STATES),
+    "states": IDLE_STATES,
+    "step": ["1", "256"],
+}
+
+
+def test_a_field_of_many_idle_states_is_refused_before_it_allocates(
+    monkeypatch,
+) -> None:
+    """Each state costs a column per path-step even when no term reads it.
+
+    The directive passes at the floor, 100,000 paths of 200 steps; the printed
+    field has no terms but 63 states, 1,260,000,000 updates. The same field at
+    20,000,000 paths of one step, past the path cap, is refused the same way.
+    Neither run allocates a column or draws a shock.
+    """
+    payload = sample_payload(IDLE_EMITTED)
+    assert sum(len(output) for output in payload.field.outputs) == 0
+    monkeypatch.setattr(sampler, "shocks", _ran)
+    request = forseti.parse(
+        "sample", HEDGED, f"{REQUIRED} (paths := {MAX_PATHS}) (steps := 200)"
+    )
+    tracemalloc.start()
+    try:
+        with pytest.raises(EvidenceError, match="take 1,260,000,000 updates"):
+            forseti.compute(request, IDLE_EMITTED)
+        with pytest.raises(EvidenceError, match="take 1,260,000,000 updates"):
+            ensemble(payload, plan(paths=20_000_000, steps=1))
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 2_000_000, peak
 
 
 def test_a_jump_past_float64_is_refused() -> None:
@@ -613,6 +710,7 @@ def test_the_card_names_its_series_and_provenance() -> None:
         "barrier",
         "observe",
         "arithmetic",
+        "rounded",
         "breach fraction",
         "sampling interval",
         "field sha256",
@@ -620,7 +718,7 @@ def test_the_card_names_its_series_and_provenance() -> None:
         "created",
     ]
     provenance = _provenance(card)
-    assert {k: provenance[k] for k in list(provenance)[:11]} == {
+    assert {k: provenance[k] for k in list(provenance)[:12]} == {
         "verb": "sample",
         "model": HEDGED,
         "law": "gaussian",
@@ -632,6 +730,7 @@ def test_the_card_names_its_series_and_provenance() -> None:
         "barrier": "1",
         "observe": "s",
         "arithmetic": "float64",
+        "rounded": "none",
     }
     assert float(provenance["breach fraction"]) == pytest.approx(
         result.breach_fraction, rel=1e-5
@@ -644,6 +743,45 @@ def test_the_card_names_its_series_and_provenance() -> None:
     assert provenance["field sha256"] == hashlib.sha256(field).hexdigest()
     assert provenance["provider"].startswith("glitnir-forseti ")
     assert all(len(value) <= MAX_TEXT for value in provenance.values())
+
+
+@pytest.mark.parametrize(
+    ("options", "rounded"),
+    [
+        # A Gaussian or two-point law takes the variance into float64.
+        ("(law := gaussian) (variance := 1/3) (observe := s)", "1/3"),
+        ("(law := twopoint) (variance := 1/3) (observe := s)", "1/3"),
+        # A three-point law takes its mass ε = v/(2L²) instead, here with the
+        # jump L = 86 that leaves the band 1/3, and that barrier too; the step
+        # 1/256 and the jump are exact.
+        (
+            "(law := threepoint) (variance := 64) (observe := s) (barrier := 1/3)",
+            "1/3, 8/1849",
+        ),
+        ("(law := threepoint) (variance := 64) (observe := s)", "32/66049"),
+        ("(law := gaussian) (variance := 1/4) (observe := s)", "none"),
+    ],
+)
+def test_the_card_lists_what_float64_rounded(options: str, rounded: str) -> None:
+    request = forseti.parse("sample", HEDGED, f"{options} (paths := 20) (steps := 8)")
+    card = forseti.compute(request, HEDGED_EMITTED)
+    assert _provenance(card)["rounded"] == rounded
+    assert checked_evidence(card) == card
+
+
+def test_the_card_lists_a_rounded_coefficient_and_initial_value() -> None:
+    """The printed field's coefficients and initial state are run in float64."""
+    third = {
+        **HEDGED_EMITTED,
+        "field": [
+            ["add", HEDGED_EMITTED["field"][0], ["const", "1", "3"]],
+            HEDGED_EMITTED["field"][1],
+        ],
+        "initial": [["1", "10"], ["0", "1"]],
+    }
+    request = forseti.parse("sample", HEDGED, f"{REQUIRED} (paths := 2) (steps := 4)")
+    card = forseti.compute(request, third)
+    assert _provenance(card)["rounded"] == "1/3, 1/10"
 
 
 def test_a_long_run_is_downsampled_on_the_card() -> None:

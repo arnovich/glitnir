@@ -93,11 +93,11 @@ def claim(goal: SteppedGoal, entry: SteppedEntry, indent: str) -> str:
         f"{argument(goal.variance)} →"
     )
     chain = f"{short(entry, entry.step_name)} {short(entry, entry.initial_name)} law"
+    observed = short(entry, entry.observations[goal.observation].lean_name)
     if goal.barrier is None:
-        tail = f"{short(entry, entry.energy_name)} {goal.horizon}"
+        tail = f"{observed} {goal.horizon}"
     else:
-        safe = short(entry, entry.observations[goal.observation].safe_name)
-        tail = f"{goal.horizon} ({safe} {argument(goal.barrier)})"
+        tail = f"{goal.horizon} ({observed} {argument(goal.barrier)})"
     form = short(entry, _FORMS[goal.claim])
     return f"{head}\n{indent}{form} {chain} {tail} {argument(goal.bound)}"
 
@@ -237,7 +237,7 @@ def fixed_date_hold(
     proxy, variance = short(entry, theorems.proxy), argument(goal.variance)
     recursion = short(entry, theorems.proxy_rec_eq)
     mono = short(entry, theorems.proxy_mono)
-    safe = short(entry, entry.observations[goal.observation].safe_name)
+    safe = short(entry, entry.observations[goal.observation].lean_name)
     path = (
         f"{short(entry, _RUN)} {short(entry, entry.step_name)} "
         f"{short(entry, entry.initial_name)} ω 0"

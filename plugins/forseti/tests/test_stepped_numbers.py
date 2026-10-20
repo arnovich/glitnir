@@ -1,10 +1,13 @@
 """Exact numbers of the stepped stochastic lane match the proved constants."""
 
+import time
 from fractions import Fraction
 
 import pytest
 
 from glitnir_forseti.stepped.numbers import (
+    PROXY_GRID,
+    Interrupted,
     bernoulli_lower,
     exp_lower,
     expected_energy,
@@ -58,8 +61,44 @@ def test_fixed_date_bound_under_one_percent() -> None:
     """The year-end barrier crossing is bounded by under one percent."""
     A = ((1 - D, -D), (D, 1 - D))
     c = proxy(A, (Fraction(1), Fraction(0)), 0, D, Fraction(64), 256)
-    r, bound = fixed_date_bound(c, Fraction(1))
-    assert Fraction(547, 100) <= r and bound <= Fraction(1, 100)
+    c_up, r, bound = fixed_date_bound(c, Fraction(1))
+    assert c_up == Fraction(18251, 200000) and c <= c_up < c + PROXY_GRID
+    assert r == 1 / (2 * c_up) and Fraction(547, 100) <= r
+    assert bound == 2 / exp_lower(r) and bound <= Fraction(1, 100)
+
+
+def test_fixed_date_bound_lowers_r_to_its_cap() -> None:
+    """A far barrier's ``r`` is lowered to the cap, which still bounds ``exp``."""
+    A = ((1 - D, -D), (D, 1 - D))
+    c = proxy(A, (Fraction(1), Fraction(0)), 0, D, Fraction(64), 256)
+    c_up, r, bound = fixed_date_bound(c, Fraction(64), cap=256)
+    assert c_up == Fraction(18251, 200000) and 64 * 64 / (2 * c_up) > 257
+    assert r == 256 and bound == 2 / exp_lower(Fraction(256))
+    # At the cap itself nothing is lowered.
+    assert fixed_date_bound(c, Fraction(1), cap=5)[1] == 1 / (2 * c_up)
+
+
+def test_the_long_recursions_stop_when_asked() -> None:
+    """``proxy`` and ``expected_energy`` poll ``stop`` at every step."""
+    A = ((1 - D, -D), (D, 1 - D))
+    asked = []
+
+    def stop() -> bool:
+        asked.append(None)
+        return len(asked) > 3
+
+    started = time.monotonic()
+    with pytest.raises(Interrupted):
+        proxy(A, (Fraction(1), Fraction(0)), 0, D, Fraction(64), 4096, stop=stop)
+    assert len(asked) == 4
+    with pytest.raises(Interrupted):
+        expected_energy(Fraction(0), rho(D), D, Fraction(64), 4096, stop=lambda: True)
+    assert time.monotonic() - started < 0.5
+    # Not asked to stop, they run to the end.
+    assert (
+        proxy(A, (Fraction(1), Fraction(0)), 0, D, Fraction(64), 2, stop=lambda: False)
+        > 0
+    )
 
 
 def test_expected_energy_matches_table() -> None:
