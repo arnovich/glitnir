@@ -3,5 +3,7 @@
 A stepped model advances by a fixed step under a bounded-variance shock. Its
 horizon, fixed-date and expected-energy bounds are plain rational numbers; the
 functions that compute them live in `numbers` and use `fractions.Fraction`
-only, so that every figure reproduces the theorem it quotes.
+only, so that every figure reproduces the theorem it quotes. The package also
+holds `sampler`, the float64 sampler of the ``sample`` evidence verb, which no
+decision reads.
 """

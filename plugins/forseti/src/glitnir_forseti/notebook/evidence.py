@@ -416,7 +416,7 @@ def _bounded(polynomial: dict[_Powers, Fraction]) -> dict[_Powers, Fraction]:
     return polynomial
 
 
-def _float(value: Fraction) -> float:
+def to_float64(value: Fraction) -> float:
     """Round an exact value to float64 as Asgard's `numerical_value` does.
 
     The numerator and denominator are each rounded, then divided; a value
@@ -437,7 +437,7 @@ def rounded(*groups: Any) -> list[str]:
     found: dict[str, None] = {}
     for group in groups:
         for value in group:
-            if Fraction(_float(value)) != value:
+            if Fraction(to_float64(value)) != value:
                 found[str(value)] = None
     return list(found)
 
@@ -618,7 +618,8 @@ def _sampling(base: Simulation, options: dict[str, str]) -> Simulation:
     return Simulation(base.model, verb="sample", sample=plan)
 
 
-#: The options ``sample`` reads, and those it may leave out, as written.
+#: The options ``sample`` reads, and those it may leave out, as written; an
+#: omitted ``show`` is at most ``paths``.
 _SAMPLE_OPTIONS = frozenset(
     {"law", "variance", "paths", "steps", "seed", "show", "observe", "barrier"}
 )
@@ -650,9 +651,8 @@ def sample_plan(options: dict[str, str], terms: int = 1) -> SamplePlan:
     written = {**_SAMPLE_DEFAULTS, **options}
     law, observe = written["law"], written["observe"]
     if law not in LAWS:
-        raise EvidenceError(
-            f"unknown law {law!r}; use gaussian, twopoint or threepoint"
-        )
+        laws = f"{', '.join(LAWS[:-1])} or {LAWS[-1]}"
+        raise EvidenceError(f"unknown law {law!r}; use {laws}")
     if not _STATE_NAME.fullmatch(observe):
         raise EvidenceError("observe names a state, as (observe := s)")
     try:
@@ -677,16 +677,30 @@ def sample_plan(options: dict[str, str], terms: int = 1) -> SamplePlan:
         raise EvidenceError(f"steps must be 1–{MAX_STEPS}")
     if paths < 1:
         raise EvidenceError("paths must be at least 1")
+    if "show" not in options:
+        show = min(show, paths)
+    check_sample_work(paths, steps, terms)
+    shown = min(paths, MAX_SHOWN)
+    if not 0 < show <= shown:
+        raise EvidenceError(f"show must be 1–{shown}")
+    return SamplePlan(law, variance, paths, steps, seed, show, observe, barrier)
+
+
+def check_sample_work(paths: int, steps: int, terms: int) -> None:
+    """Refuse a ``sample`` run of more than `MAX_WORK` field-term evaluations.
+
+    Every term of the field is evaluated once per step of every path; at
+    least one term is counted.
+
+    Raises:
+        EvidenceError: If ``paths × steps × max(terms, 1)`` exceeds `MAX_WORK`.
+    """
     work = paths * steps * max(terms, 1)
     if work > MAX_WORK:
         raise EvidenceError(
             f"this run would take {work:,} field-term evaluations, more than the "
             f"{MAX_WORK:,} allowed; use fewer paths or steps"
         )
-    shown = min(paths, MAX_SHOWN)
-    if not 0 < show <= shown:
-        raise EvidenceError(f"show must be 1–{shown}")
-    return SamplePlan(law, variance, paths, steps, seed, show, observe, barrier)
 
 
 class _NotPlain(ValueError):
@@ -732,7 +746,7 @@ def _with_error(simulation: Simulation, error: str) -> Simulation:
 _POSITIVE = re.compile(r"^[1-9][0-9]*$")
 
 
-def _rational(value: Any) -> Fraction:
+def read_rational(value: Any) -> Fraction:
     """Read an emitted ``[numerator, denominator]`` pair as Asgard reads it.
 
     Both are canonical decimal strings of at most `MAX_RATIONAL_DIGITS` digits,
@@ -775,8 +789,8 @@ def field_polynomials(
     values = emitted["initial"]
     if type(values) is not list or not 0 < len(values) <= MAX_FIELD_STATES:
         raise EvidenceError(f"a field has between 1 and {MAX_FIELD_STATES} states")
-    initial = [_rational(value) for value in values]
-    start = _rational(emitted["start"])
+    initial = [read_rational(value) for value in values]
+    start = read_rational(emitted["start"])
     polynomials = expression_polynomials(emitted["field"], len(initial))
     states = len(initial)
     if polynomials.input_degree != states or polynomials.output_degree != states:
@@ -798,7 +812,7 @@ def integrate(
         a finite number.
     """
     terms = [
-        [(powers, _float(coefficient)) for powers, coefficient in output]
+        [(powers, to_float64(coefficient)) for powers, coefficient in output]
         for output in denotation.outputs
     ]
 
@@ -814,9 +828,9 @@ def integrate(
             derivative.append(total)
         return derivative
 
-    h = _float(simulation.step)
-    x = [_float(v) for v in initial]
-    t = _float(start)
+    h = to_float64(simulation.step)
+    x = [to_float64(v) for v in initial]
+    t = to_float64(start)
     stride = max(1, -(-simulation.steps // (MAX_SAMPLES - 1)))
     times, values = [t], [[v] for v in x]
     finite = True
@@ -826,7 +840,7 @@ def integrate(
         except OverflowError:
             finite = False
             break
-        t = _float(start) + step * h
+        t = to_float64(start) + step * h
         if any(v != v or v in (float("inf"), float("-inf")) for v in x):
             finite = False
             break
@@ -890,12 +904,12 @@ def iterate(denotation: Any, simulation: Simulation) -> dict[str, Any]:
         to at most `MAX_SAMPLES` points, and ``finite``.
     """
     terms = [
-        [(powers, _float(coefficient)) for powers, coefficient in output]
+        [(powers, to_float64(coefficient)) for powers, coefficient in output]
         for output in denotation.outputs
     ]
-    parameter = [_float(v) for v in simulation.parameter]
-    inputs = [[_float(v) for v in row] for row in simulation.inputs]
-    x = [_float(v) for v in simulation.state]
+    parameter = [to_float64(v) for v in simulation.parameter]
+    inputs = [[to_float64(v) for v in row] for row in simulation.inputs]
+    x = [to_float64(v) for v in simulation.state]
     stride = max(1, -(-simulation.steps // (MAX_SAMPLES - 1)))
     times: list[float] = [0]
     values = [[v] for v in x]

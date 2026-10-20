@@ -16,7 +16,8 @@ The scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, created exclusively and removed afterwards.
 
 The ``sample`` evidence verb's emission is run here too, through the runner
-Glitnir runs evidence with, to read what Lean prints for the sampler.
+Glitnir runs evidence with: what Lean prints is read for the sampler, and the
+provider turns it into the card Glitnir would save.
 """
 
 import hashlib
@@ -31,6 +32,7 @@ from pathlib import Path
 import pytest
 from glitnir.lean.project_checking import check_candidate
 from glitnir.notebook.decision_cards import checked_decision
+from glitnir.notebook.evidence_cards import checked_evidence
 
 from glitnir_forseti import evidence_provider
 from glitnir_forseti.claims.text import render_goal
@@ -206,10 +208,11 @@ def test_a_false_block_is_rejected(check_block) -> None:
 def test_live_sample_emission_prints_the_stepped_model(scratch_notebook) -> None:
     """Lean prints the hedged spread's field, initial state, step, coordinates.
 
-    The directive goes through the provider's own ``parse`` and ``command``,
-    and its Lean through the runner Glitnir runs evidence with; the provider
-    cannot compute a ``sample`` card yet, so the printed JSON is read here. The
-    module header puts the runtime coordinates at ``[d, s, h]``.
+    The directive goes through the provider's own ``parse``, ``command`` and
+    ``compute``, and its Lean through the runner Glitnir runs evidence with.
+    The printed JSON is read here first: the module header puts the runtime
+    coordinates at ``[d, s, h]``. The card is then checked as Glitnir checks
+    it, and carries a sampled breach fraction, never a bound.
     """
     from glitnir.lean.provider_lean import run_provider_lean
 
@@ -255,3 +258,13 @@ def test_live_sample_emission_prints_the_stepped_model(scratch_notebook) -> None
         {d: 1, s: -1, h: -1},
         {s: 1, h: -1},
     ]
+    card = provider.compute(request, emitted)
+    assert checked_evidence(card) == card and card["finite"] is True
+    provenance = dict(card["provenance"])
+    assert card["series"]["names"][-1] == "breach fraction"
+    assert 0.002 <= float(provenance["breach fraction"]) <= 0.012
+    assert provenance["step"] == "1/256" and provenance["paths"] == "4000"
+    assert not any(
+        "<=" in value or "≤" in value or "bound" in value or "bound" in label
+        for label, value in provenance.items()
+    )

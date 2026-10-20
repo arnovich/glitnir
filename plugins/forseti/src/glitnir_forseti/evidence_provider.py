@@ -1,4 +1,4 @@
-"""Run `-- @evidence simulate|iterate <target>` directives for Glitnir.
+"""Run `-- @evidence simulate|iterate|sample <target>` directives for Glitnir.
 
 Glitnir's core elaborates the notebook up to the directive in its sandbox,
 followed by the Lean `command` returns, and passes the JSON printed after the
@@ -11,7 +11,13 @@ expression trees and rational pairs, read here. ``iterate`` decodes an update
 circuit with Python Asgard's wire decoder (``gimle-asgard``), so it is served by
 a provider of its own whose `unavailable` names that missing dependency: its
 cards say so and cannot run, and the provider report lists ``iterate`` as
-unavailable. Evidence is never a proof and changes no claim's status.
+unavailable. ``sample`` needs nothing beyond this package either, and is served
+with ``simulate``: it reads a registered stepped model's field the way
+``simulate`` does and draws seeded shock paths through it
+(`glitnir_forseti.stepped.sampler`). Its card shows a few paths and the running
+breach fraction, with the final fraction and its sampling interval in the
+provenance; it never shows a proved bound. Evidence is never a proof and
+changes no claim's status.
 """
 
 import hashlib
@@ -28,7 +34,8 @@ from glitnir.notebook.evidence_cards import MAX_SERIES, MAX_TEXT
 from glitnir.providers import EvidenceProvider, EvidenceRequest
 
 from glitnir_forseti.notebook import evidence
-from glitnir_forseti.notebook.evidence import EvidenceError, Simulation
+from glitnir_forseti.notebook.evidence import EvidenceError, SamplePlan, Simulation
+from glitnir_forseti.stepped import sampler
 
 IMPORTS = ("Gimle.Asgard.Compile.RationalInterchange", "Gimle.Asgard.Model.Continuous")
 #: Without the optional decoder, `iterate` cannot run.
@@ -72,11 +79,14 @@ def parse(verb: str, target: str, options: str) -> EvidenceRequest:
     """Read a directive's options; raise `ValueError` if it cannot run as written.
 
     The request carries the options as exact numbers written as text, so it
-    is plain JSON and `compute` reads back exactly what was declared.
+    is plain JSON and `compute` reads back exactly what was declared. A
+    ``sample`` request carries its plan, with the defaults filled in.
     """
     simulation = evidence.read_directive(verb, target, options)
     if simulation.error:
         raise ValueError(_sentence(simulation.error))
+    if simulation.sample is not None:
+        return EvidenceRequest(verb, target, _plan_options(simulation.sample))
     if verb == "iterate" and len(simulation.state) > MAX_SERIES:
         raise ValueError(f"Evidence shows at most {MAX_SERIES} states.")
     return EvidenceRequest(
@@ -95,9 +105,35 @@ def parse(verb: str, target: str, options: str) -> EvidenceRequest:
     )
 
 
+def _plan_options(plan: SamplePlan) -> dict[str, Any]:
+    """Write a ``sample`` plan as JSON, its exact numbers as text."""
+    return {
+        "law": plan.law,
+        "variance": str(plan.variance),
+        "paths": plan.paths,
+        "steps": plan.steps,
+        "seed": plan.seed,
+        "show": plan.show,
+        "observe": plan.observe,
+        "barrier": str(plan.barrier),
+    }
+
+
 def _simulation(request: EvidenceRequest) -> Simulation:
     """Rebuild the directive `parse` read from its request."""
     options = request.options
+    if request.verb == "sample":
+        plan = SamplePlan(
+            law=options["law"],
+            variance=Fraction(options["variance"]),
+            paths=options["paths"],
+            steps=options["steps"],
+            seed=options["seed"],
+            show=options["show"],
+            observe=options["observe"],
+            barrier=Fraction(options["barrier"]),
+        )
+        return Simulation(request.target, verb="sample", sample=plan)
 
     def exact(values: list[str]) -> tuple[Fraction, ...]:
         return tuple(Fraction(value) for value in values)
@@ -290,6 +326,50 @@ def _iterated(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]
     return _snapshot(trajectory, names, provenance)
 
 
+def _sampled(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
+    """Sample an emitted stepped model under random shocks; return its snapshot.
+
+    The card shows the first paths of the observed state and the running
+    breach fraction. The final fraction and its 95 % Wilson interval are
+    sampled evidence, kept in the provenance; no proved bound is drawn.
+    """
+    plan = simulation.sample
+    if plan is None:
+        raise EvidenceError("only a sample directive can be sampled")
+    payload = sampler.sample_payload(emitted)
+    try:
+        float(plan.steps * payload.step)
+    except OverflowError:
+        raise EvidenceError(
+            "the run's times would exceed float64; use fewer steps"
+        ) from None
+    result = sampler.sample(payload, plan)
+    trajectory = {
+        "times": [mark * payload.step for mark in result.marks],
+        "values": [*result.paths, result.breach_series],
+        "finite": result.finite,
+    }
+    names = [f"path {index}" for index in range(1, len(result.paths) + 1)]
+    low, high = result.interval
+    provenance = [
+        ("verb", "sample"),
+        ("model", simulation.model),
+        ("law", plan.law),
+        ("variance", str(plan.variance)),
+        ("paths", str(plan.paths)),
+        ("steps", str(plan.steps)),
+        ("step", str(payload.step)),
+        ("seed", str(plan.seed)),
+        ("barrier", str(plan.barrier)),
+        ("observe", plan.observe),
+        ("arithmetic", "float64"),
+        ("breach fraction", f"{result.breach_fraction:.6g}"),
+        ("sampling interval", f"{low:.4g} to {high:.4g} (95 %, Wilson)"),
+        ("field sha256", _hash(emitted["field"])),
+    ]
+    return _snapshot(trajectory, [*names, "breach fraction"], provenance)
+
+
 def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:
     """Run the directive on what Lean printed; return a ``glitnir.evidence/v1`` body.
 
@@ -301,11 +381,13 @@ def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:
     simulation = _simulation(request)
     if simulation.verb == "iterate":
         return _iterated(simulation, payload)
+    if simulation.verb == "sample":
+        return _sampled(simulation, payload)
     return _simulated(simulation, payload)
 
 
 def unavailable() -> str | None:
-    """Nothing is missing for ``simulate``."""
+    """Nothing is missing for ``simulate`` or ``sample``."""
     return None
 
 
@@ -329,7 +411,7 @@ def _provider(verbs: frozenset[str], missing: Any) -> EvidenceProvider:
 
 
 def evidence_providers() -> tuple[EvidenceProvider, EvidenceProvider]:
-    """Return the Forseti providers for ``simulate`` and for ``iterate``.
+    """Return one Forseti provider for ``simulate`` and ``sample``, one for ``iterate``.
 
     They differ only in what they lack: ``iterate``'s provider is unavailable
     without Python Asgard, so Glitnir shows why on its cards and never runs it.

@@ -15,14 +15,15 @@ Lake project whose packages build `Gimle.Forseti` and
 for the view, so the notebook need not import them. An unbuilt or out-of-date one
 is named on the card with the `lake build` command to run.
 
-It also provides evidence for `-- @evidence simulate|iterate <target>` directives,
-shown as cards with a **Run** button; a run only happens when clicked. The notebook
-loads `Gimle.Asgard.Compile.RationalInterchange` and
+It also provides evidence for `-- @evidence simulate|iterate|sample <target>`
+directives, shown as cards with a **Run** button; a run only happens when
+clicked. The notebook loads `Gimle.Asgard.Compile.RationalInterchange` and
 `Gimle.Asgard.Model.Continuous` from the project's build, as views load theirs.
 
 ```lean
 -- @evidence simulate dissipative (h := 1/100) (steps := 400) (solver := rk4)
 -- @evidence iterate update (state := 1, 1) (inputs := 1, -1; 1, 1) (parameter := 1/4) (steps := 200)
+-- @evidence sample Gimle.Forseti.Examples.HedgedSpread.compiled (law := threepoint) (variance := 64) (observe := s)
 ```
 
 `simulate` options are `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`;
@@ -30,10 +31,19 @@ loads `Gimle.Asgard.Compile.RationalInterchange` and
 are plain decimals or fractions (at most 40 digits per part). `simulate` needs
 nothing beyond this package. `iterate` needs Python Asgard (`gimle-asgard`),
 which is not on PyPI: install it into the backend's environment from its own
-wheel or checkout. Without it the card says so before anything runs. Evidence is never proof and changes no claim's status.
+wheel or checkout. Without it the card says so before anything runs.
+`sample` draws seeded random shock paths in float64 through a stepped model the
+plugin knows (`hedged-spread`, named by its compiled model as above, with
+`Gimle.Forseti.Examples.HedgedSpreadStepped` imported) and needs nothing beyond
+this package; `law` (`gaussian`, `twopoint` or `threepoint`), `variance` and
+`observe` are required, and `paths` (4000), `steps` (256), `seed` (7), `show`
+(8, or `paths` if fewer) and `barrier` (1) are optional. Its card shows a few
+paths and the fraction that has left the band `|observe| ≤ barrier`: sampled
+evidence to read beside a proved bound, never the bound. Evidence is never
+proof and changes no claim's status.
 
 It also decides `-- @decide <name> : <goal>` directives whose goal starts with
-`entailment`, `trajectory` or `stream`, in the goal syntax of
+`entailment`, `trajectory`, `stream` or `stepped`, in the goal syntax of
 `glitnir_forseti.claims.text`:
 
 ```lean
