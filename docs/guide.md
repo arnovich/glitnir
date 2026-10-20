@@ -73,6 +73,16 @@ when you click **Run**, one run at a time, and the result is saved in
 proof: it changes no claim's status and not the check exit code. Without a
 provider the line shows why, and saved results stay viewable.
 
+Views are drawn with the notebook's proofs skipped: theorem and lemma proofs are
+replaced by `sorry` and examples are skipped, so a drawing does not re-run them.
+If that draws nothing, Glitnir draws with the full notebook. A card drawn without
+the proofs says "Drawn without re-running the notebook's proofs." Evidence runs
+are elaborated the same way. A drawing never grants or changes a claim's status.
+Drawings are saved in `<Notebook>.glitnir.json` (the `views` section, at most
+4 MiB) and reused without running Lean while the source through the directive,
+the environment and the provider are unchanged. Commit that file to keep a
+gallery of the notebook free of Lean for views.
+
 `-- @decide <name> : <goal>` asks an installed decision provider for a Lean proof
 (or refutation) of a goal; continuation lines start with `--` and at least two
 spaces:
@@ -412,8 +422,11 @@ Lake project whose packages build `Gimle.Forseti` and
 visualization module, which the view loads from the project's build. If that
 build is missing or out of date, the card names the `lake build` command to run.
 A loose `.lean` file has no prepared imports to draw from. A view is drawn in the
-background, one at a time: its card says what it is doing, including waiting for
-another Lean run, and **Stop** cancels it.
+background: a notebook's views of this provider are drawn together in one Lean
+run, and a card says what it is doing, including waiting for another Lean run.
+**Stop** on a card drops only that view. Views and evidence reuse the prepared
+Lake setup while the environment is unchanged (checks never do). On macOS the
+Mac is kept awake while Lean or Lake runs.
 
 **Evidence.** It runs `-- @evidence simulate|iterate <target>` directives,
 loading `Gimle.Asgard.Compile.RationalInterchange` and
