@@ -182,9 +182,12 @@ def _setup_key(
         text = _saved(source)
     except (OSError, ValueError):
         return None
-    header = fingerprint.header_imports(text) or [
-        "sha256:" + hashlib.sha256(text.encode()).hexdigest()
-    ]
+    # The environment digest leaves out the notebook's own text, but Lake's
+    # setup depends on the header's `module`, `prelude` and import modifiers
+    # too, so the whole header is part of the key.
+    header = fingerprint.header_words(text) or (
+        "sha256:" + hashlib.sha256(text.encode()).hexdigest(),
+    )
     return (
         str(source.resolve()),
         tuple(header),

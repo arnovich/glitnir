@@ -342,8 +342,26 @@ def header_imports(text: str, complete: bool = True) -> list[str] | None:
     return None if found is None else list(found)
 
 
+def header_words(text: str) -> tuple[str, ...] | None:
+    """Return every code token of a Lean file's header, or None if not understood.
+
+    Unlike `header_imports` this keeps `module`, `prelude` and the import
+    modifiers, which change how Lean loads the imports.
+    """
+    read = _read_header(text, True)
+    return None if read is None else read[1]
+
+
 def _header_imports(text: str, complete: bool) -> tuple[str, ...] | None:
     """Read the header of `text`; see `header_imports`."""
+    read = _read_header(text, complete)
+    return None if read is None else read[0]
+
+
+def _read_header(
+    text: str, complete: bool
+) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    """Read the header's imports and all its tokens; see `header_imports`."""
     if not complete:
         text = text[: text.rfind("\n") + 1]  # the last line may be cut
     lines = text.split("\n")
@@ -368,7 +386,10 @@ def _header_imports(text: str, complete: bool) -> tuple[str, ...] | None:
             continue
         except ValueError:
             return None
-        return None if _later_import(text, prefix, tokens, used) else tuple(modules)
+        if _later_import(text, prefix, tokens, used):
+            return None
+        words = tuple(prefix[start:end] for start, end in tokens[:used])
+        return tuple(modules), words
 
 
 def _later_import(

@@ -2256,3 +2256,48 @@ def test_indented_claims_keep_their_own_cells(tmp_path):
         c["claim"]: (c["start"], c["end"]) for c in snapshot["cells"] if c.get("claim")
     }
     assert cells == {"Foo.a": (2, 2), "Foo.b": (3, 3)}
+
+
+@pytest.mark.parametrize("unknown, expected", [(False, "d" * 64), (True, None)])
+def test_a_view_passes_its_environment_digest_to_the_renderer(
+    tmp_path: Path, monkeypatch, unknown, expected
+) -> None:
+    from glitnir.notebook import source_preview
+
+    calls = []
+    monkeypatch.setattr(
+        source_preview,
+        "render_project_view",
+        lambda path, **options: calls.append(options) or {"svg": "<svg/>"},
+    )
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a, **k: {"sha256": "d" * 64, "unknown": unknown},
+    )
+    _drawn(service, cell, 4)
+    assert calls[0]["environment_sha256"] == expected
+
+
+@pytest.mark.parametrize("unknown, expected", [(False, FP), (True, None)])
+def test_an_evidence_run_passes_its_environment_digest(
+    tmp_path, monkeypatch, unknown, expected
+):
+    from glitnir.notebook import source_preview
+
+    seen = []
+
+    def run(source, **options):
+        seen.append(options["environment_sha256"])
+        return {"payload": '{"x": 1}'}
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a: {"sha256": FP, "unknown": unknown},
+    )
+    _run_evidence(service)
+    assert seen == [expected]

@@ -681,3 +681,29 @@ def test_setup_cache_is_bounded(tmp_path, monkeypatch):
     for number in range(provider_lean.MAX_SETUPS + 2):
         _run(source, environment_sha256=f"{number:064x}")
     assert len(provider_lean._SETUPS) == provider_lean.MAX_SETUPS
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "module\nimport Demo.View\n\ndef c := 1\n",
+        "import all Demo.View\n\ndef c := 1\n",
+        "public import Demo.View\n\ndef c := 1\n",
+        "prelude\nimport Demo.View\n\ndef c := 1\n",
+    ],
+)
+def test_setup_cache_key_includes_the_whole_header(tmp_path, monkeypatch, changed):
+    source, calls = _counted(tmp_path, monkeypatch)
+    plain = "import Demo.View\n\ndef c := 1\n-- @view circuit c\n"
+    other = changed + "-- @view circuit c\n"
+    assert plain != other
+    source.write_text(plain)
+    _run(source, environment_sha256=ENVIRONMENT, expected_sha256=_sha(plain), line=4)
+    source.write_text(other)
+    _run(
+        source,
+        environment_sha256=ENVIRONMENT,
+        expected_sha256=_sha(other),
+        line=4,
+    )
+    assert len(calls) == 2
