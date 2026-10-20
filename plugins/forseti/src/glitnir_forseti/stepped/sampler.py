@@ -3,11 +3,12 @@
 The ``sample`` evidence verb (`glitnir_forseti.notebook.evidence`) has Lean
 print a stepped model's compiled field over its runtime coordinates, with the
 coordinates' IDs, the index of its one driver among them, the initial state
-and the step, all exact. `sample_payload` reads that print. `sample` then
+and the step, all exact. `sample_payload` reads that print. `ensemble` then
 steps every path at once, ``x ← x + Δ·field(d, x)``, with the shock ``d`` in
-the driver's coordinate and each state in its own. It records the observed
-state along the first few paths and, at every mark, the fraction of all paths
-that have left the band ``|x| ≤ barrier`` by then.
+the driver's coordinate and each state in its own, and yields every path's
+states at each mark. `sample` reads that run: it records the observed state
+along the first few paths and, at every mark, the fraction of all paths that
+have left the band ``|x| ≤ barrier`` by then.
 
 One `random.Random` seeded with the plan's seed draws every shock, step by
 step: at each step it draws one shock for each path, in path order. The same
@@ -22,7 +23,7 @@ sampled evidence, shown on a card beside a proved bound and never as one
 
 import math
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from fractions import Fraction
 from statistics import NormalDist
@@ -47,6 +48,8 @@ _KEYS = ("states", "initial", "step", "coordinates", "driver", "field")
 _Z95 = NormalDist().inv_cdf(0.975)
 #: Draws ``count`` shocks from a generator.
 Shocks = Callable[[random.Random, int], list[float]]
+#: A mark of a run and each state's column over every path at that mark.
+Mark = tuple[int, tuple[list[float], ...]]
 #: One right-hand side in float64: ``(coefficient, ((coordinate, power), …))``
 #: per term, without the coordinates of power zero.
 _Row = list[tuple[float, tuple[tuple[int, int], ...]]]
@@ -232,6 +235,60 @@ def wilson(count: int, total: int) -> tuple[float, float]:
     return low, high
 
 
+def ensemble(payload: SamplePayload, plan: SamplePlan) -> Iterator[Mark]:
+    """Step the plan's shock paths of the model, yielding every mark's states.
+
+    Every path starts at the initial state, yielded as mark 0, and takes up to
+    ``plan.steps`` steps ``x ← x + Δ·field(d, x)``, the shocks drawn in the
+    order the module describes. Each mark yields one column per state, in the
+    order of ``payload.states``, holding every path's value; a column is the
+    run's own list, new at every mark, and must not be changed. The run stops
+    before the first mark at which a value would not be finite, so it stayed
+    finite exactly when it yields the mark ``plan.steps``.
+
+    Raises:
+        EvidenceError: When called, before any step, if the run would take
+            more than `MAX_WORK` field-term evaluations, a value cannot be run
+            in float64, or the law cannot be drawn (see `shocks`).
+    """
+    terms = sum(len(output) for output in payload.field.outputs)
+    check_sample_work(plan.paths, plan.steps, terms)
+    draws = shocks(plan.law, plan.variance, plan.barrier, payload.step)
+    field: list[_Row] = [
+        [
+            (to_float64(coefficient), tuple((i, p) for i, p in enumerate(powers) if p))
+            for powers, coefficient in output
+        ]
+        for output in payload.field.outputs
+    ]
+    step = to_float64(payload.step)
+    count = plan.paths
+    columns = [[0.0] * count for _ in payload.coordinates]
+    for place, value in zip(payload.places, payload.initial):
+        columns[place] = [to_float64(value)] * count
+
+    def run() -> Iterator[Mark]:
+        rng = random.Random(plan.seed)
+        yield 0, tuple(columns[place] for place in payload.places)
+        for mark in range(1, plan.steps + 1):
+            columns[payload.driver] = draws(rng, count)
+            try:
+                rates = [_rates(output, columns, count) for output in field]
+            except OverflowError:
+                return
+            moved = [
+                [x + step * rate for x, rate in zip(columns[place], row)]
+                for place, row in zip(payload.places, rates)
+            ]
+            if not all(_finite(column) for column in moved):
+                return
+            for place, column in zip(payload.places, moved):
+                columns[place] = column
+            yield mark, tuple(moved)
+
+    return run()
+
+
 def sample(payload: SamplePayload, plan: SamplePlan) -> SampleResult:
     """Run the plan's shock paths of the model in float64.
 
@@ -252,66 +309,38 @@ def sample(payload: SamplePayload, plan: SamplePlan) -> SampleResult:
             f"observe names {plan.observe!r}, not a state of the model; its "
             f"states are {', '.join(payload.states)}"
         )
-    terms = sum(len(output) for output in payload.field.outputs)
-    check_sample_work(plan.paths, plan.steps, terms)
-    draws = shocks(plan.law, plan.variance, plan.barrier, payload.step)
-    field: list[_Row] = [
-        [
-            (to_float64(coefficient), tuple((i, p) for i, p in enumerate(powers) if p))
-            for powers, coefficient in output
-        ]
-        for output in payload.field.outputs
-    ]
-    step, barrier = to_float64(payload.step), to_float64(plan.barrier)
+    run = ensemble(payload, plan)
+    barrier = to_float64(plan.barrier)
     count = plan.paths
-    columns = [[0.0] * count for _ in payload.coordinates]
-    for place, value in zip(payload.places, payload.initial):
-        columns[place] = [to_float64(value)] * count
-    observed = payload.places[payload.states.index(plan.observe)]
-    rng = random.Random(plan.seed)
+    observed = payload.states.index(plan.observe)
     stride = max(1, -(-plan.steps // (MAX_SAMPLES - 1)))
-    inside = [i for i, x in enumerate(columns[observed]) if abs(x) <= barrier]
+    inside = list(range(count))
+    position: list[float] = []
     marks: list[int] = []
     paths: list[list[float]] = [[] for _ in range(min(plan.show, count))]
     breach: list[float] = []
 
     def record(mark: int) -> None:
         marks.append(mark)
-        for path, x in zip(paths, columns[observed]):
+        for path, x in zip(paths, position):
             path.append(x)
         breach.append((count - len(inside)) / count)
 
-    record(0)
-    finite = True
-    for mark in range(1, plan.steps + 1):
-        columns[payload.driver] = draws(rng, count)
-        try:
-            rates = [_rates(output, columns, count) for output in field]
-        except OverflowError:
-            finite = False
-        else:
-            moved = [
-                [x + step * rate for x, rate in zip(columns[place], row)]
-                for place, row in zip(payload.places, rates)
-            ]
-            finite = all(_finite(column) for column in moved)
-        if not finite:
-            if marks[-1] != mark - 1:
-                record(mark - 1)
-            break
-        for place, column in zip(payload.places, moved):
-            columns[place] = column
-        position = columns[observed]
+    mark = 0
+    for mark, states in run:
+        position = states[observed]
         inside = [i for i in inside if abs(position[i]) <= barrier]
         if mark % stride == 0 or mark == plan.steps:
             record(mark)
+    if marks[-1] != mark:
+        record(mark)
     return SampleResult(
         marks=tuple(marks),
         paths=tuple(tuple(path) for path in paths),
         breach_series=tuple(breach),
         breach_fraction=breach[-1],
         interval=wilson(count - len(inside), count),
-        finite=finite,
+        finite=mark == plan.steps,
     )
 
 

@@ -41,7 +41,14 @@ from glitnir_forseti.notebook.evidence import (
 )
 from glitnir_forseti.stepped import sampler
 from glitnir_forseti.stepped.models import HEDGED_SPREAD_STEPPED
-from glitnir_forseti.stepped.sampler import draw, sample, sample_payload, wilson
+from glitnir_forseti.stepped.numbers import expected_energy, rho
+from glitnir_forseti.stepped.sampler import (
+    draw,
+    ensemble,
+    sample,
+    sample_payload,
+    wilson,
+)
 
 HEDGED = "Gimle.Forseti.Examples.HedgedSpread.compiled"
 REQUIRED = "(law := gaussian) (variance := 64) (observe := s)"
@@ -389,6 +396,26 @@ def test_three_point_breach_fraction_near_exact() -> None:
         plan(paths=4000, steps=256, seed=7, show=0, law="threepoint", variance=64),
     )
     assert 0.19 <= r.breach_fraction <= 0.25  # exact value 0.2198
+
+
+def test_the_sampled_energy_matches_its_exact_expectation() -> None:
+    """The ensemble's mean ``s² + h²`` matches ``ρ^n·V₀ + Δ²·v·Σ_{k<n} ρ^k``.
+
+    At the marks 64, 128 and 256 the sampled mean lies within three standard
+    errors of the kernel-checked exact expectation (0.108507… at mark 256).
+    """
+    run = plan(paths=2000, seed=1)
+    step = HEDGED_PAYLOAD.step
+    start = sum(x * x for x in HEDGED_PAYLOAD.initial)
+    checked = []
+    for mark, (s, h) in ensemble(HEDGED_PAYLOAD, run):
+        if mark in (64, 128, 256):
+            energy = [a * a + b * b for a, b in zip(s, h, strict=True)]
+            exact = expected_energy(start, rho(step), step, run.variance, mark)
+            error = statistics.stdev(energy) / math.sqrt(run.paths)
+            assert abs(statistics.fmean(energy) - float(exact)) <= 3 * error, mark
+            checked.append(mark)
+    assert checked == [64, 128, 256]
 
 
 def test_the_paths_start_at_the_initial_state_and_mark_every_step() -> None:
