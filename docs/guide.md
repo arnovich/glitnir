@@ -462,13 +462,15 @@ Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 `glitnir-forseti[z3]`, is needed). Its blocks need the Forseti and Asgard modules
 the goal uses imported in the notebook; a missing one shows as the check's
 unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
-forseti-lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release contains
-them, and an older forseti-lean build reports the missing module.
+Forseti Lean build that contains `Gimle.Forseti.Stepped` and
+`Gimle.Forseti.Examples.HedgedSpreadStepped`, as the pinned release, Forseti Lean
+v0.3.0, does; an older build reports the missing module.
 
-`stream` decisions and `iterate` evidence have not been run through Glitnir's
-checker yet. The first check of a Forseti project replays Mathlib and Forseti
-once (about 18 minutes on a laptop); later checks take a few minutes. The
+`entailment`, `trajectory` and `stepped` decisions and `sample` evidence have
+passed Glitnir's check in the opt-in live tests against Forseti Lean v0.3.0
+(2026-10-20). `stream` decisions and `iterate` evidence have not been run through
+Glitnir's checker yet. The first check of a Forseti project replays Mathlib and
+Forseti once (about 18 minutes on a laptop); later checks take a few minutes. The
 [plugin README](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/README.md)
 lists every option and goal form.
 

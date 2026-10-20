@@ -58,10 +58,10 @@ A `stepped` goal's law class goes with its claim: a breach within a horizon
 (`within N`) and an expectation (`expected <= c at N`) take the two-moment
 class (`shocks variance v`), and a breach at a fixed date, at every mark taken
 separately (`at every mark within N`), takes the sub-Gaussian class
-(`shocks subgaussian v`). `stepped` decisions and `sample` evidence need a
-forseti-lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release contains them,
-and an older forseti-lean build reports the missing module.
+(`shocks subgaussian v`). `stepped` decisions and `sample` evidence need a Forseti
+Lean build that contains `Gimle.Forseti.Stepped` and
+`Gimle.Forseti.Examples.HedgedSpreadStepped`, as the pinned release, Forseti Lean
+v0.3.0, does; an older build reports the missing module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
 so before anything runs. **Run** searches for a certificate or a counterexample and proposes a self-contained Lean block: a `Decided_<name>`
@@ -76,14 +76,13 @@ unknown-identifier rejection. The package also contains the deciders' replay
 against a pinned Forseti Lean release and its command lines, which are not
 reachable from the editor.
 
-**Verified on 2026-10-20** against forseti-lean `7314ef5` (Lean 4.32.1), the
-checkout the release and replay pins are cut from, with
-`FORSETI_LEAN_TEST_PROJECT` set: `tests/test_trajectory_lean.py` (every example
+**Verified on 2026-10-20** against Forseti Lean v0.3.0 (Lean 4.32.1), the
+pinned release, with `FORSETI_LEAN_TEST_PROJECT` set: `tests/test_trajectory_lean.py` (every example
 goal, both driven models), `tests/test_decision_provider_lean.py` (proven and
 refuted `entailment` and `trajectory`, including a driven claim read through the
 project runner), `tests/test_evidence_provider_lean.py` (`simulate`),
 `tests/test_lean_release.py`, `tests/test_live_lean_gate.py` and
-`tests/test_stepped_lean.py` (the stepped lane's ten examples, three template
+`tests/test_stepped_lean.py` (the stepped lane's ten examples, four template
 variants and the `sample` card) all passed. `stream` decisions and `iterate`
 evidence are not yet verified; the unit tests run no Lean and CI skips these live
 tests, so re-run them after changes.

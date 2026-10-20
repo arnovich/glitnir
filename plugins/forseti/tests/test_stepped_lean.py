@@ -13,10 +13,12 @@ library, and fails instead of skipping under the gate::
         uv run python -m pytest tests/test_stepped_lean.py
 
 Beside the examples, which fix the constants at the catalogue's (variance 64,
-a year of 256 marks, the barrier 1), three variants reach template branches
-those constants do not: a fixed-date bound whose ``r`` is lowered to
-`service.EXP_CAP`, a fixed-date claim at a fractional barrier, and a horizon
-hold at the lane's horizon cap of 4096 marks.
+a year of 256 marks, the barrier 1), variants reach template branches those
+constants do not: a fixed-date bound whose ``r`` is lowered to
+`service.EXP_CAP`, a fixed-date claim at a fractional barrier, and, at the
+lane's horizon cap of 4096 marks, a horizon hold and an exact refutation. The
+refutation makes the kernel evaluate a power over all 4096 marks, where the
+hold does no work that long.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
@@ -179,27 +181,40 @@ def test_emitted_block_checks(check_block, example: Example) -> None:
 
 #: The hedged spread from the flat book in steps of 1/256, as every goal starts.
 _HEDGED_GOAL = "stepped hedged-spread from (0, 0) at 0 step 1/256"
-#: Goals whose blocks take template branches no example takes, with a piece of
-#: text each block must hold to show it took that branch.
+#: Goals whose blocks take template branches no example takes, with the status
+#: the decider gives each and a piece of text its block must hold to show it
+#: took that branch.
 VARIANTS = {
     # r = 8² / (2·c_up) ≈ 350.7, so ⌊r⌋ is above the cap and lowered to it:
     # `norm_num at hE` faces e₋^256.
     "capped_exponent": (
         f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within 256"
         " observe s breach 8 probability <= 1/100",
+        "PROVEN",
         f"exp_ge_floor_cubic {service.EXP_CAP} (r := {service.EXP_CAP})",
     ),
     # The band |s| ≤ 3/2: the barrier is a fraction in the numeric core.
     "fractional_barrier": (
         f"{_HEDGED_GOAL} shocks subgaussian 64 at every mark within 256"
         " observe s breach 3/2 probability <= 1/100",
+        "PROVEN",
         "2 * Real.exp (-(3/2) ^ 2 / (2 * c))",
     ),
     # N·Δ²·v/B² = 4096 · 4 / 256² = 1/4 at the lane's horizon cap.
     "horizon_cap": (
         f"{_HEDGED_GOAL} shocks variance 4 within 4096 observe s breach 1"
         " probability <= 1/4",
+        "PROVEN",
         "(breach_within h (by norm_num) 4096).mono",
+    ),
+    # 9/10 is below the three-point law's 1 − (1 − 2ε)^4096 ≈ 0.9811 and above
+    # Bernoulli's ≈ 0.7987: the exact refutation, whose power `decide +kernel`
+    # evaluates over 4096 factors.
+    "exact_refutation_cap": (
+        f"{_HEDGED_GOAL} shocks variance 64 within 4096 observe s breach 1"
+        " probability <= 9/10",
+        "REFUTED",
+        "(1 - 2 * (64 / (2 * 257 ^ 2) : ℚ)) ^ 4096 := by decide +kernel",
     ),
 }
 
@@ -207,9 +222,9 @@ VARIANTS = {
 @pytest.mark.parametrize("name", sorted(VARIANTS))
 def test_a_template_variant_checks(check_block, name: str) -> None:
     """Each variant is decided by the real decider and checked like an example."""
-    text, needle = VARIANTS[name]
+    text, status, needle = VARIANTS[name]
     outcome = decide(parse(name, "stepped", text), threading.Event())
-    assert _status(outcome) == "PROVEN", outcome["stages"]
+    assert _status(outcome) == status, outcome["stages"]
     assert needle in outcome["block"]
     assert checked_decision(outcome)["block"] == outcome["block"]
     result = check_block(outcome)

@@ -21,6 +21,7 @@ import pytest
 from glitnir_forseti.claims.decide import Decision, decide, goal_kind, read_goal
 from glitnir_forseti.claims.text import parse_goal, render_goal
 from glitnir_forseti.entailment.limits import EntailmentLimits
+from glitnir_forseti.lean.closure import closure_identity, replay_pin
 from glitnir_forseti.notebook.decisions import block
 from glitnir_forseti.stepped import models, service
 from glitnir_forseti.stepped.examples import EXAMPLES, Example
@@ -635,6 +636,19 @@ def test_the_examples_use_the_canonical_goal_texts() -> None:
         "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks subgaussian 64"
         " within 256 observe s breach 1 probability <= 1/50"
     )
+
+
+def test_every_stepped_import_set_is_pinned() -> None:
+    """The replay pin holds the stepped lane's import set.
+
+    The live gate verifies every import set the pin holds against the project's
+    build, so a set missing from the pin is never checked for the stepped
+    modules.
+    """
+    pinned = [tuple(entry["imports"]) for entry in replay_pin()["closures"]]
+    for imports in models.replay_imports():
+        assert imports in pinned
+        assert len(closure_identity(imports)) == 64
 
 
 def test_the_examples_propose_every_block_template() -> None:

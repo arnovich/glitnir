@@ -317,6 +317,70 @@
     },
     {
       "imports": [
+        "Gimle.Forseti.Stepped",
+        "Gimle.Forseti.Examples.HedgedSpreadStepped"
+      ],
+      "modules": 5988,
+      "packages": [
+        {
+          "name": "LeanSearchClient",
+          "modules": 4,
+          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+        },
+        {
+          "name": "Qq",
+          "modules": 14,
+          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+        },
+        {
+          "name": "aesop",
+          "modules": 132,
+          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+        },
+        {
+          "name": "asgard",
+          "modules": 25,
+          "digest": "7007dc27c07ce0f56b2a90f94ddaf45f2dfa8859683794f5c4b1c17d6e2a09e4"
+        },
+        {
+          "name": "batteries",
+          "modules": 78,
+          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+        },
+        {
+          "name": "forseti",
+          "modules": 11,
+          "digest": "1d548609c91acfed21dbf8ded093cc73a42ce716028d1aa4247e6e007249597c"
+        },
+        {
+          "name": "importGraph",
+          "modules": 10,
+          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+        },
+        {
+          "name": "mathlib",
+          "modules": 3417,
+          "digest": "54d0b318feb4150a06e351ae2d16f8ef173084610e43d7260fde5ec1d10e28df"
+        },
+        {
+          "name": "plausible",
+          "modules": 13,
+          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+        },
+        {
+          "name": "proofwidgets",
+          "modules": 13,
+          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+        },
+        {
+          "name": "toolchain",
+          "modules": 2271,
+          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+        }
+      ]
+    },
+    {
+      "imports": [
         "Gimle.Forseti.Syntax.AlgebraicWitness"
       ],
       "modules": 4561,
