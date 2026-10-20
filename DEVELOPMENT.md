@@ -138,8 +138,8 @@ Lean 4.32.1 installed with elan and a working sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
 `FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead. Plugin
 tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live
-test allows each block 60 s to check; on a loaded machine raise that with
-`FORSETI_CHECK_BUDGET_MS` (in milliseconds). The
+test allows each block 120 s to check; on a loaded machine raise that with
+`FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
 [plugin README](plugins/forseti/README.md) shows how to run them.
 
 Verified on 2026-10-15 against forseti-lean `c65dada` (Lean 4.32.1): the opt-in

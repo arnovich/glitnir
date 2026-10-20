@@ -496,9 +496,22 @@ def test_an_unrolled_claim_is_decided_up_to_its_cap_only(
     assert past.status == "UNKNOWN:unsupported"
     assert past.block is None and past.decision.lean is None
     assert shape in past.reason
-    assert f"{cap} steps, not {cap + 1}" in past.reason
-    # A horizon claim goes on up to the lane's cap, which the reason names.
+    assert f"up to {cap} steps, not {cap + 1}" in past.reason
+    # A breach within a horizon goes on up to the lane's cap, which the reason
+    # names, and which `within N` alone does not tell from a fixed-date claim.
+    assert "`within N` without `at every mark`" in past.reason
     assert f"goes up to {models.HEDGED_SPREAD_STEPPED.horizon_cap}" in past.reason
+
+
+def test_a_trivial_fixed_date_claim_stops_at_the_same_cap() -> None:
+    """A bound of 1 holds for every law, yet the cap is by claim shape."""
+    cap = models.HEDGED_SPREAD_STEPPED.unrolled_cap
+    trivial = FIXED.replace("<= 1/100", "<= 1")
+    at_cap = _decide(trivial.replace("within 256", f"within {cap}"))
+    assert at_cap.status == "PROVEN"
+    assert at_cap.block is not None and "exceedsAt_of_le_one" in at_cap.block
+    past = _decide(trivial.replace("within 256", f"within {cap + 1}"))
+    assert past.status == "UNKNOWN:unsupported" and past.block is None
 
 
 def test_a_refuted_expected_claim_stops_at_the_same_cap() -> None:

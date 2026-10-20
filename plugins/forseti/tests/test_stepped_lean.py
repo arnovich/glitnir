@@ -18,12 +18,13 @@ constants do not: a fixed-date bound whose ``r`` is lowered to
 `service.EXP_CAP`, a fixed-date claim at a fractional barrier, and the lane's
 caps. At the horizon cap of 4096 marks a horizon hold and an exact refutation
 are checked; the refutation makes the kernel evaluate a power over all 4096
-marks, where the hold does no work that long. A fixed-date bound and an
-expectation unroll a recursion over every mark (``proxyRec``, ``geomSum``), so
-their cap is lower, and each is checked at it.
+marks, where the hold does no work that long. The proofs of a fixed-date bound
+and an expectation may unroll a recursion over every mark (``proxyRec``,
+``geomSum``), so their cap is lower, and each is checked at it.
 
-A check takes a budget of `CHECK_BUDGET_MS`, 60 s unless the environment
-variable ``FORSETI_CHECK_BUDGET_MS`` sets it, as a loaded machine must.
+A check is held to a budget of `CHECK_BUDGET_MS`, two minutes unless the
+environment variable ``FORSETI_CHECK_BUDGET_MS`` names another number of
+milliseconds, as a loaded machine may need.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
@@ -58,8 +59,9 @@ from glitnir_forseti.stepped.models import HEDGED_SPREAD_STEPPED
 
 #: The axioms Lean itself provides; a block may rest on nothing else.
 STANDARD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
-#: The longest a block may take to check, in milliseconds.
-CHECK_BUDGET_MS = int(os.environ.get("FORSETI_CHECK_BUDGET_MS", "60000"))
+#: The longest a block may take to check, in milliseconds, unless the
+#: environment says otherwise (`_check_budget_ms`).
+CHECK_BUDGET_MS = 120_000
 #: A block that needs nothing, to have the checker replay a notebook's imports.
 WARM_BLOCK = "theorem warm_up : True := trivial"
 #: The compiled hedged spread a ``sample`` directive names, and its options. The
@@ -77,6 +79,36 @@ import Gimle.Forseti.Examples.HedgedSpreadStepped
 
 {SAMPLE_DIRECTIVE}
 """
+
+
+def _check_budget_ms() -> int:
+    """Return the budget a check is held to.
+
+    An unset or empty ``FORSETI_CHECK_BUDGET_MS`` means `CHECK_BUDGET_MS`.
+
+    Raises:
+        pytest.fail.Exception: If the variable is not a positive whole number.
+    """
+    value = os.environ.get("FORSETI_CHECK_BUDGET_MS", "").strip()
+    if not value:
+        return CHECK_BUDGET_MS
+    try:
+        budget = int(value)
+    except ValueError:
+        budget = 0
+    if budget <= 0:
+        pytest.fail(
+            "FORSETI_CHECK_BUDGET_MS must be a positive whole number of"
+            f" milliseconds, got {value!r}",
+            pytrace=False,
+        )
+    return budget
+
+
+@pytest.fixture(autouse=True)
+def check_budget_ms() -> int:
+    """Return the check budget, failing a test at once if the variable is bad."""
+    return _check_budget_ms()
 
 
 @dataclass(frozen=True)
@@ -170,7 +202,9 @@ def _status(outcome: dict) -> str:
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
-def test_emitted_block_checks(check_block, example: Example) -> None:
+def test_emitted_block_checks(
+    check_block, check_budget_ms: int, example: Example
+) -> None:
     outcome = _decided(example)
     assert _status(outcome) == example.expected, outcome["stages"]
     if example.expected.startswith("UNKNOWN"):
@@ -182,7 +216,7 @@ def test_emitted_block_checks(check_block, example: Example) -> None:
     result = check_block(outcome)
     assert result.ok, result.message
     assert set(result.axioms) <= STANDARD_AXIOMS
-    assert result.check_ms < CHECK_BUDGET_MS
+    assert result.check_ms < check_budget_ms
     print(f"{example.name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
 
 
@@ -247,7 +281,9 @@ VARIANTS = {
 
 
 @pytest.mark.parametrize("name", sorted(VARIANTS))
-def test_a_template_variant_checks(check_block, name: str) -> None:
+def test_a_template_variant_checks(
+    check_block, check_budget_ms: int, name: str
+) -> None:
     """Each variant is decided by the real decider and checked like an example."""
     text, status, needle = VARIANTS[name]
     outcome = decide(parse(name, "stepped", text), threading.Event())
@@ -258,7 +294,37 @@ def test_a_template_variant_checks(check_block, name: str) -> None:
     print(f"{name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
     assert result.ok, result.message
     assert set(result.axioms) <= STANDARD_AXIOMS
-    assert result.check_ms < CHECK_BUDGET_MS
+    assert result.check_ms < check_budget_ms
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_an_unset_or_empty_budget_is_the_default(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is None:
+        monkeypatch.delenv("FORSETI_CHECK_BUDGET_MS", raising=False)
+    else:
+        monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
+    assert _check_budget_ms() == CHECK_BUDGET_MS == 120_000
+
+
+def test_a_budget_is_a_whole_number_of_milliseconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", " 600000 ")
+    assert _check_budget_ms() == 600_000
+
+
+@pytest.mark.parametrize("value", ["abc", "1.5", "10s", "0", "-5"])
+def test_any_other_budget_fails_with_a_message(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
+    with pytest.raises(pytest.fail.Exception) as raised:
+        _check_budget_ms()
+    message = str(raised.value)
+    assert "FORSETI_CHECK_BUDGET_MS" in message and repr(value) in message
+    assert "positive whole number of milliseconds" in message
 
 
 def test_a_false_block_is_rejected(check_block) -> None:

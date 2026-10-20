@@ -109,9 +109,9 @@ class SteppedEntry:
         start: The time the chain starts at.
         horizon_cap: The most steps a claim may range over.
         unrolled_cap: The most steps a fixed-date or expected claim may range
-            over. Their proofs have the kernel unroll a recursion over every
-            step (``proxyRec``, ``geomSum``), and the independent replay's
-            kernel hits its recursion limit well below ``horizon_cap``.
+            over. Their proofs may have the kernel unroll a recursion over
+            every step (``proxyRec``, ``geomSum``), and the independent
+            replay's kernel hits its recursion limit well below ``horizon_cap``.
     """
 
     key: str
