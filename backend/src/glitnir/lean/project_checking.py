@@ -969,6 +969,18 @@ def _candidate_failure(
     return None
 
 
+def _refuse_unsupported(source: Path) -> None:
+    """Refuse a project whose Lean version Glitnir does not check.
+
+    This runs before the Lean slot, a scratch directory or the toolchain is
+    touched, so the refusal says `lean_support`'s words and nothing else;
+    the checks after the slot still catch a declaration changed meanwhile.
+    """
+    message = lean_support(describe_project(source))["message"]
+    if message is not None:
+        raise SnapshotError(message)
+
+
 def _check_text(
     source: Path,
     text: str,
@@ -1514,6 +1526,7 @@ def check_project(
         ):
             raise ValueError("Check through a positive line number.")
         source = source.absolute()
+        _refuse_unsupported(source)
         text = read_regular(source, 16 * 1024 * 1024).decode().replace("\r\n", "\n")
         if hashlib.sha256(text.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
@@ -1712,6 +1725,7 @@ def check_candidate(
         if cancel.is_set():
             raise SnapshotError("Project check cancelled.")
         source = source.absolute()
+        _refuse_unsupported(source)
 
         def saved() -> str:
             text = read_regular(source, 16 * 1024 * 1024).decode()

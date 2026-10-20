@@ -3048,6 +3048,11 @@ def test_the_snapshot_says_whether_the_lean_version_is_supported(
     [
         ("leanprover/lean4:v4.35.0\n", f"This project uses Lean 4.35.0. {LEAN_OFF}"),
         (None, f"This project declares no Lean version. {LEAN_OFF}"),
+        (
+            "v4.32.1\nv4.35.0\n",
+            "This project's lean-toolchain could not be read: expected one "
+            f"toolchain declaration. {LEAN_OFF}",
+        ),
     ],
 )
 def test_every_lean_request_is_refused_up_front_on_another_version(

@@ -189,6 +189,12 @@ def trace_file(
             ).timeout_ms
             / 1000
         )
+        # Refuse before the Lean slot or the toolchain is touched, with the
+        # same words as every other refusal; the checks below still catch a
+        # declaration changed meanwhile.
+        message = lean_support(describe_project(source))["message"]
+        if message is not None:
+            raise SnapshotError(message)
         saved = read_regular(source, 16 * 1024**2).decode().replace("\r\n", "\n")
         if hashlib.sha256(saved.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
