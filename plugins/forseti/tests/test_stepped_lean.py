@@ -14,9 +14,13 @@ library, and fails instead of skipping under the gate::
 
 The scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, created exclusively and removed afterwards.
+
+The ``sample`` evidence verb's emission is run here too, through the runner
+Glitnir runs evidence with, to read what Lean prints for the sampler.
 """
 
 import hashlib
+import json
 import os
 import secrets
 import threading
@@ -28,8 +32,10 @@ import pytest
 from glitnir.lean.project_checking import check_candidate
 from glitnir.notebook.decision_cards import checked_decision
 
+from glitnir_forseti import evidence_provider
 from glitnir_forseti.claims.text import render_goal
 from glitnir_forseti.decision_provider import decide, parse
+from glitnir_forseti.notebook import evidence
 from glitnir_forseti.stepped.examples import EXAMPLES, Example
 
 #: The axioms Lean itself provides; a block may rest on nothing else.
@@ -38,6 +44,21 @@ STANDARD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 CHECK_BUDGET_MS = 60_000
 #: A block that needs nothing, to have the checker replay a notebook's imports.
 WARM_BLOCK = "theorem warm_up : True := trivial"
+#: The compiled hedged spread a ``sample`` directive names, and its options. The
+#: notebook imports the modules the evidence provider declares for every verb
+#: too, though Glitnir's runner loads them from the project's build either way.
+HEDGED = "Gimle.Forseti.Examples.HedgedSpread.compiled"
+SAMPLE_OPTIONS = "(law := gaussian) (variance := 64) (observe := s)"
+SAMPLE_DIRECTIVE = f"-- @evidence sample {HEDGED} {SAMPLE_OPTIONS}"
+SAMPLE_NOTEBOOK = f"""import Gimle.Asgard.Compile.RationalInterchange
+import Gimle.Asgard.Model.Continuous
+import Gimle.Forseti.Examples.HedgedSpread
+import Gimle.Forseti.Examples.HedgedSpreadStepped
+
+/-! # The stepped hedged spread, sampled -/
+
+{SAMPLE_DIRECTIVE}
+"""
 
 
 @dataclass(frozen=True)
@@ -180,3 +201,57 @@ def test_a_false_block_is_rejected(check_block) -> None:
     assert result.message.startswith(f"Block line {step}: "), result.message
     assert "unsolved goals" in result.message
     assert "unexpected" not in result.message
+
+
+def test_live_sample_emission_prints_the_stepped_model(scratch_notebook) -> None:
+    """Lean prints the hedged spread's field, initial state, step, coordinates.
+
+    The directive goes through the provider's own ``parse`` and ``command``,
+    and its Lean through the runner Glitnir runs evidence with; the provider
+    cannot compute a ``sample`` card yet, so the printed JSON is read here. The
+    module header puts the runtime coordinates at ``[d, s, h]``.
+    """
+    from glitnir.lean.provider_lean import run_provider_lean
+
+    path = scratch_notebook("GlitnirSampleLive", SAMPLE_NOTEBOOK)
+    [provider] = [
+        p for p in evidence_provider.evidence_providers() if "sample" in p.verbs
+    ]
+    request = provider.parse("sample", HEDGED, SAMPLE_OPTIONS)
+    result = run_provider_lean(
+        path,
+        expected_sha256=hashlib.sha256(SAMPLE_NOTEBOOK.encode()).hexdigest(),
+        line=SAMPLE_NOTEBOOK.split("\n").index(SAMPLE_DIRECTIVE) + 1,
+        provider_name=provider.name,
+        imports=provider.imports,
+        preamble=provider.preamble,
+        command=provider.command(request),
+        marker=provider.marker,
+        needs="evidence",
+        cancel=threading.Event(),
+    )
+    assert "payload" in result, result
+    emitted = json.loads(result["payload"])
+    print(f"emitted: {json.dumps(emitted)}")
+    assert set(emitted) == {
+        "states",
+        "initial",
+        "step",
+        "coordinates",
+        "driver",
+        "field",
+    }
+    assert emitted["step"] == ["1", "256"]
+    assert emitted["states"] == ["state-s", "state-h"]
+    assert emitted["initial"] == [["0", "1"], ["0", "1"]]
+    coordinates = emitted["coordinates"]
+    assert coordinates == ["driver-d", "state-s", "state-h"]
+    assert emitted["driver"] == 0 and coordinates[emitted["driver"]] == "driver-d"
+    # `ds := (-s + -h) + d` and `dh := s + -h`, over the three coordinates.
+    field = evidence.expression_polynomials(emitted["field"], len(coordinates))
+    assert (field.input_degree, field.output_degree) == (3, 2)
+    d, s, h = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+    assert [dict(output) for output in field.outputs] == [
+        {d: 1, s: -1, h: -1},
+        {s: 1, h: -1},
+    ]

@@ -36,6 +36,19 @@ Lean prints the circuit in the exact V2 wire form, Python Asgard's wire
 decoder validates the tree, it is expanded the same way, and the state is
 iterated in floating point with the input vectors taken in turn, one per tick.
 
+A registered stepped model (`glitnir_forseti.stepped.models`) is sampled under
+random shocks in its driver slot, by a directive written on one line (wrapped
+here)::
+
+    -- @evidence sample Gimle.Forseti.Examples.HedgedSpread.compiled
+        (law := gaussian) (variance := 64) (observe := s)
+
+Its options are read here into an exact `SamplePlan`. Lean prints the driven
+model's compiled field as the same expression trees, over its runtime
+coordinates (the drivers, then the states), with the coordinates' IDs, the
+index of its one driver among them, the initial state and the stepped model's
+step, all exact.
+
 Evidence is never a proof (semantic invariant 5): Glitnir keeps it outside the
 check records, and nothing that derives a claim's status reads it.
 """
@@ -49,7 +62,10 @@ from typing import Any
 
 # Points kept per state in a snapshot, as Glitnir accepts them; runs are
 # downsampled to this.
-from glitnir.notebook.evidence_cards import MAX_SAMPLES
+from glitnir.notebook.evidence_cards import MAX_SAMPLES, MAX_SERIES
+
+from glitnir_forseti.stepped.models import MODELS, SteppedEntry
+from glitnir_forseti.stepped.numbers import three_point
 
 _OPTION = re.compile(r"\(\s*(\w+)\s*:=\s*([^)]+?)\s*\)")
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_'.]*$")
@@ -57,8 +73,15 @@ _STATE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
 #: What the emission templates print before their JSON.
 MARK = "forsetiEvidence:"
 SOLVERS = ("euler", "rk4")
-#: The evidence directives: a continuous model, or a discrete update circuit.
-VERBS = ("simulate", "iterate")
+#: The evidence directives: a continuous model, a discrete update circuit, or
+#: a stepped model under random shocks.
+VERBS = ("simulate", "iterate", "sample")
+_USE_VERBS = "use simulate, iterate or sample"
+#: The shock laws ``sample`` draws from.
+LAWS = ("gaussian", "twopoint", "threepoint")
+#: Most paths a ``sample`` card shows: its `MAX_SERIES` series are the paths
+#: shown and the breach fraction.
+MAX_SHOWN = MAX_SERIES - 1
 MAX_STEPS = 100_000
 #: Most field-term evaluations one run may do (steps × terms × solver stages),
 #: so a large model cannot hold the server for minutes.
@@ -98,7 +121,8 @@ NOT_PLAIN = "numbers in evidence options must be plain decimals or fractions"
 #: Most decimal digits in a numerator or denominator of an emitted initial
 #: value or start, Asgard's own interchange bound (`MAX_DIGITS`).
 MAX_RATIONAL_DIGITS = 512
-_EMIT = """def _root_.forsetiExprJson {n : Nat} :
+#: The compiler's expression trees as JSON, shared by the model templates.
+_EXPR_JSON = """def _root_.forsetiExprJson {n : Nat} :
     Gimle.Asgard.Polynomial.Expr n → Lean.Json
   | .var i => Lean.toJson ["var", toString i.val]
   | .constant q => Lean.toJson ["const", toString q.num, toString q.den]
@@ -107,7 +131,8 @@ _EMIT = """def _root_.forsetiExprJson {n : Nat} :
   | .mul a b =>
     Lean.Json.arr #[Lean.toJson "mul", forsetiExprJson a, forsetiExprJson b]
   | .neg a => Lean.Json.arr #[Lean.toJson "neg", forsetiExprJson a]
-
+"""
+_EMIT = _EXPR_JSON + """
 def _root_.forsetiEvidenceJson {b : Gimle.Asgard.Model.Body}
     {e : Gimle.Asgard.Model.Evolution}
     (p : Gimle.Asgard.Model.ContinuousModel b e) : Lean.Json :=
@@ -123,6 +148,30 @@ def _root_.forsetiEvidenceJson {b : Gimle.Asgard.Model.Body}
         _root_.forsetiExprJson (p.rates.expressions i)).toArray)]
 
 #eval IO.println ("{mark}" ++ (_root_.forsetiEvidenceJson {name}).compress)"""
+#: A driven model's field over its runtime coordinates, the drivers then the
+#: states (`Evolution.drivenIds`); ``driver`` is the coordinate of its one
+#: driver port, found by stable ID, or null when it has more or none.
+_EMIT_STEPPED = _EXPR_JSON + """
+def _root_.forsetiEvidenceJson {b : Gimle.Asgard.Model.Body}
+    {e : Gimle.Asgard.Model.Evolution} {ds : List Gimle.Asgard.Model.DriverBinding}
+    (p : Gimle.Asgard.Model.DrivenModel b e ds) (step : ℚ) : Lean.Json :=
+  let rat (q : ℚ) : Lean.Json := Lean.toJson [toString q.num, toString q.den]
+  let ids := e.drivenIds ds
+  Lean.Json.mkObj [
+    ("states", Lean.toJson (e.states.map (·.stateId))),
+    ("initial", Lean.Json.arr
+      ((List.finRange e.states.length).map fun i => rat (p.initials i)).toArray),
+    ("step", rat step),
+    ("coordinates", Lean.toJson ((List.finRange
+      (Gimle.Asgard.Model.DriverBinding.width ds + e.states.length)).map ids)),
+    ("driver", Lean.toJson (if Gimle.Asgard.Model.DriverBinding.width ds = 1 then
+      (ds.head?.bind fun d => Gimle.Asgard.Model.index ids d.driverId).map (·.val)
+      else none)),
+    ("field", Lean.Json.arr
+      ((List.finRange e.states.length).map fun i =>
+        _root_.forsetiExprJson (p.rates.expressions i)).toArray)]
+
+#eval IO.println ("{mark}" ++ (_root_.forsetiEvidenceJson {name} {step}).compress)"""
 _EMIT_CIRCUIT = """def _root_.forsetiEvidenceJson {n m : Nat}
     (c : Gimle.Asgard.Circuit n m) : Lean.Json :=
   Lean.Json.mkObj [
@@ -138,18 +187,33 @@ def emission_command(verb: str, name: str) -> str:
     """Return the Lean that prints `MARK` and the field or circuit of ``name``.
 
     ``simulate`` prints a continuous model's field, ``iterate`` an update
-    circuit. Only a Lean name is ever written into the template.
+    circuit, and ``sample`` a registered stepped model's driven field with the
+    registry's step constant. Only Lean names are ever written into the
+    template.
 
     Raises:
-        EvidenceError: If ``verb`` is not an evidence verb or ``name`` is not a
-            Lean name.
+        EvidenceError: If ``verb`` is not an evidence verb, ``name`` is not a
+            Lean name, or ``sample`` names no registered stepped model.
     """
     if verb not in VERBS:
-        raise EvidenceError(f"unknown evidence {verb!r}; use simulate or iterate")
+        raise EvidenceError(f"unknown evidence {verb!r}; {_USE_VERBS}")
     if not _NAME.fullmatch(name):
         raise EvidenceError(f"{name!r} is not a Lean name")
-    template = _EMIT_CIRCUIT if verb == "iterate" else _EMIT
+    if verb == "sample":
+        step = _stepped_model(name).delta_name
+        template = _EMIT_STEPPED.replace("{step}", step)
+    else:
+        template = _EMIT_CIRCUIT if verb == "iterate" else _EMIT
     return template.replace("{mark}", MARK).replace("{name}", name)
+
+
+def _stepped_model(name: str) -> SteppedEntry:
+    """Return the registered stepped model whose compiled model is ``name``."""
+    for entry in MODELS.values():
+        if entry.initial_name == f"{name}.initial":
+            return entry
+    known = ", ".join(e.initial_name.removesuffix(".initial") for e in MODELS.values())
+    raise EvidenceError(f"{name!r} is not a registered stepped model; sample {known}")
 
 
 class EvidenceError(ValueError):
@@ -384,23 +448,50 @@ def coefficients(polynomials: ExactPolynomials) -> list[Fraction]:
 
 
 @dataclass(frozen=True)
+class SamplePlan:
+    """A ``sample`` directive's run, read exactly.
+
+    Attributes:
+        law: The shock law, one of `LAWS`.
+        variance: The shocks' variance.
+        paths: How many shock paths to draw.
+        steps: How many steps each path takes.
+        seed: The seed of the draws.
+        show: How many of the paths the card shows.
+        observe: The state whose band ``|x| ≤ barrier`` a breach leaves.
+        barrier: The band's half-width.
+    """
+
+    law: str
+    variance: Fraction
+    paths: int
+    steps: int
+    seed: int
+    show: int
+    observe: str
+    barrier: Fraction
+
+
+@dataclass(frozen=True)
 class Simulation:
     """One evidence directive.
 
     Attributes:
-        model: The Asgard ``ContinuousModel`` to simulate, or the update
-            ``Circuit`` to iterate.
+        model: The Asgard ``ContinuousModel`` to simulate, the update
+            ``Circuit`` to iterate, or the compiled ``DrivenModel`` of a
+            registered stepped model to sample.
         solver: ``euler`` or ``rk4``.
         step: The step size, exact as written.
         steps: How many steps to take.
         error: Why it cannot be run as written, if it cannot.
-        verb: ``simulate`` or ``iterate``.
+        verb: ``simulate``, ``iterate`` or ``sample``.
         state: For ``iterate``, the initial state.
         inputs: For ``iterate``, the input vectors taken in turn, one per tick.
         parameter: For ``iterate``, the fixed parameters.
         names: For ``iterate``, a name for every port, state first.
         plane: For ``simulate``, two state names drawn against each other
             beside the time series.
+        sample: For ``sample``, its run; ``step`` and ``steps`` are unused.
     """
 
     model: str
@@ -414,6 +505,7 @@ class Simulation:
     parameter: tuple[Fraction, ...] = ()
     names: tuple[str, ...] = ()
     plane: tuple[str, ...] = ()
+    sample: SamplePlan | None = None
 
 
 def read_directive(verb: str, model: str, rest: str) -> Simulation:
@@ -432,11 +524,13 @@ def read_directive(verb: str, model: str, rest: str) -> Simulation:
         if any(key == earlier for earlier, _ in pairs[:index]):
             return _with_error(base, f"option {key!r} is given twice")
     if verb not in VERBS:
-        return _with_error(base, f"unknown evidence {verb!r}; use simulate or iterate")
+        return _with_error(base, f"unknown evidence {verb!r}; {_USE_VERBS}")
     if not _NAME.fullmatch(model):
         return _with_error(base, f"{model!r} is not a Lean name")
     if verb == "iterate":
         return _iteration(base, options)
+    if verb == "sample":
+        return _sampling(base, options)
     unknown = sorted(set(options) - {"h", "steps", "solver", "plane"})
     if unknown:
         return _with_error(base, f"unknown option {unknown[0]!r}")
@@ -509,6 +603,90 @@ def _iteration(base: Simulation, options: dict[str, str]) -> Simulation:
         parameter=parameter,
         names=names,
     )
+
+
+def _sampling(base: Simulation, options: dict[str, str]) -> Simulation:
+    """Read a ``sample`` directive against its registered stepped model."""
+    base = Simulation(base.model, verb="sample")
+    try:
+        entry = _stepped_model(base.model)
+        plan = sample_plan(options)
+        if plan.law == "threepoint":
+            three_point(entry.delta, plan.variance, plan.barrier)
+    except ValueError as error:  # an `EvidenceError`, or no three-point law
+        return _with_error(base, str(error))
+    return Simulation(base.model, verb="sample", sample=plan)
+
+
+#: The options ``sample`` reads, and those it may leave out, as written.
+_SAMPLE_OPTIONS = frozenset(
+    {"law", "variance", "paths", "steps", "seed", "show", "observe", "barrier"}
+)
+_SAMPLE_DEFAULTS = {
+    "paths": "4000",
+    "steps": "256",
+    "seed": "7",
+    "show": "8",
+    "barrier": "1",
+}
+
+
+def sample_plan(options: dict[str, str], terms: int = 1) -> SamplePlan:
+    """Read a ``sample`` directive's options as written into its exact plan.
+
+    A run evaluates every term of the field once per step of every path;
+    ``terms``, the field's term count, is 1 before Lean has printed it.
+
+    Raises:
+        EvidenceError: If an option is unknown, missing or out of range, or the
+            run would take more than `MAX_WORK` field-term evaluations.
+    """
+    unknown = sorted(set(options) - _SAMPLE_OPTIONS)
+    if unknown:
+        raise EvidenceError(f"unknown option {unknown[0]!r}")
+    for key in ("law", "variance", "observe"):
+        if key not in options:
+            raise EvidenceError(f"sample needs a ({key} := …)")
+    written = {**_SAMPLE_DEFAULTS, **options}
+    law, observe = written["law"], written["observe"]
+    if law not in LAWS:
+        raise EvidenceError(
+            f"unknown law {law!r}; use gaussian, twopoint or threepoint"
+        )
+    if not _STATE_NAME.fullmatch(observe):
+        raise EvidenceError("observe names a state, as (observe := s)")
+    try:
+        variance, barrier = _number(written["variance"]), _number(written["barrier"])
+        paths, steps, seed, show = (
+            _count(written[key]) for key in ("paths", "steps", "seed", "show")
+        )
+    except _NotPlain:
+        raise EvidenceError(NOT_PLAIN) from None
+    except (ValueError, ZeroDivisionError):
+        raise EvidenceError(
+            "write the variance and barrier as numbers such as 64 or 1/2, and "
+            "paths, steps, seed and show as counts"
+        ) from None
+    if variance < 0:
+        raise EvidenceError("the variance must not be negative")
+    if barrier <= 0:
+        raise EvidenceError("the barrier must be positive")
+    if seed < 0:
+        raise EvidenceError("the seed must not be negative")
+    if not 0 < steps <= MAX_STEPS:
+        raise EvidenceError(f"steps must be 1–{MAX_STEPS}")
+    if paths < 1:
+        raise EvidenceError("paths must be at least 1")
+    work = paths * steps * max(terms, 1)
+    if work > MAX_WORK:
+        raise EvidenceError(
+            f"this run would take {work:,} field-term evaluations, more than the "
+            f"{MAX_WORK:,} allowed; use fewer paths or steps"
+        )
+    shown = min(paths, MAX_SHOWN)
+    if not 0 < show <= shown:
+        raise EvidenceError(f"show must be 1–{shown}")
+    return SamplePlan(law, variance, paths, steps, seed, show, observe, barrier)
 
 
 class _NotPlain(ValueError):
