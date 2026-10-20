@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
-from glitnir.lean.lexing import code_tokens, scan
+from glitnir.lean.lexing import code_tokens, command_boundaries, only_comments, scan
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -28,8 +28,12 @@ from glitnir.lean.project_snapshot import (
     SLOT_WAIT_TIMED_OUT,
     SnapshotError,
 )
-from glitnir.lean.project_views import render_project_view, view_provider_sha256
-from glitnir.lean.provider_lean import provider_imports_error, run_provider_lean
+from glitnir.lean.project_views import render_project_views, view_provider_sha256
+from glitnir.lean.provider_lean import (
+    INTERRUPTED,
+    provider_imports_error,
+    run_provider_lean,
+)
 from glitnir.notebook import assets
 from glitnir.notebook.check_records import (
     MAX_MESSAGE,
@@ -82,6 +86,7 @@ from glitnir.providers import (
     EvidenceProvider,
     EvidenceRequest,
     Providers,
+    ViewProvider,
     load_providers,
 )
 
@@ -133,7 +138,8 @@ MAX_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_LINK_CHARACTERS = 1024
 INSPECTING = "Inspecting the saved project setup"
 BUSY = "Project inspection or checking is already running."
-# Views are drawn one at a time in a worker; the editor polls `view` for them.
+# Views are drawn in a worker, one Lean run at a time, each run drawing every
+# view it can (`SourcePreviewService.view`); the editor polls `view` for them.
 VIEW_STARTING = "Preparing the view."
 VIEW_QUEUED = "Waiting for another view to finish drawing."
 VIEW_CANCELLED = "View drawing cancelled."
@@ -229,6 +235,20 @@ def _view_provider_sha256(providers: Providers, view: dict[str, Any]) -> str | N
     return view_provider_sha256(
         providers.views[view["kind"]], view["kind"], view["name"], tuple(view["using"])
     )
+
+
+def _starts_command(text: str, line: int) -> bool:
+    """Whether the directive at one-based `line` of `text` lies between commands.
+
+    The trusted lexer must find that the command before it ends above it
+    (`CommandBoundaries.ends_at(line - 1)`), or nothing but comments may
+    precede it. A run elaborates the notebook cut at each of its directives,
+    so only such a directive is drawn in a run with others.
+    """
+    if command_boundaries(text).ends_at(line - 1):
+        return True
+    before = "\n".join(text.split("\n", line - 1)[: line - 1])
+    return only_comments(before, docstrings=0)
 
 
 def _with_providers(
@@ -798,7 +818,7 @@ _TRANSIENT = ("uncertain", "proofs_skipped")
 
 @dataclass
 class _ViewJob:
-    """The view being drawn: its cache key, its cancel and what it is doing.
+    """One view of a run: its cache key, its own Stop and what it is doing.
 
     The key is (saved source, stable environment, line): the environment
     without the random value an unknown state adds (`environment_fingerprint`),
@@ -815,6 +835,36 @@ class _ViewJob:
     record: _ViewRecord | None = None
     id: str = field(default_factory=lambda: secrets.token_hex(16))
     message: str = VIEW_STARTING
+    # Whether its answer is kept for its polls (`_end_view_job`).
+    ended: bool = False
+
+
+@dataclass
+class _ViewRun:
+    """The Lean run drawing views of one saved source with one provider.
+
+    `jobs` are its views by directive line. `cancel` stops its process: it is
+    set when every view has ended (each stopped by its own `cancel`), on
+    close and when the saved source is replaced. The views are drawn by
+    `provider` from the saved source `sha256`.
+    """
+
+    jobs: dict[int, _ViewJob]
+    cancel: threading.Event
+    provider: ViewProvider
+    sha256: str
+
+
+def _drawing_answer(job: _ViewJob) -> dict[str, Any]:
+    """Answer for a view still being drawn: its progress and its job."""
+    return {"status": "drawing", "message": job.message, "job": job.id}
+
+
+def _drawn_view(
+    job: _ViewJob, entry: dict[str, Any]
+) -> tuple[int, str, str, tuple[str, ...]]:
+    """Name the view `render_project_views` draws for `job`, listed as `entry`."""
+    return (job.key[2], entry["kind"], entry["name"], tuple(entry["using"]))
 
 
 def _labelled(drawing: dict[str, Any], uncertain: bool) -> dict[str, Any]:
@@ -918,11 +968,11 @@ class SourcePreviewService:
         self._inspection_worker: threading.Thread | None = None
         self._inspection_cancel: threading.Event | None = None
         # Drawn views by (source, stable environment, line); finished jobs'
-        # answers by job id, for the polls that ask for them; the view being
-        # drawn, if any, and its worker. All under `_state_lock`.
+        # answers by job id, for the polls that ask for them; the run drawing
+        # views, if any, and its worker. All under `_state_lock`.
         self._drawings: dict[tuple[str, str, int], dict[str, Any]] = {}
         self._finished_views: dict[str, tuple[dict[str, Any], bool]] = {}
-        self._view_job: _ViewJob | None = None
+        self._view_run: _ViewRun | None = None
         self._view_worker: threading.Thread | None = None
         self._providers_lock = threading.Lock()
         self._loaded_providers: Providers | None = None
@@ -954,8 +1004,8 @@ class SourcePreviewService:
             self._cancel.set()
             if self._decision_cancel is not None:
                 self._decision_cancel.set()
-            if self._view_job is not None:
-                self._view_job.cancel.set()
+            if self._view_run is not None:
+                self._cancel_run(self._view_run)
             if self._inspection_cancel is not None:
                 self._inspection_cancel.set()
             if self._check_cancel is not None:
@@ -1399,92 +1449,150 @@ class SourcePreviewService:
     def view(self, cell: int, line: int) -> dict[str, Any]:
         """Report one listed directive's drawing, starting it if needed.
 
-        Never waits for Lean. A drawing is made in a worker, one view at a
-        time and bounded by the check time limit; until it is done the answer
-        is `{"status": "drawing", "message": ..., "job": id}`, or `"queued"`
-        with the id of the job being drawn, and the caller polls `view_job`
-        for that id, which answers without reading the notebook. A finished
-        drawing is kept for its saved source and environment, the provider's
-        modules included; one made while the environment is not fully known
-        is marked `uncertain` and kept for that same unknown state, so asking
-        again never draws it again. A drawing saved in the notebook's records
-        whose source, environment and provider hash all match is answered
-        without Lean; every other finished drawing made in a known
-        environment is saved there (`_save_drawing`). A failure goes to the
-        polls of its job only, so asking here again draws again. Raises
-        KeyError if no directive is listed at `cell` and `line`.
+        Never waits for Lean. Views are drawn in a worker, one Lean run at a
+        time and each run bounded by the check time limit. A run draws the
+        view asked for and, when its directive starts between commands
+        (`_starts_command`), every other listed view of the same provider
+        that does too and has no current drawing, in memory or saved. Each
+        view of the run answers `{"status": "drawing", "message": ...,
+        "job": id}` with its own job until the run ends; any other view
+        answers `"queued"` with the id of a job being drawn. The caller
+        polls `view_job` for that id, which answers without reading the
+        notebook. A finished drawing is kept for its saved source and
+        environment, the provider's modules included; one made while the
+        environment is not fully known is marked `uncertain` and kept for
+        that same unknown state, so asking again never draws it again. A
+        drawing saved in the notebook's records whose source, environment
+        and provider hash all match is answered without Lean; every other
+        finished drawing made in a known environment is saved there
+        (`_save_drawing`). A failure goes to the polls of its job only, so
+        asking here again draws again. Raises KeyError if no directive is
+        listed at `cell` and `line`.
         """
         text = self._text()
         fingerprint = self._fingerprint(text)
         snapshot = self._snapshot(text, fingerprint)
+        views = snapshot["views"]
         entry = next(
-            (v for v in snapshot["views"] if v["cell"] == cell and v["line"] == line),
-            None,
+            (v for v in views if v["cell"] == cell and v["line"] == line), None
         )
         if entry is None:
             raise KeyError(f"no view directive at cell {cell}, line {line}")
         if entry["error"]:
             return {"error": entry["error"]}
         providers = self._providers()
-        imports = _provider_imports(providers.views[entry["kind"]])
+        provider = providers.views[entry["kind"]]
+        imports = _provider_imports(provider)
         environment = fingerprint.environment(imports)
         stable = str(environment.get("stable_sha256", environment["sha256"]))
         uncertain = bool(environment.get("unknown", False))
-        key = (snapshot["sha256"], stable, line)
+        sha256 = snapshot["sha256"]
+        key = (sha256, stable, line)
         with self._state_lock:
             cached = self._drawings.get(key)
         if cached is not None:
             return _labelled(cached, uncertain)
-        record = None
-        provider_sha256 = _view_provider_sha256(providers, entry)
-        if not uncertain and provider_sha256 is not None:
-            keys = _view_keys(text, snapshot["views"])
-            saved = self._saved_drawing(
-                text, keys[line], line, str(environment["sha256"]), provider_sha256
-            )
-            if saved is not None:
-                with self._state_lock:
-                    self._keep_drawing(key, saved)
-                return saved
-            if self._save_drawings:
-                record = _ViewRecord(
-                    text,
-                    keys[line],
-                    frozenset(keys.values()),
-                    providers.views[entry["kind"]].name,
-                    provider_sha256,
+        digest = None if uncertain else str(environment["sha256"])
+        keys = _view_keys(text, views)
+        saved = {} if digest is None else saved_views(load_records(self.path))
+
+        def job_for(view: dict[str, Any]) -> _ViewJob | dict[str, Any]:
+            """Return a new job drawing `view`, or its current saved drawing."""
+            at = view["line"]
+            provider_sha256 = _view_provider_sha256(providers, view)
+            record = None
+            if digest is not None and provider_sha256 is not None:
+                drawing = self._saved_drawing(
+                    text, keys[at], at, digest, provider_sha256, saved=saved
                 )
+                if drawing is not None:
+                    return drawing
+                if self._save_drawings:
+                    record = _ViewRecord(
+                        text,
+                        keys[at],
+                        frozenset(keys.values()),
+                        provider.name,
+                        provider_sha256,
+                    )
+            return _ViewJob(
+                (sha256, stable, at), threading.Event(), uncertain, digest, record
+            )
+
+        asked = job_for(entry)
+        if not isinstance(asked, _ViewJob):
+            with self._state_lock:
+                self._keep_drawing(key, asked)
+            return asked
+        with self._state_lock:
+            answer = self._answer_during_run(key)
+        if answer is not None:
+            return answer
+        members = [(asked, entry)]
+        if _starts_command(text, line):
+            for view in views:
+                if len(members) == MAX_CACHED_VIEWS:
+                    break  # every answer of the run must outlast it
+                if (
+                    view["line"] != line
+                    and not view["error"]
+                    and providers.views.get(view["kind"]) is provider
+                    and _starts_command(text, view["line"])
+                ):
+                    member = job_for(view)
+                    if isinstance(member, _ViewJob):
+                        members.append((member, view))
+        members.sort(key=lambda member: member[0].key[2])
         with self._state_lock:
             cached = self._drawings.get(key)
             if cached is not None:
                 return _labelled(cached, uncertain)
-            job = self._view_job
-            if job is not None:
-                if job.key == key:
-                    return {"status": "drawing", "message": job.message, "job": job.id}
-                if job.key[0] != key[0]:
-                    # Its saved source is gone, so its drawing would be refused.
-                    job.cancel.set()
-                return {"status": "queued", "message": VIEW_QUEUED, "job": job.id}
+            answer = self._answer_during_run(key)
+            if answer is not None:
+                return answer
             if self._cancel.is_set():
                 return {"error": CLOSED}
-            job = _ViewJob(
-                key,
+            # Drawn in memory meanwhile, by a run that has just ended.
+            members = [
+                (job, view)
+                for job, view in members
+                if job is asked or job.key not in self._drawings
+            ]
+            run = _ViewRun(
+                {job.key[2]: job for job, _view in members},
                 threading.Event(),
-                uncertain,
-                None if uncertain else str(environment["sha256"]),
-                record,
+                provider,
+                sha256,
             )
             worker = threading.Thread(
-                target=self._draw_view, args=(job, entry), daemon=False
+                target=self._draw_views, args=(run, members), daemon=False
             )
-            self._view_job, self._view_worker = job, worker
+            self._view_run, self._view_worker = run, worker
             try:
                 worker.start()
             except RuntimeError as error:
-                self._view_job = self._view_worker = None
+                self._view_run = self._view_worker = None
                 return {"error": f"View drawing could not start: {error}"}
-            return {"status": "drawing", "message": job.message, "job": job.id}
+            return _drawing_answer(asked)
+
+    def _answer_during_run(self, key: tuple[str, str, int]) -> dict[str, Any] | None:
+        """Answer for the view `key` while a run draws, or None; hold `_state_lock`.
+
+        A view of the run answers with its own job; any other waits for one
+        of the run's jobs. A run of a replaced saved source is stopped first:
+        its drawings would be refused.
+        """
+        run = self._view_run
+        if run is None:
+            return None
+        job = run.jobs.get(key[2])
+        if job is not None and job.key == key and not job.ended:
+            return _drawing_answer(job)
+        if run.sha256 != key[0]:
+            self._cancel_run(run)
+        waited = next((job for job in run.jobs.values() if not job.ended), None)
+        job = waited or next(iter(run.jobs.values()))
+        return {"status": "queued", "message": VIEW_QUEUED, "job": job.id}
 
     def view_job(self, job_id: str) -> dict[str, Any]:
         """Answer a poll for one view job, without reading the notebook.
@@ -1494,49 +1602,149 @@ class SourcePreviewService:
         a transient failure, so the caller asks `view` again.
         """
         with self._state_lock:
-            job = self._view_job
-            if job is not None and job.id == job_id:
-                return {"status": "drawing", "message": job.message, "job": job.id}
+            run = self._view_run
+            for job in run.jobs.values() if run is not None else ():
+                if job.id == job_id and not job.ended:
+                    return _drawing_answer(job)
             found = self._finished_views.get(job_id)
         if found is None:
             return {"error": UNKNOWN_JOB, "transient": True}
         return _labelled(*found)
 
-    def _draw_view(self, job: _ViewJob, entry: dict[str, Any]) -> None:
-        """Draw one view and keep its drawing or failure; always end the job."""
+    def _cancel_run(self, run: _ViewRun) -> None:
+        """Stop a whole run and each of its views; hold `_state_lock`."""
+        run.cancel.set()
+        for job in run.jobs.values():
+            job.cancel.set()
+
+    def _draw_views(
+        self, run: _ViewRun, members: list[tuple[_ViewJob, dict[str, Any]]]
+    ) -> None:
+        """Draw a run's views; always end every one of its jobs, then the run.
+
+        `members` are its jobs, each with its listed directive, in line
+        order. If a run of several views fails as a whole other than by
+        timeout or Stop, for example by reaching the memory limit, each view
+        still wanted is drawn again alone, in line order, in this worker.
+        """
+        failure: dict[str, Any] = {"error": "View drawing failed."}
+        try:
+            whole = self._draw_together(run, members)
+            if whole is not None:
+                failure = whole
+                if self._retries(run, members, whole):
+                    with self._state_lock:
+                        for job in run.jobs.values():
+                            job.message = VIEW_QUEUED
+                    for job, entry in members:
+                        self._draw_alone(run, job, entry)
+        except Exception as error:  # every job must always end
+            failure = {"error": f"View drawing failed: {error}"}
+        finally:
+            with self._state_lock:
+                for job, _entry in members:
+                    self._end_view_job(job, failure)
+                self._view_run = None
+
+    def _draw_together(
+        self, run: _ViewRun, members: list[tuple[_ViewJob, dict[str, Any]]]
+    ) -> dict[str, Any] | None:
+        """Draw every view of a run in one Lean run; return its whole failure."""
+
+        def progress(message: str) -> None:
+            with self._state_lock:
+                for job in run.jobs.values():
+                    job.message = message
+
+        result = render_project_views(
+            self.path,
+            expected_sha256=run.sha256,
+            provider=run.provider,
+            views=[_drawn_view(job, entry) for job, entry in members],
+            cancel=run.cancel,
+            progress=progress,
+            environment_sha256=members[0][0].environment_sha256,
+        )
+        if "views" not in result:
+            return result
+        for (job, _entry), drawing in zip(members, result["views"]):
+            self._finish_view(job, drawing)
+        return None
+
+    def _retries(
+        self,
+        run: _ViewRun,
+        members: list[tuple[_ViewJob, dict[str, Any]]],
+        failure: dict[str, Any],
+    ) -> bool:
+        """Whether a run that failed as a whole draws its views again alone.
+
+        Only a run of several views does, and not when it timed out or was
+        stopped: its message then ends with "timed out." or "cancelled.".
+        """
+        message = str(failure.get("error", "")).rstrip()
+        return (
+            len(members) > 1
+            and not run.cancel.is_set()
+            and not self._cancel.is_set()
+            and not message.endswith(INTERRUPTED)
+        )
+
+    def _draw_alone(self, run: _ViewRun, job: _ViewJob, entry: dict[str, Any]) -> None:
+        """Draw one view of a failed run in a Lean run of its own, if still wanted.
+
+        Its own Stop stops that run.
+        """
+        with self._state_lock:
+            if job.ended or job.cancel.is_set():
+                return
 
         def progress(message: str) -> None:
             with self._state_lock:
                 job.message = message
 
         try:
-            drawing = render_project_view(
+            result = render_project_views(
                 self.path,
-                expected_sha256=job.key[0],
-                line=job.key[2],
-                provider=self._providers().views[entry["kind"]],
-                kind=entry["kind"],
-                name=entry["name"],
-                using=tuple(entry["using"]),
+                expected_sha256=run.sha256,
+                provider=run.provider,
+                views=[_drawn_view(job, entry)],
                 cancel=job.cancel,
                 progress=progress,
                 environment_sha256=job.environment_sha256,
             )
-        except Exception as error:  # the job must always end
+            drawing = result["views"][0] if "views" in result else result
+        except Exception as error:  # the next view is still drawn
             drawing = {"error": f"View drawing failed: {error}"}
-        if "error" not in drawing:
-            self._save_drawing(job, drawing)
+        self._finish_view(job, drawing)
+
+    def _finish_view(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
+        """End a job with its drawing, then save the drawing if it is kept."""
         with self._state_lock:
-            if "error" in drawing and job.cancel.is_set():
-                # Asked for, so not transient: drawing it again needs a request.
-                closed = self._cancel.is_set()
-                drawing = {"error": CLOSED if closed else VIEW_CANCELLED}
-            if "error" not in drawing:
-                self._keep_drawing(job.key, drawing)
-            self._finished_views[job.id] = (drawing, job.uncertain)
-            while len(self._finished_views) > MAX_CACHED_VIEWS:
-                del self._finished_views[next(iter(self._finished_views))]
-            self._view_job = None
+            if job.ended:
+                return  # stopped meanwhile, and answered so
+            self._end_view_job(job, drawing)
+            if job.cancel.is_set() or "error" in drawing:
+                return
+        self._save_drawing(job, drawing)
+
+    def _end_view_job(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
+        """Keep a job's answer for its polls, once; hold `_state_lock`.
+
+        A stopped job answers that it was cancelled, whatever was drawn: its
+        drawing is neither kept nor saved.
+        """
+        if job.ended:
+            return
+        if job.cancel.is_set():
+            # Asked for, so not transient: drawing it again needs a request.
+            drawing = {"error": CLOSED if self._cancel.is_set() else VIEW_CANCELLED}
+        elif "error" not in drawing:
+            self._keep_drawing(job.key, drawing)
+        job.ended = True
+        self._finished_views[job.id] = (drawing, job.uncertain)
+        while len(self._finished_views) > MAX_CACHED_VIEWS:
+            del self._finished_views[next(iter(self._finished_views))]
 
     def _keep_drawing(self, key: tuple[str, str, int], drawing: dict[str, Any]) -> None:
         """Keep a drawing in memory, the oldest dropped; hold `_state_lock`."""
@@ -1553,13 +1761,17 @@ class SourcePreviewService:
         provider_sha256: str,
         *,
         compare_environment: bool = True,
+        saved: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         """Return the drawing saved for the directive `key` at `line`, if current.
 
         It is checked again (`checked_drawing`) before it is shown.
-        `compare_environment` is as in `view_status`.
+        `compare_environment` is as in `view_status`. `saved` is the records'
+        drawings (`saved_views`), read here when None.
         """
-        entry = saved_views(load_records(self.path)).get(key)
+        if saved is None:
+            saved = saved_views(load_records(self.path))
+        entry = saved.get(key)
         if entry is None:
             return None
         status = view_status(
@@ -1613,16 +1825,22 @@ class SourcePreviewService:
     def cancel_view(self, sha256: str, line: int) -> None:
         """Stop drawing the view at `line` of the saved source `sha256`.
 
-        Only that view's drawing stops; its card then says it was cancelled.
+        Only that view is dropped: it answers at once that it was cancelled,
+        and its drawing is neither kept nor saved. The run goes on for its
+        other views; once none is left, its process is stopped too.
 
         Raises:
             SnapshotError: That view is not being drawn.
         """
         with self._state_lock:
-            job = self._view_job
-            if job is None or job.key[0] != sha256 or job.key[2] != line:
+            run = self._view_run
+            job = None if run is None or run.sha256 != sha256 else run.jobs.get(line)
+            if run is None or job is None or job.ended:
                 raise SnapshotError(NOTHING_DRAWING)
             job.cancel.set()
+            self._end_view_job(job, {"error": VIEW_CANCELLED})
+            if all(other.ended for other in run.jobs.values()):
+                run.cancel.set()
 
     def run_evidence(self, sha256: str, line: int) -> str:
         """Start running the evidence directive at `line`; return its card key.

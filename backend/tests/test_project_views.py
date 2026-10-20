@@ -925,3 +925,161 @@ def test_provider_lean_uses_the_configured_memory_limit(
     assert _render(source) == {"svg": "<svg/>"}
     [(_, arguments, _, _)] = calls
     assert [a for a in arguments if a.startswith("-M")] == [expected]
+
+
+def test_several_views_are_drawn_in_one_run(tmp_path, monkeypatch):
+    """One Lean run draws every view; each payload is checked as a drawing.
+
+    A view whose command the provider cannot give is an error of its own and
+    is left out of the run.
+    """
+    import threading
+
+    from glitnir.lean import provider_lean
+    from glitnir.lean.project_views import render_project_views
+
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    requests = []
+
+    def run(runtime, arguments, **options):
+        requests.append(json.loads(Path(arguments[4]).read_text()))
+        drawn = {"information": ["demoView:<svg/>"], "errors": []}
+        invalid = {"information": ["demoView:<html/>"], "errors": []}
+        Path(arguments[-1]).write_text(
+            json.dumps(
+                {
+                    "views": [
+                        {**drawn, "proofs_skipped": True},
+                        {**invalid, "proofs_skipped": False},
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+
+    def command(kind, name, using):
+        if name == "bad":
+            raise ValueError("no such view")
+        return f"#demo_view {name}"
+
+    provider = ViewProvider(
+        "demo", frozenset({"circuit"}), ("Demo.View",), "", "demoView:", command
+    )
+    result = render_project_views(
+        source,
+        expected_sha256=_sha(NOTEBOOK),
+        provider=provider,
+        views=[
+            (3, "circuit", "bad", ()),
+            (4, "circuit", "c", ()),
+            (5, "circuit", "later", ()),
+        ],
+        cancel=threading.Event(),
+    )
+    [request] = requests
+    assert [view["command"] for view in request["views"]] == [
+        "#demo_view c",
+        "#demo_view later",
+    ]
+    bad, drawn, invalid = result["views"]
+    assert bad == {"error": "Provider demo failed: ValueError: no such view"}
+    assert drawn == {"svg": "<svg/>", "proofs_skipped": True}
+    assert set(invalid) == {"error"}
+
+
+def test_a_failed_run_of_several_views_is_one_error(tmp_path, monkeypatch):
+    import threading
+
+    from glitnir.lean import provider_lean
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.lean.project_views import render_project_views
+
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+
+    def run(*_arguments, **_options):
+        raise SnapshotError("Project check timed out.")
+
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+    result = render_project_views(
+        source,
+        expected_sha256=_sha(NOTEBOOK),
+        provider=_provider(),
+        views=[(4, "circuit", "c", ()), (5, "circuit", "later", ())],
+        cancel=threading.Event(),
+    )
+    assert result == {"error": "Project check timed out.", "transient": True}
+
+
+def test_live_three_views_in_one_run(prepared_lean_project, monkeypatch):
+    """Three views drawn in one Lean run equal each drawn in a run of its own.
+
+    Each drawing names its view and whether the declaration it names is in
+    the environment the view is elaborated in, so a view drawn after the
+    wrong prefix would differ.
+    """
+    import threading
+
+    from glitnir.lean import provider_lean
+    from glitnir.lean.project_views import render_project_view, render_project_views
+
+    root = prepared_lean_project
+    source = root / "src/Example.lean"
+    text = (
+        "import Example.Helper\n\n"
+        "def a : Nat := helper\n"
+        "-- @view demo a\n"
+        "def b : Nat := a + 1\n"
+        "-- @view demo b\n"
+        "theorem t : b = 2 := rfl\n"
+        "-- @view demo t\n"
+    )
+    source.write_text(text)
+    provider = ViewProvider(
+        name="demo",
+        kinds=frozenset({"demo"}),
+        imports=("Lean",),
+        preamble=(
+            "open Lean Elab Command in\n"
+            'elab "#demo_view " n:ident : command => do\n'
+            "  let known := (← getEnv).contains n.getId\n"
+            '  logInfo m!"demoView:<svg xmlns=\\"http://www.w3.org/2000/svg\\">'
+            '<title>{n.getId} {known}</title></svg>"'
+        ),
+        marker="demoView:",
+        command=lambda kind, name, using: f"#demo_view {name}",
+    )
+    runs = []
+    observer = provider_lean.run_observer
+
+    def counted(*arguments, **options):
+        runs.append(1)
+        return observer(*arguments, **options)
+
+    monkeypatch.setattr(provider_lean, "run_observer", counted)
+    views = [(4, "demo", "a", ()), (6, "demo", "b", ()), (8, "demo", "t", ())]
+    together = render_project_views(
+        source,
+        expected_sha256=_sha(text),
+        provider=provider,
+        views=views,
+        cancel=threading.Event(),
+    )
+    assert len(runs) == 1, together
+    alone = [
+        render_project_view(
+            source,
+            expected_sha256=_sha(text),
+            line=line,
+            provider=provider,
+            kind=kind,
+            name=name,
+            using=using,
+            cancel=threading.Event(),
+        )
+        for line, kind, name, using in views
+    ]
+    assert len(runs) == 4
+    assert together == {"views": alone}, together
+    for drawing, name in zip(alone, "abt"):
+        assert f"<title>{name} true</title>" in drawing["svg"], drawing

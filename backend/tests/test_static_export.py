@@ -139,7 +139,7 @@ def nothing_runs(monkeypatch):
         "check_candidate",
         "inspect_project",
         "run_provider_lean",
-        "render_project_view",
+        "render_project_views",
         "save_records",
     ):
         monkeypatch.setattr(source_preview, name, forbidden)
@@ -239,7 +239,9 @@ def test_view_imports_need_a_drawable_view(tmp_path: Path, nothing_runs) -> None
         assert notebook.view_imports() == []
 
 
-def test_draw_view_waits_for_the_drawing(saved: Path, monkeypatch) -> None:
+def test_draw_view_waits_for_the_drawing(
+    saved: Path, monkeypatch, draw_each_alone
+) -> None:
     monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
     monkeypatch.setattr(
         source_preview,
@@ -252,7 +254,7 @@ def test_draw_view_waits_for_the_drawing(saved: Path, monkeypatch) -> None:
         drawn.append((options["kind"], options["name"], options["line"]))
         return {"svg": "<svg/>"}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     with SavedNotebook(saved) as notebook:
         [view] = notebook.snapshot()["views"]
         assert notebook.draw_view(view["cell"], view["line"]) == {"svg": "<svg/>"}
@@ -288,7 +290,9 @@ def test_draw_view_uses_saved_drawing_as_recorded(saved: Path, nothing_runs) -> 
     assert _tree(saved.parent) == before
 
 
-def test_draw_view_draws_when_saved_prefix_differs(saved: Path, monkeypatch) -> None:
+def test_draw_view_draws_when_saved_prefix_differs(
+    saved: Path, monkeypatch, draw_each_alone
+) -> None:
     _with_saved_drawing(saved, TEXT.replace("c : Nat := 1", "c : Nat := 0"))
     monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
     monkeypatch.setattr(
@@ -302,7 +306,7 @@ def test_draw_view_draws_when_saved_prefix_differs(saved: Path, monkeypatch) -> 
         drawn.append(options["line"])
         return {"svg": "<svg/>"}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     before = records_path(saved).read_bytes()
     with SavedNotebook(saved) as notebook:
         [view] = notebook.snapshot()["views"]
@@ -312,18 +316,16 @@ def test_draw_view_draws_when_saved_prefix_differs(saved: Path, monkeypatch) -> 
     assert records_path(saved).read_bytes() == before
 
 
-def test_draw_view_reports_a_failed_drawing(saved: Path, monkeypatch) -> None:
+def test_draw_view_reports_a_failed_drawing(
+    saved: Path, monkeypatch, draw_each_alone
+) -> None:
     monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
     monkeypatch.setattr(
         source_preview,
         "environment_fingerprint",
         lambda *_a, **_k: {"sha256": "2" * 64, "packages": []},
     )
-    monkeypatch.setattr(
-        source_preview,
-        "render_project_view",
-        lambda path, **options: {"error": "needs import Demo.View"},
-    )
+    draw_each_alone(lambda path, **options: {"error": "needs import Demo.View"})
     with SavedNotebook(saved) as notebook:
         [view] = notebook.snapshot()["views"]
         assert notebook.draw_view(view["cell"], view["line"]) == {
