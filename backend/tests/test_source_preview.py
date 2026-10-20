@@ -2822,6 +2822,37 @@ def test_timed_out_run_is_not_retried(tmp_path, monkeypatch, message):
     assert runs.lines() == [[2, 4, 6]]
 
 
+def test_views_of_a_timed_out_run_are_drawn_alone_when_asked_again(
+    tmp_path, monkeypatch
+):
+    """The same views together would time out again: each is drawn alone."""
+    runs = _HeldRuns({"error": "Project check timed out.", "transient": True})
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        _ask(service, 2)
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
+        assert _drawn(service, _view_cell(service, 2), 2) == {"svg": "<svg>2</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6], [4], [2]]
+
+
+def test_views_of_a_cancelled_run_are_drawn_together_again(tmp_path, monkeypatch):
+    failure = {"error": "View drawing cancelled.", "transient": True}
+    runs = _HeldRuns(failure)
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        _ask(service, 2)
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6], [2, 4, 6]]
+
+
 def test_a_failed_run_of_one_view_is_not_retried(tmp_path, monkeypatch):
     runs = _HeldRuns({"error": MEMORY})
     runs.release.set()

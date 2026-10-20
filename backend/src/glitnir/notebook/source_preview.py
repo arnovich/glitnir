@@ -331,6 +331,18 @@ def _cut_short(message: str) -> bool:
     )
 
 
+def _timed_out(failure: dict[str, Any]) -> bool:
+    """Whether a view run failed by reaching its time limit.
+
+    Not when it only waited too long for another Lean run to end: that says
+    nothing about how long its own views take.
+    """
+    message = str(failure.get("error", "")).rstrip()
+    return message.endswith("timed out.") and not message.startswith(
+        SLOT_WAIT_TIMED_OUT
+    )
+
+
 def _failed_fresh_check(observation: dict[str, Any] | None, sha256: str) -> bool:
     """Whether the latest check of this exact text was unavailable, not cut short."""
     if observation is None or observation.get("status") != "unavailable":
@@ -974,6 +986,9 @@ class SourcePreviewService:
         self._finished_views: dict[str, tuple[dict[str, Any], bool]] = {}
         self._view_run: _ViewRun | None = None
         self._view_worker: threading.Thread | None = None
+        # Keys of views whose run of several timed out, oldest first: each is
+        # drawn alone when asked for again. Under `_state_lock`.
+        self._timed_out: dict[tuple[str, str, int], None] = {}
         self._providers_lock = threading.Lock()
         self._loaded_providers: Providers | None = None
         # Held for a whole provider run, evidence or decision: one at a time
@@ -1453,7 +1468,8 @@ class SourcePreviewService:
         time and each run bounded by the check time limit. A run draws the
         view asked for and, when its directive starts between commands
         (`_starts_command`), every other listed view of the same provider
-        that does too and has no current drawing, in memory or saved. Each
+        that does too and has no current drawing, in memory or saved. A view
+        whose run of several timed out is drawn alone (`_draw_views`). Each
         view of the run answers `{"status": "drawing", "message": ...,
         "job": id}` with its own job until the run ends; any other view
         answers `"queued"` with the id of a job being drawn. The caller
@@ -1528,8 +1544,10 @@ class SourcePreviewService:
             answer = self._answer_during_run(key)
         if answer is not None:
             return answer
+        with self._state_lock:
+            timed_out = set(self._timed_out)
         members = [(asked, entry)]
-        if _starts_command(text, line):
+        if key not in timed_out and _starts_command(text, line):
             for view in views:
                 if len(members) == MAX_CACHED_VIEWS:
                     break  # every answer of the run must outlast it
@@ -1537,6 +1555,7 @@ class SourcePreviewService:
                     view["line"] != line
                     and not view["error"]
                     and providers.views.get(view["kind"]) is provider
+                    and (sha256, stable, view["line"]) not in timed_out
                     and _starts_command(text, view["line"])
                 ):
                     member = job_for(view)
@@ -1625,13 +1644,19 @@ class SourcePreviewService:
         `members` are its jobs, each with its listed directive, in line
         order. If a run of several views fails as a whole other than by
         timeout or Stop, for example by reaching the memory limit, each view
-        still wanted is drawn again alone, in line order, in this worker.
+        still wanted is drawn again alone, in line order, in this worker. If
+        it timed out, its views are remembered, so that each is drawn alone
+        when asked for again rather than in the same run.
         """
         failure: dict[str, Any] = {"error": "View drawing failed."}
         try:
             whole = self._draw_together(run, members)
             if whole is not None:
                 failure = whole
+                if len(members) > 1 and _timed_out(whole):
+                    with self._state_lock:
+                        for job, _entry in members:
+                            self._remember_timed_out(job.key)
                 if self._retries(run, members, whole):
                     with self._state_lock:
                         for job in run.jobs.values():
@@ -1745,6 +1770,13 @@ class SourcePreviewService:
         self._finished_views[job.id] = (drawing, job.uncertain)
         while len(self._finished_views) > MAX_CACHED_VIEWS:
             del self._finished_views[next(iter(self._finished_views))]
+
+    def _remember_timed_out(self, key: tuple[str, str, int]) -> None:
+        """Draw the view `key` alone from now on; hold `_state_lock`."""
+        self._timed_out.pop(key, None)
+        self._timed_out[key] = None
+        while len(self._timed_out) > MAX_CACHED_VIEWS:
+            del self._timed_out[next(iter(self._timed_out))]
 
     def _keep_drawing(self, key: tuple[str, str, int], drawing: dict[str, Any]) -> None:
         """Keep a drawing in memory, the oldest dropped; hold `_state_lock`."""
