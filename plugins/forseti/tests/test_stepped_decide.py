@@ -18,9 +18,10 @@ from pathlib import Path
 import pytest
 
 from glitnir_forseti.claims.decide import Decision, decide, goal_kind, read_goal
-from glitnir_forseti.claims.text import parse_goal
+from glitnir_forseti.claims.text import parse_goal, render_goal
 from glitnir_forseti.notebook.decisions import block
 from glitnir_forseti.stepped import models, service
+from glitnir_forseti.stepped.examples import EXAMPLES, Example
 from glitnir_forseti.stepped.goal import SteppedGoal
 
 HORIZON = (
@@ -104,7 +105,8 @@ def test_horizon_holds() -> None:
         "def forsetiClaim : Prop :=\n"
         "  ∀ law : Measure ℝ, TwoMomentLaw law 64 →\n"
         "    BreachWithin step compiled.initial law 256 (exposureWithin 1) (1/4)\n\n"
-        "/-- For every centred shock law with variance 64, the probability that the"
+        "/-- For independent, identically distributed shocks drawn from any centred"
+        " law with variance 64, the probability that the"
         " exposure s breaches 1 within 256 marks is at most 1/4. `step` is the"
         " model's step of size 1/256 with the shock in its driver slot, from"
         " `compiled.initial` = (0, 0); `exposureWithin 1` is the band |s| ≤ 1."
@@ -463,13 +465,84 @@ def test_a_decided_goal_cites_qualified_lemmas() -> None:
     )
 
 
+# ----- the examples -------------------------------------------------------------------
+
+#: The goal-only JSON fixtures, one per example, as the other lanes keep theirs.
+FIXTURES = Path(__file__).parents[1] / "benchmarks" / "stepped" / "goals"
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
+def test_examples_round_trip(example: Example) -> None:
+    document = json.loads((FIXTURES / f"{example.name}.json").read_text())
+    goal = SteppedGoal.from_json(document)
+    assert goal == example.goal and goal.to_json() == document
+    text = render_goal(goal)
+    assert parse_goal(text) == goal and render_goal(parse_goal(text)) == text
+    d = _decide(text, example.name)
+    assert d.status == example.expected, d.reason
+    # A decided example proposes a block for the project's Lean to check, and
+    # an undecided one proposes none.
+    assert (d.block is None) == example.expected.startswith("UNKNOWN")
+
+
+def test_every_fixture_is_an_example() -> None:
+    names = [example.name for example in EXAMPLES]
+    assert len(set(names)) == len(names)
+    assert {path.stem for path in FIXTURES.glob("*.json")} == set(names)
+
+
+def test_the_examples_include_the_notebook_claims() -> None:
+    expected = {example.name: example.expected for example in EXAMPLES}
+    assert {
+        "breach_within_year": "PROVEN",
+        "mark_on_any_date": "PROVEN",
+        "expected_gauge": "PROVEN",
+        "tight_limit": "REFUTED",
+        "breach_within_year_subgaussian": "UNKNOWN:unsupported",
+        "trivial_bound": "PROVEN",
+        "zero_bound": "REFUTED",
+        "fifth_refuted": "REFUTED",
+    }.items() <= expected.items()
+
+
+def test_the_examples_use_the_canonical_goal_texts() -> None:
+    texts = {example.name: render_goal(example.goal) for example in EXAMPLES}
+    assert texts["breach_within_year"] == HORIZON
+    assert texts["mark_on_any_date"] == FIXED
+    assert texts["expected_gauge"] == EXPECTED
+    assert texts["tight_limit"] == HORIZON.replace("<= 1/4", "<= 1/10")
+    assert texts["fifth_refuted"] == HORIZON.replace("<= 1/4", "<= 1/5")
+    assert texts["breach_within_year_subgaussian"] == (
+        "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks subgaussian 64"
+        " within 256 observe s breach 1 probability <= 1/50"
+    )
+
+
+def test_the_examples_propose_every_block_template() -> None:
+    """Each template is live-checked only if some example emits it."""
+    blocks = " ".join(
+        _decide(render_goal(e.goal), e.name).block or "" for e in EXAMPLES
+    )
+    templates = {
+        "bound of one, horizon": "breachWithin_of_le_one",
+        "bound of one, marks": "exceedsAt_of_le_one",
+        "horizon hold": "(breach_within h",
+        "horizon refutation, Bernoulli": "not_breachWithin_threePoint (by norm_num)",
+        "horizon refutation, exact": "not_breachWithin_threePoint_exact",
+        "fixed date": "exceeds_at_proxy",
+        "expectation hold": "exact ENNReal.ofReal_le_ofReal hr",
+        "expectation refutation": "ENNReal.ofReal_le_ofReal_iff hc",
+    }
+    assert [name for name, needle in templates.items() if needle not in blocks] == []
+
+
 def test_the_decider_uses_no_floating_point() -> None:
     """Decisions and their reasons are exact: no float literal or conversion.
 
     Only the wall clock is a float, and it decides nothing but a timeout.
     """
     package = Path(service.__file__).parent
-    for name in ("models.py", "service.py", "render.py"):
+    for name in ("models.py", "service.py", "render.py", "examples.py"):
         tree = ast.parse((package / name).read_text())
         for node in ast.walk(tree):
             assert not (

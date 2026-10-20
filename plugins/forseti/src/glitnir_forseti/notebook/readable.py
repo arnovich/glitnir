@@ -587,9 +587,15 @@ def _stepped(goal: SteppedGoal) -> Readable:
     entry = STEPPED_MODELS[goal.model]
     observation = entry.observations[goal.observation]
     if goal.law == "two-moment":
-        laws = f"centred shock law with variance {number(goal.variance)}"
+        shocks = (
+            "independent, identically distributed shocks drawn from any centred law"
+            f" with variance {number(goal.variance)}"
+        )
     else:
-        laws = f"shock law sub-Gaussian with proxy {number(goal.variance)}"
+        shocks = (
+            "independent, identically distributed shocks drawn from any sub-Gaussian"
+            f" law with proxy {number(goal.variance)}"
+        )
     quantity = f"{observation.kind} {goal.observation}"
     bound = number(goal.bound)
     if goal.barrier is None:
@@ -619,7 +625,7 @@ def _stepped(goal: SteppedGoal) -> Readable:
         )
     return Readable(
         ":\n    " + stepped_render.claim(goal, entry, "      "),
-        f"For every {laws}, {said}. {names}.",
+        f"For {shocks}, {said}. {names}.",
         lane=stepped_render.CLAIM,
         root="root",
         refuted="refuted",

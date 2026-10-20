@@ -1,0 +1,182 @@
+r"""Live Lean check of every block the stepped lane proposes for its examples.
+
+The stepped decider replays nothing: a decided goal is only a proposed block,
+and the project's Lean is what makes it a proof. This test takes each example
+through the notebook's decision provider, as the editor does, writes a scratch
+notebook that imports what the block needs, and has Glitnir check the saved
+file followed by the block (``check_candidate``, the one proof authority for a
+decision). It runs against any built Forseti Lean checkout holding the stepped
+library, and fails instead of skipping under the gate::
+
+    FORSETI_REQUIRE_LEAN_PROJECT=1 \
+    FORSETI_LEAN_PROJECT=/path/to/lean-checkout \
+        uv run python -m pytest tests/test_stepped_lean.py
+
+The scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
+library, created exclusively and removed afterwards.
+"""
+
+import hashlib
+import os
+import secrets
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+from glitnir.lean.project_checking import check_candidate
+from glitnir.notebook.decision_cards import checked_decision
+
+from glitnir_forseti.claims.text import render_goal
+from glitnir_forseti.decision_provider import decide, parse
+from glitnir_forseti.stepped.examples import EXAMPLES, Example
+
+#: The axioms Lean itself provides; a block may rest on nothing else.
+STANDARD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
+#: The longest a block may take to check, in milliseconds.
+CHECK_BUDGET_MS = 60_000
+#: A block that needs nothing, to have the checker replay a notebook's imports.
+WARM_BLOCK = "theorem warm_up : True := trivial"
+
+
+@dataclass(frozen=True)
+class Checked:
+    """What the project's Lean said about a proposed block.
+
+    Attributes:
+        ok: Whether Glitnir reports the block's theorem as checked.
+        message: Glitnir's message, which names the failing line otherwise.
+        axioms: The axioms the theorem depends on.
+        check_ms: How long the check took, in milliseconds.
+    """
+
+    ok: bool
+    message: str
+    axioms: tuple[str, ...]
+    check_ms: int
+
+
+def _check(project: Path, imports: str, block: str, theorem: str) -> Checked:
+    """Check a block as the editor does, in a scratch notebook of the project.
+
+    The notebook holds the imports, then a directive line; the block is checked
+    right after it. The file is created exclusively, so no file of the checkout
+    is overwritten, and removed afterwards.
+    """
+    header = "".join(f"{line}\n" for line in imports.split("\n"))
+    text = f"{header}\n-- @decide {theorem} : (scratch)\n"
+    path = (
+        project
+        / "Gimle/Forseti/Tests"
+        / f"GlitnirSteppedLive{secrets.token_hex(4)}.lean"
+    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    try:
+        with os.fdopen(os.open(path, flags, 0o644), "w", encoding="utf-8") as stream:
+            stream.write(text)
+        started = time.monotonic()
+        verdict = check_candidate(
+            path,
+            expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+            insert_after_line=text.count("\n"),
+            block=block,
+            theorem=theorem,
+            cancel=threading.Event(),
+        )
+        elapsed = round((time.monotonic() - started) * 1000)
+    finally:
+        path.unlink(missing_ok=True)
+    return Checked(
+        verdict["status"] == "checked",
+        verdict["message"],
+        tuple(verdict["axioms"]),
+        elapsed,
+    )
+
+
+@pytest.fixture(scope="module")
+def replayed() -> set[str]:
+    """The import sets whose one-off kernel replay the session cache holds."""
+    return set()
+
+
+@pytest.fixture
+def check_block(forseti_lake_project: Path, replayed: set[str]):
+    """Return a function that checks a decision outcome's block, timed.
+
+    The outcome's own last stage lists the imports the block needs, so a block
+    whose imports are wrong fails here. The first check of an import set
+    replays its whole closure in the kernel, which takes minutes and is cached
+    for the session (`conftest.private_replay_cache`); a trivial block is
+    checked first, untimed, so that a block's time is its own.
+    """
+
+    def check(outcome: dict) -> Checked:
+        assert outcome["stages"][-1][:2] == ["imports", "needed"], outcome["stages"]
+        imports = outcome["stages"][-1][2]
+        if imports not in replayed:
+            warm = _check(forseti_lake_project, imports, WARM_BLOCK, "warm_up")
+            assert warm.ok, warm.message
+            replayed.add(imports)
+            print(f"replay of {imports!r}: {warm.check_ms} ms")
+        return _check(
+            forseti_lake_project, imports, outcome["block"], outcome["theorem"]
+        )
+
+    return check
+
+
+def _decided(example: Example) -> dict:
+    """Decide an example as the provider does, from its goal's text."""
+    request = parse(example.name, "stepped", render_goal(example.goal))
+    return decide(request, threading.Event())
+
+
+def _status(outcome: dict) -> str:
+    """Write a provider outcome as an example's expected status."""
+    if outcome["status"] == "unknown":
+        return f"UNKNOWN:{outcome['reason']}"
+    return outcome["status"].upper()
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
+def test_emitted_block_checks(check_block, example: Example) -> None:
+    outcome = _decided(example)
+    assert _status(outcome) == example.expected, outcome["stages"]
+    if example.expected.startswith("UNKNOWN"):
+        # An undecided goal proposes nothing for Lean to check.
+        assert "block" not in outcome
+        return
+    # Glitnir accepts the outcome's shape before it checks the block.
+    assert checked_decision(outcome)["block"] == outcome["block"]
+    result = check_block(outcome)
+    assert result.ok, result.message
+    assert set(result.axioms) <= STANDARD_AXIOMS
+    assert result.check_ms < CHECK_BUDGET_MS
+    print(f"{example.name}: {result.check_ms} ms, axioms {sorted(result.axioms)}")
+
+
+def test_a_false_block_is_rejected(check_block) -> None:
+    """A false bound fails in Lean's proof step, not in the parse.
+
+    The block states the bound twice, as ``(1/4)``: in ``forsetiClaim`` and in
+    its theorem. Stating ``(1/5)`` leaves its proof untouched, so the step
+    ``(by norm_num [Δ])`` must show ``1/4 ≤ 1/5``, which Lean reports as
+    ``unsolved goals``, at that step's line of the block. A parse error would
+    read ``unexpected …`` instead, and could pass a weaker check.
+    """
+    [example] = [e for e in EXAMPLES if e.name == "breach_within_year"]
+    outcome = _decided(example)
+    assert outcome["block"].count("(1/4)") == 2
+    false_block = outcome["block"].replace("(1/4)", "(1/5)")
+    step = next(
+        number
+        for number, line in enumerate(false_block.split("\n"), 1)
+        if ".mono (by norm_num [Δ])" in line
+    )
+    result = check_block({**outcome, "block": false_block})
+    assert not result.ok
+    assert result.message.startswith(f"Block line {step}: "), result.message
+    assert "unsolved goals" in result.message
+    assert "unexpected" not in result.message

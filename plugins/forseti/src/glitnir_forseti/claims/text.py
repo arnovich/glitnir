@@ -1,8 +1,8 @@
 """Read and write closed goals as text, for people and agents.
 
-The three deciders take goals as exact values, and their JSON encodings nest
-every polynomial as tagged lists, which nobody writes by hand. This module is
-a second, textual encoding of the same values:
+The four deciders take goals as exact values, and their JSON encodings (formulas
+as nested tagged lists, rationals as pairs) are not for writing by hand. This
+module is a second, textual encoding of the same values:
 
     entailment x : x*x = 2 |- x < 0
 

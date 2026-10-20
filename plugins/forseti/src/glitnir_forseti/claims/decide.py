@@ -36,7 +36,10 @@ from glitnir_forseti.entailment import syntax as entailment_syntax
 from glitnir_forseti.entailment.limits import CEILINGS, EntailmentLimits
 from glitnir_forseti.entailment.syntax import Goal, GoalError, Tru
 from glitnir_forseti.stepped import service as stepped_service
+from glitnir_forseti.stepped.examples import BARRIER, VARIANCE, YEAR, breach_goal
 from glitnir_forseti.stepped.goal import SteppedGoal
+from glitnir_forseti.stepped.models import MODELS as STEPPED_MODELS
+from glitnir_forseti.stepped.models import SteppedEntry
 from glitnir_forseti.streams import goal as stream_goal
 from glitnir_forseti.streams import replay as stream_replay
 from glitnir_forseti.streams.examples import EXAMPLES as STREAM_EXAMPLES
@@ -416,6 +419,23 @@ def catalog() -> str:
     )
     for model in STREAM_MODELS.values():
         lines.append(f"  {model.key}: {model.summary}")
+    lines.append(
+        "Stepped models (shocks `variance v` or `subgaussian v`; claims"
+        " `within N observe X breach B probability <= q`,"
+        " `at every mark within N observe X breach B probability <= q`,"
+        " `observe X expected <= c at N`):"
+    )
+    for stepped in STEPPED_MODELS.values():
+        initial = ", ".join(_number(value) for value in stepped.initial)
+        observed = ", ".join(
+            f"{name} ({'breach' if seen.kind == 'exposure' else 'expected'} claims)"
+            for name, seen in stepped.observations.items()
+        )
+        lines.append(
+            f"  {stepped.key}: from ({initial}) at {_number(stepped.start)}"
+            f" step {_number(stepped.delta)}, at most {stepped.horizon_cap} steps;"
+            f" observe {observed}"
+        )
     return "\n".join(lines)
 
 
@@ -445,7 +465,8 @@ def examples() -> tuple[dict[str, str], ...]:
 
     Each is a goal the deciders accept as written, generated from the
     registries: a trajectory model's declared state, start and first proved
-    band in the short form, and a stream model's field on the unit box. They
+    band in the short form, a stream model's field on the unit box, and a
+    stepped model's year-long breach claim at its exact horizon bound. They
     are starting points for a person to edit, not claims anyone made.
     """
     found = [
@@ -468,7 +489,28 @@ def examples() -> tuple[dict[str, str], ...]:
         )
     for model in STREAM_MODELS.values():
         found.append({"kind": "stream", "model": model.key, "goal": _stream(model)})
+    for stepped in STEPPED_MODELS.values():
+        found.append(
+            {
+                "kind": "stepped",
+                "model": stepped.key,
+                "goal": render_goal(_stepped(stepped)),
+            }
+        )
     return tuple(found)
+
+
+def _stepped(entry: SteppedEntry) -> SteppedGoal:
+    """Pose a stepped model's breach claim at exactly its horizon bound.
+
+    The claim is the first exposure's, over the examples' year (or the model's
+    cap, if lower), bounded by ``N·Δ²·v/B²``, the figure its horizon theorem
+    proves.
+    """
+    name = next(n for n, band in entry.observations.items() if band.kind == "exposure")
+    horizon = min(YEAR, entry.horizon_cap)
+    bound = horizon * entry.delta**2 * VARIANCE / BARRIER**2
+    return breach_goal(bound, entry=entry, horizon=horizon, observation=name)
 
 
 def _stream(model: StreamModel) -> str:
@@ -485,7 +527,7 @@ def _stream(model: StreamModel) -> str:
 
 
 def check_names(goal: AnyGoal) -> None:
-    """Refuse a goal naming a model, port or coordinate that does not exist.
+    """Refuse a goal naming a model, port or observation that does not exist.
 
     A misspelled name is not a claim outside the deciders' fragment but a
     claim nobody meant, so it is an error listing the valid names, not
@@ -511,6 +553,14 @@ def check_names(goal: AnyGoal) -> None:
             )
     elif type(goal) is StreamGoal and goal.model not in STREAM_MODELS:
         raise GoalTextError(f"no stream model {goal.model!r}\n{catalog()}")
+    elif type(goal) is SteppedGoal:
+        stepped = STEPPED_MODELS.get(goal.model)
+        if stepped is None:
+            raise GoalTextError(f"no stepped model {goal.model!r}\n{catalog()}")
+        if goal.observation not in stepped.observations:
+            raise GoalTextError(
+                f"{goal.model} has no observation {goal.observation!r}\n{catalog()}"
+            )
 
 
 def _number(value: Any) -> str:

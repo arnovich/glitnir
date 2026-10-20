@@ -43,6 +43,7 @@ from glitnir_forseti.entailment.syntax import (
     Tru,
     Var,
 )
+from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams import goal as stream
 from glitnir_forseti.streams.goal import FieldClaim, StreamGoal, TrigBandClaim, band_of
 from glitnir_forseti.trajectory import goal as trajectory
@@ -61,6 +62,7 @@ DECODERS = {
     "entailment": entailment.decode_goal,
     "trajectory": trajectory.decode_goal,
     "streams": stream.decode_goal,
+    "stepped": SteppedGoal.from_json,
 }
 CORPUS = sorted(
     (kind, path)
