@@ -29,7 +29,12 @@ from glitnir.lean.lexing import (
 )
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_inspection import TOOLCHAIN, _toolchain, inspect_project
+from glitnir.lean.project_inspection import (
+    TOOLCHAIN,
+    _toolchain,
+    inspect_project,
+    lean_support,
+)
 from glitnir.lean.project_snapshot import (
     SLOT_WAITING,
     ProjectSnapshot,
@@ -1012,13 +1017,9 @@ def _check_text(
             resolution = inspected["resolution"]
             project_root = Path(project["root"]).resolve()
         else:
-            declaration = project["files"]["lean-toolchain"]
-            if project["toolchain"] not in (None, TOOLCHAIN) or declaration.get(
-                "error"
-            ) not in (None, "missing"):
-                raise SnapshotError(
-                    f"This file needs the supported declared toolchain {TOOLCHAIN}."
-                )
+            support = lean_support(project)
+            if not support["supported"]:
+                raise SnapshotError(support["message"])
             setup = {
                 "name": "GlitnirStandalone",
                 "isModule": False,

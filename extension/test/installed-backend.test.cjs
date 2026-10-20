@@ -119,6 +119,7 @@ test('ordinary Lean source opens without Lean tools and offers no pinned checkin
   const source = '/-! # Ordinary Lean -/\n\nnamespace Example\n  theorem term : True := True.intro\nend Example\n';
   writeFileSync(notebook, source);
   writeFileSync(path.join(root, 'lakefile.lean'), 'PANIC if executed');
+  writeFileSync(path.join(root, 'lean-toolchain'), 'leanprover/lean4:v4.32.1\n');
   writeFileSync(path.join(root, 'Term.forseti.json'), 'malformed proof metadata');
   const log = [];
   const backend = new Backend({python, args: ['-I', '-u', '-m', 'glitnir.notebook', 'serve', notebook, '--port', '0'], cwd: root,
@@ -174,6 +175,13 @@ test('ordinary Lean source opens without Lean tools and offers no pinned checkin
     assert.equal(inspected.status, 'unavailable');
     assert.equal(inspected.source_sha256, snapshot.sha256);
     assert.match(inspected.message, /Prepare/);
+    assert.equal(snapshot.preview.lean.supported, true);
+    // Without a declared Lean version, Lean requests are refused up front.
+    rmSync(path.join(root, 'lean-toolchain'));
+    const {lean} = (await backend.request('/api/notebook')).json.preview;
+    assert.equal(lean.supported, false);
+    assert.match(lean.message, /^This project declares no Lean version\. Glitnir checks Lean 4\.32\.1, /);
+    assert.deepEqual(await backend.request('/api/evidence/run', 'POST', JSON.stringify({sha256: snapshot.sha256, line: 1})), {status: 409, json: {error: lean.message}});
     assert.equal((await backend.request('/api/export/styles')).status, 200);
     assert.equal(readFileSync(notebook, 'utf8'), source);
     assert.equal(readFileSync(path.join(root, 'Term.forseti.json'), 'utf8'), 'malformed proof metadata');

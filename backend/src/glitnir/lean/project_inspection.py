@@ -33,6 +33,64 @@ NO_BUILD_EXIT = 3
 MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*")
 
 
+#: The origin elan assumes for a toolchain named without one.
+_ORIGIN = "leanprover/lean4:"
+#: A release named with its leading `v`, such as `v4.32.1` or `v4.32.1-rc1`.
+_RELEASE = re.compile(r"v(\d+\.\d+\.\d+\S*)")
+#: What every refusal and the editor's banner say after the version sentence.
+_OFF = (
+    "Glitnir checks Lean {supported}, so checking, proof steps, views, evidence "
+    "and decisions are off; reading works as usual."
+)
+
+
+def _version(declaration: str) -> str:
+    """Name a declared toolchain as a Lean version, the way elan resolves it.
+
+    The default origin is dropped, and the `v` of a release: elan picks the
+    same toolchain for `leanprover/lean4:v4.32.1`, `v4.32.1` and `4.32.1`.
+    """
+    name = declaration.removeprefix(_ORIGIN)
+    release = _RELEASE.fullmatch(name)
+    return release.group(1) if release else name
+
+
+def supported_version() -> str:
+    """Return the Lean version Glitnir checks, such as `4.32.1`, from `TOOLCHAIN`."""
+    return _version(TOOLCHAIN)
+
+
+def lean_support(project: dict[str, Any]) -> dict[str, Any]:
+    """Decide whether Glitnir runs Lean for a `describe_project` description.
+
+    A Lake project is supported when its `lean-toolchain` declares the
+    supported version; a loose file also when no `lean-toolchain` is found.
+    An unreadable declaration is never supported. Only this decides it, so
+    the editor's banner and every refusal say the same `message` (None when
+    supported). `declared` is the declaration as read, or None.
+    """
+    declared = project["toolchain"]
+    error = project["files"]["lean-toolchain"].get("error")
+    if declared is not None:
+        supported = _version(declared) == supported_version()
+    else:
+        supported = project["kind"] == "loose" and error == "missing"
+    message = None
+    if not supported:
+        first = (
+            f"This project uses Lean {_version(declared)}."
+            if declared is not None
+            else "This project declares no Lean version."
+        )
+        message = f"{first} {_OFF.format(supported=supported_version())}"
+    return {
+        "supported": supported,
+        "declared": declared,
+        "toolchain": TOOLCHAIN,
+        "message": message,
+    }
+
+
 class NeedsBuild(ValueError):
     """Lake found an import that is not built, or is out of date; nothing was built."""
 
@@ -237,6 +295,9 @@ def inspect_project(
             raise ValueError(
                 "Inspection needs a prepared Lake project; loose files still preview."
             )
+        support = lean_support(project)
+        if not support["supported"]:
+            raise ValueError(support["message"])
         files = project["files"]
         for name, info in files.items():
             if "error" in info and not (
@@ -244,8 +305,6 @@ def inspect_project(
                 and info["error"] == "missing"
             ):
                 raise ValueError(f"Prepare the project's {name}: {info['error']}.")
-        if project["toolchain"] != TOOLCHAIN:
-            raise ValueError(f"Project inspection currently supports only {TOOLCHAIN}.")
         root = Path(project["root"]).resolve()
         if not source.resolve().is_relative_to(root):
             raise ValueError("Source is outside the project root.")

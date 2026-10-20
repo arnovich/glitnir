@@ -15,7 +15,12 @@ from glitnir.lean.limits import (
 )
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import OUTPUT_BYTES, run_observer
-from glitnir.lean.project_inspection import TOOLCHAIN, _toolchain, inspect_project
+from glitnir.lean.project_inspection import (
+    TOOLCHAIN,
+    _toolchain,
+    inspect_project,
+    lean_support,
+)
 from glitnir.lean.project_snapshot import SnapshotError, snapshot_slot
 from glitnir.lean.sandbox import SandboxUnavailable
 from glitnir.lean.scratch import scratch_directory
@@ -205,10 +210,9 @@ def trace_file(
                 setup, resolution = inspected["setup"], inspected["resolution"]
                 project_root: Path | None = Path(project["root"]).resolve()
             else:
-                if project["toolchain"] not in (None, TOOLCHAIN) or project["files"][
-                    "lean-toolchain"
-                ].get("error") not in (None, "missing"):
-                    raise SnapshotError(f"Proof steps currently require {TOOLCHAIN}.")
+                support = lean_support(project)
+                if not support["supported"]:
+                    raise SnapshotError(support["message"])
                 setup = {
                     "name": "GlitnirTrace",
                     "isModule": False,

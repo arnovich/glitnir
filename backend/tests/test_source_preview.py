@@ -908,7 +908,7 @@ def test_unbuilt_sibling_import_is_explained(tmp_path, monkeypatch):
     path.write_text("import Basics\nimport Mathlib\n\ntheorem t : True := True.intro\n")
     (tmp_path / "Basics.lean").write_text("def x := 1\n")
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.0.0\n")
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
     message = _unavailable_message(tmp_path, path, monkeypatch, "setup failed")
     assert message.startswith("setup failed ")
     assert "If Basics are modules of this project" in message
@@ -1972,6 +1972,7 @@ def test_missing_provider_import_is_a_run_error_without_lean(tmp_path, monkeypat
         source_preview, "run_provider_lean", provider_lean.run_provider_lean
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
     toolchain = tmp_path / "toolchain"
     toolchain.mkdir()
     monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
@@ -2943,3 +2944,154 @@ def test_a_run_draws_no_more_views_than_are_kept(tmp_path, monkeypatch):
     finally:
         service.close()
     assert runs.lines() == [[2, 4]]
+
+
+#: The words every refusal shares after the version sentence.
+LEAN_OFF = (
+    "Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and "
+    "decisions are off; reading works as usual."
+)
+UNSUPPORTED_TEXT = (
+    "import Demo.View\n\ndef c := 1\n-- @view circuit c\n"
+    "-- @evidence simulate c\n-- @decide band : entailment c : c > 0\n--   |- c >= 0\n"
+)
+
+
+def _unsupported_service(tmp_path: Path, monkeypatch, toolchain: str | None):
+    """A Lake notebook with every directive; each Lean runner fails the test."""
+    import threading
+
+    from glitnir.notebook import proof_steps, source_preview
+    from glitnir.providers import (
+        DecisionProvider,
+        DecisionRequest,
+        EvidenceProvider,
+        EvidenceRequest,
+    )
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("a refused request reached Lean, Lake or a provider")
+
+    evidence = EvidenceProvider(
+        name="demo",
+        verbs=frozenset({"simulate"}),
+        imports=(),
+        preamble="",
+        marker="m:",
+        parse=lambda verb, target, options: EvidenceRequest(verb, target, {}),
+        command=forbidden,
+        compute=forbidden,
+        unavailable=lambda: None,
+    )
+    decision = DecisionProvider(
+        name="demo",
+        kinds=frozenset({"entailment"}),
+        imports=(),
+        parse=lambda name, kind, goal: DecisionRequest(name, kind, goal, {}),
+        decide=forbidden,
+        unavailable=lambda: None,
+    )
+    providers = Providers(
+        {"circuit": _demo_provider()},
+        {"simulate": evidence},
+        {"entailment": decision},
+        {},
+    )
+    monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
+    monkeypatch.setattr(
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
+    )
+    for name in (
+        "check_project",
+        "check_candidate",
+        "inspect_project",
+        "render_project_views",
+        "run_provider_lean",
+        "provider_imports_error",
+    ):
+        monkeypatch.setattr(source_preview, name, forbidden)
+    monkeypatch.setattr(proof_steps, "trace_file", forbidden)
+    monkeypatch.setattr(threading.Thread, "start", forbidden)
+    (tmp_path / "lakefile.toml").write_text('name = "demo"')
+    (tmp_path / "lake-manifest.json").write_text("{}")
+    if toolchain is not None:
+        (tmp_path / "lean-toolchain").write_text(toolchain)
+    path = tmp_path / "A.lean"
+    path.write_text(UNSUPPORTED_TEXT)
+    return SourcePreviewService(path)
+
+
+def test_the_snapshot_says_whether_the_lean_version_is_supported(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "lakefile.toml").write_text('name = "demo"')
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\r\n")
+    path = tmp_path / "A.lean"
+    path.write_text("def c := 1\n")
+    assert SourcePreviewService(path).snapshot()["preview"]["lean"] == {
+        "supported": True,
+        "declared": "leanprover/lean4:v4.32.1",
+        "toolchain": "leanprover/lean4:v4.32.1",
+        "message": None,
+    }
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    assert SourcePreviewService(path).snapshot()["preview"]["lean"] == {
+        "supported": False,
+        "declared": "leanprover/lean4:v4.35.0",
+        "toolchain": "leanprover/lean4:v4.32.1",
+        "message": f"This project uses Lean 4.35.0. {LEAN_OFF}",
+    }
+
+
+@pytest.mark.parametrize(
+    "toolchain, message",
+    [
+        ("leanprover/lean4:v4.35.0\n", f"This project uses Lean 4.35.0. {LEAN_OFF}"),
+        (None, f"This project declares no Lean version. {LEAN_OFF}"),
+    ],
+)
+def test_every_lean_request_is_refused_up_front_on_another_version(
+    tmp_path: Path, monkeypatch, toolchain, message
+) -> None:
+    """Nothing starts a worker, takes a slot or reaches Lake, Lean or a provider."""
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.notebook.document import NotebookError
+
+    service = _unsupported_service(tmp_path, monkeypatch, toolchain)
+    snapshot = service.snapshot()
+    assert snapshot["preview"]["lean"]["message"] == message
+    sha = snapshot["sha256"]
+    (view,) = snapshot["views"]
+    assert not view["error"]
+    assert [card["line"] for card in snapshot["evidence"]] == [5]
+    assert [card["line"] for card in snapshot["decisions"]] == [6]
+    with pytest.raises(NotebookError) as refused:
+        service.inspect(sha)
+    assert str(refused.value) == message
+    with pytest.raises(NotebookError) as refused:
+        service.check(sha)
+    assert str(refused.value) == message
+    with pytest.raises(NotebookError) as refused:
+        service.check(sha, through_line=3)
+    assert str(refused.value) == message
+    with pytest.raises(ValueError) as refused:
+        service.proof_steps.start(sha)
+    assert str(refused.value) == message
+    assert service.view(view["cell"], view["line"]) == {"error": message}
+    with pytest.raises(SnapshotError) as refused:
+        service.run_evidence(sha, 5)
+    assert str(refused.value) == message
+    with pytest.raises(SnapshotError) as refused:
+        service.run_decision(sha, 6)
+    assert str(refused.value) == message
+    # Each refusal leaves every gate open and nothing reported as running.
+    after = service.snapshot()
+    assert after["preview"]["check"] is None
+    assert after["preview"]["inspection"] is None
+    assert service.proof_steps.snapshot() == {"status": "idle", "nodes": []}
+    assert service._inspection_lock.acquire(blocking=False)
+    service._inspection_lock.release()
+    assert service._run_lock.acquire(blocking=False)
+    service._run_lock.release()
+    assert service._running is None and service._run_errors == {}
+    service.close()
