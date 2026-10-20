@@ -47,6 +47,23 @@ Saved decisions are keyed the same way, through the directive's last line. A
 decision whose checked block follows its directive in the text is accepted,
 whatever changed above it: the block is then part of the notebook, and the
 project check judges it like any other claim.
+
+Saved drawings (the optional `"views"` section, `{key: entry}`) are keyed like
+evidence, by the view directive's line text and its index among identical
+directive lines. Each entry is `{"prefix_sha256", "fingerprint", "provider",
+"provider_sha256", "created", "drawing"}`: `prefix_sha256` hashes the source
+through the directive's line, `fingerprint` is the environment digest taken
+with the provider's modules before drawing (a drawing made in an unknown
+environment is never saved), and `provider_sha256` hashes the provider's
+imports, preamble, marker and the directive's command
+(`glitnir.lean.project_views.view_provider_sha256`). `drawing` is the drawing
+as `checked_drawing` returns it, without the `uncertain` and `proofs_skipped`
+labels; an entry is well formed only if `checked_drawing` returns that
+drawing unchanged. A saved drawing is current while its source, environment
+and provider hash all match (`view_status`). The section is capped at
+`MAX_VIEWS_BYTES`; a drawing over it is shown but not saved. A drawing grants
+or changes no status. Records without the section (written by 0.1.2) read as
+holding no drawings.
 """
 
 import copy
@@ -64,6 +81,7 @@ from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
 from glitnir.notebook.decision_cards import checked_decision
+from glitnir.notebook.drawings import checked_drawing
 from glitnir.notebook.evidence_cards import checked_evidence
 
 FORMAT = "glitnir.project-checks/v2"
@@ -86,7 +104,7 @@ RESULTS_TOO_LARGE = (
     "the results file would exceed 16 MiB; nothing saved before was dropped"
 )
 # Saved results that a check carries over but neither makes nor judges.
-_RESULT_SECTIONS = ("evidence", "decisions")
+_RESULT_SECTIONS = ("evidence", "decisions", "views")
 _NON_CLAIM_KEYS: dict[str, type] = {
     "start_line": int,
     "end_line": int,
@@ -94,6 +112,9 @@ _NON_CLAIM_KEYS: dict[str, type] = {
     "prefix_sha256": str,
 }
 _EVIDENCE_KEYS = ("prefix_sha256", "fingerprint", "provider", "created")
+_VIEW_KEYS = (*_EVIDENCE_KEYS, "provider_sha256")
+#: The largest the saved drawings may be together, serialised as saved.
+MAX_VIEWS_BYTES = 4 * 1024 * 1024
 _VERIFICATION_KEYS = frozenset({"status", "message", "axioms", "type"})
 _USE_KEYS = frozenset({"module", "name", "in_notebook"})
 # When a run saved its result: UTC to the second, as runs write it ("+00:00")
@@ -154,6 +175,27 @@ def _evidence_entry_ok(entry: Any) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _view_entry_ok(entry: Any) -> bool:
+    """Whether `entry` holds the saved drawing fields and a drawing as checked.
+
+    The drawing must be what `checked_drawing` returns for it, so a drawing
+    with an error, a label or any other field is not a saved drawing.
+    """
+    if not isinstance(entry, dict) or set(entry) != {*_VIEW_KEYS, "drawing"}:
+        return False
+    if not all(isinstance(entry[key], str) for key in _VIEW_KEYS):
+        return False
+    if not _created_ok(entry["created"]):
+        return False
+    drawing = entry["drawing"]
+    if not isinstance(drawing, dict) or "error" in drawing:
+        return False
+    try:
+        return checked_drawing(json.dumps(drawing)) == drawing
+    except (TypeError, ValueError, RecursionError):
+        return False
 
 
 def _verification_ok(verification: Any, outcome: dict[str, Any]) -> bool:
@@ -290,6 +332,7 @@ def _well_formed(records: dict[str, Any]) -> bool:
     for section, entry_ok in (
         ("evidence", _evidence_entry_ok),
         ("decisions", _decision_entry_ok),
+        ("views", _view_entry_ok),
     ):
         entries = records.get(section, {})
         if not isinstance(entries, dict):
@@ -386,13 +429,13 @@ def records_from_check(
 ) -> dict[str, Any]:
     """Build records from a completed check of ``text``.
 
-    Saved evidence and decisions in the ``previous`` records are carried over
-    unchanged: a check neither makes nor judges them.
+    Saved evidence, decisions and drawings in the ``previous`` records are
+    carried over unchanged: a check neither makes nor judges them.
     Raises:
         ValueError: ``fingerprint`` is not an environment digest (see
-            `fingerprint_ok`), or the records, with the saved evidence and
-            decisions they keep, would be too large to load again. Nothing is
-            then saved, so nothing saved before is lost.
+            `fingerprint_ok`), or the records, with the saved evidence,
+            decisions and drawings they keep, would be too large to load again.
+            Nothing is then saved, so nothing saved before is lost.
     """
     if not fingerprint_ok(fingerprint):
         raise ValueError(UNKNOWN_FINGERPRINT)
@@ -619,6 +662,11 @@ def saved_decisions(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]
     return _saved(records, "decisions")
 
 
+def saved_views(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Return the saved drawings by directive key; none when there are no records."""
+    return _saved(records, "views")
+
+
 def _refuse_unreadable(
     records: dict[str, Any] | None, notebook: Path | None, action: str
 ) -> None:
@@ -734,6 +782,48 @@ def with_decision(
     )
 
 
+def with_view(
+    records: dict[str, Any] | None,
+    key: str,
+    entry: dict[str, Any],
+    keep: Iterable[str],
+    notebook: Path | None = None,
+) -> dict[str, Any]:
+    """Return ``records`` with the drawing ``entry`` saved under ``key``.
+
+    Like ``with_evidence``: drawings for keys that are neither ``key`` nor in
+    ``keep`` are dropped, and an unreadable records file is never replaced.
+
+    Raises:
+        ValueError: ``entry`` is not a well-formed saved drawing, its
+            fingerprint is not an environment digest, an unreadable records
+            file would be overwritten, or the saved drawings would exceed
+            `MAX_VIEWS_BYTES` or the result be too large to load again.
+    """
+    if not _view_entry_ok(entry):
+        raise ValueError("The drawing entry is malformed.")
+    if not fingerprint_ok(entry["fingerprint"]):
+        raise ValueError(f"The drawing cannot be saved: {UNKNOWN_FINGERPRINT}.")
+    result = _with_entry(
+        records,
+        "views",
+        key,
+        entry,
+        keep,
+        notebook,
+        "remove some view directives",
+    )
+    if len(_serialised(result["views"]).encode("utf-8")) > MAX_VIEWS_BYTES:
+        name = (
+            records_path(notebook).name if notebook is not None else "the records file"
+        )
+        raise ValueError(
+            f"Saved drawings would take more than 4 MiB of {name}; "
+            "this drawing is shown but not saved."
+        )
+    return result
+
+
 def without_decision(
     records: dict[str, Any] | None, key: str, notebook: Path | None = None
 ) -> dict[str, Any]:
@@ -779,6 +869,33 @@ def evidence_status(
     if _matches(entry["fingerprint"], fingerprint, compare_environment) and entry[
         "prefix_sha256"
     ] == evidence_prefix_sha256(text, line):
+        return "current"
+    return "stale"
+
+
+def view_status(
+    entry: dict[str, Any],
+    text: str,
+    line: int,
+    fingerprint: str,
+    provider_sha256: str | None,
+    *,
+    compare_environment: bool = True,
+) -> Literal["current", "stale"]:
+    """Say whether a saved drawing still draws the view directive at ``line``.
+
+    It is current while the source through the directive, the environment and
+    the provider's hash (``provider_sha256``, None when the provider could not
+    be hashed) all match. ``compare_environment`` is as in `claim_views`.
+    """
+    if (
+        provider_sha256 is not None
+        and entry["provider_sha256"] == provider_sha256
+        and evidence_status(
+            entry, text, line, fingerprint, compare_environment=compare_environment
+        )
+        == "current"
+    ):
         return "current"
     return "stale"
 

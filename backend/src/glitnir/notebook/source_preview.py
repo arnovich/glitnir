@@ -28,7 +28,7 @@ from glitnir.lean.project_snapshot import (
     SLOT_WAIT_TIMED_OUT,
     SnapshotError,
 )
-from glitnir.lean.project_views import render_project_view
+from glitnir.lean.project_views import render_project_view, view_provider_sha256
 from glitnir.lean.provider_lean import provider_imports_error, run_provider_lean
 from glitnir.notebook import assets
 from glitnir.notebook.check_records import (
@@ -45,8 +45,11 @@ from glitnir.notebook.check_records import (
     save_records,
     saved_decisions,
     saved_evidence,
+    saved_views,
+    view_status,
     with_decision,
     with_evidence,
+    with_view,
     without_decision,
 )
 from glitnir.notebook.decision_cards import (
@@ -61,11 +64,13 @@ from glitnir.notebook.document import (
     parse_notebook,
     split_lines,
 )
+from glitnir.notebook.drawings import checked_drawing
 from glitnir.notebook.evidence_cards import (
     checked_evidence,
     directive_lines,
     evidence_cards,
     evidence_directives,
+    evidence_key,
     evidence_request,
     provider_failure,
     provider_unavailable,
@@ -199,6 +204,31 @@ def _directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]
                 }
             )
     return found
+
+
+def _view_keys(text: str, views: list[dict[str, Any]]) -> dict[int, str]:
+    """Map each listed view directive's line to its saved-drawing key.
+
+    As for evidence, the key is the directive's line text and its index among
+    identical listed directive lines (`evidence_key`).
+    """
+    lines = text.split("\n")
+    seen: dict[str, int] = {}
+    keys: dict[int, str] = {}
+    for view in views:
+        source = lines[view["line"] - 1]
+        normal = source.rstrip()
+        occurrence = seen.get(normal, 0)
+        seen[normal] = occurrence + 1
+        keys[view["line"]] = evidence_key(source, occurrence)
+    return keys
+
+
+def _view_provider_sha256(providers: Providers, view: dict[str, Any]) -> str | None:
+    """Hash what the listed `view`'s provider adds to draw it, or None."""
+    return view_provider_sha256(
+        providers.views[view["kind"]], view["kind"], view["name"], tuple(view["using"])
+    )
 
 
 def _with_providers(
@@ -746,6 +776,26 @@ def _expected_theorem(name: str, status: str) -> str:
     return name if status == "proven" else f"{name}_refuted"
 
 
+@dataclass(frozen=True)
+class _ViewRecord:
+    """What saving a view's drawing needs, taken when its job started.
+
+    `text` is the saved source, `key` the directive's key, `keep` the keys of
+    every view directive in it, `provider` the provider's name and
+    `provider_sha256` its hash for this view (`view_provider_sha256`).
+    """
+
+    text: str
+    key: str
+    keep: frozenset[str]
+    provider: str
+    provider_sha256: str
+
+
+# Labels a drawing is shown with but never saved with.
+_TRANSIENT = ("uncertain", "proofs_skipped")
+
+
 @dataclass
 class _ViewJob:
     """The view being drawn: its cache key, its cancel and what it is doing.
@@ -761,6 +811,8 @@ class _ViewJob:
     uncertain: bool
     # The digest a kept Lake setup is bound to; None while the state is unknown.
     environment_sha256: str | None = None
+    # How to save the drawing; None when it is not saved (see `_save_drawing`).
+    record: _ViewRecord | None = None
     id: str = field(default_factory=lambda: secrets.token_hex(16))
     message: str = VIEW_STARTING
 
@@ -837,7 +889,11 @@ class SourcePreviewService:
     """Preview source; inspect and check confined projects only on request."""
 
     def __init__(
-        self, path: Path, *, providers: Callable[[], Providers] | None = None
+        self,
+        path: Path,
+        *,
+        providers: Callable[[], Providers] | None = None,
+        save_drawings: bool = True,
     ) -> None:
         """Keep only the file location; no workers or processes are started.
 
@@ -845,9 +901,12 @@ class SourcePreviewService:
             path: The notebook to preview.
             providers: Where to get installed providers; this service loads
                 them itself when None.
+            save_drawings: Save each finished drawing in the notebook's
+                records; a static export (which writes nothing) passes False.
         """
         self.path = path
         self._shared_providers = providers
+        self._save_drawings = save_drawings
         self.proof_steps = ProofSteps(path)
         self._cancel = threading.Event()
         self._inspection_lock = threading.Lock()
@@ -1348,9 +1407,12 @@ class SourcePreviewService:
         drawing is kept for its saved source and environment, the provider's
         modules included; one made while the environment is not fully known
         is marked `uncertain` and kept for that same unknown state, so asking
-        again never draws it again. A failure goes to the polls of its job
-        only, so asking here again draws again. Raises KeyError if no
-        directive is listed at `cell` and `line`.
+        again never draws it again. A drawing saved in the notebook's records
+        whose source, environment and provider hash all match is answered
+        without Lean; every other finished drawing made in a known
+        environment is saved there (`_save_drawing`). A failure goes to the
+        polls of its job only, so asking here again draws again. Raises
+        KeyError if no directive is listed at `cell` and `line`.
         """
         text = self._text()
         fingerprint = self._fingerprint(text)
@@ -1363,11 +1425,35 @@ class SourcePreviewService:
             raise KeyError(f"no view directive at cell {cell}, line {line}")
         if entry["error"]:
             return {"error": entry["error"]}
-        imports = _provider_imports(self._providers().views[entry["kind"]])
+        providers = self._providers()
+        imports = _provider_imports(providers.views[entry["kind"]])
         environment = fingerprint.environment(imports)
         stable = str(environment.get("stable_sha256", environment["sha256"]))
         uncertain = bool(environment.get("unknown", False))
         key = (snapshot["sha256"], stable, line)
+        with self._state_lock:
+            cached = self._drawings.get(key)
+        if cached is not None:
+            return _labelled(cached, uncertain)
+        record = None
+        provider_sha256 = _view_provider_sha256(providers, entry)
+        if not uncertain and provider_sha256 is not None:
+            keys = _view_keys(text, snapshot["views"])
+            saved = self._saved_drawing(
+                text, keys[line], line, str(environment["sha256"]), provider_sha256
+            )
+            if saved is not None:
+                with self._state_lock:
+                    self._keep_drawing(key, saved)
+                return saved
+            if self._save_drawings:
+                record = _ViewRecord(
+                    text,
+                    keys[line],
+                    frozenset(keys.values()),
+                    providers.views[entry["kind"]].name,
+                    provider_sha256,
+                )
         with self._state_lock:
             cached = self._drawings.get(key)
             if cached is not None:
@@ -1387,6 +1473,7 @@ class SourcePreviewService:
                 threading.Event(),
                 uncertain,
                 None if uncertain else str(environment["sha256"]),
+                record,
             )
             worker = threading.Thread(
                 target=self._draw_view, args=(job, entry), daemon=False
@@ -1437,19 +1524,91 @@ class SourcePreviewService:
             )
         except Exception as error:  # the job must always end
             drawing = {"error": f"View drawing failed: {error}"}
+        if "error" not in drawing:
+            self._save_drawing(job, drawing)
         with self._state_lock:
             if "error" in drawing and job.cancel.is_set():
                 # Asked for, so not transient: drawing it again needs a request.
                 closed = self._cancel.is_set()
                 drawing = {"error": CLOSED if closed else VIEW_CANCELLED}
             if "error" not in drawing:
-                self._drawings[job.key] = drawing
-                while len(self._drawings) > MAX_CACHED_VIEWS:
-                    del self._drawings[next(iter(self._drawings))]
+                self._keep_drawing(job.key, drawing)
             self._finished_views[job.id] = (drawing, job.uncertain)
             while len(self._finished_views) > MAX_CACHED_VIEWS:
                 del self._finished_views[next(iter(self._finished_views))]
             self._view_job = None
+
+    def _keep_drawing(self, key: tuple[str, str, int], drawing: dict[str, Any]) -> None:
+        """Keep a drawing in memory, the oldest dropped; hold `_state_lock`."""
+        self._drawings[key] = drawing
+        while len(self._drawings) > MAX_CACHED_VIEWS:
+            del self._drawings[next(iter(self._drawings))]
+
+    def _saved_drawing(
+        self,
+        text: str,
+        key: str,
+        line: int,
+        fingerprint: str,
+        provider_sha256: str,
+        *,
+        compare_environment: bool = True,
+    ) -> dict[str, Any] | None:
+        """Return the drawing saved for the directive `key` at `line`, if current.
+
+        It is checked again (`checked_drawing`) before it is shown.
+        `compare_environment` is as in `view_status`.
+        """
+        entry = saved_views(load_records(self.path)).get(key)
+        if entry is None:
+            return None
+        status = view_status(
+            entry,
+            text,
+            line,
+            fingerprint,
+            provider_sha256,
+            compare_environment=compare_environment,
+        )
+        if status != "current":
+            return None
+        drawing = checked_drawing(json.dumps(entry["drawing"]))
+        return None if "error" in drawing else drawing
+
+    def _save_drawing(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
+        """Save a finished drawing in the notebook's records, if it may be.
+
+        Only a drawing made in a known environment, with a provider that could
+        be hashed, is saved, and only while the saved source is the one it was
+        drawn from; directives no longer in the file lose their drawings.
+        Saving never fails the drawing: if it cannot be saved (an unreadable
+        records file, too large), it is still shown and kept in memory.
+        """
+        record = job.record
+        if record is None or job.environment_sha256 is None:
+            return
+        entry = {
+            "prefix_sha256": evidence_prefix_sha256(record.text, job.key[2]),
+            "fingerprint": job.environment_sha256,
+            "provider": record.provider,
+            "provider_sha256": record.provider_sha256,
+            "created": datetime.now(UTC).isoformat(timespec="seconds"),
+            "drawing": {k: v for k, v in drawing.items() if k not in _TRANSIENT},
+        }
+        with self._records_lock:
+            try:
+                if _sha256(self._text()) != job.key[0]:
+                    return  # changed during the drawing
+                records = with_view(
+                    load_records(self.path),
+                    record.key,
+                    entry,
+                    keep=record.keep,
+                    notebook=self.path,
+                )
+                save_records(self.path, records)
+            except Exception:  # noqa: BLE001 - saving never fails the drawing
+                return  # shown and kept in memory all the same
 
     def cancel_view(self, sha256: str, line: int) -> None:
         """Stop drawing the view at `line` of the saved source `sha256`.

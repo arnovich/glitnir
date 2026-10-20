@@ -1,5 +1,7 @@
 """Draw project-mode views through providers; a view never grants proof status."""
 
+import hashlib
+import json
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -7,6 +9,30 @@ from typing import Any, Callable
 from glitnir.lean.provider_lean import run_provider_lean
 from glitnir.notebook.drawings import checked_drawing
 from glitnir.providers import ViewProvider
+
+
+def view_provider_sha256(
+    provider: ViewProvider, kind: str, name: str, using: tuple[str, ...]
+) -> str | None:
+    """Hash what a provider adds to the notebook to draw one view.
+
+    The hash covers the provider's imports, preamble and marker and the
+    command it gives for this view, so a saved drawing is drawn again when any
+    of them changes. Returns None when the provider raises: such a drawing is
+    never saved or reused.
+    """
+    try:  # provider code must never break the preview
+        material = json.dumps(
+            [
+                list(provider.imports),
+                provider.preamble,
+                provider.marker,
+                provider.command(kind, name, using),
+            ]
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def render_project_view(

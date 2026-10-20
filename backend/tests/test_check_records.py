@@ -8,6 +8,7 @@ import pytest
 
 from glitnir.notebook import check_records
 from glitnir.notebook.check_records import (
+    MAX_VIEWS_BYTES,
     RESULTS_TOO_LARGE,
     _serialised,
     claim_views,
@@ -21,8 +22,11 @@ from glitnir.notebook.check_records import (
     save_records,
     saved_decisions,
     saved_evidence,
+    saved_views,
+    view_status,
     with_decision,
     with_evidence,
+    with_view,
     without_decision,
 )
 from glitnir.notebook.decision_cards import checked_decision, decision_key
@@ -1484,3 +1488,162 @@ def test_nothing_is_saved_under_a_fingerprint_that_is_not_a_digest(fingerprint):
     decision = _decision(fingerprint=fingerprint)
     with pytest.raises(ValueError, match="fingerprint is unknown"):
         with_decision(None, "d", decision, ["d"])
+
+
+# ----- saved drawings ----------------------------------------------------------
+
+VIEW = "-- @view circuit M"
+VIEWING = f"/-! # Notes -/\ndef M := 1\n{VIEW}\ndef after := 2\n"
+VIEW_KEY = evidence_key(VIEW, 0)
+PROVIDER_SHA = "a" * 64
+DRAWING = {"svg": "<svg/>"}
+
+
+def _view(text=VIEWING, line=3, fingerprint=FP, drawing=DRAWING):
+    return {
+        "prefix_sha256": evidence_prefix_sha256(text, line),
+        "fingerprint": fingerprint,
+        "provider": "demo",
+        "provider_sha256": PROVIDER_SHA,
+        "created": "2026-10-14T12:00:00Z",
+        "drawing": drawing,
+    }
+
+
+def _drawing_status(text, line=3, fingerprint=FP, provider=PROVIDER_SHA, **options):
+    return view_status(_view(), text, line, fingerprint, provider, **options)
+
+
+def test_records_with_views_round_trip(tmp_path: Path):
+    notebook = tmp_path / "N.lean"
+    records = with_view(
+        records_from_check(TEXT, RESULT, FP), VIEW_KEY, _view(), [VIEW_KEY], notebook
+    )
+    save_records(notebook, records)
+    loaded = load_records(notebook)
+    assert loaded == records
+    assert saved_views(loaded) == {VIEW_KEY: _view()}
+    assert [c["name"] for c in loaded["claims"]] == ["A.result", "B.result"]
+    assert saved_views(None) == {}
+
+
+@pytest.mark.parametrize(
+    "views",
+    [
+        [],
+        {VIEW_KEY: []},
+        {VIEW_KEY: {**_view(), "extra": 1}},
+        {VIEW_KEY: {k: v for k, v in _view().items() if k != "provider_sha256"}},
+        {VIEW_KEY: {**_view(), "created": "yesterday"}},
+        {VIEW_KEY: {**_view(), "provider_sha256": 1}},
+        {VIEW_KEY: _view(drawing={"svg": "not svg"})},
+        {VIEW_KEY: _view(drawing={"error": "the drawing is too large to show"})},
+        {VIEW_KEY: _view(drawing={**DRAWING, "uncertain": True})},
+        {VIEW_KEY: _view(drawing={**DRAWING, "proofs_skipped": True})},
+        {VIEW_KEY: _view(drawing="<svg/>")},
+    ],
+)
+def test_view_entry_with_invalid_drawing_makes_records_unknown(tmp_path, views):
+    """As for evidence and decisions: one bad entry and the file is unreadable."""
+    notebook = tmp_path / "N.lean"
+    records = records_from_check(TEXT, RESULT, FP)
+    records_path(notebook).write_text(json.dumps({**records, "views": views}))
+    assert load_records(notebook) is None
+    with pytest.raises(ValueError, match="cannot be read"):
+        with_view(None, VIEW_KEY, _view(), [VIEW_KEY], notebook)
+
+
+def test_records_without_views_still_load(tmp_path: Path):
+    """Records written before drawings were saved (0.1.2) read unchanged."""
+    notebook = tmp_path / "N.lean"
+    records = with_evidence(records_from_check(TEXT, RESULT, FP), KEY, _entry(), [KEY])
+    records_path(notebook).write_text(json.dumps(records))
+    loaded = load_records(notebook)
+    assert loaded == records and "views" not in loaded
+    assert saved_views(loaded) == {}
+    updated = with_view(loaded, VIEW_KEY, _view(), [VIEW_KEY], notebook)
+    assert saved_evidence(updated) == {KEY: _entry()}
+    assert updated["claims"] == records["claims"]
+
+
+def test_with_view_prunes_missing_directives():
+    other, gone = evidence_key("-- @view circuit N", 0), "gone"
+    records = with_view(None, gone, _view(), [gone])
+    records = with_view(records, other, _view(), [gone, other])
+    records = with_view(records, VIEW_KEY, _view(), [other])
+    assert set(saved_views(records)) == {other, VIEW_KEY}
+    assert records["claims"] == []
+
+
+@pytest.mark.parametrize("fingerprint", ["", "unknown", "F" * 64])
+def test_with_view_refuses_unknown_fingerprint(fingerprint):
+    with pytest.raises(ValueError, match="fingerprint is unknown"):
+        with_view(None, VIEW_KEY, _view(fingerprint=fingerprint), [VIEW_KEY])
+
+
+def test_with_view_refuses_a_malformed_entry():
+    with pytest.raises(ValueError, match="malformed"):
+        with_view(None, VIEW_KEY, _view(drawing={"svg": "x"}), [VIEW_KEY])
+    with pytest.raises(ValueError, match="malformed"):
+        with_view(None, VIEW_KEY, {**_view(), "provider": 3}, [VIEW_KEY])
+
+
+def _large_drawing(seed: int) -> dict:
+    """An SVG drawing just under the 1 MB a drawing may have."""
+    return {"svg": f"<svg><!-- {seed} {'x' * 950_000} --></svg>"}
+
+
+def test_with_view_refuses_oversized_section(tmp_path: Path):
+    assert MAX_VIEWS_BYTES == 4 * 1024 * 1024
+    notebook = tmp_path / "N.lean"
+    keys = [f"k{n}" for n in range(6)]
+    records = records_from_check(TEXT, RESULT, FP)
+    saved = 0
+    for key in keys:
+        entry = _view(drawing=_large_drawing(saved))
+        try:
+            records = with_view(records, key, entry, keys, notebook)
+        except ValueError as error:
+            assert "N.glitnir.json" in str(error) and "4 MiB" in str(error)
+            break
+        save_records(notebook, records)
+        saved += 1
+    else:
+        pytest.fail("the cap was never reached")
+    assert saved == 4
+    before = records_path(notebook).read_bytes()
+    assert load_records(notebook) == records
+    assert records_path(notebook).read_bytes() == before
+
+
+def test_records_from_check_keeps_views():
+    previous = with_view(None, VIEW_KEY, _view(), [VIEW_KEY])
+    previous = with_evidence(previous, KEY, _entry(), [KEY])
+    records = records_from_check(TEXT, RESULT, FP, previous)
+    assert saved_views(records) == {VIEW_KEY: _view()}
+    assert saved_evidence(records) == {KEY: _entry()}
+    assert "views" not in records_from_check(TEXT, RESULT, FP)
+
+
+def test_view_status_stale_when_provider_changes():
+    assert _drawing_status(VIEWING) == "current"
+    assert _drawing_status(VIEWING, provider="b" * 64) == "stale"
+    assert _drawing_status(VIEWING, provider=None) == "stale"
+
+
+def test_view_status_follows_the_text_through_the_directive_and_environment():
+    assert _drawing_status(VIEWING + "more\n") == "current"
+    assert _drawing_status(VIEWING.replace("def after", "def later")) == "current"
+    assert _drawing_status(VIEWING.replace("def M := 1", "def M := 2")) == "stale"
+    assert _drawing_status(VIEWING, fingerprint=GP) == "stale"
+    assert _drawing_status(VIEWING, fingerprint="") == "stale"
+    # As recorded: only the source and the provider are compared.
+    assert _drawing_status(VIEWING, fingerprint="", compare_environment=False) == (
+        "current"
+    )
+    assert (
+        _drawing_status(
+            VIEWING, fingerprint="", provider="b" * 64, compare_environment=False
+        )
+        == "stale"
+    )

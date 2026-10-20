@@ -6,12 +6,16 @@ from pathlib import Path
 
 import pytest
 
+from glitnir.lean.project_views import view_provider_sha256
 from glitnir.notebook import source_preview, static_export
 from glitnir.notebook.check_records import (
     evidence_prefix_sha256,
+    load_records,
     records_from_check,
+    records_path,
     save_records,
     with_evidence,
+    with_view,
 )
 from glitnir.notebook.evidence_cards import checked_evidence, evidence_key
 from glitnir.notebook.source_preview import SourcePreviewService
@@ -257,6 +261,55 @@ def test_draw_view_waits_for_the_drawing(saved: Path, monkeypatch) -> None:
         with pytest.raises(KeyError):
             notebook.draw_view(view["cell"], view["line"] + 1)
     assert drawn == [("circuit", "c", 7)]
+
+
+def _with_saved_drawing(path: Path, text: str = TEXT) -> dict:
+    """Save a drawing of the view at line 7, recorded in another environment."""
+    entry = {
+        "prefix_sha256": evidence_prefix_sha256(text, 7),
+        "fingerprint": "8" * 64,
+        "provider": "demo",
+        "provider_sha256": view_provider_sha256(_view_provider(), "circuit", "c", ()),
+        "created": "2026-10-14T12:00:00Z",
+        "drawing": {"svg": "<svg><g/></svg>"},
+    }
+    key = evidence_key("-- @view circuit c", 0)
+    save_records(path, with_view(load_records(path), key, entry, [key]))
+    return entry
+
+
+def test_draw_view_uses_saved_drawing_as_recorded(saved: Path, nothing_runs) -> None:
+    """Shown as recorded: no fingerprint is taken and nothing is drawn."""
+    entry = _with_saved_drawing(saved)
+    before = _tree(saved.parent)
+    with SavedNotebook(saved) as notebook:
+        [view] = notebook.snapshot()["views"]
+        assert notebook.draw_view(view["cell"], view["line"]) == entry["drawing"]
+    assert _tree(saved.parent) == before
+
+
+def test_draw_view_draws_when_saved_prefix_differs(saved: Path, monkeypatch) -> None:
+    _with_saved_drawing(saved, TEXT.replace("c : Nat := 1", "c : Nat := 0"))
+    monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *_a, **_k: {"sha256": "8" * 64, "packages": []},
+    )
+    drawn = []
+
+    def render(path, **options):
+        drawn.append(options["line"])
+        return {"svg": "<svg/>"}
+
+    monkeypatch.setattr(source_preview, "render_project_view", render)
+    before = records_path(saved).read_bytes()
+    with SavedNotebook(saved) as notebook:
+        [view] = notebook.snapshot()["views"]
+        assert notebook.draw_view(view["cell"], view["line"]) == {"svg": "<svg/>"}
+    assert drawn == [7]
+    # A static export saves no drawing of its own.
+    assert records_path(saved).read_bytes() == before
 
 
 def test_draw_view_reports_a_failed_drawing(saved: Path, monkeypatch) -> None:
