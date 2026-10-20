@@ -92,10 +92,10 @@ jobs:
         run: |
           # The live job runs the rest: every test_live_ test (marked live).
           ../.venv/bin/python -m pytest -m "not live" --cov --cov-report=term-missing
-          ../.venv/bin/black --check src tests
-          ../.venv/bin/isort --check-only src tests
-          ../.venv/bin/flake8 src tests
-          ../.venv/bin/mypy src
+          ../.venv/bin/black --check src tests scripts
+          ../.venv/bin/isort --check-only src tests scripts
+          ../.venv/bin/flake8 src tests scripts
+          ../.venv/bin/mypy src scripts
       - name: Check the Forseti extension package
         working-directory: plugins/forseti
         run: |
@@ -190,7 +190,8 @@ jobs:
           sudo apt-get install --yes bubblewrap apparmor apparmor-profiles elan
           sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
-          elan toolchain install leanprover/lean4:v4.32.1
+          # The one Lean version Glitnir checks, from project_inspection.TOOLCHAIN.
+          elan toolchain install "$(.venv/bin/python -c 'from glitnir.lean.project_inspection import TOOLCHAIN; print(TOOLCHAIN)')"
       - name: Check the backend against live Lean
         working-directory: backend
         env:
@@ -199,8 +200,33 @@ jobs:
           GLITNIR_REQUIRE_PROJECT_INSPECTION: '1'
           GLITNIR_TEST_PROOF_TRACE: '1'
         run: ../.venv/bin/python -m pytest -m live -rs --durations=30
+  helpers:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v4
+      - name: Retrieve this run's wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: glitnir-wheels
+      - name: Install the backend and Lean
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock backend/dist/glitnir-0.1.3-py3-none-any.whl
+          sudo apt-get update -qq
+          sudo apt-get install --yes elan
+          elan toolchain install "$(.venv/bin/python -c 'from glitnir.lean.project_inspection import TOOLCHAIN; print(TOOLCHAIN)')"
+      # Every helper program, composed as a check composes it, elaborates on the
+      # supported Lean with no output: a warning on standard output breaks the
+      # JSON Glitnir reads from it.
+      - name: Elaborate the Lean helper programs
+        run: .venv/bin/python backend/scripts/check_helpers.py
   candidate:
-    needs: [extension, live]
+    needs: [extension, live, helpers]
     # Release candidates are created only once RELEASE_CANDIDATES is set to true.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RELEASE_CANDIDATES == 'true'
     permissions:

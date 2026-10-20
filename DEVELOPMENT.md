@@ -52,9 +52,10 @@ uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
   'backend/dist/glitnir-0.1.3-py3-none-any.whl[dev]'
-(cd backend && ../.venv/bin/python -m pytest && ../.venv/bin/black --check src tests \
-  && ../.venv/bin/isort --check-only src tests && ../.venv/bin/flake8 src tests \
-  && ../.venv/bin/mypy src)
+(cd backend && ../.venv/bin/python -m pytest \
+  && ../.venv/bin/black --check src tests scripts \
+  && ../.venv/bin/isort --check-only src tests scripts \
+  && ../.venv/bin/flake8 src tests scripts && ../.venv/bin/mypy src scripts)
 
 # Optional: the Forseti view and evidence provider and its tests (as in CI). Its dependencies
 # are named explicitly because glitnir is not on an index.
@@ -133,6 +134,17 @@ Replay-cache tests that only need a recorded base start from a per-test copy of
 one recorded once per session (`recorded_replay_cache`); tests of the cold path
 use `fresh_replay_cache`.
 
+Glitnir runs its Lean helper programs (`backend/src/glitnir/lean/*.lean`) with
+`lean --run` and reads JSON from their output, so they must elaborate on the
+supported Lean with no messages at all; a deprecation warning breaks a check.
+`backend/scripts/check_helpers.py` composes each one as a check does, from the
+installed backend, and elaborates it with the installed toolchain, failing on any
+output. Run it after changing a helper or `TOOLCHAIN`:
+
+```sh
+.venv/bin/python backend/scripts/check_helpers.py
+```
+
 The plugin's live tests need a built Forseti Lean checkout, `lake` on `PATH`,
 Lean 4.32.1 installed with elan and a working sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
@@ -162,10 +174,14 @@ jobs are:
   `-m "not live"` and its linters, the plugin's tests and linters, `npm test`,
   the minimal runtime bridge test, `npm run package`, a fresh setup from the
   packaged VSIX and the isolated host test.
-- **live** runs the backend's `-m live` tests against Lean 4.32.1 in the
-  bubblewrap sandbox, where a skipped live test fails.
-- **candidate** creates a release candidate from a `main` push when both test
-  jobs pass and the `RELEASE_CANDIDATES` repository variable is `true`
+- **live** runs the backend's `-m live` tests against the supported Lean
+  (`TOOLCHAIN`, 4.32.1) in the bubblewrap sandbox, where a skipped live test
+  fails.
+- **helpers** elaborates every Lean helper program on that Lean with
+  `backend/scripts/check_helpers.py`, requiring no output.
+- **candidate** creates a release candidate from a `main` push when the
+  extension, live and helpers jobs pass and the `RELEASE_CANDIDATES` repository
+  variable is `true`
   (`.github/workflows/candidate.yml`).
 
 Keep public CI independent of private repositories. Tests requiring an external

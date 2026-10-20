@@ -70,7 +70,9 @@ sets both. They are the `test_live_` tests, which the backend's conftest marks
 `live` (a test using `project_toolchain` must have that name). CI's `extension`
 job runs `-m "not live"` with everything else; the parallel `live` job runs
 `-m live`, where a skipped live test fails. Both install the wheels the `build`
-job made, and a candidate needs both jobs. Replay-cache tests that only need a
+job made, and a candidate needs both jobs and the `helpers` job, which
+elaborates every Lean helper program with no output
+(`backend/scripts/check_helpers.py`). Replay-cache tests that only need a
 recorded base start from a per-test copy of one recorded once per session
 (`recorded_replay_cache`); tests of the cold path use `fresh_replay_cache`.
 Plugin tests marked `simulation` need Python Asgard (`gimle.asgard`). The
