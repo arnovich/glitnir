@@ -53,11 +53,13 @@ Checking, proof-step recording and evidence runs happen only when you ask. Lean
 always runs in the sandbox; an evidence provider computes from its output.
 
 Views are drawn with the notebook's proofs skipped, so they appear quickly; a
-card says "Drawn without re-running the notebook's proofs." when that was done.
-A drawing never grants or changes a claim's status. Drawings are saved in
-`<Notebook>.glitnir.json` and reused without Lean until the notebook above the
-directive, the environment or the provider changes. While Lean runs on macOS,
-Glitnir keeps the Mac from idle sleep.
+freshly drawn card says "Drawn without re-running the notebook's proofs." when
+that was done. A drawing never grants or changes a claim's status. Drawings are
+saved in `<Notebook>.glitnir.json` and reused without Lean until the notebook
+above the directive, the environment or the provider changes. A reused drawing
+does not show that note, even if it was drawn without the proofs. On macOS,
+Glitnir keeps the Mac from idle sleep while its checks, proof steps, views and
+evidence run Lean or Lake (decision runs are not covered).
 
 ## Install
 
