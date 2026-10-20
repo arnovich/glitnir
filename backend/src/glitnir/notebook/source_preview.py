@@ -22,7 +22,7 @@ from glitnir.lean.project_checking import (
     check_project,
     through_line_end,
 )
-from glitnir.lean.project_inspection import inspect_project
+from glitnir.lean.project_inspection import inspect_project, lean_support
 from glitnir.lean.project_snapshot import (
     SLOT_BUSY,
     SLOT_WAIT_TIMED_OUT,
@@ -1012,6 +1012,16 @@ class SourcePreviewService:
                 self._loaded_providers = load_providers()
             return self._loaded_providers
 
+    def _unsupported(self) -> str | None:
+        """Why Lean cannot run for this notebook's project, or None if it can.
+
+        Every Lean request (inspection, check, view, evidence and decision
+        runs; `ProofSteps.start` too) is refused with these words up front,
+        before it takes a gate or a slot, starts a worker or runs Lake.
+        """
+        message: str | None = lean_support(describe_project(self.path))["message"]
+        return message
+
     def close(self) -> None:
         """Cancel requested work and wait briefly for worker cleanup."""
         self.proof_steps.close()
@@ -1048,6 +1058,9 @@ class SourcePreviewService:
         """
         if self._cancel.is_set():
             raise NotebookError(CLOSED)
+        unsupported = self._unsupported()
+        if unsupported is not None:
+            raise NotebookError(unsupported)
         if not self._inspection_lock.acquire(blocking=False):
             raise NotebookError(BUSY)
         with self._state_lock:
@@ -1117,6 +1130,9 @@ class SourcePreviewService:
         """
         if self._cancel.is_set():
             raise NotebookError("This preview is closed.")
+        unsupported = self._unsupported()
+        if unsupported is not None:
+            raise NotebookError(unsupported)
         if through_line is not None:
             try:
                 data = self._text().encode()
@@ -1358,6 +1374,7 @@ class SourcePreviewService:
         decisions = decision_directives(cells, text)
         # Providers load only when a directive needs them.
         providers = self._providers() if views or evidence or decisions else None
+        project = describe_project(self.path)
         return {
             "file": self.path.name,
             "sha256": sha256,
@@ -1366,7 +1383,8 @@ class SourcePreviewService:
                 "notice": NOTICE,
                 "check": observation,
                 "inspection": inspection,
-                "project": describe_project(self.path),
+                "project": project,
+                "lean": lean_support(project),
             },
             "cells": cells,
             "claims": [],
@@ -1483,8 +1501,13 @@ class SourcePreviewService:
         finished drawing made in a known environment is saved there
         (`_save_drawing`). A failure goes to the polls of its job only, so
         asking here again draws again. Raises KeyError if no directive is
-        listed at `cell` and `line`.
+        listed at `cell` and `line`. For a project on a Lean version Glitnir
+        does not check (`lean_support`), it answers `{"error": message}` and
+        draws nothing, saved drawings included.
         """
+        unsupported = self._unsupported()
+        if unsupported is not None:
+            return {"error": unsupported}
         text = self._text()
         fingerprint = self._fingerprint(text)
         snapshot = self._snapshot(text, fingerprint)
@@ -1878,12 +1901,16 @@ class SourcePreviewService:
         """Start running the evidence directive at `line`; return its card key.
 
         Raises:
-            SnapshotError: The preview is closed, a run is already active, the
-                saved source is not `sha256`, or the directive at `line` is
-                missing, in error or unavailable.
+            SnapshotError: The preview is closed, the project's Lean version
+                is not supported, a run is already active, the saved source
+                is not `sha256`, or the directive at `line` is missing, in
+                error or unavailable.
         """
         if self._cancel.is_set():
             raise SnapshotError(CLOSED)
+        unsupported = self._unsupported()
+        if unsupported is not None:
+            raise SnapshotError(unsupported)
         if not self._run_lock.acquire(blocking=False):
             raise SnapshotError(RUN_BUSY)
         try:
@@ -2042,12 +2069,16 @@ class SourcePreviewService:
         Shares the evidence runs' gate: one provider run at a time.
 
         Raises:
-            SnapshotError: The preview is closed, a run is already active, the
-                saved source is not `sha256`, or the directive at `line` is
-                missing, in error or unavailable.
+            SnapshotError: The preview is closed, the project's Lean version
+                is not supported, a run is already active, the saved source
+                is not `sha256`, or the directive at `line` is missing, in
+                error or unavailable.
         """
         if self._cancel.is_set():
             raise SnapshotError(CLOSED)
+        unsupported = self._unsupported()
+        if unsupported is not None:
+            raise SnapshotError(unsupported)
         if not self._run_lock.acquire(blocking=False):
             raise SnapshotError(RUN_BUSY)
         try:

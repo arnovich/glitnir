@@ -29,7 +29,12 @@ from glitnir.lean.lexing import (
 )
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_inspection import TOOLCHAIN, _toolchain, inspect_project
+from glitnir.lean.project_inspection import (
+    TOOLCHAIN,
+    _toolchain,
+    inspect_project,
+    lean_support,
+)
 from glitnir.lean.project_snapshot import (
     SLOT_WAITING,
     ProjectSnapshot,
@@ -964,6 +969,18 @@ def _candidate_failure(
     return None
 
 
+def _refuse_unsupported(source: Path) -> None:
+    """Refuse a project whose Lean version Glitnir does not check.
+
+    This runs before the Lean slot, a scratch directory or the toolchain is
+    touched, so the refusal says `lean_support`'s words and nothing else;
+    the checks after the slot still catch a declaration changed meanwhile.
+    """
+    message = lean_support(describe_project(source))["message"]
+    if message is not None:
+        raise SnapshotError(message)
+
+
 def _check_text(
     source: Path,
     text: str,
@@ -1012,13 +1029,9 @@ def _check_text(
             resolution = inspected["resolution"]
             project_root = Path(project["root"]).resolve()
         else:
-            declaration = project["files"]["lean-toolchain"]
-            if project["toolchain"] not in (None, TOOLCHAIN) or declaration.get(
-                "error"
-            ) not in (None, "missing"):
-                raise SnapshotError(
-                    f"This file needs the supported declared toolchain {TOOLCHAIN}."
-                )
+            support = lean_support(project)
+            if not support["supported"]:
+                raise SnapshotError(support["message"])
             setup = {
                 "name": "GlitnirStandalone",
                 "isModule": False,
@@ -1513,6 +1526,7 @@ def check_project(
         ):
             raise ValueError("Check through a positive line number.")
         source = source.absolute()
+        _refuse_unsupported(source)
         text = read_regular(source, 16 * 1024 * 1024).decode().replace("\r\n", "\n")
         if hashlib.sha256(text.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
@@ -1711,6 +1725,7 @@ def check_candidate(
         if cancel.is_set():
             raise SnapshotError("Project check cancelled.")
         source = source.absolute()
+        _refuse_unsupported(source)
 
         def saved() -> str:
             text = read_regular(source, 16 * 1024 * 1024).decode()

@@ -52,6 +52,11 @@
   // with its saved source only, never with an environment: its results are
   // shown as recorded, never called current, and nothing checks or runs them.
   const recorded = () => UI.data?.preview?.recorded === true;
+  // Glitnir checks one Lean version; a project on another reads as usual but
+  // runs no Lean (the server refuses every such request with the same words).
+  // Saved results shown as recorded run nothing and say nothing about it.
+  const leanOff = () => UI.data?.preview?.lean?.supported === false && !recorded();
+  const leanVersion = toolchain => String(toolchain || '').replace(/^leanprover\/lean4:/, '').replace(/^v(?=\d)/, '');
   const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
   let readableSnapshot, heldRendering = false, highlightTimer;
   let highlighted = new Set(), highlightUntil = 0;
@@ -243,7 +248,7 @@
   }
   const inspecting = () => Boolean(UI.inspecting || inspection()?.status === 'running');
   async function inspectProject() {
-    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath() || recorded()) return;
+    if (inspecting() || UI.data?.preview?.mode !== 'project' || linkedPath() || recorded() || leanOff()) return;
     UI.inspecting = true;
     const sha256 = UI.data.sha256;
     renderChrome();
@@ -258,7 +263,7 @@
   // A check of the whole saved file, or, with `throughLine`, of its lines 1
   // through that line only: the end of a chosen claim.
   async function checkProject(throughLine = null) {
-    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded()) return;
+    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff()) return;
     UI.checkRequested = true;
     render();
     const body = {sha256: UI.data.sha256};
@@ -272,7 +277,7 @@
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note) {
-    if (linkedPath() || recorded() || !projectMode()) return '';
+    if (linkedPath() || recorded() || leanOff() || !projectMode()) return '';
     return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button><span class="small muted">${note}</span>`;
   }
   // Where a check stopped because it was asked to, not at a failing command.
@@ -341,7 +346,7 @@
     const through = UI.data.project_withheld?.through_line;
     const notRechecked = saved.not_rechecked ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>Not rechecked: ${Number.isSafeInteger(through) ? `the last check covered lines 1–${esc(through)} only, so this` : 'this'} is the result of an earlier check.</span></div>` : '';
     const note = notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
-      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : 'the saved source above this claim or its environment changed since it was checked. Check the saved file to update it.'}</span></div>`);
+      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : `the saved source above this claim or its environment changed since it was checked.${leanOff() ? '' : ' Check the saved file to update it.'}`}</span></div>`);
     const actions = staticPage ? '' : checkThroughHTML(saved, 'Check through here', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
@@ -696,11 +701,12 @@
     const key = `${cell.index}:${line}:${UI.data.sha256}`;
     const drawing = UI.drawings[key];
     const linked = Boolean(linkedPath());
-    if (!drawing && !linked) loadView(key, view);
+    if (!drawing && !linked && !leanOff()) loadView(key, view);
     const head = window.glitnirCards.header({label: `${view.kind} diagram`, name: view.name, locationHTML: lineLinkHTML(line, line)});
     let body;
     if (linked) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Lean draws this view in the notebook's own preview.</span></div>`;
     else if (view.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span>${esc(view.error)}</span></div>`;
+    else if (leanOff() && (!drawing || drawing.loading || drawing.error)) body = `<div class="note-line" data-tone="muted">${icon('branch')}<span>Views need Lean ${esc(leanVersion(UI.data.preview.lean.toolchain))}.</span></div>`;
     else if (!drawing || drawing.loading) body = `<p class="small muted view-wait" role="status">${esc(drawing?.message || 'Lean is drawing it…')}</p>`
       + (drawing?.drawing ? `<div class="claim-actions"><button type="button" class="secondary" data-act="view-cancel" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('x')}Stop</button><span class="small muted">Drawing is bounded by the check time limit.</span></div>` : '');
     else if (drawing.error) body = `<div class="note-line" data-tone="red">${icon('x')}<span class="lean-message">No drawing: ${esc(drawing.error)}</span></div>`
@@ -875,17 +881,17 @@
           + (snap.finite ? '' : note('amber', 'Some values were not finite; they are not drawn.'))
           + provenanceHTML(snap.provenance);
       } catch (error) {
-        body = note('red', 'The saved evidence is unreadable. Run it again.');
+        body = note('red', `The saved evidence is unreadable.${leanOff() ? '' : ' Run it again.'}`);
       }
     }
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any chart below is the previous saved evidence; its currency is not established here.</p>' + body;
     // An errored card shows its error, then at most the last run's failure;
     // a card errored only by its missing provider still says it is out of date.
-    if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() ? ' Run it again to update it.' : ''}`) + body;
+    if (entry.status === 'stale' && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() && !leanOff() ? ' Run it again to update it.' : ''}`) + body;
     if (entry.run_error) body = note('red', `<span class="lean-message">The last run failed: ${esc(entry.run_error)}</span>`) + body;
     if (entry.unavailable && !entry.error) body = note('amber', `${esc(entry.unavailable)} Saved evidence remains viewable.`) + body;
     if (entry.error) body = note('red', esc(entry.error) + (snap ? ' Saved evidence remains viewable.' : '')) + body;
-    if (!staticPage && runnable && !running && !linkedPath() && !recorded()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
+    if (!staticPage && runnable && !running && !linkedPath() && !recorded() && !leanOff()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
     return `<section data-document-start="${line}" data-document-end="${line}" class="cell box evidence">${head}${body}${action}</section>`;
   }
 
@@ -918,7 +924,7 @@
     }
     if (outcome && (!running || staticPage)) body = decisionOutcomeHTML(entry, note);
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any outcome below is the previous saved one; its currency is not established here.</p>' + body;
-    if (entry.status === 'stale') body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : 'Out of date: the source through this directive or its environment changed since this run. Run it again to update it.') + body;
+    if (entry.status === 'stale') body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : `Out of date: the source through this directive or its environment changed since this run.${leanOff() ? '' : ' Run it again to update it.'}`) + body;
     if (entry.missing_imports?.length) body = note('amber', `Add ${entry.missing_imports.map(m => `<code>import ${esc(m)}</code>`).join(', ')} to the file's header before accepting.`) + body;
     if (entry.run_error) body = note('red', `The last run failed: ${esc(entry.run_error)}`) + body;
     if (entry.unavailable) body = note('amber', esc(entry.unavailable) + kept) + body;
@@ -960,10 +966,10 @@
     if (entry.status === 'running') buttons.push('<button type="button" class="secondary" data-act="decision-stop">Stop</button>');
     else {
       const acceptable = served && entry.status === 'candidate' && entry.verification?.status === 'checked' && !entry.missing_imports?.length;
-      if (acceptable && HOST) buttons.push(`<button type="button" class="primary" data-act="accept" data-key="${esc(entry.key)}">${icon('check')}Accept</button>`);
-      if (served && !entry.unavailable && RUN_AGAIN.has(entry.status)) buttons.push(`<button type="button" class="${acceptable || entry.status === 'accepted' ? 'secondary' : 'primary'}" data-act="decision-run" data-line="${line}" data-sha="${sha}">${icon('replay')}${entry.outcome ? 'Run again' : 'Run'}</button>`);
+      if (acceptable && HOST && !leanOff()) buttons.push(`<button type="button" class="primary" data-act="accept" data-key="${esc(entry.key)}">${icon('check')}Accept</button>`);
+      if (served && !entry.unavailable && !leanOff() && RUN_AGAIN.has(entry.status)) buttons.push(`<button type="button" class="${acceptable || entry.status === 'accepted' ? 'secondary' : 'primary'}" data-act="decision-run" data-line="${line}" data-sha="${sha}">${icon('replay')}${entry.outcome ? 'Run again' : 'Run'}</button>`);
       if (entry.outcome) buttons.push(`<button type="button" class="secondary" data-act="decision-discard" data-line="${line}" data-sha="${sha}">Discard</button>`);
-      if (acceptable && !HOST) buttons.push('<span class="small muted">Accept it from the editor\'s preview.</span>');
+      if (acceptable && !HOST && !leanOff()) buttons.push('<span class="small muted">Accept it from the editor\'s preview.</span>');
     }
     return buttons.length ? `<div class="claim-actions">${buttons.join('')}<span class="small muted">A provider proposes; only the kernel check makes a candidate.</span></div>` : '';
   }
@@ -1040,10 +1046,12 @@
   // The button names the saved text it was drawn for; the server refuses a
   // run if that text has changed since.
   async function runEvidence(line, sha256) {
+    if (leanOff()) return;
     await post('/api/evidence/run', {sha256, line});
     refresh();
   }
   async function decisionAction(path, body) {
+    if (leanOff() && path === '/api/decide/run') return;
     await post(path, body);
     refresh();
   }
@@ -1817,7 +1825,7 @@
   // change was recorded under the current dependencies.
   const reusable = (trace, sha256) => traceFinished(trace) && trace.source_sha256 === sha256 && trace.id && traceSeen.get(trace.id) === environmentEpoch;
   async function inspectGoals(refresh = false) {
-    if (!UI.data || linkedPath() || !projectMode() || UI.goals?.starting || traceRunning(UI.goals?.trace)) return;
+    if (!UI.data || linkedPath() || !projectMode() || leanOff() || UI.goals?.starting || traceRunning(UI.goals?.trace)) return;
     const sha256 = UI.data.sha256, epoch = ++goalEpoch, environment = environmentEpoch;
     clearTimeout(goalTimer);
     UI.goals = {starting: true, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
@@ -1885,6 +1893,7 @@
   function goalSectionHTML(c) {
     const head = '<h5>Proof goals</h5>';
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
+    if (leanOff()) return `<div class="insp-section goal-section">${head}<p class="small muted">Proof steps need Lean ${esc(leanVersion(UI.data.preview.lean.toolchain))}. The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
     const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}>${label}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
@@ -1931,7 +1940,7 @@
       $('insp-title').textContent = project && UI.data.cells.length ? 'No saved results' : 'No claims';
       $('insp-sub').textContent = '';
       $('insp').innerHTML = project
-        ? '<p class="small muted">No claim of this file has a saved result. Check the saved file to see each claim\'s status here.</p>'
+        ? `<p class="small muted">No claim of this file has a saved result.${leanOff() ? '' : ' Check the saved file to see each claim\'s status here.'}</p>`
         : '<p class="small muted">This notebook has no theorems yet.</p>';
       return;
     }
@@ -2080,6 +2089,12 @@
     $('inspect-project').hidden = !project || linked;
     $('inspect-project').disabled = checkBusy();
     $('check-project').hidden = !project || linked;
+    // One banner for a project Glitnir does not check; never on a static page.
+    const unsupported = leanOff();
+    $('lean-unsupported').hidden = !unsupported;
+    // The message already names any lean-toolchain read error: shown verbatim.
+    $('lean-unsupported-text').textContent = unsupported ? d.preview.lean.message : '';
+    if (unsupported) { $('check-project').hidden = true; $('inspect-project').hidden = true; }
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
@@ -2104,7 +2119,7 @@
       $('banner').classList.toggle('recorded', recorded());
       $('banner').dataset.state = recorded() ? 'recorded' : '';
       if (recorded()) { $('check-project').hidden = true; $('inspect-project').hidden = true; $('project-check').hidden = true; }
-      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : d.preview.notice;
+      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : unsupported ? 'Saved-source preview.' : d.preview.notice;
       // A check through one claim is deliberate: said, not flagged.
       const scope = covered ? `The last check covered lines 1–${covered} only.` : '';
       $('banner-text').textContent = [...attention, scope, notice, where].filter(Boolean).join(' ');
@@ -2374,12 +2389,12 @@
       case 'document-line': e.preventDefault(); showDocument(Number(b.dataset.line), b.dataset.sha); break;
       case 'source-lines': e.preventDefault(); showSourceLines(Number(b.dataset.start), Number(b.dataset.end)); break;
       case 'source': if (linkedPath()) break; if (b.dataset.start && HOST) HOST.openSource({index: Number(b.dataset.index), sha256: b.dataset.sha, range: {start: Number(b.dataset.start), end: Number(b.dataset.end)}}); else openSource(Number(b.dataset.index)); break;
-      case 'evidence-run': runEvidence(Number(b.dataset.line), b.dataset.sha); break;
+      case 'evidence-run': if (leanOff()) break; runEvidence(Number(b.dataset.line), b.dataset.sha); break;
       case 'view-cancel': cancelView(b); break;
       case 'inspect-cancel': cancelInspection(); break;
       case 'check-cancel': cancelCheck(); break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
-      case 'decision-run': decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
+      case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'goto': closeDiagram(); select(id, true); break;
