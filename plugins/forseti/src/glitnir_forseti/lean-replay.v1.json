@@ -1,6 +1,6 @@
 {
   "schema": "gimle.forseti.lean-replay/v2",
-  "release_sha256": "d3a14ec01cbb0e963983a4956107deccbdf764bf044b858bca40c41fb8cfe5a4",
+  "release_sha256": "7dd2e5622d6d2ff624a9aaf88c4d91321115d60bafde2586dc4c74c549f562c1",
   "closure_program_sha256": "60d07a94daf2298ae5e053a74349efc2fa8a1d826e2192277657f3489becb97d",
   "toolchain": "leanprover/lean4:v4.32.1",
   "toolchain_binaries": {

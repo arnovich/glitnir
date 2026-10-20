@@ -457,8 +457,8 @@ Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 the goal uses imported in the notebook; a missing one shows as the check's
 unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
 forseti-lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release gains them
-with its next re-pin, and until then the editor reports the missing module.
+`Gimle.Forseti.Examples.HedgedSpreadStepped`; the pinned release contains
+them, and an older forseti-lean build reports the missing module.
 
 `stream` decisions and `iterate` evidence have not been run through Glitnir's
 checker yet. The first check of a Forseti project replays Mathlib and Forseti
