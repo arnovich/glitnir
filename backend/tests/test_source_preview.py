@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -903,7 +904,6 @@ def test_project_snapshot_lists_sibling_notebooks(tmp_path):
 
 
 def test_unbuilt_sibling_import_is_explained(tmp_path, monkeypatch):
-
     path = tmp_path / "Main.lean"
     path.write_text("import Basics\nimport Mathlib\n\ntheorem t : True := True.intro\n")
     (tmp_path / "Basics.lean").write_text("def x := 1\n")
@@ -1075,9 +1075,9 @@ def test_unknown_view_kind_names_failed_providers(tmp_path: Path, monkeypatch) -
     assert circuit["error"] == "Too many `using` names (at most 16)."
 
 
-def test_view_renders_once_per_source(tmp_path: Path, monkeypatch) -> None:
-    from glitnir.notebook import source_preview
-
+def test_view_renders_once_per_source(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     calls = []
 
     def render(path, **options):
@@ -1085,7 +1085,7 @@ def test_view_renders_once_per_source(tmp_path: Path, monkeypatch) -> None:
         return {"svg": "<svg/>"}
 
     service = _view_service(tmp_path, monkeypatch)
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     cell = service.snapshot()["views"][0]["cell"]
     assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
     assert service.view(cell, 4) == {"svg": "<svg/>"}
@@ -1096,28 +1096,26 @@ def test_view_renders_once_per_source(tmp_path: Path, monkeypatch) -> None:
         service.view(cell, 99)
 
 
-def test_view_error_entries_do_not_render(tmp_path: Path, monkeypatch) -> None:
-    from glitnir.notebook import source_preview
-
+def test_view_error_entries_do_not_render(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     def render(*args, **options):
         pytest.fail("rendered a view with an error")
 
     service = _view_service(tmp_path, monkeypatch, "-- @view graph g\n")
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     assert "graph" in service.view(0, 1)["error"]
 
 
 def test_view_cache_key_includes_the_environment_fingerprint(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
+    draw_each_alone,
 ) -> None:
     from glitnir.notebook import source_preview
 
     calls = []
-    monkeypatch.setattr(
-        source_preview,
-        "render_project_view",
-        lambda path, **options: calls.append(options) or {"svg": "<svg/>"},
-    )
+    draw_each_alone(lambda path, **options: calls.append(options) or {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     fingerprint = {"sha256": "one"}
@@ -1132,7 +1130,9 @@ def test_view_cache_key_includes_the_environment_fingerprint(
     assert len(calls) == 2
 
 
-def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> None:
+def test_a_view_request_never_waits_for_lean(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     """Drawing runs in a worker; its job is polled until it ends."""
     import threading
 
@@ -1148,7 +1148,7 @@ def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> Non
         assert finish.wait(10)
         return {"svg": f"<svg>{options['line']}</svg>"}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     text = "def c := 1\n\n-- @view circuit c\n-- @view circuit c\n"
     service = _view_service(tmp_path, monkeypatch, text)
     cell = service.snapshot()["views"][0]["cell"]
@@ -1167,18 +1167,16 @@ def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> Non
     }
     assert service.view(cell, 3) == waiting
     assert service.view_job(job) == waiting
-    # One view at a time: another waits, polling the job being drawn.
-    assert service.view(cell, 4) == {
-        "status": "queued",
-        "message": source_preview.VIEW_QUEUED,
-        "job": job,
-    }
+    # The other view is drawn in the same run, as a job of its own.
+    other = service.view(cell, 4)
+    assert other == {**waiting, "job": other["job"]} and other["job"] != job
     finish.set()
     service._view_worker.join(timeout=10)
     assert service.view_job(job) == {"svg": "<svg>3</svg>"}
     assert service.view_job(job) == {"svg": "<svg>3</svg>"}, "as often as asked"
     assert service.view(cell, 3) == {"svg": "<svg>3</svg>"}
-    assert _drawn(service, cell, 4) == {"svg": "<svg>4</svg>"}
+    assert service.view_job(other["job"]) == {"svg": "<svg>4</svg>"}
+    assert service.view(cell, 4) == {"svg": "<svg>4</svg>"}
     assert calls == [3, 4]
     assert service.view_job("0" * 32) == {
         "error": source_preview.UNKNOWN_JOB,
@@ -1187,13 +1185,13 @@ def test_a_view_request_never_waits_for_lean(tmp_path: Path, monkeypatch) -> Non
     service.close()
 
 
-def test_polling_a_job_reads_no_notebook(tmp_path: Path, monkeypatch) -> None:
+def test_polling_a_job_reads_no_notebook(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     """A poll is cheap: no saved file, snapshot or fingerprint."""
     from glitnir.notebook import source_preview
 
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
-    )
+    draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     job = service.view(cell, 4)["job"]
@@ -1208,7 +1206,9 @@ def test_polling_a_job_reads_no_notebook(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_an_unknown_environment_draws_once_and_says_so(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
+    draw_each_alone,
 ) -> None:
     """A random unknown-state value must not make every poll a new drawing."""
     import secrets
@@ -1216,11 +1216,7 @@ def test_an_unknown_environment_draws_once_and_says_so(
     from glitnir.notebook import source_preview
 
     renders = []
-    monkeypatch.setattr(
-        source_preview,
-        "render_project_view",
-        lambda path, **o: renders.append(1) or {"svg": "<svg/>"},
-    )
+    draw_each_alone(lambda path, **o: renders.append(1) or {"svg": "<svg/>"})
     monkeypatch.setattr(
         source_preview,
         "environment_fingerprint",
@@ -1240,18 +1236,18 @@ def test_an_unknown_environment_draws_once_and_says_so(
     assert service.view_job(answers[0]["job"]) == {"svg": "<svg/>", "uncertain": True}
 
 
-def test_a_known_environment_needs_no_label(tmp_path: Path, monkeypatch) -> None:
-    from glitnir.notebook import source_preview
-
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
-    )
+def test_a_known_environment_needs_no_label(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
+    draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
 
 
-def test_a_view_is_keyed_by_the_providers_modules(tmp_path: Path, monkeypatch) -> None:
+def test_a_view_is_keyed_by_the_providers_modules(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     """The provider's modules are part of the drawing's environment."""
     from glitnir.notebook import source_preview
     from glitnir.providers import ViewProvider
@@ -1272,10 +1268,9 @@ def test_a_view_is_keyed_by_the_providers_modules(tmp_path: Path, monkeypatch) -
 
     monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
     keys = []
-    monkeypatch.setattr(
-        source_preview,
-        "render_project_view",
-        lambda path, **o: keys.append(service._view_job.key) or {"svg": "<svg/>"},
+    draw_each_alone(
+        lambda path, **o: keys.extend(j.key for j in service._view_run.jobs.values())
+        or {"svg": "<svg/>"}
     )
     path = tmp_path / "A.lean"
     path.write_text(VIEW_TEXT)
@@ -1286,7 +1281,9 @@ def test_a_view_is_keyed_by_the_providers_modules(tmp_path: Path, monkeypatch) -
     assert keys[0][1] == "env-1"
 
 
-def test_stop_cancels_only_that_cards_view(tmp_path: Path, monkeypatch) -> None:
+def test_stop_cancels_only_that_cards_view(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError
@@ -1303,7 +1300,7 @@ def test_stop_cancels_only_that_cards_view(tmp_path: Path, monkeypatch) -> None:
             return {"error": "View drawing cancelled.", "transient": True}
         return {"svg": "<svg/>"}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     service = _view_service(tmp_path, monkeypatch)
     snapshot = service.snapshot()
     sha, cell = snapshot["sha256"], snapshot["views"][0]["cell"]
@@ -1314,7 +1311,8 @@ def test_stop_cancels_only_that_cards_view(tmp_path: Path, monkeypatch) -> None:
     for other in ((sha, 3), ("0" * 64, 4)):
         with pytest.raises(SnapshotError, match="not being drawn"):
             service.cancel_view(*other)
-    assert service._view_job is not None and not service._view_job.cancel.is_set()
+    run = service._view_run
+    assert run is not None and not run.jobs[4].cancel.is_set()
     service.cancel_view(sha, 4)
     service._view_worker.join(timeout=10)
     # Not transient: the reader asked for it, so nothing redraws it unasked.
@@ -1323,11 +1321,11 @@ def test_stop_cancels_only_that_cards_view(tmp_path: Path, monkeypatch) -> None:
     assert len(calls) == 2
 
 
-def test_a_view_of_a_replaced_source_is_cancelled(tmp_path: Path, monkeypatch) -> None:
+def test_a_view_of_a_replaced_source_is_cancelled(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     """Its drawing would be refused anyway: the saved source it read is gone."""
     import threading
-
-    from glitnir.notebook import source_preview
 
     started = threading.Event()
     cancelled = []
@@ -1337,7 +1335,7 @@ def test_a_view_of_a_replaced_source_is_cancelled(tmp_path: Path, monkeypatch) -
         cancelled.append(cancel.wait(10))
         return {"error": "Saved source changed; refresh and retry."}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     service.view(cell, 4)
@@ -1348,7 +1346,9 @@ def test_a_view_of_a_replaced_source_is_cancelled(tmp_path: Path, monkeypatch) -
     assert cancelled == [True]
 
 
-def test_close_stops_a_view_being_drawn(tmp_path: Path, monkeypatch) -> None:
+def test_close_stops_a_view_being_drawn(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     import threading
 
     from glitnir.notebook import source_preview
@@ -1360,7 +1360,7 @@ def test_close_stops_a_view_being_drawn(tmp_path: Path, monkeypatch) -> None:
         assert cancel.wait(10)
         return {"error": "View drawing cancelled.", "transient": True}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     job = service.view(cell, 4)["job"]
@@ -1371,17 +1371,17 @@ def test_close_stops_a_view_being_drawn(tmp_path: Path, monkeypatch) -> None:
     assert service.view(cell, 4) == {"error": source_preview.CLOSED}
 
 
-def test_a_failing_view_worker_always_ends(tmp_path: Path, monkeypatch) -> None:
-    from glitnir.notebook import source_preview
-
+def test_a_failing_view_worker_always_ends(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     def render(path, **options):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     assert _drawn(service, cell, 4) == {"error": "View drawing failed: boom"}
-    assert service._view_job is None
+    assert service._view_run is None
 
 
 INCOMPLETE = (
@@ -1448,7 +1448,9 @@ def test_view_names_must_be_lean_identifiers(tmp_path: Path, monkeypatch) -> Non
     assert single["error"] == "" and single["using"] == ["h1"]
 
 
-def test_providers_load_once_per_service(tmp_path: Path, monkeypatch) -> None:
+def test_providers_load_once_per_service(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     from glitnir.notebook import source_preview
 
     loads = []
@@ -1459,9 +1461,7 @@ def test_providers_load_once_per_service(tmp_path: Path, monkeypatch) -> None:
         "load_providers",
         lambda: loads.append(1) or Providers({"circuit": _demo_provider()}, {}, {}, {}),
     )
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
-    )
+    draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service = SourcePreviewService(path)
     assert loads == []
     cell = service.snapshot()["views"][0]["cell"]
@@ -1471,7 +1471,9 @@ def test_providers_load_once_per_service(tmp_path: Path, monkeypatch) -> None:
     assert len(loads) == 1
 
 
-def test_view_reads_and_fingerprints_the_file_once(tmp_path: Path, monkeypatch) -> None:
+def test_view_reads_and_fingerprints_the_file_once(
+    tmp_path: Path, monkeypatch, draw_each_alone
+) -> None:
     from glitnir.notebook import source_preview
 
     service = _view_service(tmp_path, monkeypatch)
@@ -1492,9 +1494,7 @@ def test_view_reads_and_fingerprints_the_file_once(tmp_path: Path, monkeypatch) 
         "environment_fingerprint",
         lambda *a: fingerprints.append(1) or {"sha256": "e"},
     )
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda path, **o: {"svg": "<svg/>"}
-    )
+    draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service.view(cell, 4)  # starts the drawing
     service._view_worker.join(timeout=10)
     reads.clear()
@@ -2256,3 +2256,690 @@ def test_indented_claims_keep_their_own_cells(tmp_path):
         c["claim"]: (c["start"], c["end"]) for c in snapshot["cells"] if c.get("claim")
     }
     assert cells == {"Foo.a": (2, 2), "Foo.b": (3, 3)}
+
+
+@pytest.mark.parametrize("unknown, expected", [(False, "d" * 64), (True, None)])
+def test_a_view_passes_its_environment_digest_to_the_renderer(
+    tmp_path: Path,
+    monkeypatch,
+    unknown,
+    expected,
+    draw_each_alone,
+) -> None:
+    from glitnir.notebook import source_preview
+
+    calls = []
+    draw_each_alone(lambda path, **options: calls.append(options) or {"svg": "<svg/>"})
+    service = _view_service(tmp_path, monkeypatch)
+    cell = service.snapshot()["views"][0]["cell"]
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a, **k: {"sha256": "d" * 64, "unknown": unknown},
+    )
+    _drawn(service, cell, 4)
+    assert calls[0]["environment_sha256"] == expected
+
+
+@pytest.mark.parametrize("unknown, expected", [(False, FP), (True, None)])
+def test_an_evidence_run_passes_its_environment_digest(
+    tmp_path, monkeypatch, unknown, expected
+):
+    from glitnir.notebook import source_preview
+
+    seen = []
+
+    def run(source, **options):
+        seen.append(options["environment_sha256"])
+        return {"payload": '{"x": 1}'}
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a: {"sha256": FP, "unknown": unknown},
+    )
+    _run_evidence(service)
+    assert seen == [expected]
+
+
+# ----- saved drawings ----------------------------------------------------------
+
+
+def _saving_view_service(
+    tmp_path: Path,
+    monkeypatch,
+    draw_each_alone,
+    drawing=None,
+    unknown=False,
+    text=VIEW_TEXT,
+):
+    """A view service with a fixed fingerprint and a counted, faked renderer."""
+    from glitnir.notebook import source_preview
+
+    renders: list[dict] = []
+    answer = {"svg": "<svg/>"} if drawing is None else drawing
+    draw_each_alone(lambda path, **options: renders.append(options) or dict(answer))
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a, **k: {
+            "sha256": FP,
+            "stable_sha256": FP,
+            "unknown": unknown,
+            "packages": [],
+        },
+    )
+    return _view_service(tmp_path, monkeypatch, text), renders
+
+
+def _view_cell(service, line: int = 4) -> int:
+    return next(v["cell"] for v in service.snapshot()["views"] if v["line"] == line)
+
+
+def _saved_drawings(path: Path) -> dict:
+    from glitnir.notebook.check_records import load_records, saved_views
+
+    return saved_views(load_records(path))
+
+
+def test_drawing_is_saved_and_reused_without_lean(
+    tmp_path, monkeypatch, draw_each_alone
+):
+    from glitnir.lean.project_views import view_provider_sha256
+    from glitnir.notebook.check_records import evidence_prefix_sha256
+    from glitnir.notebook.evidence_cards import evidence_key
+
+    service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+    try:
+        assert _drawn(service, _view_cell(service), 4) == {"svg": "<svg/>"}
+    finally:
+        service.close()
+    assert len(renders) == 1
+    [(key, entry)] = _saved_drawings(service.path).items()
+    assert key == evidence_key("-- @view circuit c using a, b", 0)
+    assert entry["prefix_sha256"] == evidence_prefix_sha256(VIEW_TEXT, 4)
+    assert entry["fingerprint"] == FP
+    assert entry["provider"] == "demo"
+    assert entry["provider_sha256"] == view_provider_sha256(
+        _demo_provider(), "circuit", "c", ("a", "b")
+    )
+    assert entry["drawing"] == {"svg": "<svg/>"}
+    again = SourcePreviewService(service.path)
+    try:
+        assert again.view(_view_cell(again), 4) == {"svg": "<svg/>"}
+        assert again.view(_view_cell(again), 4) == {"svg": "<svg/>"}
+    finally:
+        again.close()
+    assert len(renders) == 1
+
+
+def test_uncertain_drawing_is_not_saved(tmp_path, monkeypatch, draw_each_alone):
+    from glitnir.notebook.check_records import records_path
+
+    service, renders = _saving_view_service(
+        tmp_path, monkeypatch, draw_each_alone, unknown=True
+    )
+    try:
+        answer = _drawn(service, _view_cell(service), 4)
+    finally:
+        service.close()
+    assert answer == {"svg": "<svg/>", "uncertain": True}
+    assert not records_path(service.path).exists()
+
+
+def test_a_drawing_with_an_unhashable_provider_is_not_saved(
+    tmp_path, monkeypatch, draw_each_alone
+):
+    from glitnir.notebook.check_records import records_path
+    from glitnir.providers import ViewProvider
+
+    def command(kind, name, using):
+        raise RuntimeError("no command")
+
+    _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+    provider = ViewProvider("demo", frozenset({"circuit"}), (), "", "m:", command)
+    service = SourcePreviewService(
+        tmp_path / "A.lean",
+        providers=lambda: Providers({"circuit": provider}, {}, {}, {}),
+    )
+    try:
+        assert _drawn(service, _view_cell(service), 4) == {"svg": "<svg/>"}
+    finally:
+        service.close()
+    assert not records_path(service.path).exists()
+
+
+def test_saved_drawing_redrawn_after_edit_above(tmp_path, monkeypatch, draw_each_alone):
+    service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+    try:
+        _drawn(service, _view_cell(service), 4)
+    finally:
+        service.close()
+    # An edit below the directive keeps the saved drawing current.
+    service.path.write_text(VIEW_TEXT + "def e := 3\n")
+    below = SourcePreviewService(service.path)
+    try:
+        assert below.view(_view_cell(below), 4) == {"svg": "<svg/>"}
+    finally:
+        below.close()
+    assert len(renders) == 1
+    service.path.write_text(VIEW_TEXT.replace("def c := 1", "def c := 2"))
+    above = SourcePreviewService(service.path)
+    try:
+        assert _drawn(above, _view_cell(above), 4) == {"svg": "<svg/>"}
+    finally:
+        above.close()
+    assert len(renders) == 2
+
+
+def test_saved_drawing_redrawn_when_the_provider_changes(
+    tmp_path, monkeypatch, draw_each_alone
+):
+    from glitnir.providers import ViewProvider
+
+    service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+    try:
+        _drawn(service, _view_cell(service), 4)
+    finally:
+        service.close()
+    provider = ViewProvider(
+        "demo", frozenset({"circuit"}), (), "", "m:", lambda *a: "#draw"
+    )
+    changed = SourcePreviewService(
+        service.path, providers=lambda: Providers({"circuit": provider}, {}, {}, {})
+    )
+    try:
+        assert _drawn(changed, _view_cell(changed), 4) == {"svg": "<svg/>"}
+    finally:
+        changed.close()
+    assert len(renders) == 2
+
+
+def test_drawing_shown_when_saving_fails(tmp_path, monkeypatch, draw_each_alone):
+    from glitnir.notebook.check_records import records_path
+
+    service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+    sidecar = records_path(service.path)
+    sidecar.write_text("not json")
+    try:
+        cell = _view_cell(service)
+        assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
+        # Kept in memory all the same: asking again draws nothing.
+        assert service.view(cell, 4) == {"svg": "<svg/>"}
+    finally:
+        service.close()
+    assert len(renders) == 1
+    assert sidecar.read_text() == "not json"
+
+
+def test_a_drawing_too_large_to_save_is_still_shown(
+    tmp_path, monkeypatch, draw_each_alone
+):
+    from glitnir.notebook import check_records
+
+    monkeypatch.setattr(check_records, "MAX_VIEWS_BYTES", 10)
+    service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+    try:
+        assert _drawn(service, _view_cell(service), 4) == {"svg": "<svg/>"}
+    finally:
+        service.close()
+    assert _saved_drawings(service.path) == {}
+
+
+def test_a_drawing_is_not_saved_when_the_source_changed_during_it(
+    tmp_path,
+    monkeypatch,
+    draw_each_alone,
+):
+    service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
+
+    def render(path, **options):
+        path.write_text(VIEW_TEXT + "def e := 3\n")
+        return {"svg": "<svg/>"}
+
+    draw_each_alone(render)
+    try:
+        assert _drawn(service, _view_cell(service), 4) == {"svg": "<svg/>"}
+    finally:
+        service.close()
+    assert _saved_drawings(service.path) == {}
+
+
+def test_saved_drawing_has_no_transient_fields(tmp_path, monkeypatch, draw_each_alone):
+    drawn = {"svg": "<svg/>", "proofs_skipped": True}
+    service, renders = _saving_view_service(
+        tmp_path, monkeypatch, draw_each_alone, drawing=drawn
+    )
+    try:
+        assert _drawn(service, _view_cell(service), 4) == drawn
+    finally:
+        service.close()
+    [entry] = _saved_drawings(service.path).values()
+    assert entry["drawing"] == {"svg": "<svg/>"}
+    assert "uncertain" not in entry["drawing"]
+    assert "proofs_skipped" not in entry["drawing"]
+
+
+def test_saved_drawings_of_identical_directives_keep_their_own_keys(
+    tmp_path,
+    monkeypatch,
+    draw_each_alone,
+):
+    from glitnir.notebook.evidence_cards import evidence_key
+
+    text = "def c := 1\n-- @view circuit c\ndef d := 2\n-- @view circuit c\n"
+    service, renders = _saving_view_service(
+        tmp_path, monkeypatch, draw_each_alone, text=text
+    )
+    try:
+        _drawn(service, _view_cell(service, 2), 2)
+        _drawn(service, _view_cell(service, 4), 4)
+    finally:
+        service.close()
+    assert set(_saved_drawings(service.path)) == {
+        evidence_key("-- @view circuit c", 0),
+        evidence_key("-- @view circuit c", 1),
+    }
+    # Removing the second directive drops its drawing at the next save.
+    service.path.write_text("def c := 2\n-- @view circuit c\n")
+    again = SourcePreviewService(service.path)
+    try:
+        _drawn(again, _view_cell(again, 2), 2)
+    finally:
+        again.close()
+    assert set(_saved_drawings(service.path)) == {evidence_key("-- @view circuit c", 0)}
+
+
+# ----- one run for a notebook's views -------------------------------------------
+
+THREE_VIEWS = (
+    "def a := 1\n-- @view circuit a\n"
+    "def b := 2\n-- @view circuit b\n"
+    "def c := 3\n-- @view circuit c\n"
+)
+MEMORY = (
+    "Lean reached its memory limit of 16384 MB. The limit includes the library "
+    "files Lean loads (about 4–5 GB with Mathlib) as well as its working memory. "
+    "Raise the glitnir.memoryLimitMb setting and try again."
+)
+
+
+class _HeldRuns:
+    """A fake `render_project_views` whose runs end only when released.
+
+    Each call's lines, process cancel and other options are recorded. A run
+    tells its views that Lean is drawing them, then waits for `release`, or
+    for its cancel, which makes it a cancelled run. It answers the next of
+    `answers`, if any, else a drawing per view naming its line.
+    """
+
+    def __init__(self, *answers: dict) -> None:
+        import threading
+
+        self.calls: list[tuple[list[int], Any, dict]] = []
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.answers = list(answers)
+
+    def __call__(self, path, *, views, cancel, progress, **options):
+        import time
+
+        self.calls.append(([view[0] for view in views], cancel, options))
+        progress("Lean is drawing it.")
+        self.started.set()
+        deadline = time.monotonic() + 10
+        while not (self.release.is_set() or cancel.is_set()):
+            assert time.monotonic() < deadline, "never released"
+            time.sleep(0.005)
+        if cancel.is_set():
+            return {"error": "View drawing cancelled.", "transient": True}
+        if self.answers:
+            return self.answers.pop(0)
+        return {"views": [{"svg": f"<svg>{view[0]}</svg>"} for view in views]}
+
+    def lines(self) -> list[list[int]]:
+        return [lines for lines, _cancel, _options in self.calls]
+
+
+def _run_service(tmp_path, monkeypatch, runs, text=THREE_VIEWS, **options):
+    """A view service drawing with `runs`, in a known environment."""
+    from glitnir.notebook import source_preview
+
+    monkeypatch.setattr(source_preview, "render_project_views", runs)
+    monkeypatch.setattr(
+        source_preview,
+        "environment_fingerprint",
+        lambda *a, **k: {"sha256": FP, "stable_sha256": FP, "packages": []},
+    )
+    _view_service(tmp_path, monkeypatch, text)
+    return SourcePreviewService(tmp_path / "A.lean", **options)
+
+
+def _ask(service, line: int) -> dict:
+    return service.view(_view_cell(service, line), line)
+
+
+def _key(text: str, line: int) -> str:
+    from glitnir.notebook.evidence_cards import evidence_key
+
+    return evidence_key(text.split("\n")[line - 1], 0)
+
+
+def test_views_of_one_provider_draw_in_one_run(tmp_path, monkeypatch):
+    runs = _HeldRuns()
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        first = _ask(service, 2)
+        assert runs.started.wait(10)
+        answers = {line: _ask(service, line) for line in (2, 4, 6)}
+        assert runs.lines() == [[2, 4, 6]]
+        assert runs.calls[0][2]["environment_sha256"] == FP
+        assert answers[2]["job"] == first["job"]
+        assert len({answer["job"] for answer in answers.values()}) == 3
+        for answer in answers.values():
+            assert answer == {
+                "status": "drawing",
+                "message": "Lean is drawing it.",
+                "job": answer["job"],
+            }
+            assert service.view_job(answer["job"]) == answer
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        for line, answer in answers.items():
+            drawn = {"svg": f"<svg>{line}</svg>"}
+            assert service.view_job(answer["job"]) == drawn
+            assert _ask(service, line) == drawn
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6]]
+    assert set(_saved_drawings(service.path)) == {
+        _key(THREE_VIEWS, line) for line in (2, 4, 6)
+    }
+
+
+def test_saved_or_cached_views_are_not_redrawn_in_a_run(tmp_path, monkeypatch):
+    from glitnir.lean.project_snapshot import SnapshotError
+
+    runs = _HeldRuns()
+    runs.release.set()
+    alone = THREE_VIEWS.split("def b")[0]
+    first = _run_service(tmp_path, monkeypatch, runs, alone)
+    try:
+        assert _drawn(first, _view_cell(first, 2), 2) == {"svg": "<svg>2</svg>"}
+    finally:
+        first.close()
+    first.path.write_text(THREE_VIEWS)
+    # Drawings of this service are kept in memory only.
+    service = SourcePreviewService(first.path, save_drawings=False)
+    try:
+        runs.release.clear()
+        runs.started.clear()
+        _ask(service, 4)
+        assert runs.started.wait(10)
+        sha = service.snapshot()["sha256"]
+        service.cancel_view(sha, 6)
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        with pytest.raises(SnapshotError, match="not being drawn"):
+            service.cancel_view(sha, 6)
+        # Line 2's drawing is saved, line 4's is in memory: only 6 is drawn.
+        assert _drawn(service, _view_cell(service, 6), 6) == {"svg": "<svg>6</svg>"}
+        assert _ask(service, 2) == {"svg": "<svg>2</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2], [4, 6], [6]]
+    assert set(_saved_drawings(service.path)) == {_key(THREE_VIEWS, 2)}
+
+
+def test_directive_inside_a_command_is_drawn_alone(tmp_path, monkeypatch):
+    """Only directives at a command boundary of the trusted lexer join a run.
+
+    The command before the directive must end above it
+    (`command_boundaries(text).ends_at(line - 1)`), or only comments may
+    precede it. A directive inside the `theorem … := by` block is drawn
+    alone, when it is the view asked for, and never in another view's run.
+    """
+    text = (
+        "-- Notes.\n"
+        "-- @view circuit a\n"  # only comments before it
+        "#check 1\n"
+        "def a := 1\n"
+        "-- @view circuit a\n"
+        "theorem t : True := by\n"
+        "-- @view circuit t\n"  # inside the theorem
+        "  trivial\n"
+        "\n"
+        "-- @view circuit t\n"
+    )
+    runs = _HeldRuns()
+    runs.release.set()
+    service = _run_service(tmp_path, monkeypatch, runs, text, save_drawings=False)
+    try:
+        assert _drawn(service, _view_cell(service, 5), 5) == {"svg": "<svg>5</svg>"}
+        assert _drawn(service, _view_cell(service, 7), 7) == {"svg": "<svg>7</svg>"}
+    finally:
+        service.close()
+    other = SourcePreviewService(service.path, save_drawings=False)
+    try:
+        assert _drawn(other, _view_cell(other, 7), 7) == {"svg": "<svg>7</svg>"}
+    finally:
+        other.close()
+    assert runs.lines() == [[2, 5, 10], [7], [7]]
+
+
+def test_stop_drops_only_that_view(tmp_path, monkeypatch):
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.notebook import source_preview
+
+    runs = _HeldRuns()
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        answers = {line: _ask(service, line) for line in (2, 4, 6)}
+        assert runs.started.wait(10)
+        sha = service.snapshot()["sha256"]
+        service.cancel_view(sha, 4)
+        cancelled = {"error": source_preview.VIEW_CANCELLED}
+        # Answered at once; the run goes on for the others.
+        assert service.view_job(answers[4]["job"]) == cancelled
+        assert service.view_job(answers[2]["job"])["status"] == "drawing"
+        with pytest.raises(SnapshotError, match="not being drawn"):
+            service.cancel_view(sha, 4)
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        assert service.view_job(answers[2]["job"]) == {"svg": "<svg>2</svg>"}
+        assert service.view_job(answers[4]["job"]) == cancelled
+        assert service.view_job(answers[6]["job"]) == {"svg": "<svg>6</svg>"}
+    finally:
+        service.close()
+    [(_lines, cancel, _options)] = runs.calls
+    assert not cancel.is_set()
+    assert set(_saved_drawings(service.path)) == {
+        _key(THREE_VIEWS, 2),
+        _key(THREE_VIEWS, 6),
+    }
+
+
+def test_stopping_every_view_stops_the_run(tmp_path, monkeypatch):
+    from glitnir.notebook import source_preview
+
+    runs = _HeldRuns()
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        answers = {line: _ask(service, line) for line in (2, 4, 6)}
+        assert runs.started.wait(10)
+        sha = service.snapshot()["sha256"]
+        [(_lines, cancel, _options)] = runs.calls
+        service.cancel_view(sha, 2)
+        service.cancel_view(sha, 6)
+        assert not cancel.is_set()
+        service.cancel_view(sha, 4)
+        assert cancel.is_set()
+        service._view_worker.join(timeout=10)
+        for answer in answers.values():
+            assert service.view_job(answer["job"]) == {
+                "error": source_preview.VIEW_CANCELLED
+            }
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6]]
+    assert _saved_drawings(service.path) == {}
+
+
+def test_failed_run_of_several_views_retries_one_per_run(tmp_path, monkeypatch):
+    runs = _HeldRuns({"error": MEMORY})
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        answers = {line: _ask(service, line) for line in (2, 4, 6)}
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        for line, answer in answers.items():
+            assert service.view_job(answer["job"]) == {"svg": f"<svg>{line}</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6], [2], [4], [6]]
+    # Each view drawn alone can be stopped alone.
+    cancels = [cancel for _lines, cancel, _options in runs.calls]
+    assert len({id(cancel) for cancel in cancels}) == 4
+    assert len(_saved_drawings(service.path)) == 3
+
+
+@pytest.mark.parametrize(
+    "message", ["Project check timed out.", "View drawing cancelled."]
+)
+def test_timed_out_run_is_not_retried(tmp_path, monkeypatch, message):
+    failure = {"error": message, "transient": True}
+    runs = _HeldRuns(failure)
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        answers = {line: _ask(service, line) for line in (2, 4, 6)}
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        for answer in answers.values():
+            assert service.view_job(answer["job"]) == failure
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6]]
+
+
+def test_views_of_a_timed_out_run_are_drawn_alone_when_asked_again(
+    tmp_path, monkeypatch
+):
+    """The same views together would time out again: each is drawn alone."""
+    runs = _HeldRuns({"error": "Project check timed out.", "transient": True})
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        _ask(service, 2)
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
+        assert _drawn(service, _view_cell(service, 2), 2) == {"svg": "<svg>2</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6], [4], [2]]
+
+
+def test_views_of_a_cancelled_run_are_drawn_together_again(tmp_path, monkeypatch):
+    failure = {"error": "View drawing cancelled.", "transient": True}
+    runs = _HeldRuns(failure)
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        _ask(service, 2)
+        runs.release.set()
+        service._view_worker.join(timeout=10)
+        assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4, 6], [2, 4, 6]]
+
+
+def test_a_failed_run_of_one_view_is_not_retried(tmp_path, monkeypatch):
+    runs = _HeldRuns({"error": MEMORY})
+    runs.release.set()
+    text = THREE_VIEWS.split("def b")[0]
+    service = _run_service(tmp_path, monkeypatch, runs, text)
+    try:
+        assert _drawn(service, _view_cell(service, 2), 2) == {"error": MEMORY}
+    finally:
+        service.close()
+    assert runs.lines() == [[2]]
+
+
+def test_views_of_another_provider_wait(tmp_path, monkeypatch):
+    from glitnir.notebook import source_preview
+    from glitnir.providers import ViewProvider
+
+    graph = ViewProvider("graph", frozenset({"graph"}), (), "", "g:", lambda *a: "")
+    runs = _HeldRuns()
+    text = "def a := 1\n-- @view circuit a\n-- @view graph a\n-- @view circuit a\n"
+    both = Providers({"circuit": _demo_provider(), "graph": graph}, {}, {}, {})
+    service = _run_service(tmp_path, monkeypatch, runs, text, providers=lambda: both)
+    try:
+        first = _ask(service, 2)
+        assert runs.started.wait(10)
+        assert _ask(service, 3) == {
+            "status": "queued",
+            "message": source_preview.VIEW_QUEUED,
+            "job": first["job"],
+        }
+        runs.release.set()
+        assert _drawn(service, _view_cell(service, 3), 3) == {"svg": "<svg>3</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4], [3]]
+    assert [options["provider"].name for *_, options in runs.calls] == [
+        "demo",
+        "graph",
+    ]
+
+
+def test_close_ends_every_view_of_the_run(tmp_path, monkeypatch):
+    from glitnir.notebook import source_preview
+
+    runs = _HeldRuns()
+    service = _run_service(tmp_path, monkeypatch, runs)
+    answers = {line: _ask(service, line) for line in (2, 4, 6)}
+    assert runs.started.wait(10)
+    service.close()
+    assert not service._view_worker.is_alive()
+    assert runs.calls[0][1].is_set()
+    for answer in answers.values():
+        assert service.view_job(answer["job"]) == {"error": source_preview.CLOSED}
+
+
+def test_a_failing_run_ends_every_view(tmp_path, monkeypatch):
+    import threading
+
+    release = threading.Event()
+
+    def runs(path, **options):
+        assert release.wait(10)
+        raise RuntimeError("boom")
+
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        answers = {line: _ask(service, line) for line in (2, 4, 6)}
+        release.set()
+        service._view_worker.join(timeout=10)
+        for answer in answers.values():
+            assert service.view_job(answer["job"]) == {
+                "error": "View drawing failed: boom"
+            }
+        assert service._view_run is None
+    finally:
+        service.close()
+
+
+def test_a_run_draws_no_more_views_than_are_kept(tmp_path, monkeypatch):
+    """Every answer of a run must outlast it, so a run is at most the cache size."""
+    from glitnir.notebook import source_preview
+
+    monkeypatch.setattr(source_preview, "MAX_CACHED_VIEWS", 2)
+    runs = _HeldRuns()
+    runs.release.set()
+    service = _run_service(tmp_path, monkeypatch, runs)
+    try:
+        assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
+    finally:
+        service.close()
+    assert runs.lines() == [[2, 4]]

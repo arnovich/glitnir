@@ -250,9 +250,13 @@ reads a saved notebook and its saved results for the canonical renderer:
   snapshot holds no local absolute path.
 - `asset(path, sha256)` returns an image the prose shows.
 - `view_imports()` lists the modules to build before drawing views.
-- `draw_view(cell, line)` draws one listed view and waits for it, as the editor
-  does: with Lean in the sandbox, from the project's own build. Drawing checks
-  nothing.
+- `draw_view(cell, line)` returns the view's saved drawing from the `views`
+  section of `<Notebook>.glitnir.json` as recorded, without running Lean, when
+  the source through its directive and the provider match. Otherwise it draws
+  the view and waits for it, as the editor does: with Lean in the sandbox, from
+  the project's own build, with the notebook's proofs skipped. That drawing is
+  not saved; static export never writes records. Drawing checks nothing.
+  Committing the `.glitnir.json` keeps a gallery Lean-free for views.
 
 The module's `export_styles()` returns the CSS that **Export HTML** embeds
 (`GET /api/export/styles`). Reading a snapshot or an image runs no Lean, git or

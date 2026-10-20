@@ -472,7 +472,7 @@ def test_serve_consumes_capability_before_constructing_workers(tmp_path, monkeyp
         module.serve(tmp_path / "A.lean", 0)
 
 
-def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
+def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch, draw_each_alone):
     """`/api/view/cancel` takes an empty JSON object and stops the drawing."""
     from glitnir.notebook import source_preview
     from glitnir.notebook.source_preview import (
@@ -495,7 +495,7 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
         cancel.wait(30)
         return {"error": "View drawing cancelled.", "transient": True}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n\n-- @view circuit c\n")
     service = SourcePreviewService(path)
@@ -531,7 +531,7 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
         httpd.server_close()
 
 
-def test_project_view_http_draws_directives(tmp_path, monkeypatch):
+def test_project_view_http_draws_directives(tmp_path, monkeypatch, draw_each_alone):
     """Project mode answers /api/view for listed directives only."""
     from glitnir.notebook import source_preview
     from glitnir.notebook.source_preview import SourcePreviewService
@@ -543,9 +543,7 @@ def test_project_view_http_draws_directives(tmp_path, monkeypatch):
         "load_providers",
         lambda: Providers({"circuit": provider}, {}, {}, {}),
     )
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda *a, **k: {"svg": "<svg/>"}
-    )
+    draw_each_alone(lambda *a, **k: {"svg": "<svg/>"})
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n\n-- @view circuit c\n")
     service = SourcePreviewService(path)

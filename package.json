@@ -163,11 +163,11 @@
         },
         "glitnir.memoryLimitMb": {
           "type": "integer",
-          "default": 8192,
+          "default": 16384,
           "minimum": 1024,
           "maximum": 32768,
           "scope": "resource",
-          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Applies to previews opened after the change."
+          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change."
         }
       }
     },

@@ -213,9 +213,9 @@ and package installs, and each preview's backend output.
   notebooks): these need the notebook inside a built Lake project; a loose
   `.lean` file has no prepared imports.
 - **Large proofs run out of memory.** Every Lean run is limited to
-  `glitnir.memoryLimitMb` (8 GB by default). A large proof, a big decision block,
-  or an incremental replay on top of a recorded Mathlib replay (about 4.7 GB) can
-  exceed a lower limit and fail. Raise the setting (up to 32768) and reopen the
+  `glitnir.memoryLimitMb` (16 GB by default, less on a smaller machine). A large
+  proof, a big decision block, or an incremental replay on top of a recorded
+  Mathlib replay (about 4.7 GB) can exceed a lower limit and fail. Raise the setting (up to 32768) and reopen the
   preview.
 - **Checks time out.** Raise `glitnir.elaborationTimeoutMs` (up to 30 minutes)
   and reopen the preview. The first replay of a new set of imports has its own

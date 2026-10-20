@@ -74,6 +74,19 @@ only when you click **Run**, one run at a time, and the result is saved in
 proof: it changes no claim's status and not the check exit code. Without a
 provider the line shows why, and saved results stay viewable.
 
+Views are drawn with the notebook's proofs skipped: theorem and lemma proofs are
+replaced by `sorry` and examples are skipped, so a drawing does not re-run them.
+If that draws nothing, Glitnir draws with the full notebook. A freshly drawn
+card that skipped the proofs says "Drawn without re-running the notebook's
+proofs." Evidence runs are elaborated the same way. A drawing never grants or
+changes a claim's status. Drawings are saved in `<Notebook>.glitnir.json` (the
+`views` section, at most 4 MiB) and reused without running Lean while the source
+through the directive, the environment and the provider are unchanged. A reused
+drawing does not show the note, even if it was drawn without the proofs. If
+saving a check, evidence or a decision would make the file larger than 16 MiB,
+the saved drawings are removed from it first and drawn again when needed.
+Commit that file to keep a gallery of the notebook free of Lean for views.
+
 `-- @decide <name> : <goal>` asks an installed decision provider for a Lean proof
 (or refutation) of a goal; continuation lines start with `--` and at least two
 spaces:
@@ -259,7 +272,7 @@ recorded theorem and its copy wins Lean's merge of the two (it is loaded later
 and is not identical), all of its imports are replayed instead; an identical
 or earlier restatement keeps the incremental replay. Building on a recorded
 replay holds both rebuilt environments in memory at once: for Mathlib about
-4.7 GB, within the 8 GB default of `glitnir.memoryLimitMb`.
+4.7 GB, within the 16 GB default of `glitnir.memoryLimitMb`.
 A result's `replay` field is `full`, `imports cached`, or `imports cached (+N
 modules)`. The notebook's own declarations are replayed either way, in an
 environment rebuilt from nothing but the replayed imports' declarations (no
@@ -299,7 +312,7 @@ status. Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in
 | Setting | Default | Purpose |
 |---|---|---|
 | `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
-| `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
+| `glitnir.memoryLimitMb` | `16384` (16 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
 | `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend and carry over extension packages (see [Upgrading](../extension/media/setup.md#upgrading)). Nothing downloads until you click **Set Up**. |
 
@@ -413,8 +426,13 @@ Lake project whose packages build `Gimle.Forseti` and
 visualization module, which the view loads from the project's build. If that
 build is missing or out of date, the card names the `lake build` command to run.
 A loose `.lean` file has no prepared imports to draw from. A view is drawn in the
-background, one at a time: its card says what it is doing, including waiting for
-another Lean run, and **Stop** cancels it.
+background: a notebook's views of this provider are drawn together in one Lean
+run, and a card says what it is doing, including waiting for another Lean run.
+If that run times out, each of its views is drawn in a run of its own when asked
+for again. **Stop** on a card drops only that view. Views and evidence reuse the
+prepared Lake setup while the environment is unchanged (checks never do). On
+macOS the Mac is kept awake while Glitnir's checks, proof steps, views and
+evidence run Lean or Lake; decision runs are not covered.
 
 **Evidence.** It runs `-- @evidence simulate|iterate|sample <target>`
 directives, loading `Gimle.Asgard.Compile.RationalInterchange` and

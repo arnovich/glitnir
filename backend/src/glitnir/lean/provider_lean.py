@@ -1,12 +1,16 @@
 """Run provider Lean code in the notebook's sandbox; its output is untrusted data."""
 
+import copy
 import hashlib
 import json
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
+from glitnir.lean import fingerprint
+from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import OUTPUT_BYTES, check_seconds, run_observer
@@ -49,6 +53,20 @@ TOOLCHAIN_LIBRARIES = frozenset({"Init", "Std", "Lean", "Lake"})
 #: How much of a provider's first Lean error a card shows.
 ERROR_LINES = 12
 ERROR_CHARACTERS = 2000
+
+#: How many prepared Lake setups views and evidence keep for reuse.
+MAX_SETUPS = 8
+_SetupKey = tuple[str, tuple[str, ...], tuple[str, ...], str]
+# Prepared setups by (notebook, its header imports, provider modules, environment
+# digest), oldest first. A setup is reused only while the environment digest,
+# which covers the import closure's sources, build traces and package git
+# states, is unchanged; `_check_configuration` still re-reads the Lake
+# configuration bytes before and after every run, and a mismatch drops the
+# entry. Project checks and decision candidate checks never use it.
+_SETUPS: OrderedDict[_SetupKey, tuple[dict[str, Any], dict[str, Any], Path]] = (
+    OrderedDict()
+)
+_SETUPS_LOCK = threading.Lock()
 
 # Failures that say nothing about the output: a later request may succeed.
 INTERRUPTED = ("cancelled.", "timed out.")
@@ -122,34 +140,70 @@ def _project_modules(imports: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(m for m in imports if m.split(".")[0] not in TOOLCHAIN_LIBRARIES)
 
 
-def provider_source_parts(
-    text: str,
-    line: int,
-    imports: tuple[str, ...],
-    preamble: str,
-    command: str,
-    *,
-    needs: str,
-) -> tuple[str, str, str]:
-    """Return the composed source's notebook part, preamble and command.
+def provider_source(
+    text: str, lines: list[int], imports: tuple[str, ...], *, needs: str
+) -> tuple[str, list[int]]:
+    """Return SOURCE and the byte offset in it of each directive line in `lines`.
 
-    The notebook part is the provider imports and the notebook before `line`.
-    The program elaborates the preamble outside the notebook's scope and the
-    command inside it, so it is told where each part starts.
+    SOURCE is the provider imports and the notebook before the last of
+    `lines`. Each view is spliced in at the start of its directive line: the
+    program elaborates the notebook up to there, then the provider's preamble
+    and command, which it is given separately.
     """
-    lines = text.split("\n")
-    if not 1 <= line <= len(lines):
-        raise ValueError(
-            f"{needs.capitalize()} directive line {line} is outside the notebook."
-        )
-    prefix = "".join(item + "\n" for item in lines[: line - 1])
+    split = text.split("\n")
+    for line in lines:
+        if not 1 <= line <= len(split):
+            raise ValueError(
+                f"{needs.capitalize()} directive line {line} is outside the notebook."
+            )
     # Imports must precede every command; Lean accepts duplicated imports.
     header = "".join(f"import {module}\n" for module in imports)
-    return header + prefix + "\n", preamble + "\n", command + "\n"
+    last = max(lines, default=1)
+    source = header + "".join(item + "\n" for item in split[: last - 1])
+    # starts[n] is the byte offset of notebook line n + 1 in SOURCE.
+    starts = [len(header.encode())]
+    for item in split[: last - 1]:
+        starts.append(starts[-1] + len(item.encode()) + 1)
+    return source, [starts[line - 1] for line in lines]
 
 
 def _saved(source: Path) -> str:
     return read_regular(source, SOURCE_BYTES).decode().replace("\r\n", "\n")
+
+
+def _setup_key(
+    source: Path, imports: tuple[str, ...], environment_sha256: str | None
+) -> _SetupKey | None:
+    """Return the cache key of a setup, or None when it must not be kept."""
+    if not fingerprint_ok(environment_sha256):
+        return None
+    assert environment_sha256 is not None
+    try:
+        text = _saved(source)
+    except (OSError, ValueError):
+        return None
+    # The environment digest leaves out the notebook's own text, but Lake's
+    # setup depends on the header's `module`, `prelude` and import modifiers
+    # too, so the whole header is part of the key.
+    header = fingerprint.header_words(text) or (
+        "sha256:" + hashlib.sha256(text.encode()).hexdigest(),
+    )
+    return (
+        str(source.resolve()),
+        tuple(header),
+        _project_modules(imports),
+        environment_sha256,
+    )
+
+
+def _forget_setup(
+    source: Path, imports: tuple[str, ...], environment_sha256: str | None
+) -> None:
+    """Drop the kept setup for these arguments, if there is one."""
+    key = _setup_key(source, imports, environment_sha256)
+    if key is not None:
+        with _SETUPS_LOCK:
+            _SETUPS.pop(key, None)
 
 
 def _setup(
@@ -158,8 +212,14 @@ def _setup(
     cancel: threading.Event,
     needs: str,
     imports: tuple[str, ...] = (),
+    environment_sha256: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], Path]:
     """Prepare the notebook's Lake environment exactly as project tracing does.
+
+    With a valid `environment_sha256` the prepared setup is kept and handed
+    out again for the same notebook, imports and digest (see `_SETUPS`);
+    without one it is prepared every time. Callers drop a kept setup with
+    `_forget_setup` when its configuration no longer matches.
 
     With `imports`, the setup also loads those modules from the project's
     existing build, as if the notebook imported them. If Lake then finds an
@@ -171,6 +231,14 @@ def _setup(
         raise SnapshotError(LAKE_NEEDED[needs])
     root = Path(project["root"]).resolve()
     extra = _project_modules(imports)
+    key = _setup_key(source, imports, environment_sha256)
+    if key is not None:
+        with _SETUPS_LOCK:
+            kept = _SETUPS.get(key)
+            if kept is not None:
+                _SETUPS.move_to_end(key)
+        if kept is not None:
+            return copy.deepcopy(kept[0]), kept[1], kept[2]
     inspected = inspect_project(
         source, expected_sha256=expected_sha256, cancel=cancel, imports=extra
     )
@@ -183,7 +251,14 @@ def _setup(
             if own["status"] == "resolved":
                 raise SnapshotError(_unbuilt(extra, own["setup"], root, needs))
         raise SnapshotError(inspected["message"])
-    return inspected["setup"], inspected["resolution"], root
+    prepared = (inspected["setup"], inspected["resolution"], root)
+    if key is not None:
+        with _SETUPS_LOCK:
+            _SETUPS[key] = (copy.deepcopy(prepared[0]), prepared[1], root)
+            _SETUPS.move_to_end(key)
+            while len(_SETUPS) > MAX_SETUPS:
+                _SETUPS.popitem(last=False)
+    return prepared
 
 
 def _messages(value: Any, key: str, needs: str) -> list[str]:
@@ -235,10 +310,10 @@ def _marker_payload(
 ) -> dict[str, Any]:
     """Prefer the provider's marked output; else the first error, bounded.
 
-    The payload is returned unvalidated. An error's line is in the composed
-    source: `imports` provider imports, then the notebook before the directive
-    `line`, then the provider's own code, which is reported at the directive.
-    `needs` words the errors, as in `run_provider_lean`.
+    The payload is returned unvalidated. An error's line is in SOURCE:
+    `imports` provider imports, then the notebook before the directive `line`.
+    An error without a line is in the provider's own code, and is reported at
+    the directive. `needs` words the errors, as in `run_provider_lean`.
     """
     information = _messages(report, "information", needs)
     errors = _errors(report, needs)
@@ -248,13 +323,195 @@ def _marker_payload(
     if errors:
         error_line, text = errors[0]
         shown = _bounded(text)
-        if error_line is None:
-            return {"error": shown}
-        notebook_line = error_line - imports
+        notebook_line = line if error_line is None else error_line - imports
         if not 1 <= notebook_line < line:
             notebook_line = line
         return {"error": f"Line {notebook_line}: {shown}"}
     return {"error": NO_OUTPUT[needs]}
+
+
+def _view_reports(report: Any, count: int, needs: str) -> list[dict[str, Any]]:
+    """Return the report's `count` views; `_marker_payload` reads the rest."""
+    views = report.get("views") if isinstance(report, dict) else None
+    if not isinstance(views, list) or len(views) != count:
+        raise ValueError(f"Malformed {needs} report.")
+    for view in views:
+        if not isinstance(view, dict) or type(view.get("proofs_skipped")) is not bool:
+            raise ValueError(f"Malformed {needs} report.")
+    return views
+
+
+def _view_result(
+    view: dict[str, Any], marker: str, imports: int, line: int, needs: str
+) -> dict[str, Any]:
+    """One view's payload, saying whether it was drawn with proofs skipped."""
+    result = _marker_payload(view, marker, imports, line, needs)
+    if "payload" in result:
+        return {**result, "proofs_skipped": view["proofs_skipped"]}
+    return result
+
+
+def _check_configuration_or_forget(
+    project_root: Path,
+    resolution: dict[str, Any],
+    source: Path,
+    imports: tuple[str, ...],
+    environment_sha256: str | None,
+) -> None:
+    """Check the Lake configuration; a kept setup that fails is dropped."""
+    try:
+        _check_configuration(project_root, resolution)
+    except ValueError:
+        _forget_setup(source, imports, environment_sha256)
+        raise
+
+
+def run_provider_batch(
+    source: Path,
+    *,
+    expected_sha256: str,
+    provider_name: str,
+    imports: tuple[str, ...],
+    preamble: str,
+    marker: str,
+    needs: str,
+    views: list[tuple[int, str]],
+    cancel: threading.Event,
+    progress: Callable[[str], None] | None = None,
+    wait: bool = False,
+    environment_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Elaborate the notebook and several provider commands in one Lean run.
+
+    `views` holds `(directive line, command)` pairs, lines ascending. Each
+    command is elaborated after the notebook before its line and the
+    provider's `preamble`, all in one sandboxed Lean process. The notebook is
+    first elaborated with its proofs skipped; a view whose marked output is
+    then missing is drawn again with them.
+
+    Returns `{"views": [result, ...]}` in the order of `views`, each result
+    being `{"payload": text, "proofs_skipped": bool}`, with the text after
+    `marker` in the last message that carries it, or `{"error": message}`.
+    A failure of the whole run is `{"error": message}`, marked `transient`
+    when a later request may succeed. `needs` is `"view"` or `"evidence"`
+    and words the messages. The provider's `imports` are loaded from the
+    project's existing build, whether or not the notebook imports them. With
+    `wait`, a busy Lean slot is waited for, up to the check time limit,
+    rather than refused. `progress` is told what the run is doing.
+    `environment_sha256` is the environment digest of the notebook with the
+    provider's imports; when it is a valid digest the prepared Lake setup is
+    reused for it (see `_SETUPS`), otherwise it is prepared for this run.
+    """
+    report = progress or (lambda _message: None)
+    try:
+        if describe_project(source)["kind"] != "lake":
+            return {"error": LAKE_NEEDED[needs]}
+        saved = _saved(source)
+        if hashlib.sha256(saved.encode()).hexdigest() != expected_sha256:
+            raise SnapshotError("Saved source changed; refresh and retry.")
+        lines = [line for line, _command in views]
+        if lines != sorted(lines):
+            raise ValueError(f"{needs.capitalize()} directives must be in order.")
+        try:  # provider code must never break the preview
+            invalid = _invalid_import(imports)
+            if invalid is not None:
+                return invalid
+            if not isinstance(preamble, str) or not all(
+                isinstance(command, str) for _line, command in views
+            ):
+                raise TypeError("the preamble and commands must be text")
+            text, offsets = provider_source(saved, lines, imports, needs=needs)
+        except ValueError:
+            raise
+        except Exception as error:
+            return {
+                "error": f"Provider {provider_name} failed: "
+                f"{type(error).__name__}: {error}"
+            }
+        if not views:
+            return {"views": []}
+        slot = (
+            snapshot_slot(cancel=cancel, waiting=lambda: report(WAITING))
+            if wait
+            else snapshot_slot()
+        )
+        with (
+            slot,
+            scratch_directory("glitnir-view-") as temporary,
+        ):
+            root = Path(temporary).resolve()
+            toolchain = _toolchain()
+            report(PREPARING)
+            setup, resolution, project_root = _setup(
+                source, expected_sha256, cancel, needs, imports, environment_sha256
+            )
+            # The setup loads the provider's modules from the project's build.
+            missing = _unprovided(imports, setup, needs)
+            if missing is not None:
+                return missing
+            setup = _absolute_setup(setup, project_root)
+            _check_configuration_or_forget(
+                project_root, resolution, source, imports, environment_sha256
+            )
+            programs = root / "programs"
+            programs.mkdir()
+            helper = programs / PROGRAM.name
+            helper.write_bytes(PROGRAM.read_bytes())
+            setup_path = programs / "setup.json"
+            setup_path.write_text(json.dumps(setup))
+            input_path = programs / "Source.lean"
+            input_path.write_bytes(text.encode())
+            request_path = programs / "request.json"
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "source": str(input_path),
+                        "setup": str(setup_path),
+                        "marker": marker,
+                        "views": [
+                            {"at": at, "preamble": preamble, "command": command}
+                            for at, (_line, command) in zip(offsets, views)
+                        ],
+                    }
+                )
+            )
+            output = root / "output"
+            output.mkdir()
+            report_path = output / "view.json"
+            report(RUNNING[needs])
+            run_observer(
+                toolchain,
+                [
+                    "lean",
+                    f"-M{memory_limit_mb()}",
+                    "--run",
+                    str(helper),
+                    str(request_path),
+                    str(report_path),
+                ],
+                cwd=output,
+                readable=[programs, toolchain, project_root],
+                writable=True,
+                cancel=cancel,
+                deadline=time.monotonic() + check_seconds(),
+            )
+            if cancel.is_set():
+                raise SnapshotError(CANCELLED[needs])
+            reports = _view_reports(
+                json.loads(read_regular(report_path, OUTPUT_BYTES)), len(views), needs
+            )
+            results = [
+                _view_result(view, marker, len(imports), line, needs)
+                for view, line in zip(reports, lines)
+            ]
+            if _saved(source) != saved:
+                raise SnapshotError("Saved source changed; refresh and retry.")
+            _check_configuration_or_forget(
+                project_root, resolution, source, imports, environment_sha256
+            )
+            return {"views": results}
+    except (OSError, ValueError, KeyError, SandboxUnavailable) as error:
+        return _failure(error)
 
 
 def run_provider_lean(
@@ -271,105 +528,32 @@ def run_provider_lean(
     cancel: threading.Event,
     progress: Callable[[str], None] | None = None,
     wait: bool = False,
+    environment_sha256: str | None = None,
 ) -> dict[str, Any]:
-    """Elaborate the notebook prefix and a provider command in the sandbox.
+    """Elaborate the notebook prefix and one provider command in the sandbox.
 
-    Returns the text after `marker` in the last message that carries it, as
-    `{"payload": text}`, or `{"error": message}`. `needs` is `"view"` or
-    `"evidence"` and words the messages. The provider's `imports` are loaded
-    from the project's existing build, whether or not the notebook imports
-    them. With `wait`, a busy Lean slot is waited for, up to the check time
-    limit, rather than refused. `progress` is told what the run is doing.
+    Returns the one view's result from `run_provider_batch`: `{"payload":
+    text, "proofs_skipped": bool}` or `{"error": message}`, which a failure
+    of the whole run also is.
     """
-    report = progress or (lambda _message: None)
-    try:
-        if describe_project(source)["kind"] != "lake":
-            return {"error": LAKE_NEEDED[needs]}
-        saved = _saved(source)
-        if hashlib.sha256(saved.encode()).hexdigest() != expected_sha256:
-            raise SnapshotError("Saved source changed; refresh and retry.")
-        try:  # provider code must never break the preview
-            invalid = _invalid_import(imports)
-            if invalid is not None:
-                return invalid
-            notebook, own, last = provider_source_parts(
-                saved, line, imports, preamble, command, needs=needs
-            )
-        except ValueError:
-            raise
-        except Exception as error:
-            return {
-                "error": f"Provider {provider_name} failed: "
-                f"{type(error).__name__}: {error}"
-            }
-        slot = (
-            snapshot_slot(cancel=cancel, waiting=lambda: report(WAITING))
-            if wait
-            else snapshot_slot()
-        )
-        with (
-            slot,
-            scratch_directory("glitnir-view-") as temporary,
-        ):
-            root = Path(temporary).resolve()
-            toolchain = _toolchain()
-            report(PREPARING)
-            setup, resolution, project_root = _setup(
-                source, expected_sha256, cancel, needs, imports
-            )
-            # The setup loads the provider's modules from the project's build.
-            missing = _unprovided(imports, setup, needs)
-            if missing is not None:
-                return missing
-            setup = _absolute_setup(setup, project_root)
-            _check_configuration(project_root, resolution)
-            programs = root / "programs"
-            programs.mkdir()
-            helper = programs / PROGRAM.name
-            helper.write_bytes(PROGRAM.read_bytes())
-            setup_path = programs / "setup.json"
-            setup_path.write_text(json.dumps(setup))
-            input_path = programs / "Source.lean"
-            input_path.write_bytes((notebook + own + last).encode())
-            output = root / "output"
-            output.mkdir()
-            report_path = output / "view.json"
-            report(RUNNING[needs])
-            run_observer(
-                toolchain,
-                [
-                    "lean",
-                    f"-M{memory_limit_mb()}",
-                    "--run",
-                    str(helper),
-                    str(input_path),
-                    str(setup_path),
-                    # Where the preamble and the command start, in bytes.
-                    str(len(notebook.encode())),
-                    str(len((notebook + own).encode())),
-                    str(report_path),
-                ],
-                cwd=output,
-                readable=[programs, toolchain, project_root],
-                writable=True,
-                cancel=cancel,
-                deadline=time.monotonic() + check_seconds(),
-            )
-            if cancel.is_set():
-                raise SnapshotError(CANCELLED[needs])
-            result = _marker_payload(
-                json.loads(read_regular(report_path, OUTPUT_BYTES)),
-                marker,
-                len(imports),
-                line,
-                needs,
-            )
-            if _saved(source) != saved:
-                raise SnapshotError("Saved source changed; refresh and retry.")
-            _check_configuration(project_root, resolution)
-            return result
-    except (OSError, ValueError, KeyError, SandboxUnavailable) as error:
-        return _failure(error)
+    result = run_provider_batch(
+        source,
+        expected_sha256=expected_sha256,
+        provider_name=provider_name,
+        imports=imports,
+        preamble=preamble,
+        marker=marker,
+        needs=needs,
+        views=[(line, command)],
+        cancel=cancel,
+        progress=progress,
+        wait=wait,
+        environment_sha256=environment_sha256,
+    )
+    if "views" not in result:
+        return result
+    view: dict[str, Any] = result["views"][0]
+    return view
 
 
 def provider_imports_error(

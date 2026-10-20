@@ -127,7 +127,7 @@ test('the title button has themed icons and a setup command', () => {
   assert.ok(manifest.contributes.commands.some(c => c.command === 'glitnir.setup'));
   assert.equal(manifest.contributes.configuration.properties['glitnir.pythonPath'].default, '');
   const memory = manifest.contributes.configuration.properties['glitnir.memoryLimitMb'];
-  assert.deepEqual([memory.type, memory.default, memory.minimum, memory.maximum, memory.scope], ['integer', 8192, 1024, 32768, 'resource']);
+  assert.deepEqual([memory.type, memory.default, memory.minimum, memory.maximum, memory.scope], ['integer', 16384, 1024, 32768, 'resource']);
   for (const removed of ['glitnir.leanProject']) assert.ok(!(removed in manifest.contributes.configuration.properties), `${removed} is not a setting`);
 });
 
