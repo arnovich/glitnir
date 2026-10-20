@@ -1625,6 +1625,68 @@ def test_records_from_check_keeps_views():
     assert "views" not in records_from_check(TEXT, RESULT, FP)
 
 
+def _size(records: dict) -> int:
+    return len(_serialised(records).encode())
+
+
+def test_a_check_drops_saved_drawings_rather_than_its_results(monkeypatch):
+    """Drawings are a cache: they never stop a check's results from saving."""
+    previous = with_evidence(None, KEY, _entry(), [KEY])
+    previous = with_view(previous, VIEW_KEY, _view(), [VIEW_KEY])
+    without_views = records_from_check(
+        TEXT, RESULT, FP, {k: v for k, v in previous.items() if k != "views"}
+    )
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(without_views) + 10)
+    records = records_from_check(TEXT, RESULT, FP, previous)
+    assert "views" not in records
+    assert records == without_views
+    assert saved_evidence(records) == {KEY: _entry()}
+    assert [c["name"] for c in records["claims"]] == ["A.result", "B.result"]
+
+
+def test_a_check_too_large_without_drawings_is_still_refused(monkeypatch):
+    previous = with_evidence(None, KEY, _entry(), [KEY])
+    previous = with_view(previous, VIEW_KEY, _view(), [VIEW_KEY])
+    claims_only = _size(records_from_check(TEXT, RESULT, FP))
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", claims_only + 10)
+    with pytest.raises(ValueError, match="nothing saved before was dropped"):
+        records_from_check(TEXT, RESULT, FP, previous)
+
+
+@pytest.mark.parametrize("section", ["evidence", "decisions"])
+def test_saving_a_result_drops_saved_drawings_rather_than_fail(
+    tmp_path: Path, monkeypatch, section
+):
+    notebook = tmp_path / "N.lean"
+    checked = records_from_check(TEXT, RESULT, FP)
+    with_drawing = with_view(checked, VIEW_KEY, _view(), [VIEW_KEY], notebook)
+
+    def saved(records):
+        if section == "evidence":
+            return with_evidence(records, KEY, _entry(), [KEY], notebook)
+        return with_decision(records, DECISION_KEY, _decision(), [], notebook)
+
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(saved(checked)) + 10)
+    records = saved(with_drawing)
+    assert "views" not in records
+    assert records == saved(checked)
+    # Too large even without the drawings: refused, naming the section saved.
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(checked) + 10)
+    with pytest.raises(ValueError, match=f"Saved {section} would make N.glitnir"):
+        saved(with_drawing)
+
+
+def test_a_drawing_never_drops_other_drawings_to_fit_the_file(
+    tmp_path: Path, monkeypatch
+):
+    notebook = tmp_path / "N.lean"
+    other = evidence_key("-- @view circuit other", 0)
+    records = with_view(None, other, _view(), [other])
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(records) + 10)
+    with pytest.raises(ValueError, match="Saved views would make N.glitnir.json"):
+        with_view(records, VIEW_KEY, _view(), [other, VIEW_KEY], notebook)
+
+
 def test_view_status_stale_when_provider_changes():
     assert _drawing_status(VIEWING) == "current"
     assert _drawing_status(VIEWING, provider="b" * 64) == "stale"
