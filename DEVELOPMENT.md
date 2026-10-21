@@ -149,7 +149,10 @@ output. Run it after changing a helper or `TOOLCHAIN`:
 The plugin's live tests need a built Forseti Lean checkout, `lake` on `PATH`,
 Lean 4.35.0 installed with elan and a working sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
-`FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead. Plugin
+`FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead, and
+under it a test using that checkout that skips at run time fails too; a skip it
+declares with a `skipif` mark (another platform's sandbox probes) or for the
+optional `simulation` input stays a skip. Plugin
 tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live
 test allows each block 120 s to check; on a loaded machine raise that with
 `FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
