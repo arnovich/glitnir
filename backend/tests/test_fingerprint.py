@@ -363,6 +363,21 @@ def test_axiom_allowlist_changes_the_fingerprint(tmp_path, monkeypatch):
     assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
 
 
+def test_supported_toolchain_changes_the_fingerprint(tmp_path, monkeypatch):
+    """Moving to another Lean invalidates results without any helper edit."""
+    from glitnir.lean import project_inspection
+
+    source = _project(tmp_path)
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    assert before["checker"]["toolchain"] == project_inspection.TOOLCHAIN
+    monkeypatch.setattr(project_inspection, "TOOLCHAIN", "leanprover/lean4:v4.99.0")
+    after = environment_fingerprint(source, text)
+    assert after["checker"]["toolchain"] == "leanprover/lean4:v4.99.0"
+    assert after["checker"]["programs"] == before["checker"]["programs"]
+    assert after["sha256"] != before["sha256"]
+
+
 def test_checker_helper_sources_are_identified(tmp_path):
     source = _project(tmp_path)
     checker = environment_fingerprint(source, source.read_text())["checker"]
