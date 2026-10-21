@@ -258,8 +258,8 @@ checked the notebook's declarations, walking every dependency (imported lemmas
 included) from its checked value rather than from summaries stored in compiled
 files. The separate module report lists them too, for display; when the two
 lists differ the check is unavailable rather than trusting either. A proof by
-`native_decide` rests on an axiom Lean adds to the notebook's module, so its
-status is `assumptions`.
+`native_decide` rests on an axiom Lean adds to the module that uses
+`native_decide`, so its status is `assumptions`.
 
 ### Imports and caches
 

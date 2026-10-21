@@ -59,6 +59,10 @@ the quotient are still added through the kernel's checked `addDecl` (so `quotIni
 is set only by the kernel's own `init_quot`), and generated constructors and
 recursors must equal the imported ones.
 
+Every kernel check here passes `maxRecDepth` 0 to `addDeclCore`, as Lean's own
+`Kernel.Environment.replay` and `leanchecker` do: from Lean 4.35 on, 0 means
+unbounded, so no check is cut short by a recursion limit.
+
 In `imports-cached`, when MODULE declares an imported name (Lean's import merges
 a theorem restated under the same name and statement into one constant, which
 the reporter reads), or the imports lack the kernel's own quotient from
@@ -74,10 +78,11 @@ local, is walked from its kernel-checked value. Each axiom's module is the first
 module, in load order, whose own constant data declares it, then MODULE: the
 reporter's `getModuleIdxFor?`, without the names IR files add. These are the
 axioms the checker decides a theorem's status by. `collectAxioms` finds each
-constant in that kernel environment, where the replay itself added every constant
-and no import added any; a constant it could not find would contribute no axioms,
-so the live tests check that axioms reached only through imported theorems are
-reported.
+constant in that kernel environment, where the replay added every constant (on
+the cached and incremental paths, `rebuild` added the imported ones) and none
+came from the environment `importModules` returned; a constant it could not find
+would contribute no axioms, so the live tests check that axioms reached only
+through imported theorems are reported.
 
 On success it prints one JSON document: what ran, whether the imports were
 replayed and rebuilt equally (`imports_replayed`), whether a larger closure may

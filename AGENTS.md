@@ -44,7 +44,9 @@ sets `quotInit` for any import list (through Lean 4.34 the kernel's interpreter
 also ran that IR for `Lean.reduceBool`/`reduceNat`; Lean 4.35 removed them, and
 its kernel runs no compiled code). Every kernel environment starts from
 `mkEmptyEnvironment`; the cached path rebuilds the imports there unchecked, and
-only after the same program verified that rebuild equals its full replay. An
+only after the same program verified that rebuild equals its full replay. Kernel
+checks pass `maxRecDepth` 0, which from Lean 4.35 on means unbounded, as in
+Lean's own replay. An
 incremental record (`imports-incremental`) kernel-replays only the modules a
 closure adds to a recorded, `extendable` base with identical module digests, and
 is recorded only after its own rebuild equals that replay; keep that argument
