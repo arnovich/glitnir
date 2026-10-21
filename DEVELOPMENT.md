@@ -161,11 +161,9 @@ test allows each block 120 s to check; on a loaded machine raise that with
 Verified on 2026-10-15 against forseti-lean `c65dada` (Lean 4.32.1): the opt-in
 live tests passed for proven and refuted `entailment` and `trajectory` decisions
 and for `simulate` evidence. `stream` decisions and `iterate` evidence have not
-been run through Glitnir's checker yet. CI does not run these tests
-(`plugins/forseti/tests/test_decision_provider_lean.py` and
-`test_evidence_provider_lean.py`, with `FORSETI_LEAN_TEST_PROJECT` set), so
-re-run them after Forseti or Glitnir changes. The plugin README records later
-runs.
+been run through Glitnir's checker yet. CI's `plugin-live` job now runs all of
+the plugin's Lean tests on Linux against the pinned release; run them locally
+for macOS. The plugin README records later runs.
 
 ## Continuous integration
 
@@ -183,6 +181,13 @@ jobs are:
   fails.
 - **helpers** elaborates every Lean helper program on that Lean with
   `backend/scripts/check_helpers.py`, requiring no output.
+- **plugin-live** builds the Forseti Lean release the plugin pins (forseti-lean
+  `v0.4.0`, checked against its commit) and runs the plugin's whole test suite
+  against it with `FORSETI_REQUIRE_LEAN_PROJECT=1`, so a Lean test that cannot
+  run or skips fails (a `skipif` it declares, or the optional `simulation`
+  input, stays a skip). It runs on every pull request and `main` push, in up
+  to 150 minutes; no test runs the community REPL. A candidate does not wait
+  for it.
 - **candidate** creates a release candidate from a `main` push when the
   extension, live and helpers jobs pass and the `RELEASE_CANDIDATES` repository
   variable is `true`

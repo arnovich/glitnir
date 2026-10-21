@@ -225,6 +225,59 @@ jobs:
       # JSON Glitnir reads from it.
       - name: Elaborate the Lean helper programs
         run: .venv/bin/python backend/scripts/check_helpers.py
+  # The plugin's Lean tests, against the Forseti Lean release the plugin pins.
+  plugin-live:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v4
+      - name: Retrieve this run's wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: glitnir-wheels
+      - name: Install the backend and plugin as the extension job does
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.3-py3-none-any.whl[dev]'
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
+          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.3-py3-none-any.whl
+      - name: Install elan and the sandbox
+        run: |
+          curl -fsSL https://github.com/leanprover/elan/releases/download/v4.2.4/elan-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/elan.tar.gz"
+          echo "42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63  $RUNNER_TEMP/elan.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/elan.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/elan-init" -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq
+          # keyutils: a sandbox probe checks that a proof cannot read the session keyring.
+          sudo apt-get install --yes bubblewrap apparmor apparmor-profiles keyutils
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
+      # The release the plugin pins (lean-release.v1.json); its build brings the
+      # supported Lean toolchain with it.
+      - name: Build the pinned Forseti Lean release
+        run: |
+          git clone --quiet --depth 1 --branch v0.4.0 https://github.com/arnovich/forseti-lean.git "$RUNNER_TEMP/forseti-lean"
+          cd "$RUNNER_TEMP/forseti-lean"
+          test "$(git rev-parse HEAD)" = e7de73c8982fc2d4c57924161c02b3c285253706
+          lake exe cache get
+          lake build
+      - name: Check the plugin against live Lean
+        working-directory: plugins/forseti
+        env:
+          # Under the gate a Lean test that cannot run, or skips, fails
+          # (tests/conftest.py). No test runs the community REPL.
+          FORSETI_REQUIRE_LEAN_PROJECT: '1'
+          # A cold first check replays Mathlib and Forseti; let a waiting check
+          # outlast it (the editor's timeout setting, at its cap).
+          GLITNIR_ELABORATION_TIMEOUT_MS: '1800000'
+        run: |
+          export FORSETI_LEAN_PROJECT="$RUNNER_TEMP/forseti-lean"
+          ../../.venv/bin/python -m pytest -q -rs --durations=40
   candidate:
     needs: [extension, live, helpers]
     # Release candidates are created only once RELEASE_CANDIDATES is set to true.
