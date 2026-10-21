@@ -147,7 +147,7 @@ output. Run it after changing a helper or `TOOLCHAIN`:
 ```
 
 The plugin's live tests need a built Forseti Lean checkout, `lake` on `PATH`,
-Lean 4.32.1 installed with elan and a working sandbox, and skip unless
+Lean 4.35.0 installed with elan and a working sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
 `FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead. Plugin
 tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live

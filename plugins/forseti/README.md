@@ -64,7 +64,7 @@ proofs may unroll a recursion over every mark, only up to 1024 marks, four
 years. A longer claim is `UNKNOWN: unsupported`. `stepped` decisions and
 `sample` evidence need a Forseti Lean build that contains
 `Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the
-pinned release, Forseti Lean v0.3.0, does; an older build reports the missing
+pinned release, Forseti Lean v0.4.0, does; an older build reports the missing
 module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
@@ -103,7 +103,7 @@ from `plugins/forseti`. See the repository's
 The live evidence tests (`tests/test_evidence_provider_lean.py`) run `simulate`,
 and `iterate` when `gimle.asgard` is installed, end to end through Glitnir's
 project runner. They need a built Forseti Lean release checkout, `lake` on
-`PATH`, Lean 4.32.1 installed with elan and a working sandbox. They write a
+`PATH`, Lean 4.35.0 installed with elan and a working sandbox. They write a
 temporary module into the checkout's `Gimle/Forseti/Tests/` and remove it and its
 results file afterwards. CI sets no project, so they skip there; `-k "not live"`
 deselects them. To run them:
