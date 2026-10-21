@@ -248,9 +248,11 @@ def test_the_rendered_goals_are_the_lean_corpus_goals(lean_test_project) -> None
         n = goal.context.dimension
         for side in ("antecedent", "consequent"):
             formula = getattr(goal, side)
+            # `show`, not an ascription: Lean 4.35 finds no `Decidable` for an
+            # equation whose side keeps the type `Formula context.dimension`.
             claims.append(
                 f"(({render.formula(formula)} : Formula {n}) = "
-                f"(PredicateCertificates.{name}.{side} : Formula {n}))"
+                f"(show Formula {n} from PredicateCertificates.{name}.{side}))"
             )
             constraints = nonstrict(formula)
             if constraints is not None:
