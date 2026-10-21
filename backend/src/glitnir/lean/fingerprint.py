@@ -156,7 +156,11 @@ def git_state(
     """
     if deadline is None:
         deadline = _clock() + FINGERPRINT_SECONDS
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("GIT_") and k != "GLITNIR_TASKVALET_TOKEN"
+    }
     env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", LC_ALL="C")
     reasons: list[str] = []
 
@@ -684,6 +688,14 @@ def environment_fingerprint(
         "sources": sources,
         "checker": checker_identity(),
     }
+    from glitnir.compute.client import execution_identity
+    from glitnir.compute.protocol import checker_digest, context_digest
+
+    execution = execution_identity()
+    if execution is not None:
+        identity["execution"] = execution
+        identity["compute_context"] = context_digest(source)
+        identity["compute_checker"] = checker_digest()
     unknown = any("reason" in package for package in packages) or bool(
         sources and sources["unknown"]
     )

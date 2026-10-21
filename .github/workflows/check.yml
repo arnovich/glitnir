@@ -71,13 +71,13 @@ jobs:
       - name: Install runtime and extension dependencies
         run: |
           uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.3-py3-none-any.whl[dev]'
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.4-py3-none-any.whl[dev]'
           # glitnir is not on an index, so the plugin's own dependencies are named here.
           uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
-          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.3-py3-none-any.whl
+          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.4-py3-none-any.whl
           uv venv --python 3.12 .venv-core
           uv pip install --python .venv-core/bin/python -c backend/requirements-dev.lock \
-            backend/dist/glitnir-0.1.3-py3-none-any.whl
+            backend/dist/glitnir-0.1.4-py3-none-any.whl
           npm ci
           npm audit --audit-level=high
           echo "GLITNIR_BUILD_PYTHON=$GITHUB_WORKSPACE/.venv/bin/python" >> "$GITHUB_ENV"
@@ -118,7 +118,7 @@ jobs:
           fi
           version=$(node -p 'require("./package.json").version')
           unzip -q "glitnir-$version.vsix" -d "$RUNNER_TEMP/checked-vsix"
-          python=$(node extension/scripts/check-thin-install.cjs "$RUNNER_TEMP/checked-vsix/extension" backend/dist/glitnir-0.1.3-py3-none-any.whl "$RUNNER_TEMP/checked-backends")
+          python=$(node extension/scripts/check-thin-install.cjs "$RUNNER_TEMP/checked-vsix/extension" backend/dist/glitnir-0.1.4-py3-none-any.whl "$RUNNER_TEMP/checked-backends")
           echo "GLITNIR_TEST_PYTHON=$python" >> "$GITHUB_ENV"
           echo "GLITNIR_TEST_VSIX=$PWD/glitnir-$version.vsix" >> "$GITHUB_ENV"
       - name: Check the installed extension in an isolated VS Code host
@@ -181,9 +181,9 @@ jobs:
       - name: Install the backend as the extension job does
         run: |
           uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.3-py3-none-any.whl[dev]'
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock 'backend/dist/glitnir-0.1.4-py3-none-any.whl[dev]'
           uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
-          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.3-py3-none-any.whl
+          uv pip install --python .venv/bin/python --no-deps plugins/forseti/dist/glitnir_forseti-0.1.4-py3-none-any.whl
       - name: Install Lean and the sandbox
         run: |
           sudo apt-get update -qq

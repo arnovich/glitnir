@@ -527,6 +527,8 @@ def records_from_check(
         "withheld": result.get("withheld"),
         "claims": claims,
     }
+    if isinstance(result.get("execution"), dict):
+        records["environment"]["execution"] = dict(result["execution"])
     if non_claims:
         records["non_claims"] = non_claims
     kept = dict(records)

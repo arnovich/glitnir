@@ -379,3 +379,32 @@ def prepared_git_project(tmp_path, project_toolchain):
     )
     run([str(toolchain / "bin/lake"), "--keep-toolchain", "build", "Example"], root)
     return root
+
+
+@pytest.fixture
+def compute_project(tmp_path):
+    """A small prepared-project source tree for transport and isolation tests."""
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "lakefile.toml").write_text(
+        'name = "example"\n[[lean_lib]]\nname = "Example"\n'
+    )
+    (root / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (root / "lake-manifest.json").write_text('{"packages": []}\n')
+    (root / "Example.lean").write_text("theorem sample : True := by trivial\n")
+    (root / "Helper.lean").write_text("theorem helper : True := by trivial\n")
+    return root
+
+
+@pytest.fixture(autouse=True)
+def artifact_store_test_space(request, monkeypatch):
+    """Keep store unit tests independent of the host's changing free disk space.
+
+    Disk-pressure cases override this sampler explicitly. Live checks continue
+    to use the real filesystem reserve.
+    """
+    if request.node.path.name == "test_artifact_store.py":
+        monkeypatch.setattr(
+            "glitnir.lean.artifact_store._free_bytes",
+            lambda _descriptor: (100 * 1024**3, 1024**4),
+        )

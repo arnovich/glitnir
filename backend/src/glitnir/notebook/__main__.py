@@ -14,9 +14,11 @@ import argparse
 import hashlib
 import json
 import sys
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 
+from glitnir.compute.client import check_remote, from_environment
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import check_project
 from glitnir.lean.scratch import sweep_stale_scratch
@@ -55,9 +57,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         text = (
             read_regular(args.notebook, MAX_SOURCE_BYTES).decode().replace("\r\n", "\n")
         )
-        result = check_project(
-            args.notebook, expected_sha256=hashlib.sha256(text.encode()).hexdigest()
-        )
+        source_hash = hashlib.sha256(text.encode()).hexdigest()
+        if from_environment() is not None:
+            result = check_remote(
+                args.notebook,
+                expected_sha256=source_hash,
+                cancel=threading.Event(),
+                progress=lambda message: print(message, file=sys.stderr),
+            )
+        else:
+            result = check_project(args.notebook, expected_sha256=source_hash)
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

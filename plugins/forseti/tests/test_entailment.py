@@ -1565,3 +1565,19 @@ def test_a_certificate_that_uses_no_product_is_an_ordinary_one() -> None:
     assert pruned == Certificate((Row(used, (used, empty)),))
     kept = search._prune((Row(used, (empty, empty, used)),), ((0, 1),), 2)
     assert kept == PsatzCertificate(((0, 1),), (Row(used, (empty, empty, used)),))
+
+
+def test_solver_child_does_not_inherit_remote_credential(monkeypatch) -> None:
+    """Local solver search has no need for the remote computation credential."""
+    from glitnir_forseti.entailment import solver
+
+    monkeypatch.setenv("GLITNIR_TASKVALET_TOKEN", "private-compute-token")
+    observed = []
+
+    def refuse(*args, **kwargs):
+        observed.append("GLITNIR_TASKVALET_TOKEN" in kwargs.get("env", os.environ))
+        raise OSError("no child needed")
+
+    monkeypatch.setattr(solver.subprocess, "Popen", refuse)
+    run_worker({"op": "refute"}, time.monotonic() + 5)
+    assert observed == [False]
