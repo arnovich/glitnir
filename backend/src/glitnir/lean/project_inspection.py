@@ -17,6 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from glitnir.lean.artifacts import artifact_files, valid_artifacts
 from glitnir.lean.awake import awake
 from glitnir.lean.environment import bind_to_parent, kill_and_reap
 from glitnir.lean.limits import check_seconds
@@ -24,7 +25,7 @@ from glitnir.lean.prepared_packages import PROGRAM, validate_resolution
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.sandbox import SandboxUnavailable, confine
 
-TOOLCHAIN = "leanprover/lean4:v4.32.1"
+TOOLCHAIN = "leanprover/lean4:v4.35.0"
 # `lake setup-file` lists every module in the import closure; for `import
 # Mathlib` that is over 5 MB, so leave room for the library to grow.
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
@@ -35,7 +36,7 @@ MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*")
 
 #: The origin elan assumes for a toolchain named without one.
 _ORIGIN = "leanprover/lean4:"
-#: A release named with its leading `v`, such as `v4.32.1` or `v4.32.1-rc1`.
+#: A release named with its leading `v`, such as `v4.35.0` or `v4.35.0-rc1`.
 _RELEASE = re.compile(r"v(\d+\.\d+\.\d+\S*)")
 #: What every refusal and the editor's banner say after the version sentence.
 _OFF = (
@@ -48,7 +49,7 @@ def _version(declaration: str) -> str:
     """Name a declared toolchain as a Lean version, the way elan resolves it.
 
     The default origin is dropped, and the `v` of a release: elan picks the
-    same toolchain for `leanprover/lean4:v4.32.1`, `v4.32.1` and `4.32.1`.
+    same toolchain for `leanprover/lean4:v4.35.0`, `v4.35.0` and `4.35.0`.
     """
     name = declaration.removeprefix(_ORIGIN)
     release = _RELEASE.fullmatch(name)
@@ -56,7 +57,7 @@ def _version(declaration: str) -> str:
 
 
 def supported_version() -> str:
-    """Return the Lean version Glitnir checks, such as `4.32.1`, from `TOOLCHAIN`."""
+    """Return the Lean version Glitnir checks, such as `4.35.0`, from `TOOLCHAIN`."""
     return _version(TOOLCHAIN)
 
 
@@ -104,7 +105,7 @@ def _source_digest(source: Path) -> str:
 
 
 def toolchain_directory() -> str:
-    """Name elan's directory for `TOOLCHAIN`, such as `leanprover--lean4---v4.32.1`."""
+    """Name elan's directory for `TOOLCHAIN`, such as `leanprover--lean4---v4.35.0`."""
     return TOOLCHAIN.replace("/", "--").replace(":", "---")
 
 
@@ -248,8 +249,7 @@ def validate_setup(value: Any, root: Path, toolchain: Path) -> dict[str, Any]:
     ):
         raise ValueError("Lake returned invalid Lean options.")
     if not isinstance(imports, dict) or not all(
-        isinstance(k, str) and isinstance(v, list) and 1 <= len(v) <= 4
-        for k, v in imports.items()
+        isinstance(k, str) and valid_artifacts(v) for k, v in imports.items()
     ):
         raise ValueError("Lake returned invalid import artifacts.")
 
@@ -263,7 +263,7 @@ def validate_setup(value: Any, root: Path, toolchain: Path) -> dict[str, Any]:
             raise ValueError("Lake artifact is missing or is not a regular file.")
 
     for paths in imports.values():
-        for path in paths:
+        for path, _ in artifact_files(paths):
             artifact(path)
     for field in ("plugins", "dynlibs"):
         if not isinstance(value[field], list):

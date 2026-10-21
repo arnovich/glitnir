@@ -8,16 +8,20 @@ It reads MODULE's own data (every `.olean` part, as `importModules` reads it) an
 the constants of MODULE's imports with `importModules` at the private level, which
 reads every module of the transitive closure in full. The kernel never checks
 anything against that imported environment: `importModules` also loads the
-imports' IR and extension state, and sets `quotInit` for any import list, and
-the kernel runs the interpreter on its environment for `Lean.reduceBool` and
-`Lean.reduceNat`. Every kernel environment here starts from `mkEmptyEnvironment`,
-which holds no project IR or extension state, as in a fresh replay.
+imports' IR and extension state, and sets `quotInit` for any import list.
+Through Lean 4.34 the kernel also ran the interpreter on its environment for
+`Lean.reduceBool` and `Lean.reduceNat`, so imported IR could run during a check;
+Lean 4.35, which this program targets, removed both, and its kernel runs no
+compiled code. Every kernel environment here still starts from
+`mkEmptyEnvironment`, which holds no project IR or extension state, as in a fresh
+replay.
 
 Write X for the imported constant map (`map₁`, which `finalizeImport` merges
 over the closure's modules in load order) and R(X) for `rebuild X`.
 
 - `full` replays every imported and local constant together into an empty
-  environment (Lean 4.32.1's `leanchecker --fresh` algorithm), as before caching.
+  environment (`leanchecker --fresh`'s algorithm, `Lean.Kernel.Environment.replay`),
+  as before caching.
 - `imports-only` replays X into an empty environment, giving K, and reports
   `imports_replayed` only when R(X) and K hold equal constants and the same
   `quotInit` (`sameKernel`). Every constant in K was kernel-checked, so then
@@ -48,11 +52,11 @@ closure's data in load order gives X exactly, so that a later, larger closure
 may use this one as its BASE. A record built on a base stands on that base's
 record, back to one whose K was a fresh replay.
 
-`rebuild` is Lean's `Environment.replay` algorithm with one change: definitions,
-theorems, axioms and opaque constants are added without type checking; their
-checks are what an import mode already did. Inductive types and the quotient
-are still added through the kernel's checked `addDecl` (so `quotInit` is set
-only by the kernel's own `init_quot`), and generated constructors and
+`rebuild` is Lean's `Kernel.Environment.replay` algorithm with one change:
+definitions, theorems, axioms and opaque constants are added without type
+checking; their checks are what an import mode already did. Inductive types and
+the quotient are still added through the kernel's checked `addDecl` (so `quotInit`
+is set only by the kernel's own `init_quot`), and generated constructors and
 recursors must equal the imported ones.
 
 In `imports-cached`, when MODULE declares an imported name (Lean's import merges
@@ -61,15 +65,19 @@ the reporter reads), or the imports lack the kernel's own quotient from
 `Init.Prelude` (`kernelQuotient`), the module is replayed as in `full`; the
 output says why (`fresh`).
 
-After checking MODULE's constants, it collects, for every theorem MODULE
-declares, the axioms it depends on (`collectAxioms`) in the environment where
-those constants were just kernel-checked. That environment starts from
+After checking MODULE's constants, it collects, for every theorem MODULE declares,
+the axioms it depends on (`collectAxioms`) in the environment where those
+constants were just kernel-checked. That environment starts from
 `mkEmptyEnvironment`: it holds no imported extension state, so no axiom list
 precomputed into an `.olean` is consulted, and every dependency, imported or
 local, is walked from its kernel-checked value. Each axiom's module is the first
 module, in load order, whose own constant data declares it, then MODULE: the
-reporter's `getModuleIdxFor?`, without the names `.ir` files add. These are the
-axioms the checker decides a theorem's status by.
+reporter's `getModuleIdxFor?`, without the names IR files add. These are the
+axioms the checker decides a theorem's status by. `collectAxioms` finds each
+constant in that kernel environment, where the replay itself added every constant
+and no import added any; a constant it could not find would contribute no axioms,
+so the live tests check that axioms reached only through imported theorems are
+reported.
 
 On success it prints one JSON document: what ran, whether the imports were
 replayed and rebuilt equally (`imports_replayed`), whether a larger closure may
@@ -143,7 +151,7 @@ def sameConstants (a b : Std.HashMap Name ConstantInfo) : Bool :=
     | some other => sameConstant info other
     | none => false
 
-/-- `finalizeImport`'s `subsumesInfo` (private in Lean 4.32.1), unchanged: whether
+/-- `finalizeImport`'s `subsumesInfo` (private in Lean 4.35.0), unchanged: whether
 `c₁` may replace `c₂` of the same name when both are imported. -/
 def subsumes (constMap : Std.HashMap Name ConstantInfo) (c₁ c₂ : ConstantInfo) : Bool :=
   c₁.name == c₂.name && c₁.type == c₂.type && c₁.levelParams == c₂.levelParams &&
@@ -199,7 +207,8 @@ def kernelQuotient (env : Environment) : IO Bool := do
     let some index := env.getModuleIdxFor? name | return false
     unless env.header.moduleNames[index]? == some `Init.Prelude do return false
   let empty ← mkEmptyEnvironment
-  let .ok fresh ← (empty.replay subset).toBaseIO | return false
+  let .ok fresh ← (Kernel.Environment.replay subset empty.toKernelEnv).toBaseIO
+    | return false
   return quotientNames.all fun name =>
     match fresh.constants.find? name, constants[name]? with
     | some (.quotInfo created), some (.quotInfo imported) => sameQuotient created imported
@@ -207,7 +216,7 @@ def kernelQuotient (env : Environment) : IO Bool := do
 
 namespace Rebuild
 
-/-- Lean 4.32.1's `Lean.Environment.Replay` state, over a kernel environment. -/
+/-- Lean 4.35.0's `Lean.Kernel.Environment.Replay` state. -/
 structure State where
   env : Kernel.Environment
   remaining : NameSet := {}
@@ -219,7 +228,8 @@ abbrev M := ReaderT (Std.HashMap Name ConstantInfo) <| StateRefT State IO
 
 def addDecl (d : Declaration) (check : Bool) : M Unit := do
   let env := (← get).env
-  let result := if check then env.addDeclCore 0 d none else env.addDeclWithoutChecking d
+  -- Recursion depth 0 is unbounded, as in Lean's own `Kernel.Environment.replay`.
+  let result := if check then env.addDeclCore 0 0 d none else env.addDeclWithoutChecking d
   match result with
   | .ok env => modify fun s => { s with env := env }
   | .error _ => throw <| IO.userError "rebuilding the imported environment failed"
@@ -233,7 +243,7 @@ def isTodo (name : Name) : M Bool := do
     return false
 
 mutual
-/-- `Lean.Environment.Replay.replayConstant`, adding values unchecked. -/
+/-- `Lean.Kernel.Environment.Replay.replayConstant`, adding values unchecked. -/
 partial def replayConstant (name : Name) : M Unit := do
   if ← isTodo name then
     let some ci := (← read)[name]? | unreachable!
@@ -390,8 +400,7 @@ def incremental (env : Environment) (imported : Std.HashMap Name ConstantInfo)
     | none => return none
   let rest := imported.filter fun name _ => !baseConstants.contains name
   let baseKernel ← rebuild baseConstants
-  let checked ← (Environment.ofKernelEnv baseKernel).replay rest
-  return some checked.toKernelEnv
+  return some (← Kernel.Environment.replay rest baseKernel)
 
 unsafe def main (args : List String) : IO UInt32 := do
   let (moduleText, artifactRoot, mode, baseFile) ← match args with
@@ -432,8 +441,7 @@ unsafe def main (args : List String) : IO UInt32 := do
       let replayed ← match fromBase with
         | some checked => pure checked
         | none => do
-          let full ← (← mkEmptyEnvironment).replay imported
-          pure full.toKernelEnv
+          Kernel.Environment.replay imported (← mkEmptyEnvironment).toKernelEnv
       let rebuilt ← rebuild imported
       importsReplayed := sameKernel replayed rebuilt
       -- A later, larger closure may rebuild this one from its module data.
@@ -465,12 +473,11 @@ unsafe def main (args : List String) : IO UInt32 := do
       if mode == "full" || fresh.isSome then
         -- Lean's import keeps the later, local copy of a restated theorem.
         let merged := declared.fold (init := imported) fun map name info => map.insert name info
-        let checked ← (← mkEmptyEnvironment).replay merged
-        theorems := theoremAxioms env checked module own
+        let checked ← Kernel.Environment.replay merged (← mkEmptyEnvironment).toKernelEnv
+        theorems := theoremAxioms env (Environment.ofKernelEnv checked) module own
       else
-        let base := Environment.ofKernelEnv (← rebuild imported)
-        let checked ← base.replay declared
-        theorems := theoremAxioms env checked module own
+        let checked ← Kernel.Environment.replay declared (← rebuild imported)
+        theorems := theoremAxioms env (Environment.ofKernelEnv checked) module own
         ran := "imports cached"
     let modules ← env.header.moduleNames.mapM fun m => do
       return toJson #[m.toString, (← findOLean m).toString]

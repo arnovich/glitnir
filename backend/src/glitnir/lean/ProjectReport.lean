@@ -9,7 +9,7 @@ Each theorem's `uses` are display only too, and are not cross-checked: the other
 theorems its type and value name directly, each with the module that declares
 it, which the preview draws as the claims a claim uses. -/
 
-/-- The fields of Lean 4.32.1's private `ExportedAxiomsState`, the state of the
+/-- The fields of Lean 4.35.0's private `ExportedAxiomsState`, the state of the
 extension through which `collectAxioms` takes an imported constant's axioms
 from its `.olean` instead of walking its value. -/
 structure ExportedAxioms where

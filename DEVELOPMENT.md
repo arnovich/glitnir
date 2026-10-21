@@ -121,8 +121,9 @@ plugin.
 The backend's `test_live_` tests run Lean. The backend's conftest marks them
 `live`, and a test that uses the `project_toolchain` fixture must have that
 name. They skip locally unless `GLITNIR_REQUIRE_PROJECT_INSPECTION=1` and
-`GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.32.1 and a working sandbox;
-with both set, a live test that skips fails instead.
+`GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.35.0 (the one version Glitnir
+checks, `project_inspection.TOOLCHAIN`) and a working sandbox; with both set, a
+live test that skips fails instead.
 
 ```sh
 cd backend
@@ -175,7 +176,7 @@ jobs are:
   the minimal runtime bridge test, `npm run package`, a fresh setup from the
   packaged VSIX and the isolated host test.
 - **live** runs the backend's `-m live` tests against the supported Lean
-  (`TOOLCHAIN`, 4.32.1) in the bubblewrap sandbox, where a skipped live test
+  (`TOOLCHAIN`, 4.35.0) in the bubblewrap sandbox, where a skipped live test
   fails.
 - **helpers** elaborates every Lean helper program on that Lean with
   `backend/scripts/check_helpers.py`, requiring no output.

@@ -794,6 +794,7 @@ def test_module_files_require_links_to_the_recorded_stored_files(tmp_path):
         ".olean": "1" * 64,
         ".olean.server": "absent",
         ".olean.private": "absent",
+        ".ir.sig": "absent",
         ".ir": "absent",
     }
     assert _module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean"))
@@ -802,9 +803,13 @@ def test_module_files_require_links_to_the_recorded_stored_files(tmp_path):
     assert (
         _module_files(snapshot, isolated, "Init", str(isolated / "Dep.olean")) is None
     )
-    (lib / "Init.ir").write_bytes(b"unrecorded")
-    assert _module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
-    (lib / "Init.ir").unlink()
+    # Lean 4.35 reads `.ir.sig` too, so an unrecorded one is unknown as well.
+    for suffix in (".ir", ".ir.sig"):
+        (lib / f"Init{suffix}").write_bytes(b"unrecorded")
+        assert (
+            _module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
+        )
+        (lib / f"Init{suffix}").unlink()
     # An entry linking to another stored file, or not a link at all.
     (inputs / "artifacts/Dep.olean").unlink()
     (inputs / "artifacts/Dep.olean").symlink_to(blob_path(blobs, "1" * 64))

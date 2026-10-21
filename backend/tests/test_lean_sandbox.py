@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from glitnir.lean import sandbox
+from glitnir.lean.project_inspection import TOOLCHAIN
 
 
 @pytest.fixture
@@ -575,7 +576,7 @@ def test_code_written_to_scratch_cannot_be_loaded(tmp_path) -> None:
         command = [
             shutil.which("elan") or "elan",
             "run",
-            "leanprover/lean4:v4.32.1",
+            TOOLCHAIN,
             "lean",
             f"--load-dynlib={library}",
             "T.lean",

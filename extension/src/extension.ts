@@ -252,7 +252,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
   }
-  const dependencyChanges = vscode.workspace.createFileSystemWatcher('**/{*.lean,*.olean,*.ir,*.so,*.dylib,lean-toolchain,lakefile.toml,lake-manifest.json}');
+  const dependencyChanges = vscode.workspace.createFileSystemWatcher('**/{*.lean,*.olean,*.ir,*.ir.sig,*.so,*.dylib,lean-toolchain,lakefile.toml,lake-manifest.json}');
   const invalidateObservations = () => {
     for (const preview of previews.values()) void preview.panel.webview.postMessage({type: 'environmentChanged'});
   };

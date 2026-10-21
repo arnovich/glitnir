@@ -269,17 +269,17 @@ def test_observation_absolutizes_validated_project_artifacts(tmp_path):
     from glitnir.lean.proof_trace import _absolute_setup
 
     setup = {
-        "importArts": {"Example": ["build/Example.olean"]},
+        "importArts": {"Example": [["build/Example.olean"]]},
         "plugins": [{"path": "build/plugin.so", "initFn": "init"}],
         "dynlibs": ["build/library.so"],
     }
     result = _absolute_setup(setup, tmp_path)
-    assert result["importArts"]["Example"] == [str(tmp_path / "build/Example.olean")]
+    assert result["importArts"]["Example"] == [[str(tmp_path / "build/Example.olean")]]
     assert result["plugins"] == [
         {"path": str(tmp_path / "build/plugin.so"), "initFn": "init"}
     ]
     assert result["dynlibs"] == [str(tmp_path / "build/library.so")]
-    assert setup["importArts"]["Example"] == ["build/Example.olean"]
+    assert setup["importArts"]["Example"] == [["build/Example.olean"]]
     with pytest.raises(ValueError, match="without a project"):
         _absolute_setup(setup, None)
 

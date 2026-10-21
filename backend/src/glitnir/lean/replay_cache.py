@@ -44,7 +44,7 @@ MAX_TOTAL_BYTES = 256 * 1024**2
 #: One entry lists every module of a closure (Mathlib: thousands).
 ENTRY_BYTES = 16 * 1024**2
 #: Each module's files that ``importModules`` may read.
-MODULE_SUFFIXES = (".olean", ".olean.server", ".olean.private", ".ir")
+MODULE_SUFFIXES = (".olean", ".olean.server", ".olean.private", ".ir.sig", ".ir")
 _KEY = re.compile(r"[0-9a-f]{64}\Z")
 
 

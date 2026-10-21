@@ -629,10 +629,22 @@ def test_live_imports_without_the_kernel_quotient_replay_fresh(
         ]
 
 
-def test_live_reduce_bool_is_not_evaluated_on_the_cached_path(
-    prepared_lean_project, monkeypatch, recorded_replay_cache
+#: Lean 4.35 removed `Lean.reduceBool`, `Lean.ofReduceBool` and their `Nat`
+#: forms, so the kernel runs no compiled code. A proof naming them no longer
+#: elaborates: the check withholds it, with no status.
+REMOVED_REDUCTION = [
+    "theorem windows : System.Platform.isWindows = false :=\n"
+    "  Lean.ofReduceBool _ _ rfl\n",
+    "theorem reduced : Lean.reduceBool true = true := rfl\n",
+    "theorem counted : Lean.reduceNat 2 = 2 := rfl\n",
+]
+
+
+@pytest.mark.parametrize("proof", REMOVED_REDUCTION)
+def test_live_removed_kernel_reduction_is_withheld_on_the_cached_path(
+    prepared_lean_project, monkeypatch, recorded_replay_cache, proof
 ):
-    """`Lean.ofReduceBool` fails over reused imports exactly as in a fresh replay."""
+    """A proof by `Lean.ofReduceBool` gets no status, over reused imports too."""
     import hashlib
 
     from glitnir.lean import project_checking as checking
@@ -649,16 +661,18 @@ def test_live_reduce_bool_is_not_evaluated_on_the_cached_path(
     monkeypatch.setattr(checking, "run_observer", observed)
     source = prepared_lean_project / "src/Example.lean"
     source.write_text(
-        "import Example.Helper\n"
-        "theorem t : System.Platform.isWindows = false :=\n"
-        "  Lean.ofReduceBool _ _ rfl\n"
+        "import Example.Helper\ntheorem result : helper = 1 := rfl\n" + proof
     )
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     for _ in range(2):
         result = checking.check_project(source, expected_sha256=digest)
-        assert result["status"] == "unavailable", result
-        assert "Independent kernel replay failed" in result["message"], result
-        assert "(interpreter) unknown declaration" in result["message"], result
+        assert result["status"] == "checked_snapshot", result
+        assert result["replay"] == "imports cached", result
+        assert [(t["name"], t["status"]) for t in result["theorems"]] == [
+            ("result", "checked")
+        ], result
+        assert result["withheld"]["from_line"] == 3, result
+        assert "Unknown" in result["withheld"]["message"], result
     assert modes == ["imports-cached", "imports-cached"]
 
 
@@ -668,8 +682,9 @@ def test_live_dependency_ir_cannot_run_in_the_cached_replay(
     """A dependency's `implemented_by` code never runs while the module replays.
 
     The dependency's IR would print a forged replay report and exit 0. The
-    module, forged just before its replay, asks the kernel to evaluate it and
-    adds an unchecked theorem of `False`.
+    module, forged just before its replay, adds an unchecked theorem of `False`
+    and one whose statement would have had the kernel evaluate that IR through
+    Lean 4.34 (`Lean.reduceBool`, which Lean 4.35 no longer declares).
     """
     import hashlib
     import os
@@ -725,7 +740,8 @@ def test_live_dependency_ir_cannot_run_in_the_cached_replay(
     assert result["status"] == "unavailable", result
     assert result["theorems"] == []
     assert "Independent kernel replay failed" in result["message"], result
-    assert "unknown declaration 'evil'" in result["message"] or (
+    # Whichever forged constant the replay reaches first fails it.
+    assert "unknown constant 'Lean.reduceBool'" in result["message"] or (
         "forgedLocal" in result["message"]
     ), result
 
@@ -917,30 +933,37 @@ def test_live_a_forged_new_module_is_rejected_over_a_base(
     assert "forgedLocal" in result["message"], result
 
 
-def test_live_reduce_bool_in_a_new_module_is_not_evaluated(
+def test_live_native_decide_in_a_new_module_is_an_assumption(
     prepared_lean_project, monkeypatch, recorded_replay_cache
 ):
-    """`Lean.ofReduceBool` in a new module fails over a base as in a fresh replay."""
+    """`native_decide` over a base is an assumption of the module that used it."""
     root = prepared_lean_project
     source = root / "src/Example.lean"
     recorded_replay_cache()
     _grow_closure(
         root,
-        "import Example.Helper\n"
-        "theorem windows : System.Platform.isWindows = false :=\n"
-        "  Lean.ofReduceBool _ _ rfl\n",
-        "import Example.Extra\ntheorem result : True := True.intro\n",
+        "import Example.Helper\ntheorem decided : helper + 1 = 2 := by native_decide\n",
+        "import Example.Extra\ntheorem result : helper + 1 = 2 := decided\n",
     )
     result, modes = _check_recording_modes(source, monkeypatch)
-    assert modes == ["imports-incremental"]
-    assert result["status"] == "unavailable", result
-    assert "(interpreter) unknown declaration" in result["message"], result
+    assert modes == ["imports-incremental", "imports-cached"]
+    assert result["status"] == "checked_snapshot", result
+    assert result["replay"] == "imports cached (+1 module)", result
+    (theorem,) = result["theorems"]
+    assert theorem["status"] == "assumptions", theorem
+    (axiom,) = theorem["axioms"]
+    assert axiom["module"] == "Example.Extra", axiom
+    assert axiom["name"].startswith("decided._native.native_decide.ax"), axiom
 
 
 def test_live_base_ir_cannot_run_while_a_new_module_replays(
     prepared_lean_project, monkeypatch, recorded_replay_cache
 ):
-    """A base module's `implemented_by` code never runs in the incremental replay."""
+    """A base module's `implemented_by` code never runs in the incremental replay.
+
+    As in the cached replay: the forged module names `Lean.reduceBool`, which
+    Lean 4.35 no longer declares, and an unchecked theorem of `False`.
+    """
     root = prepared_lean_project
     source = root / "src/Example.lean"
     recorded_replay_cache(EVIL_HELPER)
@@ -957,7 +980,8 @@ def test_live_base_ir_cannot_run_while_a_new_module_replays(
     assert modes == ["imports-incremental"]
     assert result["status"] == "unavailable", result
     assert result["theorems"] == []
-    assert "unknown declaration 'evil'" in result["message"] or (
+    # Whichever forged constant the replay reaches first fails it.
+    assert "unknown constant 'Lean.reduceBool'" in result["message"] or (
         "forgedLocal" in result["message"]
     ), result
 
@@ -1269,7 +1293,7 @@ def test_snapshot_identity_binds_copied_artifacts(tmp_path, project_snapshot_inp
     assert captured.identity != again.identity
     assert captured.source.read_bytes() == again.source.read_bytes()
     assert captured.artifacts.joinpath("Dependency.olean").read_bytes() == original
-    assert str(captured.artifacts) in captured.setup["importArts"]["Dependency"][0]
+    assert str(captured.artifacts) in captured.setup["importArts"]["Dependency"][0][0]
     assert str(artifact) not in str(captured.setup)
 
 
@@ -1280,7 +1304,7 @@ def test_snapshot_refuses_toolchain_shadowing(tmp_path, project_snapshot_inputs)
     from glitnir.lean.project_snapshot import capture
 
     root, toolchain, source, artifact, setup = project_snapshot_inputs
-    setup["importArts"] = {"Lean": [str(artifact)]}
+    setup["importArts"] = {"Lean": [[str(artifact)]]}
     with pytest.raises(SnapshotError, match="shadows"):
         capture(tmp_path, source, setup, toolchain, root, threading.Event())
 
@@ -2223,10 +2247,10 @@ def test_project_modules_are_the_ones_the_project_builds(tmp_path):
     outside.write_bytes(b"")
     setup = {
         "importArts": {
-            "Sibling": [".lake/build/lib/lean/Sibling.olean"],
-            "Absolute": [str(build / "Sibling.olean")],
-            "Mathlib": [".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"],
-            "Init": [str(outside)],
+            "Sibling": [[".lake/build/lib/lean/Sibling.olean"]],
+            "Absolute": [[str(build / "Sibling.olean")]],
+            "Mathlib": [[".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"]],
+            "Init": [[str(outside)]],
         }
     }
     assert project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}

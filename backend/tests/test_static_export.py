@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_views import view_provider_sha256
 from glitnir.notebook import source_preview, static_export
 from glitnir.notebook.check_records import (
@@ -384,7 +385,7 @@ def test_the_snapshot_names_no_local_project_path(tmp_path: Path, nothing_runs):
     project = tmp_path / "project"
     (project / "examples").mkdir(parents=True)
     (project / "lakefile.toml").write_text('name = "demo"\n')
-    (project / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (project / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     path = project / "examples" / "A.lean"
     path.write_text("def c : Nat := 1\n")
     with SavedNotebook(path) as notebook:
@@ -392,7 +393,7 @@ def test_the_snapshot_names_no_local_project_path(tmp_path: Path, nothing_runs):
     assert snapshot["preview"]["project"] == {
         "kind": "lake",
         "root": "..",
-        "toolchain": "leanprover/lean4:v4.32.1",
+        "toolchain": TOOLCHAIN,
     }
     assert str(tmp_path) not in json.dumps(snapshot)
 

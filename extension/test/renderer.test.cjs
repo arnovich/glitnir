@@ -1952,7 +1952,7 @@ test('a failed view keeps the lines of its Lean error, as text', async () => {
 
 test('project inspection runs only on click and unsaved files stay off the wire', async () => {
   const requests = [];
-  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/project', toolchain: 'leanprover/lean4:v4.32.1'}}};
+  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], cells: [], preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/project', toolchain: 'leanprover/lean4:v4.35.0'}}};
   const window = await renderSnapshot(snapshot, {onMessage: message => requests.push(message)});
   try {
     const button = window.document.getElementById('inspect-project');
@@ -2171,7 +2171,7 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     {id: 0, parent: null, text: 'constructor', range: {start: {line: 2, character: 2}, end: {line: 2, character: 13}}, before: ['⊢ True ∧ True'], after: ['left ⊢ True', 'right ⊢ True']},
     {id: 1, parent: null, text: '· trivial', range: {start: {line: 3, character: 2}, end: {line: 3, character: 11}}, before: ['left ⊢ True'], after: []},
   ];
-  const trace = {id: 'record', status: 'ready', source_sha256: snapshot.sha256, environment: {kind: 'read_only_live_dependencies', toolchain: 'Lean 4.32.1'}, claim: 'pair', nodes, warnings: ['illustrative warning'], errors: [], message: 'Recorded goals'};
+  const trace = {id: 'record', status: 'ready', source_sha256: snapshot.sha256, environment: {kind: 'read_only_live_dependencies', toolchain: 'Lean 4.35.0'}, claim: 'pair', nodes, warnings: ['illustrative warning'], errors: [], message: 'Recorded goals'};
   const messages = [];
   const window = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: () => trace});
   const $ = id => window.document.getElementById(id);
@@ -2918,7 +2918,7 @@ function goalTrace(sha256, fields = {}) {
   const node = (id, line, text, before, after, parent = null) => ({id, parent, text, start: id * 10, end: id * 10 + 5, declaration: 'Demo.k_pos', kind: 'tactic',
     range: {start: {line, character: 2}, end: {line, character: 2 + text.length}}, before, after});
   return {id: 'observation', status: 'ready', source_sha256: sha256, message: 'Recorded goals; the claim check status is unchanged.',
-    environment: {kind: 'read_only_live_dependencies', toolchain: 'leanprover/lean4:v4.32.1'}, errors: [], warnings: ['unused variable'],
+    environment: {kind: 'read_only_live_dependencies', toolchain: 'leanprover/lean4:v4.35.0'}, errors: [], warnings: ['unused variable'],
     nodes: [
       node(0, 13, 'unfold k', ['⊢ 0 < k'], ['⊢ 0 < 1 / 2']),
       node(1, 14, 'norm_num', ['⊢ 0 < 1 / 2'], []),
@@ -2959,7 +2959,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     assert.equal(steps[1].querySelector('pre.goal').dataset.tone, 'green');
     assert.match(steps[1].textContent, /No goals remain/);
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
-    assert.match(insp.querySelector('.goal-section').textContent, /Recorded from source aaaaaaaa with leanprover\/lean4:v4\.32\.1.*never changes a status/s);
+    assert.match(insp.querySelector('.goal-section').textContent, /Recorded from source aaaaaaaa with leanprover\/lean4:v4\.35\.0.*never changes a status/s);
     assert.equal(insp.querySelector('.goal-section [data-act="goal"]').textContent, 'Refresh proof goals');
     assert.equal(insp.querySelector('.focus .pill').textContent, 'Kernel checked', 'the status is the saved record’s');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1, 'one observation at a time');
@@ -2998,7 +2998,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     assert.match(section(), /cancelled\. No goals were recorded/);
     assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof goals');
     // A failed observation says why.
-    start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
+    start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.match(section(), /No proof goals: This project uses Lean 4\.31\.0\./);
     // Proof steps' running observation of this saved file is joined, not restarted.
@@ -3722,7 +3722,7 @@ test('saved results shown as recorded get their own banner state and never read 
 
 // A project notebook with one saved claim, an evidence card, a decision candidate
 // the kernel checked and a view: every place a Lean command could start.
-const LEAN_MESSAGE = 'This project uses Lean 4.31.0. Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and decisions are off; reading works as usual.';
+const LEAN_MESSAGE = 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.';
 function leanSupportNotebook({lean, recorded = false, toolchainError = null} = {}) {
   const claimText = 'theorem t : True := by\n  trivial\n';
   const rest = 'def M := 1\n-- @evidence simulate M (h := 1/10)\n-- @decide band : entailment x : x > 0 |- x >= 0\n-- @view circuit c\n';
@@ -3736,8 +3736,8 @@ function leanSupportNotebook({lean, recorded = false, toolchainError = null} = {
     preview: {mode: 'project', notice: recorded ? 'Saved results, shown as recorded.' : 'Saved-source preview.', ...(recorded ? {recorded: true} : {}),
       project: {kind: 'lake', root: '/p', toolchain: 'leanprover/lean4:v4.31.0', files}, ...(lean ? {lean} : {})}});
 }
-const UNSUPPORTED = {supported: false, declared: 'leanprover/lean4:v4.31.0', toolchain: 'leanprover/lean4:v4.32.1', message: LEAN_MESSAGE};
-const SUPPORTED = {supported: true, declared: 'leanprover/lean4:v4.32.1', toolchain: 'leanprover/lean4:v4.32.1', message: null};
+const UNSUPPORTED = {supported: false, declared: 'leanprover/lean4:v4.31.0', toolchain: 'leanprover/lean4:v4.35.0', message: LEAN_MESSAGE};
+const SUPPORTED = {supported: true, declared: 'leanprover/lean4:v4.35.0', toolchain: 'leanprover/lean4:v4.35.0', message: null};
 const RUN_CONTROLS = '[data-act="evidence-run"], [data-act="decision-run"], [data-act="accept"], [data-act="check-through"], [data-act="goal"], [data-act="view-retry"]';
 
 test('a project on another Lean version shows one banner, no enabled Lean control and no view request', async () => {
@@ -3751,7 +3751,7 @@ test('a project on another Lean version shows one banner, no enabled Lean contro
     assert.equal($('check-project').hidden, true);
     assert.equal($('inspect-project').hidden, true);
     assert.equal(d.querySelectorAll(`#doc ${RUN_CONTROLS.split(', ').join(', #doc ')}, #insp [data-act="goal"], #insp [data-act="check-through"]`).length, 0, 'no Lean control is offered');
-    assert.match(d.querySelector('#doc .view-cell').textContent, /Views need Lean 4\.32\.1\./);
+    assert.match(d.querySelector('#doc .view-cell').textContent, /Views need Lean 4\.35\.0\./);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/view')).length, 0, 'nothing is drawn');
     // The saved result still reads, out of date.
     assert.deepEqual([...d.querySelectorAll('#doc .project-claim .claim-head .pill')].map(p => p.textContent), ['Kernel checked', 'Out of date']);
@@ -3761,7 +3761,7 @@ test('a project on another Lean version shows one banner, no enabled Lean contro
 });
 
 test('the unsupported-version banner shows the message verbatim, read errors included, and escapes everything', async () => {
-  const hostile = {...UNSUPPORTED, message: 'This project\'s lean-toolchain could not be read: cannot read <i>it</i>. <b>x</b> Glitnir checks Lean 4.32.1.'};
+  const hostile = {...UNSUPPORTED, message: 'This project\'s lean-toolchain could not be read: cannot read <i>it</i>. <b>x</b> Glitnir checks Lean 4.35.0.'};
   const snapshot = leanSupportNotebook({lean: hostile, toolchainError: 'cannot read <i>it</i>'});
   const window = await renderSnapshot(snapshot);
   try {
@@ -3864,7 +3864,7 @@ test('a linked notebook in another project shows its own project\'s Lean banner'
     window.close();
     return [before, inLinked, after];
   };
-  const other = {...UNSUPPORTED, declared: 'leanprover/lean4:v4.35.0', message: LEAN_MESSAGE.replace('4.31.0', '4.35.0')};
+  const other = {...UNSUPPORTED, declared: 'leanprover/lean4:v4.32.1', message: LEAN_MESSAGE.replace('4.31.0', '4.32.1')};
   const pair = (mainLean, linkedLean) => {
     const {main, linked} = linkedNotebooks();
     main.preview.lean = mainLean;

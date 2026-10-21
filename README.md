@@ -72,9 +72,9 @@ Glitnir runs in local VS Code windows on **macOS and Linux** (see
   **Python 3.12 or newer**, for the Python backend. Without uv, setup offers
   **Install uv**, which shows its command before running it: Homebrew, or the
   official installer `https://astral.sh/uv/0.12.23/install.sh`.
-- **Lean 4.32.1**, the one Lean version Glitnir checks, for checking, proof
+- **Lean 4.35.0**, the one Lean version Glitnir checks, for checking, proof
   steps, views, evidence and decisions; reading needs only the backend. Install
-  it with `elan toolchain install leanprover/lean4:v4.32.1`, and have the
+  it with `elan toolchain install leanprover/lean4:v4.35.0`, and have the
   notebook's project use it. A project on another Lean version still opens and
   reads, with a banner saying checking is off. Build the project yourself first
   (`lake build`, after `lake exe cache get` for Mathlib).
@@ -123,7 +123,7 @@ theorem hello : True := by
 1. Open that folder in VS Code and run **Glitnir: Open in Glitnir**. Click
    **Edit in VS Code** on a cell to jump to its source, save an edit and watch
    the preview refresh.
-2. Click **Check saved file** (needs Lean 4.32.1). The `hello` card shows
+2. Click **Check saved file** (needs Lean 4.35.0). The `hello` card shows
    **checked**, and the result is saved beside the notebook.
 3. Run **Glitnir: Set Up Coding Agent**, then ask your agent to extend
    `Hello.lean` with the `glitnir-notebooks` skill and follow its work in the
@@ -209,7 +209,7 @@ notebooks and the claim graph.
 
 ## Limits
 
-- **One supported Lean version, today 4.32.1.** Checking, proof steps, views,
+- **One supported Lean version, today 4.35.0.** Checking, proof steps, views,
   evidence and decisions run only on it. A notebook on another Lean version
   opens and reads as usual, with a banner saying those are off; saved results
   still show, marked out of date. Glitnir moves the supported version forward

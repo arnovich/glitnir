@@ -4,6 +4,7 @@ import hashlib
 
 import pytest
 
+from glitnir.lean.artifacts import artifact_files
 from glitnir.lean.prepared_packages import validate_resolution
 
 
@@ -135,7 +136,8 @@ def test_live_override_and_custom_configuration(prepared_git_project):
         for p in result["resolution"]["inputs"]
     )
     assert packages["dep"]["entry"]["configFile"] == "custom.toml"
-    assert any("alternate" in p for p in result["setup"]["importArts"]["Leaf"])
+    leaf = result["setup"]["importArts"]["Leaf"]
+    assert any("alternate" in path for path, _ in artifact_files(leaf))
 
 
 def test_live_revision_is_descriptive_and_new_override_is_detected(

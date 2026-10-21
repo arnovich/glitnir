@@ -14,10 +14,11 @@ from glitnir.lean.fingerprint import (
     header_imports,
     trace_digest,
 )
+from glitnir.lean.project_inspection import TOOLCHAIN
 
 
 def _project(root: Path) -> Path:
-    (root / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     (root / "lakefile.toml").write_text('name = "demo"\n')
     (root / "lake-manifest.json").write_text(
         json.dumps({"version": "1.2.0", "packages": []})

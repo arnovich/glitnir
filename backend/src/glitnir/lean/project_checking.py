@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean import replay_cache
+from glitnir.lean.artifacts import olean_path
 from glitnir.lean.awake import awake
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.environment import (
@@ -336,7 +337,7 @@ def project_modules(setup: dict[str, Any], project_root: Path | None) -> set[str
     packages = project_root / ".lake" / "packages"
     found = set()
     for module, paths in setup["importArts"].items():
-        olean = Path(paths[0])
+        olean = Path(olean_path(paths))
         if not olean.is_absolute():
             olean = project_root / olean
         try:

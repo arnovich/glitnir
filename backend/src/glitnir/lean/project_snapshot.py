@@ -27,6 +27,7 @@ from typing import Any, BinaryIO, Callable, Iterator
 
 from glitnir.lean import artifact_store
 from glitnir.lean.artifact_store import ArtifactStore, StoreError
+from glitnir.lean.artifacts import map_artifacts
 from glitnir.lean.limits import check_seconds
 from glitnir.lean.project import read_regular
 
@@ -468,9 +469,8 @@ def _capture(
                 "A project artifact shadows a trusted toolchain module."
             )
         base = artifacts / module_path(module)
-        suffixes = (".olean", ".ir", ".olean.server", ".olean.private")
-        new_paths = []
-        for name, suffix in zip(paths, suffixes, strict=False):
+
+        def captured(name: str, suffix: str) -> str:
             original = Path(name)
             if not original.is_absolute():
                 if project is None:
@@ -478,8 +478,9 @@ def _capture(
                 original = project / original
             target = Path(str(base) + suffix)
             copy(original.resolve(), target)
-            new_paths.append(str(target))
-        rewritten["importArts"][module] = new_paths
+            return str(target)
+
+        rewritten["importArts"][module] = map_artifacts(paths, captured)
     for field in ("plugins", "dynlibs"):
         rewritten[field] = []
         for index, item in enumerate(setup[field]):

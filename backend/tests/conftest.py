@@ -161,7 +161,9 @@ def project_toolchain(request):
     try:
         toolchain = _toolchain()
     except ValueError:
-        pytest.fail("project inspection gate requires installed Lean 4.32.1")
+        from glitnir.lean.project_inspection import TOOLCHAIN
+
+        pytest.fail(f"project inspection gate requires installed {TOOLCHAIN}")
     assert sandbox_available(), "live project inspection requires a sandbox"
     return toolchain
 
@@ -288,7 +290,7 @@ def project_snapshot_inputs(tmp_path):
     setup = {
         "name": "A",
         "isModule": False,
-        "importArts": {"Dependency": [str(artifact)]},
+        "importArts": {"Dependency": [[str(artifact)]]},
         "plugins": [],
         "dynlibs": [],
         "options": {},

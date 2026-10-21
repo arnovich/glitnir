@@ -165,7 +165,7 @@ def test_an_ambiguous_names_interpretations_are_shown():
     """Lean's first line hides the cause; blank lines are left out."""
     from glitnir.lean.provider_lean import _marker_payload
 
-    # Lean 4.32.1's message (Lean/Elab/App.lean) for a preamble line.
+    # Lean's message (Lean/Elab/App.lean, unchanged in 4.35.0) for a preamble line.
     ambiguous = (
         "Ambiguous term\n  Circuit\nPossible interpretations:\n"
         "  Dynamics.Circuit n m : Type\n  \n  Gimle.Asgard.Circuit n m : Type"
@@ -222,7 +222,7 @@ def test_malformed_information_is_rejected(needs):
 
 
 def test_runner_returns_the_payload_for_the_caller_to_validate(tmp_path, monkeypatch):
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": ['demoMark:{"a":1}'], "errors": []})
     assert _run(source) == {"payload": '{"a":1}', "proofs_skipped": False}
 
@@ -258,7 +258,7 @@ def test_loose_files_need_a_lake_project(tmp_path, monkeypatch, needs, message):
 
 
 def test_composing_failures_name_the_provider(tmp_path, monkeypatch):
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _forbid_lean(monkeypatch)
     result = _run(source, preamble=None)
     assert result["error"].startswith("Provider demo failed: TypeError: ")
@@ -273,7 +273,7 @@ def test_invalid_import_names_are_rejected_before_composing(tmp_path, monkeypatc
 
 
 def test_changed_source_never_launches_lean(tmp_path, monkeypatch):
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _forbid_lean(monkeypatch)
     assert "changed" in _run(source, expected_sha256=_sha("other"))["error"]
 
@@ -281,7 +281,7 @@ def test_changed_source_never_launches_lean(tmp_path, monkeypatch):
 def test_source_edited_during_the_run_is_an_error(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(runtime, arguments, **options):
         view = {"information": ["demoMark:x"], "errors": [], "proofs_skipped": True}
@@ -295,7 +295,7 @@ def test_source_edited_during_the_run_is_an_error(tmp_path, monkeypatch):
 def test_cancellation_is_transient_and_worded_for_the_caller(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     cancel = threading.Event()
 
     def run(runtime, arguments, **options):
@@ -336,7 +336,7 @@ def _batch(source, **overrides):
 
 
 def _ten(tmp_path, monkeypatch):
-    source = _lake(tmp_path, monkeypatch, {"A": ["A.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"A": [["A.olean"]]})
     source.write_text(TEN)
     return source
 
@@ -463,7 +463,7 @@ def _imports_error(source, **overrides):
 
 
 def test_imports_the_setup_provides_are_no_error(tmp_path, monkeypatch):
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _forbid_lean(monkeypatch)
     assert _imports_error(source, imports=("Demo.View", "Lean.Elab")) is None
 
@@ -482,7 +482,7 @@ def test_missing_imports_are_named_before_anything_runs(tmp_path, monkeypatch):
 def test_import_checks_need_a_lake_project_and_a_resolved_setup(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def inspect(path, *, expected_sha256, cancel, imports=()):
         return {"status": "unavailable", "message": "Prepare the project."}
@@ -515,7 +515,7 @@ def test_a_provider_without_imports_needs_no_setup(tmp_path, monkeypatch):
 def test_a_busy_slot_is_a_transient_import_error(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SLOT_BUSY, snapshot_slot
 
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     with snapshot_slot():
         assert _imports_error(source) == {"error": SLOT_BUSY, "transient": True}
 
@@ -609,7 +609,7 @@ def _counted(tmp_path, monkeypatch):
     """Return a Lake notebook and the list of its inspections, one per setup."""
     from glitnir.lean import provider_lean
 
-    source = _lake(tmp_path, monkeypatch, {"Demo.View": ["V.olean"]})
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["V.olean"]]})
     inspect = provider_lean.inspect_project
     calls: list[tuple[str, ...]] = []
 

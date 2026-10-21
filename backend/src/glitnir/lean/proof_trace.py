@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from glitnir.lean.artifacts import map_artifacts
 from glitnir.lean.environment import MAX_TIMEOUT_MS
 from glitnir.lean.limits import (
     SessionLimits,
@@ -137,7 +138,7 @@ def _absolute_setup(setup: dict[str, Any], project: Path | None) -> dict[str, An
         return str(path)
 
     result["importArts"] = {
-        module: [absolute(name) for name in paths]
+        module: map_artifacts(paths, lambda name, _: absolute(name))
         for module, paths in result["importArts"].items()
     }
     for field in ("plugins", "dynlibs"):
