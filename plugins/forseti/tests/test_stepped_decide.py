@@ -271,6 +271,7 @@ def test_fixed_date_holds() -> None:
         "· have hempty : {ω : ℕ → ℝ | ¬ exposureWithin 1"
         " (run step compiled.initial ω 0)} = ∅ := by",
         "    ext ω",
+        "    simp only [run_zero]",
         "    norm_num [exposureWithin, initial_eq]",
         "  refine ⟨h.prob, by norm_num, ?_⟩",
         "  rw [hempty, measure_empty]",
@@ -654,6 +655,7 @@ def test_a_decided_goal_cites_qualified_lemmas() -> None:
         "Gimle.Forseti.Examples.HedgedSpreadStepped.proxyRec_eq",
         "Gimle.Forseti.Examples.HedgedSpreadStepped.proxy_mono",
         "Gimle.Forseti.Stepped.exp_ge_floor_cubic",
+        "Gimle.Forseti.Stepped.run_zero",
         "Gimle.Forseti.Examples.HedgedSpread.initial_eq",
     )
 

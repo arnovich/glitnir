@@ -54,6 +54,7 @@ _FORMS = {
 }
 _MEASURE = "MeasureTheory.Measure"
 _RUN = f"{_STEPPED}.run"
+_RUN_ZERO = f"{_STEPPED}.run_zero"
 _MONO = f"{_STEPPED}.BreachWithin.mono"
 _AT_MOST_ONE = {
     "horizon": f"{_STEPPED}.breachWithin_of_le_one",
@@ -265,6 +266,9 @@ def fixed_date_hold(
         "rcases Nat.eq_zero_or_pos n with rfl | hn0",
         f"· have hempty : {{ω : ℕ → ℝ | ¬ {safe} {barrier} ({path})}} = ∅ := by",
         "    ext ω",
+        # The path's start first: once `initial_eq` names the state `![0, 0]`,
+        # Lean 4.35 no longer unifies it with `run`'s state type in `run_zero`.
+        f"    simp only [{short(entry, _RUN_ZERO)}]",
         f"    norm_num [{safe}, {short(entry, theorems.initial_eq)}]",
         "  refine ⟨h.prob, by norm_num, ?_⟩",
         f"  rw [hempty, {short(entry, _EMPTY)}]",
@@ -295,6 +299,7 @@ def fixed_date_hold(
             theorems.proxy_rec_eq,
             theorems.proxy_mono,
             _EXP,
+            _RUN_ZERO,
             theorems.initial_eq,
         ),
     )
