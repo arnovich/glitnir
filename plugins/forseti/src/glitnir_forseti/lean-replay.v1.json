@@ -4,7 +4,8 @@
   "closure_program_sha256": "60d07a94daf2298ae5e053a74349efc2fa8a1d826e2192277657f3489becb97d",
   "toolchain": "leanprover/lean4:v4.35.0",
   "toolchain_binaries": {
-    "Darwin-arm64": "edb18bdc4a454c75c128a8dba8e9c13723228c17ad1327b83aceec4d5bd1c0c4"
+    "Darwin-arm64": "edb18bdc4a454c75c128a8dba8e9c13723228c17ad1327b83aceec4d5bd1c0c4",
+    "Linux-x86_64": "7c6a262a8df5b5adb4ce2258d50f6b982fa6395d431b030e8b90354363fca537"
   },
   "closures": [
     {
