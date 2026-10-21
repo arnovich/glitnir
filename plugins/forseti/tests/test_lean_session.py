@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from glitnir.lean.artifacts import artifact_files
 from glitnir.lean.environment import (
     MAX_HEARTBEATS,
     MAX_OUTPUT_BYTES,
@@ -14,7 +15,10 @@ from glitnir.lean.environment import (
 )
 
 from glitnir_forseti.lean.messages import MessageStream
-from glitnir_forseti.lean.release_environment import lean_process_environment
+from glitnir_forseti.lean.release_environment import (
+    lean_module_setup,
+    lean_process_environment,
+)
 from glitnir_forseti.lean.session import (
     NO_EXIT_CODE,
     Elaboration,
@@ -147,6 +151,43 @@ def test_unconfigured_subprocess_session_is_unavailable(monkeypatch) -> None:
     result = session.elaborate("example : True := trivial", SessionLimits())
     assert result.status is SessionStatus.UNAVAILABLE
     assert not result.succeeded()
+
+
+def _built(library: Path, stem: str, *suffixes: str) -> str:
+    base = library / stem
+    base.parent.mkdir(parents=True, exist_ok=True)
+    for suffix in suffixes:
+        Path(f"{base}.{suffix}").write_bytes(b"")
+    return str(base)
+
+
+def test_module_setup_lists_artifacts_in_the_nested_shape(tmp_path) -> None:
+    forseti = tmp_path / ".lake/build/lib/lean"
+    asgard = tmp_path / ".lake/packages/asgard/.lake/build/lib/lean"
+    every = ("olean", "olean.server", "olean.private", "ir.sig", "ir")
+    full = _built(forseti, "Gimle/Forseti/Full", *every)
+    plain = _built(asgard, "Gimle/Asgard/Plain", "olean")
+    gaps = _built(asgard, "Gimle/Asgard/Gaps", "olean", "olean.private", "ir")
+    public = _built(asgard, "Gimle/Asgard/Public", "olean", "olean.server", "ir.sig")
+
+    setup = json.loads(lean_module_setup(tmp_path, "Unit"))
+    arts = setup["importArts"]
+
+    assert arts["Gimle.Forseti.Full"] == [
+        [f"{full}.olean", f"{full}.olean.server", f"{full}.olean.private"],
+        [f"{full}.ir.sig", f"{full}.ir"],
+    ]
+    # Lean reads each file by position, so a file after a missing one is left out.
+    assert arts["Gimle.Asgard.Plain"] == [[f"{plain}.olean"]]
+    assert arts["Gimle.Asgard.Gaps"] == [[f"{gaps}.olean"]]
+    assert arts["Gimle.Asgard.Public"] == [
+        [f"{public}.olean", f"{public}.olean.server"],
+        [f"{public}.ir.sig"],
+    ]
+    # Glitnir's reader of the shape gives every path the suffix it carries.
+    for name in ("Forseti.Full", "Asgard.Plain", "Asgard.Gaps", "Asgard.Public"):
+        files = artifact_files(arts[f"Gimle.{name}"])
+        assert all(path.endswith(suffix) for path, suffix in files)
 
 
 def test_child_environment_inherits_no_lean_override(lean_test_project, monkeypatch):
