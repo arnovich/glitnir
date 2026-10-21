@@ -113,6 +113,21 @@
         "command": "glitnir.reviewHelp",
         "title": "Keyboard Shortcuts",
         "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.openSettings",
+        "title": "Open Settings",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.setTaskvaletCredential",
+        "title": "Set Taskvalet Credential",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.clearTaskvaletCredential",
+        "title": "Clear Taskvalet Credential",
+        "category": "Glitnir"
       }
     ],
     "menus": {
@@ -167,7 +182,35 @@
           "minimum": 1024,
           "maximum": 32768,
           "scope": "resource",
-          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Applies to previews opened after the change."
+          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Changing this setting closes existing previews."
+        },
+        "glitnir.executionBackend": {
+          "type": "string",
+          "enum": [
+            "local",
+            "taskvalet"
+          ],
+          "default": "local",
+          "scope": "resource",
+          "description": "Run saved-file Lean checks locally or submit them asynchronously to Taskvalet. Other notebook operations stay local."
+        },
+        "glitnir.taskvaletServer": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "HTTPS origin of the Taskvalet server, for example https://tasks.example.com. Use Set Taskvalet Credential to store a credential securely."
+        },
+        "glitnir.taskvaletProject": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Taskvalet project permitted by the computation credential."
+        },
+        "glitnir.taskvaletEnvironment": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Versioned prepared environment registered by a computation worker. The source context and installed checker must match."
         }
       }
     },
