@@ -583,6 +583,167 @@ def test_live_replay_collects_the_axioms_that_decide_statuses(
         assert [a["name"] for a in theorem["axioms"]] == replayed[name]
 
 
+def _build(root):
+    """Build `Example` in the test project with the supported toolchain."""
+    import os
+    import subprocess
+
+    from glitnir.lean.project_inspection import _toolchain
+
+    subprocess.run(
+        [str(_toolchain() / "bin/lake"), "--keep-toolchain", "build", "Example"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(_toolchain())},
+    )
+
+
+def _replays(monkeypatch):
+    """Record each ProjectReplay run's mode and JSON report."""
+    import json
+
+    from glitnir.lean import project_checking as checking
+
+    original = checking.run_observer
+    replays = []
+
+    def observed(lean, arguments, **options):
+        output = original(lean, arguments, **options)
+        if "--run" in arguments and arguments[3].endswith("ProjectReplay.lean"):
+            replays.append((arguments[-1], json.loads(output)))
+        return output
+
+    monkeypatch.setattr(checking, "run_observer", observed)
+    return replays
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_live_axioms_are_collected_after_replay_into_an_empty_environment(
+    prepared_lean_project, monkeypatch, cached, fresh_replay_cache
+):
+    """Every axiom is found in the replayed environment, imported ones included.
+
+    The replay starts from `mkEmptyEnvironment`, so every constant it holds was
+    added after the import (the constant map's second stage). An axiom
+    collection that looked only at imported constants would find none here and
+    call these theorems checked; they each depend on all three standard axioms,
+    reached only through the toolchain's and a dependency's own theorems.
+    """
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    root = prepared_lean_project
+    (root / "src/Example/Helper.lean").write_text(
+        "def helper : Nat := 1\n"
+        "theorem decidedly (p : Prop) : p ∨ ¬p := Classical.em p\n"
+    )
+    source = root / "src/Example.lean"
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem direct (p : Prop) : p ∨ ¬p := Classical.em p\n"
+        "theorem imported (p : Prop) : p ∨ ¬p := decidedly p\n"
+        "theorem plain : helper = 1 := rfl\n"
+    )
+    _build(root)
+    if not cached:
+        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+    replays = _replays(monkeypatch)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    result = checking.check_project(source, expected_sha256=digest)
+    assert result["status"] == "checked_snapshot", result
+    modes = [mode for mode, _ in replays]
+    assert modes == (["imports-only", "imports-cached"] if cached else ["full"])
+    standard = ["Classical.choice", "Quot.sound", "propext"]
+    replayed = {
+        t["name"]: sorted(a["name"] for a in t["axioms"])
+        for t in replays[-1][1]["theorems"]
+    }
+    assert replayed == {"direct": standard, "imported": standard, "plain": []}
+    found = {t["name"]: t for t in result["theorems"]}
+    assert {name: t["status"] for name, t in found.items()} == {
+        "direct": "checked",
+        "imported": "checked",
+        "plain": "checked",
+    }
+    for name in ("direct", "imported"):
+        axioms = found[name]["axioms"]
+        assert sorted(a["name"] for a in axioms) == standard
+        assert all(a["module"].startswith("Init") for a in axioms), axioms
+
+
+def test_live_native_decide_reports_assumptions_never_standard_axioms(
+    prepared_lean_project, monkeypatch, fresh_replay_cache
+):
+    """Lean 4.35's `native_decide` adds an axiom of the module that used it.
+
+    That axiom is outside Lean's standard set, so the theorem's status is
+    `assumptions`, on a full replay and over cached imports alike, while the
+    kernel's own `decide` stays checked.
+    """
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    source = prepared_lean_project / "src/Example.lean"
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem native : 2 + 2 = 4 := by native_decide\n"
+        "theorem kernel : 2 + 2 = 4 := by decide\n"
+    )
+    replays = _replays(monkeypatch)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    for replay in ("full", "imports cached"):
+        result = checking.check_project(source, expected_sha256=digest)
+        assert result["status"] == "checked_snapshot", result
+        assert result["replay"] == replay, result
+        found = {t["name"]: t for t in result["theorems"]}
+        assert found["kernel"]["status"] == "checked"
+        assert found["kernel"]["axioms"] == []
+        assert found["native"]["status"] == "assumptions", found["native"]
+        (axiom,) = found["native"]["axioms"]
+        assert axiom["module"] == "Example", axiom
+        assert axiom["name"].startswith("native._native.native_decide.ax"), axiom
+        assert axiom["name"] not in checking.LEAN_AXIOM_ALLOWLIST
+    assert [mode for mode, _ in replays] == [
+        "imports-only",
+        "imports-cached",
+        "imports-cached",
+    ]
+
+
+def test_live_a_forged_standard_axiom_is_reported_as_an_assumption(
+    prepared_lean_project,
+):
+    """An axiom named like a standard one, but not the toolchain's, is assumed.
+
+    The dependency declares its own `propext` (of `False`) over `Init.Prelude`
+    alone, which leaves out the toolchain's `Init.Core` and its `propext`.
+    """
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    root = prepared_lean_project
+    (root / "src/Example/Helper.lean").write_text(
+        "prelude\nimport Init.Prelude\naxiom propext : False\n"
+    )
+    source = root / "src/Example.lean"
+    source.write_text(
+        "prelude\nimport Example.Helper\ntheorem forged : False := propext\n"
+    )
+    _build(root)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    result = check_project(source, expected_sha256=digest)
+    assert result["status"] == "checked_snapshot", result
+    (theorem,) = result["theorems"]
+    assert theorem["name"] == "forged"
+    assert theorem["status"] == "assumptions", theorem
+    assert theorem["axioms"] == [{"name": "propext", "module": "Example.Helper"}]
+
+
 def test_live_imports_without_the_kernel_quotient_replay_fresh(
     prepared_lean_project, fresh_replay_cache
 ):
