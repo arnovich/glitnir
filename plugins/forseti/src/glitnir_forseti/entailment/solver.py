@@ -98,6 +98,11 @@ def run_worker(
                 stdout=out,
                 stderr=subprocess.DEVNULL,
                 cwd=scratch,
+                env={
+                    k: v
+                    for k, v in os.environ.items()
+                    if k != "GLITNIR_TASKVALET_TOKEN"
+                },
                 start_new_session=True,
                 preexec_fn=(
                     partial(_child_setup, os.getpid()) if os.name == "posix" else None

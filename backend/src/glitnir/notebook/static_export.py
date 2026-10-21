@@ -11,11 +11,16 @@ as recorded", never "current". Only this module asks for that comparison; the
 editor's preview always compares with the environment.
 
 Reading a snapshot never runs Lean, git or a provider run, and never writes a
-file. Drawing a view (`~SavedNotebook.draw_view`) runs Lean in the sandbox to
-draw, as the editor does; it checks nothing and writes nothing in the
-notebook's project. `export_styles` is the CSS the renderer's Export HTML
-embeds (``GET /api/export/styles``). Export reports recorded observations: it
-neither runs Lean for checks nor updates records.
+file. Drawing a view (`~SavedNotebook.draw_view`) answers with the drawing saved
+in ``<Notebook>.glitnir.json`` (its ``views`` section) when its saved source
+and provider hash match, as recorded: without running Lean and without
+comparing the environment. Otherwise it runs Lean in the sandbox to draw, as
+the editor does, unless the project's Lean version is not the one Glitnir
+checks (`glitnir.lean.project_inspection.lean_support`): then there is no
+drawing and the refusal is returned. It checks nothing and writes nothing in
+the notebook's project, so a drawing made here is not saved. `export_styles` is
+the CSS the renderer's Export HTML embeds (``GET /api/export/styles``). Export reports
+recorded observations: it neither runs Lean for checks nor updates records.
 """
 
 import base64
@@ -27,7 +32,12 @@ from types import TracebackType
 from typing import Any
 
 from glitnir.lean.fingerprint import direct_imports, header_imports
-from glitnir.notebook.source_preview import SourcePreviewService, _provider_imports
+from glitnir.notebook.source_preview import (
+    SourcePreviewService,
+    _provider_imports,
+    _view_keys,
+    _view_provider_sha256,
+)
 
 _APP = Path(__file__).parent / "app"
 
@@ -73,7 +83,7 @@ class SavedNotebook:
     def __init__(self, path: Path) -> None:
         """Keep the notebook's location; nothing is read or started yet."""
         self.path = path
-        self._service = SourcePreviewService(path)
+        self._service = SourcePreviewService(path, save_drawings=False)
 
     def __enter__(self) -> "SavedNotebook":
         """Return this notebook; `close` runs when the block ends."""
@@ -170,11 +180,20 @@ class SavedNotebook:
     def draw_view(self, cell: int, line: int) -> dict[str, Any]:
         """Draw the view listed at `cell` and `line` of the snapshot; wait for it.
 
-        The view is drawn as the editor draws it, by its provider with Lean in
-        the sandbox, from the notebook project's own build, bounded by the
-        check time limit. Nothing is checked, and a drawing never changes a
-        result. Reading the notebook or its environment for the drawing may
-        fail; that failure is returned like a failed drawing.
+        A drawing saved for the view in the notebook's records is used as
+        recorded while the source through its directive and its provider's
+        hash (`glitnir.lean.project_views.view_provider_sha256`) match: no
+        Lean runs and the environment is not compared, as for every saved
+        result in `snapshot`, also for a project on a Lean version Glitnir
+        does not check. Otherwise the view is drawn as the editor draws
+        it, by its provider with Lean in the sandbox, from the notebook
+        project's own build, bounded by the check time limit; that drawing is
+        not saved. For a project on a Lean version Glitnir does not check, a
+        view without a matching saved drawing is refused (``{"error":
+        message}``, the editor's refusal) and nothing is drawn. Nothing is
+        checked, and a drawing never changes a result.
+        Reading the notebook or its environment for the drawing may fail;
+        that failure is returned like a failed drawing.
 
         Returns:
             The drawing the renderer reads from ``GET /api/view`` (``svg`` and
@@ -192,6 +211,9 @@ class SavedNotebook:
 
     def _drawn(self, cell: int, line: int) -> dict[str, Any]:
         service = self._service
+        saved = self._saved_drawing(cell, line)
+        if saved is not None:
+            return saved
         while True:
             answer = service.view(cell, line)
             state = answer.get("status")
@@ -204,6 +226,26 @@ class SavedNotebook:
             # Behind another view, or forgotten: ask for this one again.
             if state == "drawing" and not polled.get("transient"):
                 return polled
+
+    def _saved_drawing(self, cell: int, line: int) -> dict[str, Any] | None:
+        """Return the view's saved drawing as recorded, or None to draw it."""
+        service = self._service
+        text = service._text()
+        views = self._recorded(text)["views"]
+        view = next((v for v in views if v["cell"] == cell and v["line"] == line), None)
+        if view is None or view["error"]:
+            return None  # `view` reports it
+        provider_sha256 = _view_provider_sha256(service._providers(), view)
+        if provider_sha256 is None:
+            return None
+        return service._saved_drawing(
+            text,
+            _view_keys(text, views)[line],
+            line,
+            "",
+            provider_sha256,
+            compare_environment=False,
+        )
 
 
 def export_styles() -> str:

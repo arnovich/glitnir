@@ -472,7 +472,7 @@ def test_serve_consumes_capability_before_constructing_workers(tmp_path, monkeyp
         module.serve(tmp_path / "A.lean", 0)
 
 
-def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
+def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch, draw_each_alone):
     """`/api/view/cancel` takes an empty JSON object and stops the drawing."""
     from glitnir.notebook import source_preview
     from glitnir.notebook.source_preview import (
@@ -495,7 +495,7 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
         cancel.wait(30)
         return {"error": "View drawing cancelled.", "transient": True}
 
-    monkeypatch.setattr(source_preview, "render_project_view", render)
+    draw_each_alone(render)
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n\n-- @view circuit c\n")
     service = SourcePreviewService(path)
@@ -531,7 +531,7 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch):
         httpd.server_close()
 
 
-def test_project_view_http_draws_directives(tmp_path, monkeypatch):
+def test_project_view_http_draws_directives(tmp_path, monkeypatch, draw_each_alone):
     """Project mode answers /api/view for listed directives only."""
     from glitnir.notebook import source_preview
     from glitnir.notebook.source_preview import SourcePreviewService
@@ -543,9 +543,7 @@ def test_project_view_http_draws_directives(tmp_path, monkeypatch):
         "load_providers",
         lambda: Providers({"circuit": provider}, {}, {}, {}),
     )
-    monkeypatch.setattr(
-        source_preview, "render_project_view", lambda *a, **k: {"svg": "<svg/>"}
-    )
+    draw_each_alone(lambda *a, **k: {"svg": "<svg/>"})
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n\n-- @view circuit c\n")
     service = SourcePreviewService(path)
@@ -899,3 +897,36 @@ def test_bad_image_requests_are_refused(server, illustrated, path, status) -> No
     response, body = _request(server, "GET", path)
     assert response.status == status
     assert "error" in json.loads(body)
+
+
+def test_lean_requests_on_another_version_answer_the_refusal(tmp_path) -> None:
+    """Each endpoint refuses in the shape it already uses for a refusal."""
+    (tmp_path / "lakefile.toml").write_text('name = "demo"')
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    path = tmp_path / "A.lean"
+    path.write_text("def c := 1\n-- @view circuit c\n")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    service = SourcePreviewService(path)
+    httpd = make_server(service, 0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        response, data = _request(httpd, "GET", "/api/notebook")
+        message = json.loads(data)["preview"]["lean"]["message"]
+        assert message.startswith("This project uses Lean 4.35.0. ")
+        for route, body, status in [
+            ("/api/project/inspect", {"sha256": digest}, 400),
+            ("/api/project/check", {"sha256": digest}, 400),
+            ("/api/proof/start", {"sha256": digest}, 400),
+            ("/api/evidence/run", {"sha256": digest, "line": 2}, 409),
+            ("/api/decide/run", {"sha256": digest, "line": 2}, 409),
+        ]:
+            response, data = _post(httpd, route, body)
+            assert (route, response.status) == (route, status)
+            assert json.loads(data) == {"error": message}
+        response, data = _request(httpd, "GET", "/api/view?cell=0&line=2")
+        assert response.status == 200
+        assert json.loads(data) == {"error": message}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        service.close()

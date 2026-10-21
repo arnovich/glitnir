@@ -106,3 +106,21 @@ def test_invalid_claim_is_reported_without_terminating_worker(
     assert worker.run_once(threading.Event())
     assert calls[-1][1].endswith("/complete")
     assert calls[-1][2]["result"]["status"] == "unavailable"
+
+
+def test_default_worker_accepts_default_editor_memory(
+    compute_project, tmp_path, monkeypatch
+):
+    """Default remote checks fit the worker's advertised resource ceiling."""
+    from glitnir.compute.client import Client, Settings
+    from glitnir.compute.worker import Worker
+    from glitnir.lean.limits import memory_limit_mb
+
+    monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
+    monkeypatch.setattr("glitnir.lean.limits.physical_memory_mb", lambda: 65536)
+    client = Client(Settings("https://tasks.example.test", "lab", "prepared", "secret"))
+    worker = Worker(client, compute_project, tmp_path / "journal")
+    request = make_request(
+        compute_project / "Example.lean", "prepared", 600, memory_limit_mb()
+    )
+    assert request["memory_mb"] <= worker.capabilities["max_memory_mb"]

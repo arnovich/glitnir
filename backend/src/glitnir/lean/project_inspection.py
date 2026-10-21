@@ -17,6 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from glitnir.lean.awake import awake
 from glitnir.lean.environment import bind_to_parent, kill_and_reap
 from glitnir.lean.limits import check_seconds
 from glitnir.lean.prepared_packages import PROGRAM, validate_resolution
@@ -32,6 +33,66 @@ NO_BUILD_EXIT = 3
 MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(\.[A-Za-z_][A-Za-z0-9_']*)*")
 
 
+#: The origin elan assumes for a toolchain named without one.
+_ORIGIN = "leanprover/lean4:"
+#: A release named with its leading `v`, such as `v4.32.1` or `v4.32.1-rc1`.
+_RELEASE = re.compile(r"v(\d+\.\d+\.\d+\S*)")
+#: What every refusal and the editor's banner say after the version sentence.
+_OFF = (
+    "Glitnir checks Lean {supported}, so checking, proof steps, views, evidence "
+    "and decisions are off; reading works as usual."
+)
+
+
+def _version(declaration: str) -> str:
+    """Name a declared toolchain as a Lean version, the way elan resolves it.
+
+    The default origin is dropped, and the `v` of a release: elan picks the
+    same toolchain for `leanprover/lean4:v4.32.1`, `v4.32.1` and `4.32.1`.
+    """
+    name = declaration.removeprefix(_ORIGIN)
+    release = _RELEASE.fullmatch(name)
+    return release.group(1) if release else name
+
+
+def supported_version() -> str:
+    """Return the Lean version Glitnir checks, such as `4.32.1`, from `TOOLCHAIN`."""
+    return _version(TOOLCHAIN)
+
+
+def lean_support(project: dict[str, Any]) -> dict[str, Any]:
+    """Decide whether Glitnir runs Lean for a `describe_project` description.
+
+    A Lake project is supported when its `lean-toolchain` declares the
+    supported version; a loose file also when no `lean-toolchain` is found.
+    An unreadable declaration is never supported, and the message names its
+    read error. Only this decides it, so the editor's banner and every
+    refusal say the same `message` (None when supported). `declared` is the
+    declaration as read, or None.
+    """
+    declared = project["toolchain"]
+    error = project["files"]["lean-toolchain"].get("error")
+    if declared is not None:
+        supported = _version(declared) == supported_version()
+    else:
+        supported = project["kind"] == "loose" and error == "missing"
+    message = None
+    if not supported:
+        if declared is not None:
+            first = f"This project uses Lean {_version(declared)}."
+        elif error is not None and error != "missing":
+            first = f"This project's lean-toolchain could not be read: {error}."
+        else:
+            first = "This project declares no Lean version."
+        message = f"{first} {_OFF.format(supported=supported_version())}"
+    return {
+        "supported": supported,
+        "declared": declared,
+        "toolchain": TOOLCHAIN,
+        "message": message,
+    }
+
+
 class NeedsBuild(ValueError):
     """Lake found an import that is not built, or is out of date; nothing was built."""
 
@@ -42,10 +103,24 @@ def _source_digest(source: Path) -> str:
     return hashlib.sha256(text.replace("\r\n", "\n").encode()).hexdigest()
 
 
+def toolchain_directory() -> str:
+    """Name elan's directory for `TOOLCHAIN`, such as `leanprover--lean4---v4.32.1`."""
+    return TOOLCHAIN.replace("/", "--").replace(":", "---")
+
+
+def lake_matches(version: str) -> bool:
+    """Tell whether `lake --version` output reports the supported Lean version.
+
+    Lake's own version moves with every release; the Lean version it was
+    built with is the binding fact.
+    """
+    return f"(Lean version {supported_version()})" in version
+
+
 def _toolchain() -> Path:
     """Locate the supported installed toolchain without invoking elan."""
     home = Path(os.environ.get("ELAN_HOME", Path.home() / ".elan"))
-    root = (home / "toolchains" / "leanprover--lean4---v4.32.1").resolve()
+    root = (home / "toolchains" / toolchain_directory()).resolve()
     if not all((root / "bin" / name).is_file() for name in ("lake", "lean")):
         raise ValueError(
             f"Install {TOOLCHAIN} with elan before inspecting this project."
@@ -104,7 +179,7 @@ def _run(
         "HOME": "/nonexistent",
         "LANG": "C.UTF-8",
     }
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, awake():
         process = subprocess.Popen(
             command,
             cwd=root,
@@ -236,6 +311,9 @@ def inspect_project(
             raise ValueError(
                 "Inspection needs a prepared Lake project; loose files still preview."
             )
+        support = lean_support(project)
+        if not support["supported"]:
+            raise ValueError(support["message"])
         files = project["files"]
         for name, info in files.items():
             if "error" in info and not (
@@ -243,8 +321,6 @@ def inspect_project(
                 and info["error"] == "missing"
             ):
                 raise ValueError(f"Prepare the project's {name}: {info['error']}.")
-        if project["toolchain"] != TOOLCHAIN:
-            raise ValueError(f"Project inspection currently supports only {TOOLCHAIN}.")
         root = Path(project["root"]).resolve()
         if not source.resolve().is_relative_to(root):
             raise ValueError("Source is outside the project root.")
@@ -267,12 +343,10 @@ def inspect_project(
             cancellation,
             timeout_seconds=remaining(),
         ).strip()
-        if (
-            not version.startswith("Lake version 5.0.0-src+")
-            or "(Lean version 4.32.1)" not in version
-        ):
+        if not lake_matches(version):
             raise ValueError(
-                "Installed Lake does not match the supported Lean 4.32.1 adapter."
+                "Installed Lake does not match the supported "
+                f"Lean {supported_version()} adapter."
             )
         output = _run(
             ["setup-file", str(source), *imports],

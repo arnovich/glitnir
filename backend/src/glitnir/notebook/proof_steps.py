@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from glitnir.lean.project import describe_project
+from glitnir.lean.project_inspection import lean_support
 from glitnir.lean.proof_trace import trace_file
 
 
@@ -30,6 +32,10 @@ class ProofSteps:
         """Start at most one bounded observation at a time."""
         if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise ValueError("Send the saved source sha256.")
+        # Refused before any worker, slot or Lean run, as every Lean request.
+        support = lean_support(describe_project(self.path))
+        if not support["supported"]:
+            raise ValueError(support["message"])
         with self._lock:
             if self._closed:
                 raise ValueError("This preview is closed.")

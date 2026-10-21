@@ -694,6 +694,7 @@ def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch
         source_preview, "provider_imports_error", provider_lean.provider_imports_error
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
     monkeypatch.setattr(
         provider_lean,
         "inspect_project",

@@ -1,9 +1,11 @@
 """Decide `-- @decide <name> : <goal>` directives for Glitnir.
 
 A goal is written in the syntax of `glitnir_forseti.claims.text` and starts
-with its kind: ``entailment``, ``trajectory`` or ``stream``. `decide` runs that
-kind's decider without the pinned Lean replay: the first evidence a lane finds
-becomes a proposed Lean block (`glitnir_forseti.notebook.decisions.block`).
+with its kind: ``entailment``, ``trajectory``, ``stream`` or ``stepped``.
+`decide` runs that kind's decider without the pinned Lean replay: the first
+evidence a lane finds, or for a stepped goal the template its exact arithmetic
+chooses, becomes a proposed Lean block
+(`glitnir_forseti.notebook.decisions.block`).
 Nothing here grants anything. Glitnir's core checks the block with the
 project's own Lean after the notebook's text up to the directive, and only
 that check makes it a proof.
@@ -14,8 +16,8 @@ A proof is the theorem ``<name>``; a refutation is ``<name>_refuted``, stating
 entailment lane, or the model), so `IMPORTS` is empty and the outcome lists
 the block's imports as a stage; a notebook without them fails the check.
 
-Deciding needs Z3, from the ``z3`` extra. A cancelled decision returns
-``unknown`` with the reason ``cancelled``.
+Deciding needs Z3, from the ``z3`` extra (the stepped decider itself uses
+none). A cancelled decision returns ``unknown`` with the reason ``cancelled``.
 """
 
 import importlib.util
@@ -24,7 +26,7 @@ from typing import Any
 
 from glitnir.providers import DecisionProvider, DecisionRequest
 
-KINDS = frozenset({"entailment", "trajectory", "stream"})
+KINDS = frozenset({"entailment", "trajectory", "stream", "stepped"})
 #: The modules every block needs, whatever its goal; see the module docstring.
 IMPORTS: tuple[str, ...] = ()
 NEEDS_Z3 = "Install glitnir-forseti[z3] to decide goals."
@@ -134,7 +136,7 @@ def decide(request: DecisionRequest, cancel: threading.Event) -> dict[str, Any]:
 
 
 def decision_provider() -> DecisionProvider:
-    """Return the Forseti provider for entailment, trajectory and stream goals."""
+    """Return the Forseti provider for all four kinds of goal."""
     return DecisionProvider(
         name="forseti",
         kinds=KINDS,

@@ -12,6 +12,7 @@ from pathlib import Path
 from glitnir.compute.client import Client, Settings, result_from_job, save_receipt
 from glitnir.compute.protocol import make_request, validate_request
 from glitnir.compute.worker import Worker, execute
+from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -39,7 +40,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     worker.add_argument("--prepared", type=Path, required=True)
     worker.add_argument("--journal", type=Path, required=True)
     worker.add_argument("--max-seconds", type=int, default=1800)
-    worker.add_argument("--max-memory-mb", type=int, default=8192)
+    worker.add_argument("--max-memory-mb", type=int, default=DEFAULT_MEMORY_LIMIT_MB)
     recovery = commands.add_parser("retry-completion")
     recovery.add_argument("journal", type=Path)
     child = commands.add_parser("execute", help=argparse.SUPPRESS)

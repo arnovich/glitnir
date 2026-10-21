@@ -51,7 +51,7 @@ With Python 3.12+, uv and Node 22+, run from the repository root:
 uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
-  'backend/dist/glitnir-0.1.2-py3-none-any.whl[dev]'
+  'backend/dist/glitnir-0.1.4-py3-none-any.whl[dev]'
 (cd backend && ../.venv/bin/python -m pytest && ../.venv/bin/black --check src tests \
   && ../.venv/bin/isort --check-only src tests && ../.venv/bin/flake8 src tests \
   && ../.venv/bin/mypy src)
@@ -61,7 +61,7 @@ uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
 uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
 uv pip install --python .venv/bin/python --no-deps \
-  plugins/forseti/dist/glitnir_forseti-0.1.2-py3-none-any.whl
+  plugins/forseti/dist/glitnir_forseti-0.1.4-py3-none-any.whl
 (cd plugins/forseti && ../../.venv/bin/python -m pytest -q && ../../.venv/bin/black --check src tests tools \
   && ../../.venv/bin/isort --check-only src tests tools && ../../.venv/bin/flake8 src tests tools \
   && ../../.venv/bin/mypy src)
@@ -137,7 +137,9 @@ The plugin's live tests need a built Forseti Lean checkout, `lake` on `PATH`,
 Lean 4.32.1 installed with elan and a working sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
 `FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead. Plugin
-tests marked `simulation` need Python Asgard (`gimle.asgard`). The
+tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live
+test allows each block 120 s to check; on a loaded machine raise that with
+`FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
 [plugin README](plugins/forseti/README.md) shows how to run them.
 
 Verified on 2026-10-15 against forseti-lean `c65dada` (Lean 4.32.1): the opt-in
@@ -250,9 +252,13 @@ reads a saved notebook and its saved results for the canonical renderer:
   snapshot holds no local absolute path.
 - `asset(path, sha256)` returns an image the prose shows.
 - `view_imports()` lists the modules to build before drawing views.
-- `draw_view(cell, line)` draws one listed view and waits for it, as the editor
-  does: with Lean in the sandbox, from the project's own build. Drawing checks
-  nothing.
+- `draw_view(cell, line)` returns the view's saved drawing from the `views`
+  section of `<Notebook>.glitnir.json` as recorded, without running Lean, when
+  the source through its directive and the provider match. Otherwise it draws
+  the view and waits for it, as the editor does: with Lean in the sandbox, from
+  the project's own build, with the notebook's proofs skipped. That drawing is
+  not saved; static export never writes records. Drawing checks nothing.
+  Committing the `.glitnir.json` keeps a gallery Lean-free for views.
 
 The module's `export_styles()` returns the CSS that **Export HTML** embeds
 (`GET /api/export/styles`). Reading a snapshot or an image runs no Lean, git or

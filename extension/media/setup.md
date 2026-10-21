@@ -15,9 +15,13 @@ describes the notebook format, the preview and checking.
   shell's `PATH`, so setup looks for `uv` in `~/.local/bin`, `/opt/homebrew/bin`,
   `/usr/local/bin`, `/usr/bin` and `/bin`. Without it, setup offers **Install
   uv** (see [Set Up Environment](#set-up-environment)).
-- **Lean 4.32.1**, installed with [elan](https://github.com/leanprover/elan):
+- **Lean 4.32.1**, the one Lean version Glitnir checks, installed with
+  [elan](https://github.com/leanprover/elan):
   `elan toolchain install leanprover/lean4:v4.32.1`. Reading a notebook needs only
   the backend; checking, proof steps, views, evidence and decisions need Lean.
+  A notebook on another Lean version still opens and reads, with a banner saying
+  those are off. Glitnir moves the supported version forward as new Lean
+  releases are tested.
   Glitnir never builds or downloads a project's dependencies: build the
   notebook's Lake project first (`lake build`, after `lake exe cache get` for
   Mathlib).
@@ -206,6 +210,15 @@ and package installs, and each preview's backend output.
   Version** (see [Upgrading](#upgrading)).
 - **"Install leanprover/lean4:v4.32.1 with elan"**: install the toolchain with
   `elan toolchain install leanprover/lean4:v4.32.1`.
+- **"This project uses Lean X. Glitnir checks Lean 4.32.1, so checking, proof
+  steps, views, evidence and decisions are off"** (or "declares no Lean
+  version", or "lean-toolchain could not be read"): Glitnir runs Lean only for a
+  project whose `lean-toolchain` declares Lean 4.32.1, as
+  `leanprover/lean4:v4.32.1` (a loose file may also declare none). Installing
+  4.32.1 does not help; the project itself must declare it. Saved results still
+  show, out of date, and the notebook reads as usual. Change `lean-toolchain`
+  only if the project builds with 4.32.1, then rebuild it with `lake build` and
+  reopen the preview.
 - **"no working sandbox"** on Linux: install bubblewrap and allow unprivileged
   user namespaces (see [Requirements](#requirements)). Do not disable confinement
   to work around it.
@@ -213,9 +226,9 @@ and package installs, and each preview's backend output.
   notebooks): these need the notebook inside a built Lake project; a loose
   `.lean` file has no prepared imports.
 - **Large proofs run out of memory.** Every Lean run is limited to
-  `glitnir.memoryLimitMb` (8 GB by default). A large proof, a big decision block,
-  or an incremental replay on top of a recorded Mathlib replay (about 4.7 GB) can
-  exceed a lower limit and fail. Raise the setting (up to 32768) and reopen the
+  `glitnir.memoryLimitMb` (16 GB by default, less on a smaller machine). A large
+  proof, a big decision block, or an incremental replay on top of a recorded
+  Mathlib replay (about 4.7 GB) can exceed a lower limit and fail. Raise the setting (up to 32768) and reopen the
   preview.
 - **Checks time out.** Raise `glitnir.elaborationTimeoutMs` (up to 30 minutes)
   and reopen the preview. The first replay of a new set of imports has its own

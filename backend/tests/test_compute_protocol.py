@@ -103,3 +103,14 @@ def test_nonstandard_dependency_layout_fails_before_dispatch(compute_project):
     )
     with pytest.raises(ValueError, match=".lake/packages"):
         make_request(compute_project / "Example.lean", "prepared", 60, 4096)
+
+
+def test_remote_submission_refuses_unsupported_inherited_toolchain(tmp_path):
+    """Staging a loose file must not discard an unsupported ancestor version."""
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    child = tmp_path / "nested"
+    child.mkdir()
+    source = child / "Example.lean"
+    source.write_text("theorem sample : True := by trivial\n")
+    with pytest.raises(ValueError, match="4.35.0"):
+        make_request(source, "prepared", 60, 4096)

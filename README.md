@@ -1,6 +1,6 @@
 # Glitnir: A simple notebook format for Lean
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/gimle.glitnir?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir)
+[![Visual Studio Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-install-007ACC)](https://marketplace.visualstudio.com/items?itemName=gimle.glitnir)
 
 Glitnir is a simple notebook format that makes it easier for a standard human mathematician to follow agent-generated proofs in Lean.
 
@@ -52,6 +52,15 @@ buttons in the preview.
 Checking, proof-step recording and evidence runs happen only when you ask. Lean
 always runs in the sandbox; an evidence provider computes from its output.
 
+Views are drawn with the notebook's proofs skipped, so they appear quickly; a
+freshly drawn card says "Drawn without re-running the notebook's proofs." when
+that was done. A drawing never grants or changes a claim's status. Drawings are
+saved in `<Notebook>.glitnir.json` and reused without Lean until the notebook
+above the directive, the environment or the provider changes. A reused drawing
+does not show that note, even if it was drawn without the proofs. On macOS,
+Glitnir keeps the Mac from idle sleep while its checks, proof steps, views and
+evidence run Lean or Lake (decision runs are not covered).
+
 ## Install
 
 Glitnir runs in local VS Code windows on **macOS and Linux** (see
@@ -63,11 +72,12 @@ Glitnir runs in local VS Code windows on **macOS and Linux** (see
   **Python 3.12 or newer**, for the Python backend. Without uv, setup offers
   **Install uv**, which shows its command before running it: Homebrew, or the
   official installer `https://astral.sh/uv/0.12.23/install.sh`.
-- **Lean 4.32.1**, for checking, proof steps, views, evidence and decisions;
-  reading needs only the backend. Checking needs the notebook's project to be on
-  that toolchain (`elan toolchain install leanprover/lean4:v4.32.1`): a project
-  on another Lean version renders but cannot be checked. Build the project
-  yourself first (`lake build`, after `lake exe cache get` for Mathlib).
+- **Lean 4.32.1**, the one Lean version Glitnir checks, for checking, proof
+  steps, views, evidence and decisions; reading needs only the backend. Install
+  it with `elan toolchain install leanprover/lean4:v4.32.1`, and have the
+  notebook's project use it. A project on another Lean version still opens and
+  reads, with a banner saying checking is off. Build the project yourself first
+  (`lake build`, after `lake exe cache get` for Mathlib).
 - **On Linux, bubblewrap** with unprivileged user namespaces, which Lean runs
   in; the setup guide has the Ubuntu commands. macOS uses its built-in sandbox.
 
@@ -193,14 +203,18 @@ notebooks and the claim graph.
 | Setting | Default | Purpose |
 |---|---|---|
 | `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks, proof-step recording, views, evidence and decisions, in milliseconds, capped at 30 minutes. Applies to previews opened after the change. |
-| `glitnir.memoryLimitMb` | `8192` (8 GB) | Memory limit for every Lean run, in megabytes, between 1024 and 32768. Applies to previews opened after the change. |
+| `glitnir.memoryLimitMb` | `16384` (16 GB) | Memory limit for every Lean run, in megabytes, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change. |
 | `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. Changing it closes open previews. |
 | `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend. Nothing downloads until you click **Set Up**. |
 
 ## Limits
 
-- **Lean 4.32.1 only.** Checking, proof steps, views, evidence and decisions use
-  that toolchain; a project on another Lean version can be read but not checked.
+- **One supported Lean version, today 4.32.1.** Checking, proof steps, views,
+  evidence and decisions run only on it. A notebook on another Lean version
+  opens and reads as usual, with a banner saying those are off; saved results
+  still show, marked out of date. Glitnir moves the supported version forward
+  as new Lean releases are tested, so a project on a newer Lean reads until
+  then.
 - **Local macOS and Linux only.** Windows, remote windows (SSH, WSL, containers)
   and virtual or untrusted workspaces are unsupported. On Linux, the sandbox
   needs an x86-64 or ARM64 machine.
@@ -210,9 +224,6 @@ notebooks and the claim graph.
   dependencies; run `lake build` yourself. Views, evidence, decisions and
   imports of other notebooks need the notebook inside a built Lake project; a
   loose `.lean` file has no prepared imports.
-- **Simulation is evidence, never proof.** Evidence never changes a claim's
-  status or the check's exit code, and a decision provider only proposes a Lean
-  block that the kernel check must accept.
 
 ## Where next
 

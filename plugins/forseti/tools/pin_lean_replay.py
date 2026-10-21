@@ -32,6 +32,7 @@ from pathlib import Path
 from glitnir_forseti.entailment.render import ALGEBRAIC_IMPORTS, IMPORTS, PSATZ_IMPORTS
 from glitnir_forseti.lean.closure import ClosureObservation, build_pin, observe_closure
 from glitnir_forseti.lean.session import SessionLimits
+from glitnir_forseti.stepped.models import replay_imports as stepped_imports
 from glitnir_forseti.streams.models import replay_imports as stream_imports
 from glitnir_forseti.trajectory.models import replay_imports
 
@@ -58,6 +59,7 @@ def main() -> int:
         PSATZ_IMPORTS,
         *replay_imports(),
         *stream_imports(),
+        *stepped_imports(),
     }
     for imports in sorted(import_sets):
         observed = observe_closure(

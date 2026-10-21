@@ -62,7 +62,8 @@
     <main class="document">
       <div class="doc-inner">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
-        <div class="banner" id="banner" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="banner-text"></span><button type="button" id="check-project" hidden>Check saved file</button><button type="button" id="inspect-project" hidden title="Inspect a prepared Lean 4.32.1 project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner" id="banner" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="banner-text"></span><button type="button" id="check-project" hidden>Check saved file</button><button type="button" id="inspect-project" hidden title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden></section>
         <div class="banner error" id="load-error" hidden></div>

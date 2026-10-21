@@ -68,10 +68,13 @@ The worker never fetches packages or edits the prepared project.
       --server https://tasks.example.com --project lab --environment example-v1 \
       --credential-file /secure/compute-worker.json \
       worker --prepared /srv/lean/example-v1 --journal /srv/lean/job-journal \
-      --max-seconds 1800 --max-memory-mb 8192
+      --max-seconds 1800 --max-memory-mb 16384
 
 Run this as a supervised service under a dedicated operating-system user.
 It polls outbound and needs no inbound port. Each process runs one job at a time.
+The default worker ceiling is 16384 MB, matching the maximum default editor
+request. Provision that capacity or explicitly lower both the worker ceiling and
+the editor memory setting. Jobs need a worker whose ceiling covers their request.
 Add workers on larger machines to add capacity. Glitnir serializes Lean runs in
 each user's temporary area, so workers intended to run concurrently need
 separate users or private TMPDIR directories with their own resource allocation.
@@ -162,3 +165,25 @@ The checked result referred to the original theorem and the edit remained intact
 A prior cold run correctly reached its ten-minute deadline; the successful run
 used the supported thirty-minute budget. These are correctness checks, not a
 performance benchmark or a production deployment.
+
+## Release candidate 0.1.4
+
+The release branch integrates upstream main through `330c497` and pairs with
+Taskvalet 0.14.0. The integration review found and fixed three issues: worker
+memory ceilings now cover default editor requests; remote submission applies the
+same supported-Lean guard as local checking, including inherited toolchains; and
+local Z3 search does not inherit the remote computation credential. Regression
+tests cover each boundary. The review panel found no remaining blockers after
+these fixes.
+
+The release remains subject to Linux CI (including every required live Lean
+test), exact candidate asset verification and fresh-profile installation checks.
+The earlier end-to-end evidence above describes the initial implementation;
+release artifacts must be validated separately before publication or rollout.
+
+After integration, the installed 0.1.4 wheels passed 1,538 non-live backend tests
+(2 optional skips; 65 live cases delegated to CI), 1,515 plugin tests (295
+optional integration skips), and all 303 extension tests. Backend and plugin
+format/lint/type checks passed. The universal VSIX and isolated packaged macOS
+host check passed. These checks used the integrated release worktree; CI binds
+its own built assets to the eventual candidate commit.

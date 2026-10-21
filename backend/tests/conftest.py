@@ -49,6 +49,38 @@ def no_startup_sweep(monkeypatch):
     monkeypatch.setattr("glitnir.notebook.server.sweep_stale_scratch", lambda: None)
 
 
+@pytest.fixture(autouse=True)
+def no_caffeinate(monkeypatch):
+    """Start no caffeinate, which tests patching `subprocess.Popen` would catch."""
+    monkeypatch.setattr("glitnir.lean.awake._enabled", lambda: False)
+
+
+@pytest.fixture
+def draw_each_alone(monkeypatch):
+    """Fake the preview's view runs with a fake of one view's drawing.
+
+    `draw_each_alone(render)` replaces `source_preview.render_project_views`
+    with a run that draws each of its views with `render`, called as
+    `render_project_view` is: the notebook, then `line`, `kind`, `name`,
+    `using` and the run's other options.
+    """
+
+    def install(render):
+        def run(path, *, views, **options):
+            return {
+                "views": [
+                    render(
+                        path, line=line, kind=kind, name=name, using=using, **options
+                    )
+                    for line, kind, name, using in views
+                ]
+            }
+
+        monkeypatch.setattr("glitnir.notebook.source_preview.render_project_views", run)
+
+    return install
+
+
 @pytest.fixture(scope="session")
 def session_replay_cache(tmp_path_factory):
     """One private replay cache directory shared by this session's live tests."""

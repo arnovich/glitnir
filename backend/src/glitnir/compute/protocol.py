@@ -10,7 +10,7 @@ from typing import Any, Iterator
 from uuid import UUID, uuid4
 
 from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_inspection import TOOLCHAIN
+from glitnir.lean.project_inspection import TOOLCHAIN, lean_support
 
 MAX_SOURCE = 1_000_000
 MAX_CONTEXT_FILES = 30000
@@ -176,6 +176,9 @@ def make_request(
 ) -> dict[str, Any]:
     """Freeze one candidate and its context before it is sent or edited again."""
     source = source.absolute()
+    message = lean_support(describe_project(source))["message"]
+    if message is not None:
+        raise ValueError(message)
     relative = source_path(source.relative_to(project_root(source)).as_posix())
     text = read_regular(source, MAX_SOURCE).decode().replace("\r\n", "\n")
     request = {

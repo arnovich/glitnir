@@ -131,3 +131,40 @@ def test_issued_credentials_and_completion_retry_keep_original_lease(
         ("POST", "/jobs/" + request["request_id"] + "/complete", completion)
     ]
     assert "private-token" not in capsys.readouterr().out
+
+
+def test_worker_cli_capacity_covers_default_editor_request(
+    compute_project, tmp_path, monkeypatch
+):
+    """The service command must not override the compatible Worker default."""
+    from glitnir.compute.worker import Worker
+    from glitnir.lean.limits import memory_limit_mb
+
+    monkeypatch.setenv("GLITNIR_TASKVALET_TOKEN", "private-token")
+    monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
+    monkeypatch.setattr("glitnir.lean.limits.physical_memory_mb", lambda: 65536)
+    capacities = []
+    monkeypatch.setattr(
+        Worker,
+        "run",
+        lambda self, stop: capacities.append(self.capabilities["max_memory_mb"]),
+    )
+    assert (
+        main(
+            [
+                "--server",
+                "https://tasks.example.test",
+                "--project",
+                "lab",
+                "--environment",
+                "prepared",
+                "worker",
+                "--prepared",
+                str(compute_project),
+                "--journal",
+                str(tmp_path / "journal"),
+            ]
+        )
+        == 0
+    )
+    assert capacities and capacities[0] >= memory_limit_mb()

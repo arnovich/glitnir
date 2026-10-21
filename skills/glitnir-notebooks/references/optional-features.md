@@ -49,10 +49,12 @@ and goes out of date when anything above the directive or the environment change
 If the file would exceed 16 MiB or the existing file cannot be read, the run still
 happens but its result is not saved; the card shows why. Never hand-edit it.
 
-`glitnir-forseti` provides two verbs. They load
-`Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
-from the project's build; the notebook need not import them. Without Python
-Asgard, `iterate` cards say it is unavailable and cannot run.
+`glitnir-forseti` provides three verbs: `simulate`, `iterate` and `sample`. They
+load `Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
+from the project's build; the notebook need not import them. `sample` also needs
+the notebook to import `Gimle.Forseti.Examples.HedgedSpreadStepped`, which
+defines the step it samples. Without Python Asgard, `iterate` cards say it is
+unavailable and cannot run.
 
 ```lean
 -- @evidence simulate dissipative (h := 1/100) (steps := 400) (solver := rk4) (plane := x, z)
@@ -61,7 +63,10 @@ Asgard, `iterate` cards say it is unavailable and cannot run.
 
 `simulate` takes `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`; it needs no
 extra package. `iterate` takes `state`, `inputs`, `parameter`, `steps` and `names`
-and needs Python Asgard (`gimle-asgard`, installed separately into the backend). Numbers are plain decimals or
+and needs Python Asgard (`gimle-asgard`, installed separately into the backend).
+`sample` takes `law` (`gaussian`, `twopoint` or `threepoint`), `variance` and
+`observe`, plus `paths` (at most 100000), `steps`, `seed`, `barrier` and `show`,
+and needs no extra package. Numbers are plain decimals or
 fractions of at most 40 digits per part; write `1/100` or `0.01`, not `1e-2`.
 Without a provider the line shows why, and saved results stay viewable. A bad
 option is reported on the card. CI skips the plugin's live Lean tests, so Forseti
@@ -77,12 +82,16 @@ results untouched.
 
 `-- @decide <name> : <goal>` on a line of its own, with continuation lines `--`
 plus at least two spaces, asks a decision provider for a Lean proof or refutation
-of the goal. `glitnir-forseti` decides kinds `entailment`, `trajectory` and
-`stream`; it needs `glitnir-forseti[z3]`, and the notebook must import the
+of the goal. `glitnir-forseti` decides kinds `entailment`, `trajectory`, `stream`
+and `stepped`; it needs `glitnir-forseti[z3]`, and the notebook must import the
 Forseti/Asgard modules the goal uses (a missing one shows as an unknown-identifier
-rejection on the card). Forseti `entailment` and `trajectory` decision blocks have passed Glitnir's
-check in the opt-in live tests (2026-10-15); `stream` decisions have not been
-verified yet, so do not present them as working. The first check of a Forseti
+rejection on the card). Forseti `entailment`, `trajectory` and `stepped` decision
+blocks and the `sample` card have passed Glitnir's check in the opt-in live tests
+against Forseti Lean v0.3.0, the pinned release (2026-10-20); `stream` decisions
+have not been verified yet, so do not present them as working. `stepped`
+decisions and `sample` need a Forseti Lean build that contains
+`Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as
+Forseti Lean v0.3.0 does. The first check of a Forseti
 project takes about 18 minutes (a one-time import replay); later checks take a
 few minutes.
 

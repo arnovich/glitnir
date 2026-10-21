@@ -9,7 +9,6 @@ from a Lake workspace, and is removed with its results file afterwards.
 """
 
 import hashlib
-import secrets
 from pathlib import Path
 
 import pytest
@@ -67,18 +66,9 @@ ITERATE_LINE = _line("-- @evidence iterate")
 
 
 @pytest.fixture
-def notebook(forseti_lake_project):
-    """Write `NOTEBOOK` into the test project; remove it and its results after."""
-    from glitnir.notebook.check_records import records_path
-
-    folder = forseti_lake_project / "Gimle/Forseti/Tests"
-    path = folder / f"GlitnirEvidenceLive{secrets.token_hex(4)}.lean"
-    path.write_text(NOTEBOOK, encoding="utf-8")
-    try:
-        yield path
-    finally:
-        path.unlink(missing_ok=True)
-        records_path(path).unlink(missing_ok=True)
+def notebook(scratch_notebook) -> Path:
+    """Write `NOTEBOOK` into the test project; it is removed with its results."""
+    return scratch_notebook("GlitnirEvidenceLive", NOTEBOOK)
 
 
 def _run(path: Path, line: int) -> dict:

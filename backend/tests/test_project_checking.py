@@ -1325,6 +1325,38 @@ def test_running_project_stage_is_cancelled_and_reaped(tmp_path, monkeypatch):
     assert children and children[0].poll() is not None
 
 
+def test_running_out_of_memory_names_the_limit_and_the_setting(tmp_path, monkeypatch):
+    """Lean's memory error becomes advice naming the limit and the setting."""
+    import threading
+    import time
+
+    from glitnir.lean import project_checking as checking
+
+    toolchain = tmp_path / "toolchain"
+    (toolchain / "bin").mkdir(parents=True)
+    lean = toolchain / "bin" / "lean"
+    lean.write_text(
+        "#!/bin/sh\n"
+        "echo \"excessive memory consumption detected at 'interpreter' "
+        '(potential solution: increase memory consumption threshold)" >&2\n'
+        "exit 1\n"
+    )
+    lean.chmod(0o755)
+    monkeypatch.setattr(checking, "confine", lambda command, **_options: command)
+    with pytest.raises(SnapshotError) as raised:
+        checking.run_observer(
+            toolchain,
+            ["lean", "-M6400", "A.lean"],
+            cwd=tmp_path,
+            readable=[],
+            writable=False,
+            cancel=threading.Event(),
+            deadline=time.monotonic() + 30,
+        )
+    assert str(raised.value).startswith("Lean reached its memory limit of 6400 MB.")
+    assert "glitnir.memoryLimitMb" in str(raised.value)
+
+
 @pytest.mark.parametrize(
     "configured, expected", [("", 600), ("120000", 120), ("3600000", 1800)]
 )
@@ -2345,7 +2377,7 @@ def _fake_check_stages(tmp_path, monkeypatch) -> list[list[str]]:
 
 
 @pytest.mark.parametrize(
-    "configured, expected", [(None, "-M8192"), ("16384", "-M16384")]
+    "configured, expected", [(None, "-M16384"), ("20480", "-M20480")]
 )
 def test_every_check_stage_uses_the_configured_memory_limit(
     tmp_path, monkeypatch, capsys, configured, expected
@@ -2353,10 +2385,12 @@ def test_every_check_stage_uses_the_configured_memory_limit(
     """The command-line check passes `GLITNIR_MEMORY_LIMIT_MB` to every Lean run."""
     import json
 
+    from glitnir.lean import limits
     from glitnir.notebook.__main__ import main
 
     source = tmp_path / "A.lean"
     source.write_text("def x : Nat := 1\n")
+    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
     if configured is None:
         monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
     else:

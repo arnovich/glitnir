@@ -1,10 +1,12 @@
-"""One front door to the three deciders, for the agent and the notebook.
+"""One front door to the four deciders, for the agent and the notebook.
 
 `read_goal` accepts a goal as text (`glitnir_forseti.claims.text`) or as its
 JSON encoding; `decide` hands it to the decider for its kind, unchanged, and
 reports that decider's own answer: ``PROVEN`` or ``REFUTED`` with a replayable
 artifact, or ``UNKNOWN`` with a reason. Nothing here searches, checks or
-decides; a status is only ever copied from a service result.
+decides; a status is only ever copied from a service result. The stepped
+decider keeps no artifact: it answers only without a replay, below, and a
+replayed request about a stepped goal ends ``UNKNOWN: lean-unavailable``.
 
 For a decided goal the checked Lean statement and script are regenerated from
 the artifact by the kind's ``regenerate_application``, the same regeneration a
@@ -33,6 +35,12 @@ from glitnir_forseti.entailment import replay as entailment_replay
 from glitnir_forseti.entailment import syntax as entailment_syntax
 from glitnir_forseti.entailment.limits import CEILINGS, EntailmentLimits
 from glitnir_forseti.entailment.syntax import Goal, GoalError, Tru
+from glitnir_forseti.stepped import service as stepped_service
+from glitnir_forseti.stepped.examples import BARRIER, VARIANCE, YEAR, breach_goal
+from glitnir_forseti.stepped.goal import SteppedGoal
+from glitnir_forseti.stepped.models import MODELS as STEPPED_MODELS
+from glitnir_forseti.stepped.models import SteppedEntry
+from glitnir_forseti.stepped.numbers import horizon_bound
 from glitnir_forseti.streams import goal as stream_goal
 from glitnir_forseti.streams import replay as stream_replay
 from glitnir_forseti.streams.examples import EXAMPLES as STREAM_EXAMPLES
@@ -120,11 +128,20 @@ _KINDS: dict[type, _Kind] = {
         _decide_stream,
         stream_replay.regenerate_application,
     ),
+    SteppedGoal: _Kind(
+        "stepped",
+        "glitnir_forseti.stepped",
+        SteppedGoal.SCHEMA,
+        SteppedGoal.from_json,
+        SteppedGoal.to_json,
+        stepped_service.decide_stepped,
+        stepped_service.regenerate_application,
+    ),
 }
 
 
 def goal_kind(goal: AnyGoal) -> str:
-    """Name a parsed goal's kind: ``entailment``, ``trajectory`` or ``stream``."""
+    """Name a parsed goal's kind: entailment, trajectory, stream or stepped."""
     return _KINDS[type(goal)].name
 
 
@@ -173,7 +190,7 @@ class Decision:
     """A decider's answer about one goal, as that decider gave it.
 
     Attributes:
-        kind: ``entailment``, ``trajectory`` or ``stream``.
+        kind: ``entailment``, ``trajectory``, ``stream`` or ``stepped``.
         goal: The goal decided.
         status: ``PROVEN``, ``REFUTED`` or ``UNKNOWN``.
         reason: For ``UNKNOWN``, the decider's reason.
@@ -237,7 +254,9 @@ def decide(
     """
     kind = _KINDS.get(type(goal))
     if kind is None:
-        raise TypeError("goal must be an entailment, trajectory or stream goal")
+        raise TypeError(
+            "goal must be an entailment, trajectory, stream or stepped goal"
+        )
     if replay:
         result = kind.decide(goal, limits, project=project, cancel=cancel)
     else:
@@ -401,6 +420,24 @@ def catalog() -> str:
     )
     for model in STREAM_MODELS.values():
         lines.append(f"  {model.key}: {model.summary}")
+    lines.append(
+        "Stepped models (shocks `variance v` or `subgaussian v`; claims"
+        " `within N observe X breach B probability <= q`,"
+        " `at every mark within N observe X breach B probability <= q`,"
+        " `observe X expected <= c at N`):"
+    )
+    for stepped in STEPPED_MODELS.values():
+        initial = ", ".join(_number(value) for value in stepped.initial)
+        observed = ", ".join(
+            f"{name} ({'breach' if seen.kind == 'exposure' else 'expected'} claims)"
+            for name, seen in stepped.observations.items()
+        )
+        lines.append(
+            f"  {stepped.key}: from ({initial}) at {_number(stepped.start)}"
+            f" step {_number(stepped.delta)}, at most {stepped.horizon_cap} steps"
+            f" ({stepped.unrolled_cap} for fixed-date and expected claims);"
+            f" observe {observed}"
+        )
     return "\n".join(lines)
 
 
@@ -430,7 +467,8 @@ def examples() -> tuple[dict[str, str], ...]:
 
     Each is a goal the deciders accept as written, generated from the
     registries: a trajectory model's declared state, start and first proved
-    band in the short form, and a stream model's field on the unit box. They
+    band in the short form, a stream model's field on the unit box, and a
+    stepped model's year-long breach claim at its exact horizon bound. They
     are starting points for a person to edit, not claims anyone made.
     """
     found = [
@@ -453,7 +491,30 @@ def examples() -> tuple[dict[str, str], ...]:
         )
     for model in STREAM_MODELS.values():
         found.append({"kind": "stream", "model": model.key, "goal": _stream(model)})
+    for stepped in STEPPED_MODELS.values():
+        found.append(
+            {
+                "kind": "stepped",
+                "model": stepped.key,
+                "goal": render_goal(_stepped(stepped)),
+            }
+        )
     return tuple(found)
+
+
+def _stepped(entry: SteppedEntry) -> SteppedGoal:
+    """Pose a stepped model's breach claim at exactly its horizon bound.
+
+    The claim is the first exposure's, over the examples' year (or the model's
+    cap, if lower), bounded by ``N·Δ²·v/B²``, the figure its horizon theorem
+    proves.
+    """
+    name = next(n for n, band in entry.observations.items() if band.kind == "exposure")
+    horizon = min(YEAR, entry.horizon_cap)
+    bound = horizon_bound(
+        stepped_service.INITIAL_ENERGY, horizon, entry.delta, VARIANCE, BARRIER
+    )
+    return breach_goal(bound, entry=entry, horizon=horizon, observation=name)
 
 
 def _stream(model: StreamModel) -> str:
@@ -470,7 +531,7 @@ def _stream(model: StreamModel) -> str:
 
 
 def check_names(goal: AnyGoal) -> None:
-    """Refuse a goal naming a model, port or coordinate that does not exist.
+    """Refuse a goal naming a model, port or observation that does not exist.
 
     A misspelled name is not a claim outside the deciders' fragment but a
     claim nobody meant, so it is an error listing the valid names, not
@@ -496,6 +557,14 @@ def check_names(goal: AnyGoal) -> None:
             )
     elif type(goal) is StreamGoal and goal.model not in STREAM_MODELS:
         raise GoalTextError(f"no stream model {goal.model!r}\n{catalog()}")
+    elif type(goal) is SteppedGoal:
+        stepped = STEPPED_MODELS.get(goal.model)
+        if stepped is None:
+            raise GoalTextError(f"no stepped model {goal.model!r}\n{catalog()}")
+        if goal.observation not in stepped.observations:
+            raise GoalTextError(
+                f"{goal.model} has no observation {goal.observation!r}\n{catalog()}"
+            )
 
 
 def _number(value: Any) -> str:

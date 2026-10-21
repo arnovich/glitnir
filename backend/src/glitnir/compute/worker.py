@@ -19,6 +19,7 @@ from glitnir.compute.protocol import (
     stage_project,
     validate_request,
 )
+from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
 from glitnir.lean.project_checking import check_project
 
 
@@ -77,7 +78,7 @@ class Worker:
         journal: Path,
         *,
         max_seconds: int = 1800,
-        max_memory_mb: int = 8192,
+        max_memory_mb: int = DEFAULT_MEMORY_LIMIT_MB,
     ) -> None:
         """Bind a serial worker to one prepared project and private journal."""
         if (

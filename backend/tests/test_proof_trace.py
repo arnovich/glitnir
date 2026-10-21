@@ -327,15 +327,18 @@ def test_observation_timeout_uses_bounded_shared_setting(
     assert answer["message"] == "observed bounded deadline"
 
 
-@pytest.mark.parametrize("configured, expected", [("", "-M8192"), ("20480", "-M20480")])
+@pytest.mark.parametrize(
+    "configured, expected", [("", "-M16384"), ("20480", "-M20480")]
+)
 def test_observation_uses_the_configured_memory_limit(
     tmp_path, monkeypatch, configured, expected
 ):
     """Proof-step recording passes `GLITNIR_MEMORY_LIMIT_MB` to Lean as `-M`."""
-    from glitnir.lean import proof_trace
+    from glitnir.lean import limits, proof_trace
 
     source = tmp_path / "A.lean"
     source.write_text("theorem t : True := by trivial\n")
+    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
     monkeypatch.setenv("GLITNIR_MEMORY_LIMIT_MB", configured)
     monkeypatch.setattr(proof_trace, "_toolchain", lambda: tmp_path)
     seen: list[str] = []
