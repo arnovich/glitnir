@@ -204,6 +204,144 @@ def test_live_project_check_preserves_names_and_axiom_policy(prepared_lean_proje
     assert not source.with_suffix(".forseti.json").exists()
 
 
+def test_live_scoped_options_preserve_claims_and_ranges(prepared_lean_project):
+    """Scoped and nested options keep named claims and their axiom statuses."""
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    source = prepared_lean_project / "src/Example.lean"
+    text = (
+        "namespace Scoped\n"
+        "set_option maxHeartbeats 500000 in\n"
+        "theorem result : True := True.intro\n"
+        "set_option autoImplicit false in\n"
+        "set_option autoImplicit true in\n"
+        "set_option pp.explicit true in\n"
+        "theorem identity (x : α) : x = x := rfl\n"
+        "set_option maxHeartbeats 500000 in\n"
+        "theorem admitted : False := sorry\n"
+        "axiom custom : False\n"
+        "set_option maxHeartbeats 500000 in\n"
+        "theorem assumed : False := custom\n"
+        "end Scoped\n"
+    )
+    source.write_text(text)
+    result = check_project(
+        source, expected_sha256=hashlib.sha256(text.encode()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert result.get("withheld") is None, result.get("withheld")
+    found = {t["name"]: t for t in result["theorems"]}
+    assert found["Scoped.result"]["status"] == "checked"
+    assert (
+        found["Scoped.result"]["start_line"],
+        found["Scoped.result"]["end_line"],
+    ) == (2, 3)
+    assert found["Scoped.identity"]["status"] == "checked"
+    assert "@Eq" in found["Scoped.identity"]["statement"]
+    assert (
+        found["Scoped.identity"]["start_line"],
+        found["Scoped.identity"]["end_line"],
+    ) == (4, 7)
+    assert found["Scoped.admitted"]["status"] == "admitted"
+    assert found["Scoped.assumed"]["status"] == "assumptions"
+    assert source.read_text() == text
+
+
+@pytest.mark.parametrize(
+    ("text", "kept", "line", "message"),
+    [
+        (
+            "theorem good : True := True.intro\n"
+            "set_option maxHeartbeats 500000 in\n"
+            "theorem bad : 1 = 2 := rfl\n",
+            ["good"],
+            2,
+            "",
+        ),
+        (
+            "set_option autoImplicit true in\n"
+            "theorem inside (x : α) : x = x := rfl\n"
+            "theorem outside (x : β) : x = x := rfl\n",
+            ["inside"],
+            3,
+            "β",
+        ),
+        (
+            "theorem good : True := True.intro\n"
+            "set_option debug.skipKernelTC true in\n"
+            "theorem bad : False := True.intro\n",
+            ["good"],
+            2,
+            "type mismatch",
+        ),
+        (
+            "theorem good : True := True.intro\n"
+            "set_option maxHeartbeats 500000 in\n"
+            "example : True := True.intro\n",
+            ["good"],
+            2,
+            "unsupported scoped",
+        ),
+        (
+            "theorem good : True := True.intro\n"
+            "open Nat in theorem scoped : True := True.intro\n",
+            ["good"],
+            2,
+            "unsupported scoped",
+        ),
+    ],
+)
+def test_live_scoped_options_fail_closed(
+    prepared_lean_project, text, kept, line, message
+):
+    """Options do not leak, mask bad proofs or enable unsupported scoped commands."""
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    source = prepared_lean_project / "src/Example.lean"
+    source.write_text(text)
+    result = check_project(
+        source, expected_sha256=hashlib.sha256(text.encode()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert [t["name"] for t in result["theorems"]] == kept
+    assert all(t["status"] == "checked" for t in result["theorems"])
+    assert result["withheld"]["from_line"] == line
+    assert message in result["withheld"]["message"]
+
+
+def test_live_scoped_option_check_cannot_split_the_command(prepared_lean_project):
+    """A partial check includes the entire option wrapper and proof, or neither."""
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    source = prepared_lean_project / "src/Example.lean"
+    text = (
+        "theorem first : True := True.intro\n"
+        "set_option maxHeartbeats 500000 in\n"
+        "theorem scoped : True := by\n"
+        "  trivial\n"
+        "  <;> trivial\n"
+        "theorem after : True := True.intro\n"
+    )
+    source.write_text(text)
+    for through in (2, 4, 5):
+        result = check_project(
+            source,
+            expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+            through_line=through,
+        )
+        assert result["status"] == "checked_snapshot", result
+        assert [t["name"] for t in result["theorems"]] == (
+            ["first", "scoped"] if through == 5 else ["first"]
+        ), result
+        assert all(t["status"] == "checked" for t in result["theorems"])
+
+
 def test_live_claim_uses_name_their_notebook_module(prepared_lean_project):
     """A claim using another notebook's claim records it with that module.
 
@@ -1664,7 +1802,12 @@ def _reader_accepted_kinds() -> set[str]:
     from glitnir.lean.project_checking import PROGRAMS
 
     source = (PROGRAMS / "ProjectRead.lean").read_text()
-    assert source.count("unless allowed stx.getKind || printAxioms stx.getKind do") == 1
+    assert (
+        source.count(
+            "unless allowed declaration.getKind || printAxioms declaration.getKind do"
+        )
+        == 1
+    )
     allowed = source.split("private def allowed (kind : Name) : Bool :=")[1]
     allowed = allowed.split("].contains kind")[0]
     inert = source.split("private def printAxioms (kind : Name) : Bool :=")[1]
