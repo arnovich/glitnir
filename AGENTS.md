@@ -82,8 +82,10 @@ job runs `-m "not live"` with everything else; the parallel `live` job runs
 `-m live`, where a skipped live test fails. Both install the wheels the `build`
 job made, and a candidate needs both jobs and the `helpers` job, which
 elaborates every Lean helper program with no output
-(`backend/scripts/check_helpers.py`). The `plugin-live` job runs the plugin's
-tests against a build of the Forseti Lean release it pins, under
+(`backend/scripts/check_helpers.py`). The `plugin-live` shards run the plugin's
+tests against a build of the Forseti Lean release it pins
+(`plugins/forseti/tools/live_shards.py` assigns each test module to exactly one
+shard), under
 `FORSETI_REQUIRE_LEAN_PROJECT=1`, where a Lean test that skips fails unless the
 skip is declared (`skipif`) or for `simulation`; update its tag and commit
 check together with `lean-release.v1.json`. Replay-cache tests that only need a

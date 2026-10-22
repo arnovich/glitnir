@@ -185,9 +185,14 @@ jobs are:
   `v0.4.0`, checked against its commit) and runs the plugin's whole test suite
   against it with `FORSETI_REQUIRE_LEAN_PROJECT=1`, so a Lean test that cannot
   run or skips fails (a `skipif` it declares, or the optional `simulation`
-  input, stays a skip). It runs on every pull request and `main` push, in up
-  to 150 minutes; no test runs the community REPL. A candidate does not wait
-  for it.
+  input, stays a skip). It runs as a matrix of shards, each building the release
+  and given up to 180 minutes: `plugins/forseti/tools/live_shards.py` names the
+  slow Lean modules of each shard, puts every other module in `rest` and gives
+  the matrix its shard names, so together the shards run the suite exactly once.
+  Each test's name, outcome and time are printed as it finishes. It runs on
+  every pull request and `main` push; no test runs the community REPL. The
+  stepped budget is raised to 600 s there provisionally
+  (`FORSETI_CHECK_BUDGET_MS`), until Linux timings set it.
 - **candidate** creates a release candidate from a `main` push when the
   extension, live and helpers jobs pass and the `RELEASE_CANDIDATES` repository
   variable is `true`

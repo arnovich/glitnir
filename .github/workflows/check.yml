@@ -225,11 +225,31 @@ jobs:
       # JSON Glitnir reads from it.
       - name: Elaborate the Lean helper programs
         run: .venv/bin/python backend/scripts/check_helpers.py
-  # The plugin's Lean tests, against the Forseti Lean release the plugin pins.
-  plugin-live:
-    needs: build
+  # The plugin-live shards, from plugins/forseti/tools/live_shards.py, so the
+  # matrix always covers the whole suite exactly once.
+  plugin-live-shards:
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.shards.outputs.names }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: List the shards
+        id: shards
+        run: echo "names=$(python3 plugins/forseti/tools/live_shards.py --names)" >> "$GITHUB_OUTPUT"
+  # The plugin's Lean tests, against the Forseti Lean release the plugin pins,
+  # in shards that each build that release.
+  plugin-live:
+    needs: [build, plugin-live-shards]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plugin-live-shards.outputs.names) }}
+    name: plugin-live (${{ matrix.shard }})
     steps:
       - uses: actions/checkout@v4
         with:
@@ -266,7 +286,7 @@ jobs:
           test "$(git rev-parse HEAD)" = e7de73c8982fc2d4c57924161c02b3c285253706
           lake exe cache get
           lake build
-      - name: Check the plugin against live Lean
+      - name: Check the plugin against live Lean (${{ matrix.shard }})
         working-directory: plugins/forseti
         env:
           # Under the gate a Lean test that cannot run, or skips, fails
@@ -275,9 +295,18 @@ jobs:
           # A cold first check replays Mathlib and Forseti; let a waiting check
           # outlast it (the editor's timeout setting, at its cap).
           GLITNIR_ELABORATION_TIMEOUT_MS: '1800000'
+          # Provisional, until Linux timings set the stepped budget in the test.
+          FORSETI_CHECK_BUDGET_MS: '600000'
+          SHARD: ${{ matrix.shard }}
         run: |
           export FORSETI_LEAN_PROJECT="$RUNNER_TEMP/forseti-lean"
-          ../../.venv/bin/python -m pytest -q -rs --durations=40
+          # A failing assignment stops the step; it never runs an empty list.
+          list=$(python3 tools/live_shards.py "$SHARD")
+          mapfile -t modules <<< "$list"
+          # Each test's name, outcome and time as it finishes, so a shard that
+          # runs out of time still says what it ran.
+          ../../.venv/bin/python -m pytest -v --tb=short -rfE --durations=50 \
+            -o console_output_style=times "${modules[@]}"
   candidate:
     needs: [extension, live, helpers]
     # Release candidates are created only once RELEASE_CANDIDATES is set to true.
