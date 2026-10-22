@@ -146,8 +146,12 @@ output. Run it after changing a helper or `TOOLCHAIN`:
 .venv/bin/python backend/scripts/check_helpers.py
 ```
 
-The plugin's live tests need a built Forseti Lean checkout, `lake` on `PATH`,
-Lean 4.35.0 installed with elan and a working sandbox, and skip unless
+The plugin's live tests need a built Forseti Lean checkout, with the modules
+its view and evidence providers load built too (`lake build
+Gimle.Asgard.Compile.RationalInterchange Gimle.Asgard.Model.Continuous
+Gimle.Asgard.Visualization.Model`; the release's own targets do not build
+them all), `lake` on `PATH`, Lean 4.35.0 installed with elan and a working
+sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
 `FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead, and
 under it a test using that checkout that skips at run time fails too; a skip it
