@@ -33,6 +33,7 @@ SHARDS: dict[str, tuple[str, ...]] = {
         "tests/test_decision_provider_lean.py",
         "tests/test_entailment_lean.py",
         "tests/test_evidence_provider_lean.py",
+        "tests/test_views_lean.py",
     ),
 }
 #: The shard holding every module no named shard lists.
