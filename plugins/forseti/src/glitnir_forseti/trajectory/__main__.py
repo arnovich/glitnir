@@ -6,7 +6,7 @@
         [--lean-project P] [--wall-time-ms N]
 
 A goal file is a ``gimle.forseti.trajectory-goal/v1`` document. ``decide``
-searches with task 111's Z3 producers and needs the ``z3`` extra; ``replay``
+searches with the entailment lane's Z3 producers and needs the ``z3`` extra; ``replay``
 imports no solver and re-checks retained exact evidence with the Lean
 toolchain alone. Both print one JSON object; ``replay`` exits 0 only when the
 root is validated.

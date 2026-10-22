@@ -25,7 +25,7 @@ Formulas are rendered structurally, the way `claims.text` writes them: an
 atom whose polynomial is ``p + -q`` is ``p ⋈ q``, any other is ``p ⋈ 0``.
 Coordinates are the goal's own names.
 
-Stream claims are written the same way (task 158). A coefficient claim binds
+Stream claims are written the same way. A coefficient claim binds
 each coefficient it reads to the output stream's own entry; a full-stream claim
 says which polynomial each output realizes, over the axes as polynomials, and
 its bridge rewrites the contract's output constants with the identities the

@@ -4,7 +4,7 @@ A notebook is one Lean module. Prose lives in ``/-! … -/`` module docs, each
 claim is a ``theorem`` or ``lemma`` proved by a tactic block, and everything
 else is ordinary Lean: imports, namespaces, definitions and directive comments.
 This module finds those cell boundaries line by line, asking the lexer only
-whether a claim's column-0 line lies inside a literal of its proof (task 167).
+whether a claim's column-0 line lies inside a literal of its proof.
 It is not a grammar of Lean and understands nothing else inside a cell; Lean
 alone decides what the cells mean. The boundaries it finds are proposals:
 no status rests on them until Lean, reading the whole file, confirms them.
@@ -110,7 +110,7 @@ class Claim:
 
         This is what any other name the claim is declared under takes, so
         that each has exactly the claim's universe parameters, in its order
-        and under its names (task 176).
+        and under its names.
         """
         if not self.universes:
             return self.statement
@@ -261,7 +261,7 @@ _MODIFIERS = rf"((?:{_ATTRIBUTE})*(?:(?:private|protected|nonrec){_SPACE}+)*)"
 #: An explicit universe list: plain identifiers, commas and spaces, nothing
 #: else. It is copied into every binding, so it must mean the same wherever it
 #: is spliced; a comment or literal in it could open something the file does
-#: not (task 176 review). Any other list stays part of the name, with no
+#: not. Any other list stays part of the name, with no
 #: universes, and is bound as before.
 _UNIVERSE_LIST = r"\.\{[ \t]*[^\W\d]\w*(?:[ \t]*,[ \t]*[^\W\d]\w*)*[ \t]*\}"
 _UNIVERSE_SUFFIX = re.compile(rf".+?({_UNIVERSE_LIST})")
@@ -420,7 +420,7 @@ def _body_end(lines: list[str], last: int) -> int:
 
     The proof runs to its last non-blank line before a non-blank line at column
     0. Such a line inside a string literal of the proof is Lean's text, not a
-    new block (task 167), so it stays in the proof when the lexer places it
+    new block, so it stays in the proof when the lexer places it
     inside a string, raw string, character literal or ``«…»`` name, and the
     scans of the whole proof and of the file up to the proof's end are both
     settled and agree on it. The file's scan is how Lean reads the line: a
@@ -430,8 +430,7 @@ def _body_end(lines: list[str], last: int) -> int:
 
     The scanner may still be wrong: a notebook can declare a notation token
     holding ``"``, after which Lean reads the line as code. These boundaries
-    are only proposals; Lean reading the whole file confirms or rejects them
-    (task 174).
+    are only proposals; Lean reading the whole file confirms or rejects them.
     """
     rest = scan("\n".join(lines[last + 1 :]))
     end, through = _proof_lines(lines, last, rest.literal_lines)

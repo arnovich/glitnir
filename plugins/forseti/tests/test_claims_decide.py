@@ -1,4 +1,4 @@
-"""Tests for the deciders' front door (task 136).
+"""Tests for the deciders' front door.
 
 The services run for real on the paths that need neither Lean nor Z3; where a
 decision is needed, the service is replaced by one returning a genuine artifact

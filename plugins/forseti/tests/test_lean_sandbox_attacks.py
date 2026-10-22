@@ -1,4 +1,4 @@
-"""Live attacks on the Lean sandbox from inside a proof (task 130).
+"""Live attacks on the Lean sandbox from inside a proof.
 
 A proof is a program: a tactic can run any IO the Lean process may. These tests
 use that to probe the sandbox configuration itself: what ``/dev``, ``/proc``,

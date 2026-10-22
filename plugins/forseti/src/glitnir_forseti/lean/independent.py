@@ -99,7 +99,7 @@ MODULE_FILE_BYTES = 67_108_864
 #: Separates proposition fingerprints from every other sha256 in Forseti. A
 #: change after which a fingerprint made before it could equal one made after
 #: it for another proposition must change it. Writing universe parameters by
-#: position (task 176) did not: a proposition without them is written byte for
+#: position did not: a proposition without them is written byte for
 #: byte as before, and one with them wrote names (strings) where it now writes
 #: positions (numbers), so an old and a new text are never equal.
 PROPOSITION_DOMAIN = "gimle.forseti.proposition/v1\n"

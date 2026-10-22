@@ -856,7 +856,7 @@ def test_exponential_sum_terms_are_a_tuple() -> None:
         )
 
 
-# --- field bands on the front (task 190) ---------------------------------------
+# --- field bands on the front ---------------------------------------
 
 NU = Fraction(1, 2)
 BAND = band_goal(front_band(Fraction(2, 5), Fraction(3, 5)))

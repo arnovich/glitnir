@@ -3,10 +3,10 @@
 Two bounded templates, in order, each ending in a fresh replay of the root:
 
 1. *Certificate.* The model's named contract proves an invariant of the
-   observation for all forward time. Task 111's certificate lane searches for
+   observation for all forward time. The entailment certificate lane searches for
    a certificate that the invariant entails the goal's postcondition; with one,
    the root follows by ``Contract.consequence``.
-2. *Initial witness.* Task 111's refutation lane asks whether the postcondition
+2. *Initial witness.* The entailment refutation lane asks whether the postcondition
    fails at the observation's exact value at the declared start (a named
    lemma). With a rational point, the admitted declared input's own solution
    violates the root there.

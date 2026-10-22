@@ -1,9 +1,9 @@
-"""The nonlinear-certificate comparison of task 034.
+"""The nonlinear-certificate comparison.
 
-What these pin is the comparison's two widenings of task 111's search. Pairwise
+What these pin is the comparison's two widenings of the default search. Pairwise
 constraint products prove ``x ≥ 0 ∧ y ≥ 0 ⊨ x·y ≥ 0``, and the diagonally
-dominant squares prove ``x² ≤ 1 ∧ y² ≤ 1 ⊨ x·y ≤ 1``. Each is beyond 111's
-own dictionary, and a product of three constraints is beyond both. The Lean
+dominant squares prove ``x² ≤ 1 ∧ y² ≤ 1 ⊨ x·y ≤ 1``. Each is beyond the default
+dictionary, and a product of three constraints is beyond both. The Lean
 prototype also checks independently.
 """
 

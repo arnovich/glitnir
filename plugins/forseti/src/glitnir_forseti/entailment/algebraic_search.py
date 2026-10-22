@@ -1,4 +1,4 @@
-"""The untrusted producer of real-algebraic counterexamples (task 033).
+"""The untrusted producer of real-algebraic counterexamples.
 
 Z3 reports an irrational model exactly: per coordinate, a polynomial and
 rational bounds on one of its roots. This module turns it into an

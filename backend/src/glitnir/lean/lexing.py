@@ -4,13 +4,13 @@ A claim's context hash leaves out comment lines: lines whose first non-blank
 characters are ``--``. That is only right where Lean is reading code. Inside a
 string, raw string, character literal, ``«…»`` name, block comment or doc
 comment the same line is Lean's text, and leaving it out would let an edit that
-changes a definition keep a claim checked (task 151).
+changes a definition keep a claim checked.
 
 It also reports the lines that start inside a string literal, raw string,
 character literal or ``«…»`` name, whose leading blanks are Lean's text, so a
 claim's proof holding one is checked as written rather than re-indented
-(task 159), and such a line at column 0 neither ends the claim's cell nor is
-refused by ``render_unit`` (task 167).
+and such a line at column 0 neither ends the claim's cell nor is
+refused by ``render_unit``.
 
 `scan` walks the source once, mirroring ``Lean.Parser.Basic`` (``whitespace``,
 ``finishCommentBlock``, ``strLitFnAux``, ``charLitFnAux``, ``rawStrLitFnAux``,
@@ -28,7 +28,7 @@ glued to the token before it, a comment right after a doc comment's opener, an
 comments, and source that ends inside a literal or comment.
 It assumes that no notation token contains ``"`` or ``«``; Mathlib has none.
 A notebook can declare one, so a notebook's claims whose Lean would differ if
-a literal's column-0 line were code are left unchecked (task 167).
+a literal's column-0 line were code are left unchecked.
 """
 
 import bisect

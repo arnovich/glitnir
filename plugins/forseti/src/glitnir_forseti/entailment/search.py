@@ -7,7 +7,7 @@ entailment service turns it into an algebraic witness (`algebraic_search`). Z3
 ``unsat`` means only that there is no counterexample to hand to Lean, which is
 not evidence the goal holds.
 
-**Certificate.** For conjunctions of non-strict inequalities, 017's identity
+**Certificate.** For conjunctions of non-strict inequalities, the identity
 
     −q_j = Σ_k w_0k · g_k² + Σ_i Σ_k w_ik · g_k² · (−p_i),   w ≥ 0
 

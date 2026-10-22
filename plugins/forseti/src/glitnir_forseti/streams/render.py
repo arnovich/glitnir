@@ -667,7 +667,7 @@ def prove_front(
     )
 
 
-# --- field bands on the front, from a checked window (task 190) ---------------
+# --- field bands on the front, from a checked window ---------------
 
 _DEGREES = "Gimle.Asgard.Streams.Lowering.Degrees"
 
@@ -913,7 +913,7 @@ def refute_band(goal: StreamGoal, evidence: WindowEvidence) -> RootApplication:
     )
 
 
-# --- the Euler radius: trigonometric streams (task 217) ---------------------------
+# --- the Euler radius: trigonometric streams ---------------------------
 
 _TRIG = "Gimle.Asgard.Streams.TrigStream"
 _TORUS = "Gimle.Asgard.Streams.Torus"

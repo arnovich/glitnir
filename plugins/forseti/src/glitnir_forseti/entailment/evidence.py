@@ -1,4 +1,4 @@
-"""Finite exact evidence about a goal, mirroring 017's checker inputs.
+"""Finite exact evidence about a goal, mirroring the Lean checker's inputs.
 
 Positive evidence is ``EntailmentCertificate``: one `Row` per consequent
 constraint, each a base square sum and one multiplier per antecedent

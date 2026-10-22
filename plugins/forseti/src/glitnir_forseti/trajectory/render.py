@@ -16,8 +16,8 @@ driver stays within the goal's bound on the domain; the identities then also
 fix the driver port IDs and the bounded driver's index. A proof is one of two
 bounded templates, rendered from validated evidence:
 
-- *prove*: ``Contract.consequence`` of the model's named contract, with task
-  111's certificate that the contract's invariant entails ``post``;
+- *prove*: ``Contract.consequence`` of the model's named contract, with the
+  entailment certificate that the contract's invariant entails ``post``;
 - *refute*: the admitted declared input's solution (for a driven model, under
   the zero driver, which every bound admits), read at the start time
   where the named lemma gives the observation's exact value, at which

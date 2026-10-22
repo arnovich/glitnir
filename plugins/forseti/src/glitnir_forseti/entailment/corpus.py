@@ -1,4 +1,4 @@
-"""The acceptance corpus: 017's five goals and tasks 111's, 033's and 145's additions.
+"""The acceptance corpus: the goals of ``Examples/PredicateCertificates`` and more.
 
 Each goal is written here as data, exactly as ``Examples/PredicateCertificates``
 writes it in Lean, and no evidence is written anywhere: the producer must find
@@ -86,7 +86,7 @@ ROOT_TWO = Goal(
 )
 STRICT = Goal(LINE, Atom(Relation.LT, _U), Atom(Relation.LE, _U))
 
-# Task 033: counterexamples at irrational points only.
+# Counterexamples at irrational points only.
 _ROOT_TWO_X = Atom(Relation.EQ, _sub(_square(_X), _const(2)))
 #: Refuted only at −√2: a negative root.
 ROOT_TWO_POSITIVE = Goal(LINE, ROOT_TWO.antecedent, Atom(Relation.GT, _U))
@@ -136,7 +136,7 @@ DISK_REORDERED = Goal(
     ),
 )
 
-#: A product bound only a square of ``x ± y`` certifies (task 145's DSOS
+#: A product bound only a square of ``x ± y`` certifies (the DSOS
 #: widening): ``1 − x·y = ½(1 − x²) + ½(1 − y²) + ½(x − y)²``.
 UNIT_PRODUCT = Goal(
     PLANE,

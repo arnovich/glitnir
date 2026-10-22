@@ -1,4 +1,4 @@
-"""The blocks decided goals become (task 137).
+"""The Lean blocks that decided goals become.
 
 The decisions carry real artifacts and regenerated Lean, so the blocks are the
 ones the decision provider proposes; Glitnir's project check of such blocks
@@ -180,7 +180,7 @@ def _coefficient_refutation() -> Decision:
 
 
 def test_a_refuted_coefficient_claim_is_readable_and_bridged() -> None:
-    """Task 158: coefficient claims read as the coefficients, not the root."""
+    """Coefficient claims read as the coefficients, not the root."""
     proposed = _valid(block("coefficient", _coefficient_refutation()), "refuted")
     (claim,) = parse_notebook(proposed.source).claims
     assert claim.statement.startswith(": ¬ (")

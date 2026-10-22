@@ -1,4 +1,4 @@
-"""Tests for entailment search and replay that need no Lean (task 111).
+"""Tests for entailment search and replay that need no Lean.
 
 The exact encoding, limits, rendering, producers and the replay's binding
 checks run here. Z3 runs for real where it is installed, in its worker
@@ -1154,7 +1154,7 @@ def test_the_worker_starts_on_this_platform(live_children) -> None:
     """The real worker, with its real child setup, starts and answers here.
 
     macOS refused the address-space cap the setup once applied, so the worker
-    never started there (task 134); this fails on any platform where it cannot.
+    never started there; this fails on any platform where it cannot.
     """
     answer = run_worker({"op": "none"}, time.monotonic() + 60)
     assert not isinstance(answer, WorkerStop), answer
@@ -1162,7 +1162,7 @@ def test_the_worker_starts_on_this_platform(live_children) -> None:
     assert live_children() == []
 
 
-# --- real-algebraic counterexamples (task 033) ------------------------------
+# --- real-algebraic counterexamples ------------------------------
 
 SQRT_TWO = AlgebraicRoot(
     (Fraction(-2), Fraction(0), Fraction(1)), Fraction(7, 5), Fraction(3, 2)

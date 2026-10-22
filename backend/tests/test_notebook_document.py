@@ -100,7 +100,7 @@ def test_only_a_list_ending_the_name_is_its_universes(header) -> None:
     "universes", [".{u /- } -/ }", ".{u -- }", '.{u, "v"}', ".{«u}»}", ".{}"]
 )
 def test_a_universe_list_is_copied_only_when_it_holds_bare_names(universes) -> None:
-    """The review of task 176 spliced an open comment through the list."""
+    """A list holding an open comment or literal is not copied into bindings."""
     claim = parse_notebook(
         f"theorem L{universes} (α : Sort u) (a : α) : a = a := by\n  rfl\n"
     ).claims[0]
@@ -286,7 +286,7 @@ def test_the_block_of_a_proof_read_as_written_is_the_files(body: str) -> None:
 
 @pytest.mark.parametrize("body", _ORDINARY_PROOFS.values(), ids=_ORDINARY_PROOFS)
 def test_the_block_of_an_ordinary_proof_is_shown_as_before(body: str) -> None:
-    # Before task 168 the workbench put two spaces before every line of the
+    # The workbench used to put two spaces before every line of the
     # proof; a blank line showed as two spaces, which look the same as none.
     claim = parse_notebook(_proof_notebook(body)).claim("c")
     before = "  " + claim.proof.replace("\n", "\n  ")

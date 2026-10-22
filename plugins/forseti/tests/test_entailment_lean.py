@@ -1,4 +1,4 @@
-r"""Live Lean tests for entailment search and replay (task 111).
+r"""Live Lean tests for entailment search and replay.
 
 These run against the pinned standalone release. They skip without one, and
 fail instead under the gate::
@@ -231,7 +231,7 @@ def _witness(artifact: bytes) -> Witness:
 
 
 def test_the_rendered_goals_are_the_lean_corpus_goals(lean_test_project) -> None:
-    """The trusted translation, checked against 017's own Lean definitions.
+    """The trusted translation, checked against the Lean example goals.
 
     Each rendered formula must equal the Lean example's formula, and the Python
     reading of the positive fragment must equal ``Formula.nonstrict?``.
@@ -388,7 +388,7 @@ def test_the_replay_pin_is_current(lean_test_project) -> None:
     assert run.returncode == 0, run.stdout + run.stderr
 
 
-# --- real-algebraic counterexamples (task 033) ------------------------------
+# --- real-algebraic counterexamples ------------------------------
 
 _F = Fraction
 SQRT_TWO = AlgebraicRoot((_F(-2), _F(0), _F(1)), _F(7, 5), _F(3, 2))

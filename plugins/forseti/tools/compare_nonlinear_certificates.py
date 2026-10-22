@@ -1,10 +1,10 @@
-"""Compare what nonlinear ``unsat`` evidence each route gives (task 034).
+"""Compare what nonlinear ``unsat`` evidence each route gives.
 
 Usage, with the ``z3`` extra installed::
 
     uv run python tools/compare_nonlinear_certificates.py [--lean-project P]
 
-For every goal ``P ⊨ Q`` in task 111's corpus, plus goals chosen to sit just
+For every goal ``P ⊨ Q`` in the entailment corpus, plus goals chosen to sit just
 beyond its square dictionary, the question is the same: ``P ∧ ¬Q`` is
 unsatisfiable, and what does each route hand over that a Lean checker could
 replay? The routes:
@@ -19,8 +19,8 @@ replay? The routes:
   otherwise;
 - **z3-qe**: exact quantifier elimination (Z3's CAD-based ``qe2`` tactic) of
   ``∀x. P → Q``, which answers ``True`` and carries no certificate;
-- **psatz**: the certificate family the comparison recommends, found by task
-  111's exact linear search. It widens 111 in two ways: squares of pairwise
+- **psatz**: the certificate family the comparison recommends, found by the
+  default exact linear search. It widens that search in two ways: squares of pairwise
   sums and differences of the dictionary (the diagonally dominant Gram
   matrices), and pairwise products of antecedent constraints (a degree-2
   Positivstellensatz). Each is recorded separately.
@@ -162,13 +162,13 @@ BEYOND = (
 
 
 def cases() -> tuple[Case, ...]:
-    """Task 111's corpus followed by the goals just beyond it."""
+    """Return the entailment corpus followed by the goals just beyond it."""
     own = tuple(
-        Case(c.name, c.claim, c.goal, "task 111 corpus")
+        Case(c.name, c.claim, c.goal, "entailment corpus")
         for c in corpus.CASES
         if c.dictionary is None
     )
-    # Task 145 moved some of these goals into the corpus; they keep their
+    # Some of these goals are now in the corpus; they keep their
     # "beyond" labels here.
     beyond = {c.name for c in BEYOND}
     return tuple(c for c in own if c.name not in beyond) + BEYOND
@@ -408,7 +408,7 @@ def cvc5_proofs(queries: dict[str, str]) -> dict[str, Any]:
 
 
 def dsos_dictionary(goal: Goal) -> tuple[Poly, ...]:
-    """111's dictionary plus every pairwise sum and difference of its entries."""
+    """Return the default dictionary and every pairwise sum and difference."""
     base = default_dictionary(goal.context)
     pairs = [
         f(a, b)
@@ -442,7 +442,7 @@ def _size(certificate: Certificate) -> int:
 
 
 def psatz(goal: Goal, limits: EntailmentLimits) -> dict[str, Any]:
-    """Search 111's family and its two widenings, each exactly."""
+    """Search the default family and its two widenings, each exactly."""
     found: dict[str, Any] = {}
     augmented = with_products(goal)
     # Each family names its dictionary: the lane widens an unnamed one itself.

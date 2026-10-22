@@ -18,7 +18,7 @@ here into exact polynomials with `Fraction` coefficients under the same bounds
 as a circuit's expansion. The expression form is linear in the size of the
 equations where the compiled circuit's wiring grows quadratically with the
 state count, so a 12-mode Galerkin field that the wire decoder's node and
-depth bounds refuse fits in a few kilobytes (task 184). No typed Asgard
+depth bounds refuse fits in a few kilobytes. No typed Asgard
 circuit is built, and Python Asgard is not needed: the rational pairs are read
 here under Asgard's own interchange rules. The circuit grammar writes
 constants as finite decimals, so a model with damping ``1/3`` could not be

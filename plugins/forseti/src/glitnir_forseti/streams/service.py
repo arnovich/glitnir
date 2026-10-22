@@ -2,12 +2,13 @@
 
 - *Full stream.* The only template is the model's contract: a supported
   identity is replayed as the root, with no search.
-- *Coefficients.* Task 111's certificate lane searches the leaf that asgard
-  023's lowering poses (the observed coefficients as polynomials in the input
-  halo, under the admitted input's halo values); a found certificate is lifted
-  by ``lift_certificate``. Otherwise the refutation lane looks for halo values
-  that satisfy the admitted input's facts and violate the claim; Lean checks
-  they are the admitted input's own and lifts them with ``refutes_root``.
+- *Coefficients.* The entailment certificate lane searches the leaf that
+  ``Gimle.Asgard.Streams.Lowering`` poses (the observed coefficients as
+  polynomials in the input halo, under the admitted input's halo values); a
+  found certificate is lifted by ``lift_certificate``. Otherwise the refutation
+  lane looks for halo values that satisfy the admitted input's facts and
+  violate the claim; Lean checks they are the admitted input's own and lifts
+  them with ``refutes_root``.
 - *Field.* The certificate lane searches ``t``'s interval and the box bound
   ``R² − x² ≥ 0`` against the post with ``u`` replaced by the field; the root
   cites ``sq_le_sq_of_box`` for the bound. Otherwise candidate witnesses are
@@ -19,7 +20,7 @@
 - *Euler radius.* For the vorticity stream at ``ν = 0`` the producer of
   `trig` reads the start's size and ℓ¹ bounds and, for a band, the Picard
   tables' norms; the certified bound is ``tailBound``, and a band is never
-  refuted (task 217).
+  refuted.
 
 Every decided result is a fresh replay of the root by `replay_stream`, or,
 with ``replay=False``, the unchecked root application for the caller's Lean to

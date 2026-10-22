@@ -3,7 +3,7 @@
 Some false entailments fail at no rational point: ``x² = 2 ⊨ x < 0`` fails
 only at ``±√2``. Z3 represents such a model exactly, as an algebraic number: a
 polynomial and bounds on one of its roots. This module holds the data
-``forseti-lean``'s ``algebraicRefutes`` checks (task 022):
+``forseti-lean``'s ``algebraicRefutes`` checks:
 
 - per coordinate, a univariate polynomial and a rational interval holding
   exactly one of its roots (a rational coordinate ``q`` is ``x − q`` on

@@ -1,4 +1,4 @@
-"""Readable statements of decided claims and their bridges (task 140).
+"""Readable statements of decided claims and their bridges.
 
 What is rendered here is checked by Lean only as part of a block, in
 ``test_decision_provider_lean.py``; these tests pin the text a reader sees.
