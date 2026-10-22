@@ -161,7 +161,9 @@ def project_toolchain(request):
     try:
         toolchain = _toolchain()
     except ValueError:
-        pytest.fail("project inspection gate requires installed Lean 4.32.1")
+        from glitnir.lean.project_inspection import TOOLCHAIN
+
+        pytest.fail(f"project inspection gate requires installed {TOOLCHAIN}")
     assert sandbox_available(), "live project inspection requires a sandbox"
     return toolchain
 
@@ -288,7 +290,7 @@ def project_snapshot_inputs(tmp_path):
     setup = {
         "name": "A",
         "isModule": False,
-        "importArts": {"Dependency": [str(artifact)]},
+        "importArts": {"Dependency": [[str(artifact)]]},
         "plugins": [],
         "dynlibs": [],
         "options": {},
@@ -384,12 +386,14 @@ def prepared_git_project(tmp_path, project_toolchain):
 @pytest.fixture
 def compute_project(tmp_path):
     """A small prepared-project source tree for transport and isolation tests."""
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
     root = tmp_path / "project"
     root.mkdir()
     (root / "lakefile.toml").write_text(
         'name = "example"\n[[lean_lib]]\nname = "Example"\n'
     )
-    (root / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     (root / "lake-manifest.json").write_text('{"packages": []}\n')
     (root / "Example.lean").write_text("theorem sample : True := by trivial\n")
     (root / "Helper.lean").write_text("theorem helper : True := by trivial\n")

@@ -14,10 +14,11 @@ from glitnir.lean.fingerprint import (
     header_imports,
     trace_digest,
 )
+from glitnir.lean.project_inspection import TOOLCHAIN
 
 
 def _project(root: Path) -> Path:
-    (root / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     (root / "lakefile.toml").write_text('name = "demo"\n')
     (root / "lake-manifest.json").write_text(
         json.dumps({"version": "1.2.0", "packages": []})
@@ -360,6 +361,21 @@ def test_axiom_allowlist_changes_the_fingerprint(tmp_path, monkeypatch):
         (*project_checking.LEAN_AXIOM_ALLOWLIST, "Extra.axiom"),
     )
     assert environment_fingerprint(source, text)["sha256"] != before["sha256"]
+
+
+def test_supported_toolchain_changes_the_fingerprint(tmp_path, monkeypatch):
+    """Moving to another Lean invalidates results without any helper edit."""
+    from glitnir.lean import project_inspection
+
+    source = _project(tmp_path)
+    text = source.read_text()
+    before = environment_fingerprint(source, text)
+    assert before["checker"]["toolchain"] == project_inspection.TOOLCHAIN
+    monkeypatch.setattr(project_inspection, "TOOLCHAIN", "leanprover/lean4:v4.99.0")
+    after = environment_fingerprint(source, text)
+    assert after["checker"]["toolchain"] == "leanprover/lean4:v4.99.0"
+    assert after["checker"]["programs"] == before["checker"]["programs"]
+    assert after["sha256"] != before["sha256"]
 
 
 def test_checker_helper_sources_are_identified(tmp_path):

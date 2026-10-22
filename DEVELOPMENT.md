@@ -52,9 +52,10 @@ uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
   'backend/dist/glitnir-0.1.4-py3-none-any.whl[dev]'
-(cd backend && ../.venv/bin/python -m pytest && ../.venv/bin/black --check src tests \
-  && ../.venv/bin/isort --check-only src tests && ../.venv/bin/flake8 src tests \
-  && ../.venv/bin/mypy src)
+(cd backend && ../.venv/bin/python -m pytest \
+  && ../.venv/bin/black --check src tests scripts \
+  && ../.venv/bin/isort --check-only src tests scripts \
+  && ../.venv/bin/flake8 src tests scripts && ../.venv/bin/mypy src scripts)
 
 # Optional: the Forseti view and evidence provider and its tests (as in CI). Its dependencies
 # are named explicitly because glitnir is not on an index.
@@ -120,8 +121,9 @@ plugin.
 The backend's `test_live_` tests run Lean. The backend's conftest marks them
 `live`, and a test that uses the `project_toolchain` fixture must have that
 name. They skip locally unless `GLITNIR_REQUIRE_PROJECT_INSPECTION=1` and
-`GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.32.1 and a working sandbox;
-with both set, a live test that skips fails instead.
+`GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.35.0 (the one version Glitnir
+checks, `project_inspection.TOOLCHAIN`) and a working sandbox; with both set, a
+live test that skips fails instead.
 
 ```sh
 cd backend
@@ -133,23 +135,40 @@ Replay-cache tests that only need a recorded base start from a per-test copy of
 one recorded once per session (`recorded_replay_cache`); tests of the cold path
 use `fresh_replay_cache`.
 
-The plugin's live tests need a built Forseti Lean checkout, `lake` on `PATH`,
-Lean 4.32.1 installed with elan and a working sandbox, and skip unless
+Glitnir runs its Lean helper programs (`backend/src/glitnir/lean/*.lean`) with
+`lean --run` and reads JSON from their output, so they must elaborate on the
+supported Lean with no messages at all; a deprecation warning breaks a check.
+`backend/scripts/check_helpers.py` composes each one as a check does, from the
+installed backend, and elaborates it with the installed toolchain, failing on any
+output. Run it after changing a helper or `TOOLCHAIN`:
+
+```sh
+.venv/bin/python backend/scripts/check_helpers.py
+```
+
+The plugin's live tests need a built Forseti Lean checkout, with the modules
+its view and evidence providers load built too (`lake build
+Gimle.Asgard.Compile.RationalInterchange Gimle.Asgard.Model.Continuous
+Gimle.Asgard.Visualization.Model`; the release's own targets do not build
+them all), `lake` on `PATH`, Lean 4.35.0 installed with elan and a working
+sandbox, and skip unless
 `FORSETI_LEAN_TEST_PROJECT` (or `FORSETI_LEAN_PROJECT`) names that checkout;
-`FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead. Plugin
+`FORSETI_REQUIRE_LEAN_PROJECT=1` makes a missing project fail instead, and
+under it a test using that checkout that skips at run time fails too; a skip it
+declares with a `skipif` mark (another platform's sandbox probes) or for the
+optional `simulation` input stays a skip. Plugin
 tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live
-test allows each block 120 s to check; on a loaded machine raise that with
+test allows each block 300 s to check (on CI's Linux runners a block takes
+112–122 s); on a loaded or slower machine raise that with
 `FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
 [plugin README](plugins/forseti/README.md) shows how to run them.
 
-Verified on 2026-10-15 against forseti-lean `c65dada` (Lean 4.32.1): the opt-in
-live tests passed for proven and refuted `entailment` and `trajectory` decisions
-and for `simulate` evidence. `stream` decisions and `iterate` evidence have not
-been run through Glitnir's checker yet. CI does not run these tests
-(`plugins/forseti/tests/test_decision_provider_lean.py` and
-`test_evidence_provider_lean.py`, with `FORSETI_LEAN_TEST_PROJECT` set), so
-re-run them after Forseti or Glitnir changes. The plugin README records later
-runs.
+CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
+pinned release; run them locally for macOS. Its first all-green run was run
+39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
+Lean 4.35.0. `stream` decisions and `iterate` evidence have not been run through
+Glitnir's checker yet (`iterate` needs Python Asgard, which CI does not
+install). The plugin README records the runs.
 
 ## Continuous integration
 
@@ -162,10 +181,24 @@ jobs are:
   `-m "not live"` and its linters, the plugin's tests and linters, `npm test`,
   the minimal runtime bridge test, `npm run package`, a fresh setup from the
   packaged VSIX and the isolated host test.
-- **live** runs the backend's `-m live` tests against Lean 4.32.1 in the
-  bubblewrap sandbox, where a skipped live test fails.
-- **candidate** creates a release candidate from a `main` push when both test
-  jobs pass and the `RELEASE_CANDIDATES` repository variable is `true`
+- **live** runs the backend's `-m live` tests against the supported Lean
+  (`TOOLCHAIN`, 4.35.0) in the bubblewrap sandbox, where a skipped live test
+  fails.
+- **helpers** elaborates every Lean helper program on that Lean with
+  `backend/scripts/check_helpers.py`, requiring no output.
+- **plugin-live** builds the Forseti Lean release the plugin pins (forseti-lean
+  `v0.4.0`, checked against its commit) and runs the plugin's whole test suite
+  against it with `FORSETI_REQUIRE_LEAN_PROJECT=1`, so a Lean test that cannot
+  run or skips fails (a `skipif` it declares, or the optional `simulation`
+  input, stays a skip). It runs as a matrix of shards, each building the release
+  and given up to 180 minutes: `plugins/forseti/tools/live_shards.py` names the
+  slow Lean modules of each shard, puts every other module in `rest` and gives
+  the matrix its shard names, so together the shards run the suite exactly once.
+  Each test's name, outcome and time are printed as it finishes. It runs on
+  every pull request and `main` push; no test runs the community REPL.
+- **candidate** creates a release candidate from a `main` push when the
+  extension, live and helpers jobs and every plugin-live shard pass and the
+  `RELEASE_CANDIDATES` repository variable is `true`
   (`.github/workflows/candidate.yml`).
 
 Keep public CI independent of private repositories. Tests requiring an external

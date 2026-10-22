@@ -75,8 +75,10 @@ private def inspect (source : FilePath) (extra : List Name) : LoggerIO Json := d
   let resolve (_pkg : Package) (dep : Dependency) (current : Workspace) : LoggerIO MaterializedDep := do
     let some entry := entries.find? dep.name
       | error s!"dependency {dep.name} is not in the captured prepared package map"
+    -- A copied path package lies where Lake copied it, under the packages
+    -- directory, as Lake's own resolver reads it; it is never copied again.
     let (relPkgDir, remoteUrl) := match entry.src with
-      | .path dir => (dir, "")
+      | .path dir copy => (if copy then relPkgsDir / entry.dirName else dir, "")
       | .git url _ _ subDir? =>
         let dir := relPkgsDir / entry.dirName
         (subDir?.map (dir / ·) |>.getD dir, Git.filterUrl? url |>.getD "")

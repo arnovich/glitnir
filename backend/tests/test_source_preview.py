@@ -9,11 +9,14 @@ from typing import Any
 import pytest
 
 from glitnir.lean.project import describe_project, read_regular
+from glitnir.lean.project_inspection import TOOLCHAIN, supported_version
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.providers import Providers
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64
+#: Another Lean version, which Glitnir refuses.
+OTHER = "4.32.1"
 
 
 def test_nearest_project_and_loose_toolchain(tmp_path: Path) -> None:
@@ -187,7 +190,7 @@ def test_inspection_is_explicit_serialized_and_cancelled(tmp_path, monkeypatch):
         return {
             "status": "unavailable",
             "message": "fixture",
-            "setup": {"importArts": {"Big": ["x"]}},
+            "setup": {"importArts": {"Big": [["x"]]}},
             "resolution": {"kind": "prepared_local", "packages": [], "inputs": [1]},
         }
 
@@ -908,7 +911,7 @@ def test_unbuilt_sibling_import_is_explained(tmp_path, monkeypatch):
     path.write_text("import Basics\nimport Mathlib\n\ntheorem t : True := True.intro\n")
     (tmp_path / "Basics.lean").write_text("def x := 1\n")
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     message = _unavailable_message(tmp_path, path, monkeypatch, "setup failed")
     assert message.startswith("setup failed ")
     assert "If Basics are modules of this project" in message
@@ -1972,7 +1975,7 @@ def test_missing_provider_import_is_a_run_error_without_lean(tmp_path, monkeypat
         source_preview, "run_provider_lean", provider_lean.run_provider_lean
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     toolchain = tmp_path / "toolchain"
     toolchain.mkdir()
     monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
@@ -2948,8 +2951,8 @@ def test_a_run_draws_no_more_views_than_are_kept(tmp_path, monkeypatch):
 
 #: The words every refusal shares after the version sentence.
 LEAN_OFF = (
-    "Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and "
-    "decisions are off; reading works as usual."
+    f"Glitnir checks Lean {supported_version()}, so checking, proof steps, views, "
+    "evidence and decisions are off; reading works as usual."
 )
 UNSUPPORTED_TEXT = (
     "import Demo.View\n\ndef c := 1\n-- @view circuit c\n"
@@ -3025,31 +3028,31 @@ def test_the_snapshot_says_whether_the_lean_version_is_supported(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "lakefile.toml").write_text('name = "demo"')
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\r\n")
+    (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\r\n")
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n")
     assert SourcePreviewService(path).snapshot()["preview"]["lean"] == {
         "supported": True,
-        "declared": "leanprover/lean4:v4.32.1",
-        "toolchain": "leanprover/lean4:v4.32.1",
+        "declared": TOOLCHAIN,
+        "toolchain": TOOLCHAIN,
         "message": None,
     }
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    (tmp_path / "lean-toolchain").write_text(f"leanprover/lean4:v{OTHER}\n")
     assert SourcePreviewService(path).snapshot()["preview"]["lean"] == {
         "supported": False,
-        "declared": "leanprover/lean4:v4.35.0",
-        "toolchain": "leanprover/lean4:v4.32.1",
-        "message": f"This project uses Lean 4.35.0. {LEAN_OFF}",
+        "declared": f"leanprover/lean4:v{OTHER}",
+        "toolchain": TOOLCHAIN,
+        "message": f"This project uses Lean {OTHER}. {LEAN_OFF}",
     }
 
 
 @pytest.mark.parametrize(
     "toolchain, message",
     [
-        ("leanprover/lean4:v4.35.0\n", f"This project uses Lean 4.35.0. {LEAN_OFF}"),
+        (f"leanprover/lean4:v{OTHER}\n", f"This project uses Lean {OTHER}. {LEAN_OFF}"),
         (None, f"This project declares no Lean version. {LEAN_OFF}"),
         (
-            "v4.32.1\nv4.35.0\n",
+            f"v{OTHER}\n{TOOLCHAIN}\n",
             "This project's lean-toolchain could not be read: expected one "
             f"toolchain declaration. {LEAN_OFF}",
         ),

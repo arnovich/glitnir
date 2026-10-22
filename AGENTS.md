@@ -36,12 +36,17 @@ sandbox, exact quantities and source/context bindings intact. The kernel replay
 always replays the checked module's own constants; the per-user replay cache
 (`replay_cache.py`) only lets it skip replaying imports whose toolchain files,
 replay program and every module file digest match a recorded full replay, and
-only Python, outside the sandbox, reads or writes it. The kernel never checks
-against the environment `importModules` returns: it carries the project's IR,
-which the kernel's interpreter runs for `Lean.reduceBool`/`reduceNat`, and sets
-`quotInit` for any import list. Every kernel environment starts from
+only Python, outside the sandbox, reads or writes it. A module's digest covers
+every file `importModules` may read for it (`replay_cache.MODULE_SUFFIXES`,
+`.ir.sig` included). The kernel never checks against the environment
+`importModules` returns: it carries the project's IR and extension state, and
+sets `quotInit` for any import list (through Lean 4.34 the kernel's interpreter
+also ran that IR for `Lean.reduceBool`/`reduceNat`; Lean 4.35 removed them, and
+its kernel runs no compiled code). Every kernel environment starts from
 `mkEmptyEnvironment`; the cached path rebuilds the imports there unchecked, and
-only after the same program verified that rebuild equals its full replay. An
+only after the same program verified that rebuild equals its full replay. Kernel
+checks pass `maxRecDepth` 0, which from Lean 4.35 on means unbounded, as in
+Lean's own replay. An
 incremental record (`imports-incremental`) kernel-replays only the modules a
 closure adds to a recorded, `extendable` base with identical module digests, and
 is recorded only after its own rebuild equals that replay; keep that argument
@@ -51,6 +56,11 @@ environment it kernel-checked; `ProjectReport.lean`'s axioms are display and a
 cross-check that must equal them (a mismatch fails the check), and it refuses to
 run if `collectAxioms`' imported summaries (`exportedAxiomsExt`) are loaded.
 The claim uses it reports, like the reader's printed statements, are display only.
+Glitnir supports exactly one Lean version, `project_inspection.TOOLCHAIN` (today
+`leanprover/lean4:v4.35.0`); derive every other version value from it. The helper
+programs are edited for that version directly, with no compatibility layers,
+and must elaborate on it with no output. Lake's `importArts` are read only
+through `glitnir/lean/artifacts.py`.
 Simulation is evidence, never proof. The core has one checking mode (project) and no runtime
 dependencies; Forseti-specific code lives in `plugins/forseti` (`glitnir-forseti`,
 loaded through the `glitnir.providers` entry point). Run its tests, black, isort,
@@ -65,12 +75,20 @@ backend never writes the `.lean` file. The editor-applied **Accept**
 document) is the only path that writes Lean source.
 
 Live Lean tests skip locally unless `GLITNIR_REQUIRE_PROJECT_INSPECTION=1` and
-`GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.32.1 and a working sandbox; CI
+`GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.35.0 and a working sandbox; CI
 sets both. They are the `test_live_` tests, which the backend's conftest marks
 `live` (a test using `project_toolchain` must have that name). CI's `extension`
 job runs `-m "not live"` with everything else; the parallel `live` job runs
 `-m live`, where a skipped live test fails. Both install the wheels the `build`
-job made, and a candidate needs both jobs. Replay-cache tests that only need a
+job made, and a candidate needs both jobs, the `helpers` job, which
+elaborates every Lean helper program with no output
+(`backend/scripts/check_helpers.py`), and every `plugin-live` shard. Those run
+the plugin's tests against a build of the Forseti Lean release it pins
+(`plugins/forseti/tools/live_shards.py` assigns each test module to exactly one
+shard), under
+`FORSETI_REQUIRE_LEAN_PROJECT=1`, where a Lean test that skips fails unless the
+skip is declared (`skipif`) or for `simulation`; update its tag and commit
+check together with `lean-release.v1.json`. Replay-cache tests that only need a
 recorded base start from a per-test copy of one recorded once per session
 (`recorded_replay_cache`); tests of the cold path use `fresh_replay_cache`.
 Plugin tests marked `simulation` need Python Asgard (`gimle.asgard`). The

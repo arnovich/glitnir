@@ -21,7 +21,7 @@ Reuse the project's existing dependencies and conventions. Do not add Mathlib,
 Asgard or Forseti imports merely to make a file look like a notebook.
 
 Glitnir checks a file with its prepared Lake modules, or the supported
-standard library for a loose file. The checker supports Lean 4.32.1.
+standard library for a loose file. The checker supports Lean 4.35.0.
 Checks are explicit, whole-file operations; compiled propositions and assumptions
 appear separately from source. Results are saved beside the notebook; any edit
 above a claim marks its result out of date, and if a command fails only the

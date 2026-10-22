@@ -21,7 +21,8 @@ from glitnir_forseti.lean.messages import (
     parse_messages,
 )
 
-# Captured from leanprover/lean4:v4.32.1 running `lean --json`.
+# Captured from leanprover/lean4:v4.32.1 running `lean --json`; v4.35.0 emits
+# the same documents.
 UNSOLVED = {
     "caption": "",
     "data": "unsolved goals\nx : Nat\n⊢ x + 0 = x",

@@ -1,8 +1,38 @@
 """Shared fixtures for the Forseti release, session and provider tests."""
 
+import os
 from pathlib import Path
 
 import pytest
+
+#: The fixtures that give a test a built Forseti Lean checkout.
+_LEAN_FIXTURES = frozenset({"lean_test_project", "forseti_lake_project"})
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Under the Lean gate a Lean test that skips fails instead.
+
+    The gate (``FORSETI_REQUIRE_LEAN_PROJECT=1``) is how CI runs the Lean
+    tests, so a skip there would pass with nothing checked, as the backend's
+    live job refuses too. A skip a test declares (a ``skipif`` mark, such as
+    another platform's sandbox probes) and one for the optional ``simulation``
+    input stay skips.
+    """
+    report = yield
+    if (
+        report.skipped
+        and os.environ.get("FORSETI_REQUIRE_LEAN_PROJECT") == "1"
+        and _LEAN_FIXTURES & set(getattr(item, "fixturenames", ()))
+        and item.get_closest_marker("simulation") is None
+        and not any(mark.args and mark.args[0] for mark in item.iter_markers("skipif"))
+    ):
+        reason = report.longrepr
+        if isinstance(reason, tuple):  # (path, line, reason)
+            reason = reason[-1]
+        report.outcome = "failed"
+        report.longrepr = f"A Lean test skipped under the Lean gate: {reason}"
+    return report
 
 
 @pytest.fixture(scope="session")

@@ -143,7 +143,7 @@ function releaseNotes(identity, ready) {
   return `${ready ? 'Ready for review' : 'Upload incomplete — do not publish'}\n\n` +
     `Glitnir ${identity.version}; source commit ${identity.sha}.\n` +
     `Validated build: https://github.com/${identity.repository}/actions/runs/${identity.runId}\n\n` +
-    'Universal thin VSIX and matching Python backend wheel for local macOS/Linux. Python 3.12+ and Lean 4.32.1 are prerequisites; see INSTALL.md. No Python interpreter, Lean distribution or Mathlib build is included.\n\n' +
+    'Universal thin VSIX and matching Python backend wheel for local macOS/Linux. Python 3.12+ and Lean 4.35.0 are prerequisites; see INSTALL.md. No Python interpreter, Lean distribution or Mathlib build is included.\n\n' +
     `The optional glitnir-forseti provider wheel (${pluginAsset(identity.version)}) is the one tested with this backend; install it with Glitnir: Install Extension Package… after verifying SHA256SUMS.\n\n` +
     'Verify SHA256SUMS, review the release notes, then publish this existing draft. Keep its tag and assets unchanged; publishing requires no rebuild.\n';
 }

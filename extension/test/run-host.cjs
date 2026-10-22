@@ -14,8 +14,11 @@ mkdirSync(path.join(workspace, '.vscode'), {recursive: true});
 // No Glitnir settings: exercise discovery of a nearby installation.
 symlinkSync(path.dirname(path.dirname(python)), path.join(workspace, '.venv'), 'dir');
 writeFileSync(path.join(workspace, 'lakefile.lean'), 'This must never execute');
-// The supported toolchain, so a check is accepted and stops on its stale digest, not on the Lean version.
-writeFileSync(path.join(workspace, 'lean-toolchain'), 'leanprover/lean4:v4.32.1\n');
+// The supported toolchain, as the installed backend names it, so a check is accepted and
+// stops on its stale digest, not on the Lean version.
+const toolchain = spawnSync(python, ['-I', '-c', 'from glitnir.lean.project_inspection import TOOLCHAIN; print(TOOLCHAIN)'], {encoding: 'utf8'});
+if (toolchain.status !== 0) throw new Error(`Cannot read the backend's Lean toolchain: ${toolchain.stderr}`);
+writeFileSync(path.join(workspace, 'lean-toolchain'), toolchain.stdout);
 for (const name of ['First', 'Second']) writeFileSync(path.join(workspace, `${name}.lean`), `/-! # ${name} notebook -/\n\ntheorem simple : True := by\n  trivial\n`);
 async function main() {
   let extension = path.resolve(__dirname, '../..');

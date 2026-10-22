@@ -1,10 +1,10 @@
 {
   "schema": "gimle.forseti.lean-release/v1",
-  "support_version": "gimle.forseti.lean-support/v19",
-  "toolchain": "leanprover/lean4:v4.32.1",
+  "support_version": "gimle.forseti.lean-support/v20",
+  "toolchain": "leanprover/lean4:v4.35.0",
   "support_source_sha256": "60b318b2003ef526f67e63b2e3f8f967c73e0bb9e619194e3f51c1c577a32c6e",
-  "checker_sha256": "05c258e1788c0a2cc37cff4644f47933ac5f02e0236b09819f0765b31a8b9802",
-  "lockfile_sha256": "e13b4ecf03209e47966dfde2bbadd0ae8a0deb38b6e92de3e7f7b2747f96dd25",
+  "checker_sha256": "c133a67c981758d5d1990f54cd66838bbcb78a621b4776395110f569ec5f5d4a",
+  "lockfile_sha256": "6454fc385ee0d3c2c96b6faec1a527a3a182a33a43a2d6c66fd86fba607ad045",
   "import": "Gimle.Forseti",
   "axiom_allowlist": [
     "Classical.choice",
@@ -14,43 +14,43 @@
   "dependencies": [
     {
       "name": "asgard",
-      "revision": "1496c7d71adbf94ff91d530251a9c5e740e23a65"
+      "revision": "2b3ec26c2a463bccde31b8d9a369f5f2d5db72ef"
     },
     {
       "name": "mathlib",
-      "revision": "520045ab14e26149ee970e2e617ca04b09bde5d6"
+      "revision": "56a005855ea17e0b0958f73ec801ae140b0a1679"
     },
     {
       "name": "plausible",
-      "revision": "e12c1910fe855cbfc38803cd4e55543906d5fa62"
+      "revision": "dfa4f38190d07c37e315953e08b90fe2d95b3c24"
     },
     {
       "name": "LeanSearchClient",
-      "revision": "c5d5b8fe6e5158def25cd28eb94e4141ad97c843"
+      "revision": "d6b4c7be5be75ec4917c873ac50c756dc1436372"
     },
     {
       "name": "importGraph",
-      "revision": "7e9612bf0b9ee66db3cb5b9988a35afc706f5a12"
+      "revision": "a41f0e9a4dea23188ea9cc1c41ac9f8bbafe0b93"
     },
     {
       "name": "proofwidgets",
-      "revision": "6e311e2a844da9b2cc3971187df2fe0066947b93"
+      "revision": "df72b022e558978a1c50264cfc4d7fec86fa8e04"
     },
     {
       "name": "aesop",
-      "revision": "a7dbf0c63b694e47f425f3dcddbc0e178bb432d3"
+      "revision": "4a174c490d8707121c4a9290800489f105d85e07"
     },
     {
       "name": "Qq",
-      "revision": "38d591e778f100aec9762bb582f9c7f55f50e9dc"
+      "revision": "dce0ad79c486cb1fb504af04f953c3466b0c6db8"
     },
     {
       "name": "batteries",
-      "revision": "023ce7d62a0531e22a5331e20b587817a80d49ff"
+      "revision": "66e469188fe07963e5cf666c7d4433f45b8131c5"
     },
     {
       "name": "Cli",
-      "revision": "88679d088c9720c27ebdf2ba4dafe17341747f94"
+      "revision": "c24fe6078c630e89b489bffe59b3e20ac30d12c8"
     }
   ],
   "core_sources": [
@@ -62,7 +62,7 @@
     {
       "package": "forseti",
       "path": "Executables/Checker.lean",
-      "sha256": "05c258e1788c0a2cc37cff4644f47933ac5f02e0236b09819f0765b31a8b9802"
+      "sha256": "c133a67c981758d5d1990f54cd66838bbcb78a621b4776395110f569ec5f5d4a"
     },
     {
       "package": "asgard",
@@ -77,7 +77,7 @@
     {
       "package": "asgard",
       "path": "Gimle/Asgard/Semantics/Real.lean",
-      "sha256": "529deae667805ac4a8ac8486a704502a43ea5f9c7ca31019ba38a603aad650fb"
+      "sha256": "c029ad5f0f5b8038c0eaee55025315c9927a573b65b9d6bb81b5b512a16ee349"
     },
     {
       "package": "asgard",
@@ -89,17 +89,17 @@
     {
       "package": "forseti",
       "path": "lakefile.toml",
-      "sha256": "938a68105b8dadaab9c1c5c8d121cfed3117fb775d548fb457d337be0036937d"
+      "sha256": "6c2d59db554772ec95c07298ddfe6beadacea2d47b78c70c075e820e0339ef62"
     },
     {
       "package": "asgard",
       "path": "lakefile.toml",
-      "sha256": "f0c42d1cf55cd2dd87ebcd53a7918cf4baa84f610e24955bb64ede87c38673fc"
+      "sha256": "5edf48cea1edd2ad1ae25562b4f7c536cc7162fddd7190f205bd53bf6afbb352"
     },
     {
       "package": "mathlib",
       "path": "lakefile.lean",
-      "sha256": "e3e8ac4d3ea441b062dbd29a2910165e55d8463c8bd9a3feb830cf6fb64a1b7a"
+      "sha256": "6083173bc380adea0cfd26f9a7813637ae0fd2c38c6a0d4536626e82a9538ef6"
     },
     {
       "package": "plausible",
@@ -114,7 +114,7 @@
     {
       "package": "importGraph",
       "path": "lakefile.toml",
-      "sha256": "fdd58c5f7fa7d1377e7ede7eec3a358a977aaad958705c5b7640659c23e05751"
+      "sha256": "022463f7dbaaba8273aa66a4e86a8004ed678b162cb14bf08f74011cb7c812ff"
     },
     {
       "package": "proofwidgets",
@@ -124,7 +124,7 @@
     {
       "package": "aesop",
       "path": "lakefile.toml",
-      "sha256": "1e341b858f1375729626764e6206853896d86876956c30fcf9ebe020dd96afe4"
+      "sha256": "17a39597618a5b30440ce9d1fb62267a23b7134327a6df0ce46f243f25a03f00"
     },
     {
       "package": "Qq",

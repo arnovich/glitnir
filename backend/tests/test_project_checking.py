@@ -583,6 +583,167 @@ def test_live_replay_collects_the_axioms_that_decide_statuses(
         assert [a["name"] for a in theorem["axioms"]] == replayed[name]
 
 
+def _build(root):
+    """Build `Example` in the test project with the supported toolchain."""
+    import os
+    import subprocess
+
+    from glitnir.lean.project_inspection import _toolchain
+
+    subprocess.run(
+        [str(_toolchain() / "bin/lake"), "--keep-toolchain", "build", "Example"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(_toolchain())},
+    )
+
+
+def _replays(monkeypatch):
+    """Record each ProjectReplay run's mode and JSON report."""
+    import json
+
+    from glitnir.lean import project_checking as checking
+
+    original = checking.run_observer
+    replays = []
+
+    def observed(lean, arguments, **options):
+        output = original(lean, arguments, **options)
+        if "--run" in arguments and arguments[3].endswith("ProjectReplay.lean"):
+            replays.append((arguments[-1], json.loads(output)))
+        return output
+
+    monkeypatch.setattr(checking, "run_observer", observed)
+    return replays
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_live_axioms_are_collected_after_replay_into_an_empty_environment(
+    prepared_lean_project, monkeypatch, cached, fresh_replay_cache
+):
+    """Every axiom is found in the replayed environment, imported ones included.
+
+    The replay starts from `mkEmptyEnvironment`, so every constant it holds was
+    added after the import (the constant map's second stage). An axiom
+    collection that looked only at imported constants would find none here and
+    call these theorems checked; they each depend on all three standard axioms,
+    reached only through the toolchain's and a dependency's own theorems.
+    """
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    root = prepared_lean_project
+    (root / "src/Example/Helper.lean").write_text(
+        "def helper : Nat := 1\n"
+        "theorem decidedly (p : Prop) : p ∨ ¬p := Classical.em p\n"
+    )
+    source = root / "src/Example.lean"
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem direct (p : Prop) : p ∨ ¬p := Classical.em p\n"
+        "theorem imported (p : Prop) : p ∨ ¬p := decidedly p\n"
+        "theorem plain : helper = 1 := rfl\n"
+    )
+    _build(root)
+    if not cached:
+        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+    replays = _replays(monkeypatch)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    result = checking.check_project(source, expected_sha256=digest)
+    assert result["status"] == "checked_snapshot", result
+    modes = [mode for mode, _ in replays]
+    assert modes == (["imports-only", "imports-cached"] if cached else ["full"])
+    standard = ["Classical.choice", "Quot.sound", "propext"]
+    replayed = {
+        t["name"]: sorted(a["name"] for a in t["axioms"])
+        for t in replays[-1][1]["theorems"]
+    }
+    assert replayed == {"direct": standard, "imported": standard, "plain": []}
+    found = {t["name"]: t for t in result["theorems"]}
+    assert {name: t["status"] for name, t in found.items()} == {
+        "direct": "checked",
+        "imported": "checked",
+        "plain": "checked",
+    }
+    for name in ("direct", "imported"):
+        axioms = found[name]["axioms"]
+        assert sorted(a["name"] for a in axioms) == standard
+        assert all(a["module"].startswith("Init") for a in axioms), axioms
+
+
+def test_live_native_decide_reports_assumptions_never_standard_axioms(
+    prepared_lean_project, monkeypatch, fresh_replay_cache
+):
+    """Lean 4.35's `native_decide` adds an axiom of the module that used it.
+
+    That axiom is outside Lean's standard set, so the theorem's status is
+    `assumptions`, on a full replay and over cached imports alike, while the
+    kernel's own `decide` stays checked.
+    """
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    source = prepared_lean_project / "src/Example.lean"
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem native : 2 + 2 = 4 := by native_decide\n"
+        "theorem kernel : 2 + 2 = 4 := by decide\n"
+    )
+    replays = _replays(monkeypatch)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    for replay in ("full", "imports cached"):
+        result = checking.check_project(source, expected_sha256=digest)
+        assert result["status"] == "checked_snapshot", result
+        assert result["replay"] == replay, result
+        found = {t["name"]: t for t in result["theorems"]}
+        assert found["kernel"]["status"] == "checked"
+        assert found["kernel"]["axioms"] == []
+        assert found["native"]["status"] == "assumptions", found["native"]
+        (axiom,) = found["native"]["axioms"]
+        assert axiom["module"] == "Example", axiom
+        assert axiom["name"].startswith("native._native.native_decide.ax"), axiom
+        assert axiom["name"] not in checking.LEAN_AXIOM_ALLOWLIST
+    assert [mode for mode, _ in replays] == [
+        "imports-only",
+        "imports-cached",
+        "imports-cached",
+    ]
+
+
+def test_live_a_forged_standard_axiom_is_reported_as_an_assumption(
+    prepared_lean_project,
+):
+    """An axiom named like a standard one, but not the toolchain's, is assumed.
+
+    The dependency declares its own `propext` (of `False`) over `Init.Prelude`
+    alone, which leaves out the toolchain's `Init.Core` and its `propext`.
+    """
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    root = prepared_lean_project
+    (root / "src/Example/Helper.lean").write_text(
+        "prelude\nimport Init.Prelude\naxiom propext : False\n"
+    )
+    source = root / "src/Example.lean"
+    source.write_text(
+        "prelude\nimport Example.Helper\ntheorem forged : False := propext\n"
+    )
+    _build(root)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    result = check_project(source, expected_sha256=digest)
+    assert result["status"] == "checked_snapshot", result
+    (theorem,) = result["theorems"]
+    assert theorem["name"] == "forged"
+    assert theorem["status"] == "assumptions", theorem
+    assert theorem["axioms"] == [{"name": "propext", "module": "Example.Helper"}]
+
+
 def test_live_imports_without_the_kernel_quotient_replay_fresh(
     prepared_lean_project, fresh_replay_cache
 ):
@@ -629,10 +790,22 @@ def test_live_imports_without_the_kernel_quotient_replay_fresh(
         ]
 
 
-def test_live_reduce_bool_is_not_evaluated_on_the_cached_path(
-    prepared_lean_project, monkeypatch, recorded_replay_cache
+#: Lean 4.35 removed `Lean.reduceBool`, `Lean.ofReduceBool` and their `Nat`
+#: forms, so the kernel runs no compiled code. A proof naming them no longer
+#: elaborates: the check withholds it, with no status.
+REMOVED_REDUCTION = [
+    "theorem windows : System.Platform.isWindows = false :=\n"
+    "  Lean.ofReduceBool _ _ rfl\n",
+    "theorem reduced : Lean.reduceBool true = true := rfl\n",
+    "theorem counted : Lean.reduceNat 2 = 2 := rfl\n",
+]
+
+
+@pytest.mark.parametrize("proof", REMOVED_REDUCTION)
+def test_live_removed_kernel_reduction_is_withheld_on_the_cached_path(
+    prepared_lean_project, monkeypatch, recorded_replay_cache, proof
 ):
-    """`Lean.ofReduceBool` fails over reused imports exactly as in a fresh replay."""
+    """A proof by `Lean.ofReduceBool` gets no status, over reused imports too."""
     import hashlib
 
     from glitnir.lean import project_checking as checking
@@ -649,16 +822,18 @@ def test_live_reduce_bool_is_not_evaluated_on_the_cached_path(
     monkeypatch.setattr(checking, "run_observer", observed)
     source = prepared_lean_project / "src/Example.lean"
     source.write_text(
-        "import Example.Helper\n"
-        "theorem t : System.Platform.isWindows = false :=\n"
-        "  Lean.ofReduceBool _ _ rfl\n"
+        "import Example.Helper\ntheorem result : helper = 1 := rfl\n" + proof
     )
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     for _ in range(2):
         result = checking.check_project(source, expected_sha256=digest)
-        assert result["status"] == "unavailable", result
-        assert "Independent kernel replay failed" in result["message"], result
-        assert "(interpreter) unknown declaration" in result["message"], result
+        assert result["status"] == "checked_snapshot", result
+        assert result["replay"] == "imports cached", result
+        assert [(t["name"], t["status"]) for t in result["theorems"]] == [
+            ("result", "checked")
+        ], result
+        assert result["withheld"]["from_line"] == 3, result
+        assert "Unknown" in result["withheld"]["message"], result
     assert modes == ["imports-cached", "imports-cached"]
 
 
@@ -668,8 +843,9 @@ def test_live_dependency_ir_cannot_run_in_the_cached_replay(
     """A dependency's `implemented_by` code never runs while the module replays.
 
     The dependency's IR would print a forged replay report and exit 0. The
-    module, forged just before its replay, asks the kernel to evaluate it and
-    adds an unchecked theorem of `False`.
+    module, forged just before its replay, adds an unchecked theorem of `False`
+    and one whose statement would have had the kernel evaluate that IR through
+    Lean 4.34 (`Lean.reduceBool`, which Lean 4.35 no longer declares).
     """
     import hashlib
     import os
@@ -725,7 +901,8 @@ def test_live_dependency_ir_cannot_run_in_the_cached_replay(
     assert result["status"] == "unavailable", result
     assert result["theorems"] == []
     assert "Independent kernel replay failed" in result["message"], result
-    assert "unknown declaration 'evil'" in result["message"] or (
+    # Whichever forged constant the replay reaches first fails it.
+    assert "unknown constant 'Lean.reduceBool'" in result["message"] or (
         "forgedLocal" in result["message"]
     ), result
 
@@ -917,30 +1094,37 @@ def test_live_a_forged_new_module_is_rejected_over_a_base(
     assert "forgedLocal" in result["message"], result
 
 
-def test_live_reduce_bool_in_a_new_module_is_not_evaluated(
+def test_live_native_decide_in_a_new_module_is_an_assumption(
     prepared_lean_project, monkeypatch, recorded_replay_cache
 ):
-    """`Lean.ofReduceBool` in a new module fails over a base as in a fresh replay."""
+    """`native_decide` over a base is an assumption of the module that used it."""
     root = prepared_lean_project
     source = root / "src/Example.lean"
     recorded_replay_cache()
     _grow_closure(
         root,
-        "import Example.Helper\n"
-        "theorem windows : System.Platform.isWindows = false :=\n"
-        "  Lean.ofReduceBool _ _ rfl\n",
-        "import Example.Extra\ntheorem result : True := True.intro\n",
+        "import Example.Helper\ntheorem decided : helper + 1 = 2 := by native_decide\n",
+        "import Example.Extra\ntheorem result : helper + 1 = 2 := decided\n",
     )
     result, modes = _check_recording_modes(source, monkeypatch)
-    assert modes == ["imports-incremental"]
-    assert result["status"] == "unavailable", result
-    assert "(interpreter) unknown declaration" in result["message"], result
+    assert modes == ["imports-incremental", "imports-cached"]
+    assert result["status"] == "checked_snapshot", result
+    assert result["replay"] == "imports cached (+1 module)", result
+    (theorem,) = result["theorems"]
+    assert theorem["status"] == "assumptions", theorem
+    (axiom,) = theorem["axioms"]
+    assert axiom["module"] == "Example.Extra", axiom
+    assert axiom["name"].startswith("decided._native.native_decide.ax"), axiom
 
 
 def test_live_base_ir_cannot_run_while_a_new_module_replays(
     prepared_lean_project, monkeypatch, recorded_replay_cache
 ):
-    """A base module's `implemented_by` code never runs in the incremental replay."""
+    """A base module's `implemented_by` code never runs in the incremental replay.
+
+    As in the cached replay: the forged module names `Lean.reduceBool`, which
+    Lean 4.35 no longer declares, and an unchecked theorem of `False`.
+    """
     root = prepared_lean_project
     source = root / "src/Example.lean"
     recorded_replay_cache(EVIL_HELPER)
@@ -957,7 +1141,8 @@ def test_live_base_ir_cannot_run_while_a_new_module_replays(
     assert modes == ["imports-incremental"]
     assert result["status"] == "unavailable", result
     assert result["theorems"] == []
-    assert "unknown declaration 'evil'" in result["message"] or (
+    # Whichever forged constant the replay reaches first fails it.
+    assert "unknown constant 'Lean.reduceBool'" in result["message"] or (
         "forgedLocal" in result["message"]
     ), result
 
@@ -1269,7 +1454,7 @@ def test_snapshot_identity_binds_copied_artifacts(tmp_path, project_snapshot_inp
     assert captured.identity != again.identity
     assert captured.source.read_bytes() == again.source.read_bytes()
     assert captured.artifacts.joinpath("Dependency.olean").read_bytes() == original
-    assert str(captured.artifacts) in captured.setup["importArts"]["Dependency"][0]
+    assert str(captured.artifacts) in captured.setup["importArts"]["Dependency"][0][0]
     assert str(artifact) not in str(captured.setup)
 
 
@@ -1280,7 +1465,7 @@ def test_snapshot_refuses_toolchain_shadowing(tmp_path, project_snapshot_inputs)
     from glitnir.lean.project_snapshot import capture
 
     root, toolchain, source, artifact, setup = project_snapshot_inputs
-    setup["importArts"] = {"Lean": [str(artifact)]}
+    setup["importArts"] = {"Lean": [[str(artifact)]]}
     with pytest.raises(SnapshotError, match="shadows"):
         capture(tmp_path, source, setup, toolchain, root, threading.Event())
 
@@ -2223,10 +2408,10 @@ def test_project_modules_are_the_ones_the_project_builds(tmp_path):
     outside.write_bytes(b"")
     setup = {
         "importArts": {
-            "Sibling": [".lake/build/lib/lean/Sibling.olean"],
-            "Absolute": [str(build / "Sibling.olean")],
-            "Mathlib": [".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"],
-            "Init": [str(outside)],
+            "Sibling": [[".lake/build/lib/lean/Sibling.olean"]],
+            "Absolute": [[str(build / "Sibling.olean")]],
+            "Mathlib": [[".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"]],
+            "Init": [[str(outside)]],
         }
     }
     assert project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}

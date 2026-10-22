@@ -902,7 +902,7 @@ def test_bad_image_requests_are_refused(server, illustrated, path, status) -> No
 def test_lean_requests_on_another_version_answer_the_refusal(tmp_path) -> None:
     """Each endpoint refuses in the shape it already uses for a refusal."""
     (tmp_path / "lakefile.toml").write_text('name = "demo"')
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n-- @view circuit c\n")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -912,7 +912,7 @@ def test_lean_requests_on_another_version_answer_the_refusal(tmp_path) -> None:
     try:
         response, data = _request(httpd, "GET", "/api/notebook")
         message = json.loads(data)["preview"]["lean"]["message"]
-        assert message.startswith("This project uses Lean 4.35.0. ")
+        assert message.startswith("This project uses Lean 4.32.1. ")
         for route, body, status in [
             ("/api/project/inspect", {"sha256": digest}, 400),
             ("/api/project/check", {"sha256": digest}, 400),

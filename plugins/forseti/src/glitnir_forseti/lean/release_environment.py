@@ -91,7 +91,7 @@ def lean_module_setup(project: Path, name: str) -> str:
         The canonical JSON setup document for ``lean --setup``.
     """
     roots = package_roots(project, json.loads(LOCKFILE_BYTES))
-    artifacts: dict[str, list[str]] = {}
+    artifacts: dict[str, list[list[str]]] = {}
     for package, relative, _ in SOURCE_PINS:
         if relative.startswith("Gimle/") and relative.endswith(".lean"):
             stem = relative.removesuffix(".lean")
@@ -118,10 +118,28 @@ def lean_module_setup(project: Path, name: str) -> str:
     )
 
 
-def _artifacts(library: Path, stem: str) -> list[str]:
-    base = library / stem
-    return [
-        str(base) + "." + suffix
-        for suffix in ("olean", "ir", "olean.server", "olean.private")
-        if Path(str(base) + "." + suffix).is_file()
-    ]
+#: The files of one nested ``importArts`` entry, by position:
+#: ``[[olean, olean.server?, olean.private?], [ir.sig, ir?]]``.
+_ARTIFACT_GROUPS = (("olean", "olean.server", "olean.private"), ("ir.sig", "ir"))
+
+
+def _artifacts(library: Path, stem: str) -> list[list[str]]:
+    """List a module's built files in Lean's nested ``importArts`` shape.
+
+    Lean reads each file by its position, so a group holds the files present
+    up to the first one that is missing, and the IR group follows only a data
+    group: a module outside the module system has only ``[[olean]]``.
+    """
+    base = str(library / stem)
+    groups: list[list[str]] = []
+    for suffixes in _ARTIFACT_GROUPS:
+        group: list[str] = []
+        for suffix in suffixes:
+            path = base + "." + suffix
+            if not Path(path).is_file():
+                break
+            group.append(path)
+        if not group:
+            break
+        groups.append(group)
+    return groups

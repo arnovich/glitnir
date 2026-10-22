@@ -821,6 +821,9 @@ def test_the_closure_digest_covers_every_loaded_file(tmp_path) -> None:
     changed_extra = observe()
     assert isinstance(changed_extra, ClosureObservation)
     assert changed_extra.packages[1] == first.packages[1]
+    # Lean 4.33 and later also load a module's IR signature.
+    (library / "Gimle/A.ir.sig").write_bytes(b"signature")
+    assert observe() != changed_extra
 
 
 def test_the_closure_digest_refuses_files_it_cannot_attribute(tmp_path) -> None:

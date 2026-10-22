@@ -39,7 +39,7 @@ LOCKFILE_PIN = PACKAGE / "lean-lockfile.v1.json"
 ORIGIN_RECORD = REPOSITORY / "tests/fixtures/lean-release-origin.v1.json"
 
 #: The support contract version. Bump it whenever the pinned content changes.
-SUPPORT_VERSION = "gimle.forseti.lean-support/v19"
+SUPPORT_VERSION = "gimle.forseti.lean-support/v20"
 
 #: Sources whose bytes the Python side depends on, by package and path.
 SUPPORT_SOURCE = ("forseti", "Gimle/Forseti.lean")

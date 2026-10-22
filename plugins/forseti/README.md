@@ -64,7 +64,7 @@ proofs may unroll a recursion over every mark, only up to 1024 marks, four
 years. A longer claim is `UNKNOWN: unsupported`. `stepped` decisions and
 `sample` evidence need a Forseti Lean build that contains
 `Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the
-pinned release, Forseti Lean v0.3.0, does; an older build reports the missing
+pinned release, Forseti Lean v0.4.0, does; an older build reports the missing
 module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
@@ -80,18 +80,29 @@ unknown-identifier rejection. The package also contains the deciders' replay
 against a pinned Forseti Lean release and its command lines, which are not
 reachable from the editor.
 
-**Verified on 2026-10-20** against Forseti Lean v0.3.0 (Lean 4.32.1), the
-pinned release, with `FORSETI_LEAN_TEST_PROJECT` set, these suites passed:
-`tests/test_trajectory_lean.py` (every example goal, both driven models),
-`tests/test_decision_provider_lean.py` (proven and refuted `entailment` and
-`trajectory`, including a driven claim read through the project runner),
-`tests/test_evidence_provider_lean.py` (`simulate`),
-`tests/test_lean_release.py`, `tests/test_live_lean_gate.py` and
-`tests/test_stepped_lean.py` (the stepped lane's ten examples, its template
-variants and the `sample` card). Each stepped block checked in under 80 seconds
-on the verifying machine. `stream` decisions and `iterate` evidence are not yet
-verified; the unit tests run no Lean and CI skips these live tests, so re-run
-them after changes.
+**Verified on 2026-10-22** against Forseti Lean v0.4.0 (Lean 4.35.0), the
+pinned release, by CI's `plugin-live` shards on Linux (run 39731807284, commit
+`cb59769`), every one green:
+`streams` 87 passed (`tests/test_streams_lean.py` and
+`tests/test_mild_stream_lean.py`, kernel replay of the stream roots against
+the pinned release); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,
+every example goal and both driven models, and
+`tests/test_classical_euler_lean.py`); `decisions` 55 passed and one skipped
+(`tests/test_decision_provider_lean.py`, proven and refuted `entailment` and
+`trajectory` checked through Glitnir's project runner, including a driven
+claim; `tests/test_entailment_lean.py`; `tests/test_evidence_provider_lean.py`
+`simulate`; the skip is `iterate`, which needs Python Asgard); `stepped` 27
+passed (`tests/test_stepped_lean.py`: the lane's ten examples, its template
+variants and caps, a rejected false block and the `sample` card, each block
+checked in 117–125 s, the first after a one-time import replay); and `rest`
+1549 passed with 14 skipped, all Python Asgard simulations or macOS-only
+sandbox probes (`tests/test_lean_release.py`,
+`tests/test_live_lean_gate.py`, `tests/test_lean_independent.py`,
+`tests/test_lean_sandbox_attacks.py` and the unit tests). The view preamble
+drew a circuit and a model in `tests/test_views_lean.py` on macOS against the
+same release on 2026-10-22; CI runs it from then on. `stream` decisions have
+not yet been checked through Glitnir's project runner, and `iterate` evidence
+has not run.
 
 Development: from the repository root, build it with
 `uv build plugins/forseti --wheel --out-dir plugins/forseti/dist`, install the
@@ -103,10 +114,10 @@ from `plugins/forseti`. See the repository's
 The live evidence tests (`tests/test_evidence_provider_lean.py`) run `simulate`,
 and `iterate` when `gimle.asgard` is installed, end to end through Glitnir's
 project runner. They need a built Forseti Lean release checkout, `lake` on
-`PATH`, Lean 4.32.1 installed with elan and a working sandbox. They write a
+`PATH`, Lean 4.35.0 installed with elan and a working sandbox. They write a
 temporary module into the checkout's `Gimle/Forseti/Tests/` and remove it and its
-results file afterwards. CI sets no project, so they skip there; `-k "not live"`
-deselects them. To run them:
+results file afterwards. CI's `plugin-live` job runs them against the pinned
+release; without a project they skip. To run them:
 
 ```sh
 cd plugins/forseti
@@ -119,7 +130,8 @@ and a refuted entailment and trajectory goal through Glitnir's project runner an
 assert that its check accepts each proposed block. They need the same project, `lake`, Lean and
 sandbox as the live evidence tests, and Z3. They create a new temporary module
 in the checkout's `Gimle/Forseti/Tests/` and remove it and its results file
-afterwards; CI sets no project, so they skip there. To run them:
+afterwards; CI's `plugin-live` job runs them, and without a project they skip.
+To run them:
 
 ```sh
 cd plugins/forseti

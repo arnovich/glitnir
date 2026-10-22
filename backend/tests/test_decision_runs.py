@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from glitnir.lean import project_checking
+from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.notebook.check_records import load_records, records_path
 from glitnir.notebook.source_preview import (
@@ -694,7 +695,7 @@ def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch
         source_preview, "provider_imports_error", provider_lean.provider_imports_error
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
     monkeypatch.setattr(
         provider_lean,
         "inspect_project",
@@ -703,7 +704,7 @@ def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch
             "setup": {
                 "name": "A",
                 "isModule": False,
-                "importArts": {"Other": ["Other.olean"]},
+                "importArts": {"Other": [["Other.olean"]]},
                 "plugins": [],
                 "dynlibs": [],
                 "options": {},

@@ -1,68 +1,68 @@
 {
   "schema": "gimle.forseti.lean-replay/v2",
-  "release_sha256": "7dd2e5622d6d2ff624a9aaf88c4d91321115d60bafde2586dc4c74c549f562c1",
+  "release_sha256": "a26496f0fb8583d2a0bd5189cad593dfda1bb665f9429115868b45cf3897e3f2",
   "closure_program_sha256": "60d07a94daf2298ae5e053a74349efc2fa8a1d826e2192277657f3489becb97d",
-  "toolchain": "leanprover/lean4:v4.32.1",
+  "toolchain": "leanprover/lean4:v4.35.0",
   "toolchain_binaries": {
-    "Darwin-arm64": "9e8c534d0f7d947ffd5ff0e36bf875dfea10338738d8815d564a482774023d10",
-    "Linux-x86_64": "e4a5532e3875005eadc91bb97948e66da53d890e7de0ef037b297fb1de1d3c0a"
+    "Darwin-arm64": "edb18bdc4a454c75c128a8dba8e9c13723228c17ad1327b83aceec4d5bd1c0c4",
+    "Linux-x86_64": "7c6a262a8df5b5adb4ce2258d50f6b982fa6395d431b030e8b90354363fca537"
   },
   "closures": [
     {
       "imports": [
         "Gimle.Asgard.Streams.AnalyticHeat"
       ],
-      "modules": 4801,
+      "modules": 5118,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 12,
-          "digest": "177ef8a2248d9d3346dc2217c9de10feb5567d880f5ee6e96a3b58fe2c9e8916"
+          "digest": "a68e9f33b7e6775ede500ee130739d078c62e28d5dc4ab1903e5a349d8f98793"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3030,
-          "digest": "023a1fada9701117f2ec550ab64eff6bfbf3168542bf4666f0283bb743bfecaf"
+          "modules": 3163,
+          "digest": "e8dcb4ff4e64e6c48e87ca856c65675695eb6031957cf34601126336a7798f22"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -70,57 +70,57 @@
       "imports": [
         "Gimle.Asgard.Streams.ColeHopf"
       ],
-      "modules": 4817,
+      "modules": 5134,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "04f46a06923a9ab64df0571fee4e16991fa76324edd695542d42ac2cb1cd1b7e"
+          "digest": "d0b916a1eabd2ced461c0c4d9b7e54f7085fe29b187cd798844345477e9a8a3e"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3039,
-          "digest": "e074d442e71d2d21bb9d594475820509e9a2c8a30a7cbd211aa7ab42c39937e7"
+          "modules": 3172,
+          "digest": "cb6addea5604cd27390a8dcb9a3a19a1c83ac0101b53b493fc8781d823be5445"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -128,62 +128,62 @@
       "imports": [
         "Gimle.Forseti.Euler"
       ],
-      "modules": 4618,
+      "modules": 4923,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 18,
-          "digest": "7b9c77061399010d0a70ef5b22f2a0722ada7fb0361b72e0d9add121057c6fd2"
+          "digest": "9655674910d838945c75150b6975e2d6255c4673fbde5462da1098f14153a192"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 2,
-          "digest": "c366a60c7c7f1d5edc567c8b0e61e741e26e3fca1b88cc1102456a8ee6c94cc6"
+          "digest": "e3398ebfb60234ba9575d9a7d979af31d744f3e9653c58cd2c2bcccafd1fb2db"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 2839,
-          "digest": "b8ba6021345d9fabef349f636923268a559d9a3ebd05183ebc617c1bc0c756ea"
+          "modules": 2960,
+          "digest": "aa2becdf60e4f42fe7170f05aaf48e46e59f68420e83fc99f272e7d9bcba2f4a"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -193,62 +193,62 @@
         "Gimle.Asgard.Streams.EulerRadius",
         "Gimle.Asgard.Streams.VorticityTable"
       ],
-      "modules": 4611,
+      "modules": 4916,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 16,
-          "digest": "b5f0f33a2cc1789edb2fca997cd69ffa92a6b84d3b9021b7d665d355e9eb5752"
+          "digest": "c9d73b45a716b347c795a38407b3645d4b06ca872c55f2ee2b28c1a3434276b1"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 1,
-          "digest": "e0e3451f12a4ac257eb34884d9d139ee58889bf8f9fd20cbbad1d8240e35da17"
+          "digest": "690a788be0fa236e7cb5a1f4dea28289ddfc5ba9d8a5d3fe72acf1ba7f64ab1b"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 2835,
-          "digest": "4b1959d7d61d475e36f133b4f5c50f69cbfe9a51a8483ee551790c0271caf6f7"
+          "modules": 2956,
+          "digest": "7148c28ebaa419faa10f0abf98f79aa6d97b5062fca04bdcd26709afaa32f8d3"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -256,62 +256,62 @@
       "imports": [
         "Gimle.Forseti.MildVorticity"
       ],
-      "modules": 4918,
+      "modules": 5230,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 47,
-          "digest": "0adb51f4f1d2ec295c2b86f6d7664de145550248e3bdb7c5b31340e9449e1c5e"
+          "digest": "883007d4214287e73b8bb2a8b22b1e957433ed5ba8192db96b10e22ebdc00521"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 4,
-          "digest": "50ee4b349aa3ce9a235fc5cfb2cb587640598b302dbcf2719f84794848bdb50c"
+          "digest": "f76ef73b237dd3150b829f34c1d290e4ae39d1ce19876737a3c7520f754d426b"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3108,
-          "digest": "3006a046c1fc7b880869d0840a8f2a2be70b3e37d81d108fc28d3c396abc86a3"
+          "modules": 3236,
+          "digest": "f414233846c6442bb22c172f48fdd8e52082e980f81fdc8fc9670c4a1004c61f"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -320,62 +320,62 @@
         "Gimle.Forseti.Stepped",
         "Gimle.Forseti.Examples.HedgedSpreadStepped"
       ],
-      "modules": 5988,
+      "modules": 6248,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 25,
-          "digest": "7007dc27c07ce0f56b2a90f94ddaf45f2dfa8859683794f5c4b1c17d6e2a09e4"
+          "digest": "111f364b8d4b96f299af46f04ae489abd8398ef26989418f8c22636d95b83fc5"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "1d548609c91acfed21dbf8ded093cc73a42ce716028d1aa4247e6e007249597c"
+          "digest": "d5fae54d9b5832c1048f61af6c34d08e1f9f70232f02215472cd56721f6123f2"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3417,
-          "digest": "54d0b318feb4150a06e351ae2d16f8ef173084610e43d7260fde5ec1d10e28df"
+          "modules": 3548,
+          "digest": "17a233650ed2abaa21c8fc6ac559569d9697076b20ef722e9e149b8832a1c5cd"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -383,62 +383,62 @@
       "imports": [
         "Gimle.Forseti.Syntax.AlgebraicWitness"
       ],
-      "modules": 4561,
+      "modules": 4870,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 6,
-          "digest": "cd6b71d54e031f8a09d643e303188a01587f0e0c99ba4bdba7411526de584558"
+          "digest": "54098face6f1fc670873f7bd1d8cad3691fde9632566d669bb1e8c860d4360aa"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 5,
-          "digest": "5c03a50cd41c9e91bcdfeccc0869db7042d22d9cac3aabdd6f5bbc9166c7ce48"
+          "digest": "ef9b32e4bf8aa043250dac43b24d99289c2f9a9e24a2e0ff9264a3f55b29c98e"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 2791,
-          "digest": "d690705efc645de41dfe30007e25f5e680c4d6159ddae1c5b25bbf110b7c8f0d"
+          "modules": 2916,
+          "digest": "4462a487088edda009cf203aa267be4afbfa63487f29e9e5d0144fb0d638d221"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -446,62 +446,62 @@
       "imports": [
         "Gimle.Forseti.Syntax.Certificate"
       ],
-      "modules": 4486,
+      "modules": 4790,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 6,
-          "digest": "cd6b71d54e031f8a09d643e303188a01587f0e0c99ba4bdba7411526de584558"
+          "digest": "54098face6f1fc670873f7bd1d8cad3691fde9632566d669bb1e8c860d4360aa"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 4,
-          "digest": "93b1bfe38b2667bf313238a537921af431283a4cd500d72511b4054e924b303c"
+          "digest": "25a49d05c2aa6c23e4abea68f4c3017cd33043c153aca8d685ba4d5b965fe43b"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 2717,
-          "digest": "9ad37bed0ed60f95b87cb08879be43943d0712e078e820222f08f9fac3746fdb"
+          "modules": 2837,
+          "digest": "6d10b559abf999edf95ebe5c61e96fe1a3ae451c0b32bd338a53487b685cb6c4"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -510,62 +510,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.DampedOscillatorContract"
       ],
-      "modules": 5666,
+      "modules": 5923,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 24,
-          "digest": "212e5e14b0ac8fcfe6b854f5d177cfa37668834913e658cb65a1850d5cdcdd5b"
+          "digest": "af9c6511da8c74f8f412c4cfde1a1e7dc64cac9630ce2338494069dc428e32cd"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "8c6a69bd29669b6a6d1d70d7cb8473f779a26538c1c3e2cc21bea0b527576120"
+          "digest": "01d09211de4c14831194039982469f00f05aaaeb1dbbbbcdbc9c42d89d0099a9"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -574,62 +574,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.ForcedDecayContract"
       ],
-      "modules": 5668,
+      "modules": 5925,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 26,
-          "digest": "0997c199a9abf32934340bf3ad15e5cf7d464af9365cc9cc749245df18cb85e8"
+          "digest": "c77466ac873c3a3f9a787dcc9722c7767b416bd6df647ce0af7b4a1a3a687460"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "ed15604e5f5fc006d5a7e36f3e697321a24ebf49e892a4c4140187940ea59a32"
+          "digest": "91987c132e247b406ee1acad60776d03231953662f97c43b774628fadf9bd663"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -638,62 +638,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.GalerkinNS.B2"
       ],
-      "modules": 5663,
+      "modules": 5920,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "df3531ba1275233cf1a30d2845250a0e820f342ae391766e8e8e38519ad1eab3"
+          "digest": "d94d68704df216629d7696cb6f7b5e259122ea350efc722d7675a95d6b749ca3"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "5e11939d05d035f105f06991a75f8fa87771506b3058015357fd03386f25c64c"
+          "digest": "6be93eca74ab3f86c5667bffef6088a549cc919ffafd9f46da5e529fdc0f54c4"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -703,62 +703,62 @@
         "Gimle.Forseti.Examples.GalerkinNS.K5",
         "Gimle.Forseti.Examples.GalerkinNS.K5Below6"
       ],
-      "modules": 5666,
+      "modules": 5923,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "df3531ba1275233cf1a30d2845250a0e820f342ae391766e8e8e38519ad1eab3"
+          "digest": "d94d68704df216629d7696cb6f7b5e259122ea350efc722d7675a95d6b749ca3"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 14,
-          "digest": "ef9db9c1da9c62073400fc227d2721d016e43bc84f8689794606024a81978981"
+          "digest": "b9c4d265bc103585ffb627cf05f78a416646468314069b2e082483c7e80574fa"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -768,62 +768,62 @@
         "Gimle.Forseti.Examples.GalerkinNS.T3",
         "Gimle.Forseti.Examples.GalerkinNS.T3Below9"
       ],
-      "modules": 5667,
+      "modules": 5924,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "df3531ba1275233cf1a30d2845250a0e820f342ae391766e8e8e38519ad1eab3"
+          "digest": "d94d68704df216629d7696cb6f7b5e259122ea350efc722d7675a95d6b749ca3"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 15,
-          "digest": "2a777dd9742b0ea4a570caf1c739d9fb56458faf868ed74aadc7fc1b72f5fa46"
+          "digest": "64ab449c747b2219284f71c77b9fda19ee5393e86759883bbab7b4ff94c93b00"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -832,62 +832,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.GalerkinNS.T3S"
       ],
-      "modules": 5663,
+      "modules": 5920,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "df3531ba1275233cf1a30d2845250a0e820f342ae391766e8e8e38519ad1eab3"
+          "digest": "d94d68704df216629d7696cb6f7b5e259122ea350efc722d7675a95d6b749ca3"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "271c2be269f061a16426ddfb7af958886c39bdff37eb038511431f31964fe172"
+          "digest": "be6fa1ba296a710d570a2dc3def9146bc1c90907cc97b9075045568dc3ff66b8"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -896,62 +896,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.HarmonicOscillator"
       ],
-      "modules": 5665,
+      "modules": 5922,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 24,
-          "digest": "212e5e14b0ac8fcfe6b854f5d177cfa37668834913e658cb65a1850d5cdcdd5b"
+          "digest": "af9c6511da8c74f8f412c4cfde1a1e7dc64cac9630ce2338494069dc428e32cd"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 8,
-          "digest": "35d9bf07d96d86aae01314ff7b7e5984489a445d17823ade99c4cfde6cf13e81"
+          "digest": "86f99f685dec4a3a93ff56018d5b108a9b850bac1a5dfca41157ef9cd1f8879b"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -960,62 +960,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.HeatFieldBound"
       ],
-      "modules": 4817,
+      "modules": 5134,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 18,
-          "digest": "2ed895dd3cc6912da1ee7481eecb5fbb0da0e6bb015c0e00857bbcba634f4801"
+          "digest": "b6cd1154c9b8234509a4e6343e8f3acb018758dde227b628772eba30c0d36f9d"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 10,
-          "digest": "610f74af3d7c7d98caf06bfb7b97ef2bcac9a47f5a12bb753d39a6ed5e988532"
+          "digest": "e370b70391c2d644359c4fc3b629e651ba356033bd2ffa4831d3a9a3bc84711e"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3030,
-          "digest": "023a1fada9701117f2ec550ab64eff6bfbf3168542bf4666f0283bb743bfecaf"
+          "modules": 3163,
+          "digest": "e8dcb4ff4e64e6c48e87ca856c65675695eb6031957cf34601126336a7798f22"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -1024,62 +1024,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.HedgedSpreadContract"
       ],
-      "modules": 5669,
+      "modules": 5926,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 25,
-          "digest": "7007dc27c07ce0f56b2a90f94ddaf45f2dfa8859683794f5c4b1c17d6e2a09e4"
+          "digest": "111f364b8d4b96f299af46f04ae489abd8398ef26989418f8c22636d95b83fc5"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "3e2c03dbbc650c551196308937dd0eedad56a47207b5f5246f5a34d3ec0616f7"
+          "digest": "7b93842fe85dd6ec64409bcdbb3e59452a2ec5962f18d216628f459f7be7b5db"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -1088,62 +1088,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.Lorenz"
       ],
-      "modules": 5662,
+      "modules": 5919,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "df3531ba1275233cf1a30d2845250a0e820f342ae391766e8e8e38519ad1eab3"
+          "digest": "d94d68704df216629d7696cb6f7b5e259122ea350efc722d7675a95d6b749ca3"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 10,
-          "digest": "2c3eb405185ddfce1ee7a5e0a566837b4dd78b02682e603ab138028e7c7700e6"
+          "digest": "30d50a44d08db519544625a11479d6154f86c01719cea750a9e78b7f7f58bc81"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -1152,62 +1152,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.StreamObservation"
       ],
-      "modules": 4511,
+      "modules": 4814,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 15,
-          "digest": "16c2d57a414f96497352113af0f2b15c18c950b2f299aa4321b05530364cbcd3"
+          "digest": "de3d1fdd43172beff0f2ac8068966681ad00e3fe98299a4dca4fe36443bb0b18"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "dff8e6ed1d148bfa93b1a3156d4612a490115d3fb9aebd4dfab6fc2978b081b2"
+          "digest": "a22c4e4993219903e0d2ba97393eeb3a5fd0861be3c2be482bf33ae7357be55a"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 2728,
-          "digest": "8323f34525f21d2f957a6df25feedaa09316d6c8249a1665d4a2a419c0152e93"
+          "modules": 2847,
+          "digest": "c0ddaec467320d54e369c83fe1db71ea427b508d10451bb7c84977b7605b9aa8"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -1217,62 +1217,62 @@
         "Gimle.Forseti.Examples.StreamObservation",
         "Gimle.Asgard.Examples.PolynomialHeat"
       ],
-      "modules": 4816,
+      "modules": 5133,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 18,
-          "digest": "2ed895dd3cc6912da1ee7481eecb5fbb0da0e6bb015c0e00857bbcba634f4801"
+          "digest": "b6cd1154c9b8234509a4e6343e8f3acb018758dde227b628772eba30c0d36f9d"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "dff8e6ed1d148bfa93b1a3156d4612a490115d3fb9aebd4dfab6fc2978b081b2"
+          "digest": "a22c4e4993219903e0d2ba97393eeb3a5fd0861be3c2be482bf33ae7357be55a"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3030,
-          "digest": "023a1fada9701117f2ec550ab64eff6bfbf3168542bf4666f0283bb743bfecaf"
+          "modules": 3163,
+          "digest": "e8dcb4ff4e64e6c48e87ca856c65675695eb6031957cf34601126336a7798f22"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     },
@@ -1281,62 +1281,62 @@
         "Gimle.Forseti.Syntax.Certificate",
         "Gimle.Forseti.Examples.ThreeStateContract"
       ],
-      "modules": 5664,
+      "modules": 5921,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 22,
-          "digest": "53c764d6225d532dd69312b97c4ff8088ffe973f2056521ed1a8386798997f62"
+          "digest": "e1b817fd00ac8d8ad649427a626c8c0d60d6c7f867727d0fe40ca9bc4e39a526"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "7263a4b75b01c7e6abc851b6e073fc4662d26cea32fb4391333dd632029693fc"
+          "digest": "85dd6e7c92c179cf94b51ebce0d64f0084438f1987ea3ef3954442a52bdf2152"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 3098,
-          "digest": "aba0ada6425aa4ced574d88228d679591c34341a5543b82d03dce95229ae43f0"
+          "modules": 3226,
+          "digest": "38dc1f51f023a559b1600e4a9b0594cb60f127e1da2a542df71626689787ea04"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 2271,
-          "digest": "51d5f3f11d28ba703b7fa7255f469a39eda9799c7e01a1f24b67e503b4e5d5ef"
+          "modules": 2380,
+          "digest": "1d912c2543fb716f16416c8781d18765d2dad2be00b6076c25248013c6610940"
         }
       ]
     },
@@ -1344,62 +1344,62 @@
       "imports": [
         "Gimle.Forseti.Syntax.Positivstellensatz"
       ],
-      "modules": 4487,
+      "modules": 4791,
       "packages": [
         {
           "name": "LeanSearchClient",
           "modules": 4,
-          "digest": "ad81b02dc54e7f014d3178b9b9c418c79df349d34785db1e0b26edec228d0c98"
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
         },
         {
           "name": "Qq",
           "modules": 14,
-          "digest": "0543bae6305833bf61b6f61e46715cdfd463dfc2e5abc701444dc5a3fd77b85f"
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
         },
         {
           "name": "aesop",
           "modules": 132,
-          "digest": "21e03ed357ab0fc9c36b2997f01d9b9be32fd7188ab9912a0d37235e06eaa372"
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
         },
         {
           "name": "asgard",
           "modules": 6,
-          "digest": "cd6b71d54e031f8a09d643e303188a01587f0e0c99ba4bdba7411526de584558"
+          "digest": "54098face6f1fc670873f7bd1d8cad3691fde9632566d669bb1e8c860d4360aa"
         },
         {
           "name": "batteries",
-          "modules": 78,
-          "digest": "baf03c067689d5732e7230aa047d1524193034eb9b10ddbb7ff870d4df1e91ab"
+          "modules": 73,
+          "digest": "30f1e0b7b4c7a5cc4514b26bd4f02666c23911f77a421709fa485494d543ba47"
         },
         {
           "name": "forseti",
           "modules": 5,
-          "digest": "094070a7f6ef3548d7e66ad6f932c04fc4bcfaa562a94a2efd3e4c1cfd97580f"
+          "digest": "a26ce6fe58aed5be0c08b22a69fdd9937b6e8f82020f064ce1aaecde69e90004"
         },
         {
           "name": "importGraph",
-          "modules": 10,
-          "digest": "0bdebc02cea4768df6827cf7df8e5f9e698219ec6e4651192255e693d3d9418a"
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
         },
         {
           "name": "mathlib",
-          "modules": 2717,
-          "digest": "9ad37bed0ed60f95b87cb08879be43943d0712e078e820222f08f9fac3746fdb"
+          "modules": 2837,
+          "digest": "6d10b559abf999edf95ebe5c61e96fe1a3ae451c0b32bd338a53487b685cb6c4"
         },
         {
           "name": "plausible",
           "modules": 13,
-          "digest": "e56b485c921237c1dab5c8cba2e9179101e9a8dae20762dfd8d700880ce6b3b2"
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
         },
         {
           "name": "proofwidgets",
           "modules": 13,
-          "digest": "f0d19774b5bb45f864ce5bc080179978950e8ec7b105aca44f21ffa1e3abbede"
+          "digest": "ec17d3f0b454eb90dbaab69e27683c7c57ffe32913eaad35c38b40f460b23716"
         },
         {
           "name": "toolchain",
-          "modules": 1495,
-          "digest": "50f903a10445d092cd8fcfa8c1a4622ffce1268993475e832cfeb5dc04d27e10"
+          "modules": 1659,
+          "digest": "4bed80fab9f40af8ae7f2ae9884845a19493b90817ed0dbc4def9017b1656c81"
         }
       ]
     }

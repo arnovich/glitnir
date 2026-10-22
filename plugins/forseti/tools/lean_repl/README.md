@@ -4,8 +4,9 @@ Glitnir's core no longer includes the Python proof-state adapter or its tests;
 these build notes are kept for the Forseti plugin, which will own that tooling.
 The adapter used
 [leanprover-community/repl](https://github.com/leanprover-community/repl), at
-`68a3b3a059787a7db44fb1e6281e4a657efee470` (tag `v4.32.0`), compiled with
-Forseti's unchanged `leanprover/lean4:v4.32.1` toolchain.
+`58bdde1ff173117960083cc5a052a11d51c49ff1` (tag `v4.35.0`), compiled with
+Forseti's `leanprover/lean4:v4.35.0` toolchain. The patch below applies to it
+unchanged, and that build was confirmed on 2026-10-21.
 
 Apply `source_positions.patch` before building. Upstream parses each tactic as
 new text but runs it with the original declaration's file map. `apply?` uses
@@ -15,18 +16,19 @@ The final candidate is replayed by ordinary Lean, without importing REPL.
 
 First complete [the Python backend setup](../../../../DEVELOPMENT.md#build-and-test)
 and [the Lean setup](../../../../extension/media/setup.md).
-From Glitnir's `backend/` directory, choose a new durable directory for the REPL.
+From this plugin's directory (`plugins/forseti`), choose a new durable
+directory for the REPL.
 The example is beside the Glitnir checkout; use another new path if it exists:
 
 ```bash
-repo_root="$PWD"
-repl_dir="$repo_root/../../forseti-lean-repl-4.32.1"
+plugin_dir="$PWD"
+repl_dir="$plugin_dir/../../../forseti-lean-repl-4.35.0"
 git clone https://github.com/leanprover-community/repl.git "$repl_dir"
-git -C "$repl_dir" checkout --detach 68a3b3a059787a7db44fb1e6281e4a657efee470
-git -C "$repl_dir" apply --unidiff-zero "$repo_root/tools/lean_repl/source_positions.patch"
+git -C "$repl_dir" checkout --detach 58bdde1ff173117960083cc5a052a11d51c49ff1
+git -C "$repl_dir" apply --unidiff-zero "$plugin_dir/tools/lean_repl/source_positions.patch"
 (
   cd "$repl_dir"
-  elan run leanprover/lean4:v4.32.1 lake build
+  elan run leanprover/lean4:v4.35.0 lake build
 )
 export FORSETI_LEAN_REPL="$(cd "$repl_dir" && pwd)/.lake/build/bin/repl"
 test -x "$FORSETI_LEAN_REPL"

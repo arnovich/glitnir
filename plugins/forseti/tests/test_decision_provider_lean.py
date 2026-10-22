@@ -2,7 +2,7 @@
 
 Opt in like the other live Lean tests, by pointing ``FORSETI_LEAN_TEST_PROJECT``
 (or ``FORSETI_LEAN_PROJECT``) at a built standalone Forseti Lean release checkout,
-with ``lake`` on ``PATH``. Glitnir's checker also needs Lean 4.32.1 installed
+with ``lake`` on ``PATH``. Glitnir's checker also needs Lean 4.35.0 installed
 with elan and a working sandbox, and deciding needs Z3. The notebook is written
 as a new temporary module of the checkout's ``Gimle.Forseti.Tests`` library,
 because the runner reads imports only from a Lake workspace, and is removed

@@ -126,7 +126,9 @@ def test_missing_provider_import_is_reported_without_lean(tmp_path, monkeypatch)
 def test_provider_imports_are_set_up_from_the_project_build(tmp_path, monkeypatch):
     """The notebook need not import the provider's modules; Lake sets them up."""
     asked: list[tuple[str, ...]] = []
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]}, asked=asked)
+    source, _ = _lake(
+        tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]}, asked=asked
+    )
     calls: list = []
     _reporting(monkeypatch, {"information": ["demoView:{}"], "errors": []}, calls)
     _render(source, provider=_provider(("Lean", "Demo.View")))
@@ -152,7 +154,7 @@ def _needs_build(tmp_path, monkeypatch, own_resolves):
             }
         return {
             "status": "resolved",
-            "setup": {"name": "Note", "importArts": {"Other": ["O.olean"]}},
+            "setup": {"name": "Note", "importArts": {"Other": [["O.olean"]]}},
             "resolution": {"inputs": []},
         }
 
@@ -188,7 +190,7 @@ def test_drawing_waits_for_a_busy_slot_and_says_so(tmp_path, monkeypatch):
 
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": ["demoView:{}"], "errors": []})
     waited: list[dict] = []
     messages: list[str] = []
@@ -249,7 +251,7 @@ def test_loose_files_need_a_lake_project(tmp_path, monkeypatch, imports):
 
 def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
     source, toolchain = _lake(
-        tmp_path, monkeypatch, {"Demo.View": [".lake/build/Demo/View.olean"]}
+        tmp_path, monkeypatch, {"Demo.View": [[".lake/build/Demo/View.olean"]]}
     )
     calls: list = []
     _reporting(
@@ -286,7 +288,7 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
     assert setup.parent == helper.parent
     written = json.loads(inputs[setup.name])
     assert written["importArts"]["Demo.View"] == [
-        str(tmp_path.resolve() / ".lake/build/Demo/View.olean")
+        [str(tmp_path.resolve() / ".lake/build/Demo/View.olean")]
     ]
     assert report.parent == options["cwd"]
     assert options["writable"] is True
@@ -301,7 +303,7 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
 
 
 def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     _reporting(
         monkeypatch,
@@ -314,7 +316,7 @@ def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
 
 
 def test_invalid_drawings_and_reports_are_errors(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     _reporting(monkeypatch, {"information": ["demoView:<html/>"], "errors": []})
     assert "error" in _render(source)
@@ -326,7 +328,7 @@ def test_invalid_drawings_and_reports_are_errors(tmp_path, monkeypatch):
 def test_changed_source_never_launches_lean(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise AssertionError("Lean must not run for a stale source")
@@ -340,7 +342,7 @@ def test_unavailable_sandbox_is_an_error(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
     from glitnir.lean.sandbox import SandboxUnavailable
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise SandboxUnavailable("no sandbox here")
@@ -363,7 +365,7 @@ def test_unresolved_project_is_an_error(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("line", [0, 7])
 def test_directive_line_must_be_in_the_notebook(tmp_path, monkeypatch, line):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": ["demoView:<svg/>"], "errors": []})
     assert "error" in _render(source, line=line)
 
@@ -581,7 +583,7 @@ def test_a_slot_busy_past_the_time_limit_is_a_transient_error(tmp_path, monkeypa
     from glitnir.lean import provider_lean
     from glitnir.lean.project_snapshot import SLOT_WAIT_TIMED_OUT, SnapshotError
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     @contextlib.contextmanager
     def busy(**options):
@@ -600,7 +602,7 @@ def test_cancelled_or_timed_out_drawing_is_transient(tmp_path, monkeypatch, mess
     from glitnir.lean import provider_lean
     from glitnir.lean.project_snapshot import SnapshotError
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise SnapshotError(message)
@@ -610,7 +612,7 @@ def test_cancelled_or_timed_out_drawing_is_transient(tmp_path, monkeypatch, mess
 
 
 def test_lasting_errors_are_not_transient(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": [], "errors": ["unknown c"]})
     assert "transient" not in _render(source)
 
@@ -629,7 +631,7 @@ def test_provider_code_failures_become_errors(tmp_path, monkeypatch, changes):
 
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise AssertionError("Lean must not run")
@@ -641,7 +643,7 @@ def test_provider_code_failures_become_errors(tmp_path, monkeypatch, changes):
 
 
 def test_a_drawing_drawn_with_proofs_skipped_says_so(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(
         monkeypatch,
         {"information": ["demoView:<svg/>"], "errors": []},
@@ -658,7 +660,7 @@ def test_a_drawing_drawn_with_proofs_skipped_says_so(tmp_path, monkeypatch):
 
 
 def test_a_drawing_wins_over_unrelated_errors(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(
         monkeypatch,
         {"information": ["demoView:<svg/>"], "errors": [{"line": 3, "text": "x"}]},
@@ -911,7 +913,7 @@ def test_provider_lean_uses_the_configured_memory_limit(
 ):
     """Provider Lean runs with `GLITNIR_MEMORY_LIMIT_MB`, or 16384 MB by default."""
     source, _ = _lake(
-        tmp_path, monkeypatch, {"Demo.View": [".lake/build/Demo/View.olean"]}
+        tmp_path, monkeypatch, {"Demo.View": [[".lake/build/Demo/View.olean"]]}
     )
     calls: list = []
     _reporting(monkeypatch, {"information": ["demoView:<svg/>"], "errors": []}, calls)
@@ -938,7 +940,7 @@ def test_several_views_are_drawn_in_one_run(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
     from glitnir.lean.project_views import render_project_views
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     requests = []
 
     def run(runtime, arguments, **options):
@@ -995,7 +997,7 @@ def test_a_failed_run_of_several_views_is_one_error(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SnapshotError
     from glitnir.lean.project_views import render_project_views
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": ["View.olean"]})
+    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise SnapshotError("Project check timed out.")

@@ -277,7 +277,9 @@ def refute_coefficients(
     cases = tuple(
         f"· rw [{c.input}.point_of_slot (by decide +kernel : {c.input}.slot _ = "
         f"⟨{port}, ![{degrees[0]}, {degrees[1]}]⟩)]; "
-        f"norm_num [{fact}, Rat.mkRat_eq_div]"
+        # `Fin.cast` unfolded: Lean 4.35 no longer reads `![…]` at a cast index
+        # into `Fin context.dimension` otherwise.
+        f"norm_num [{fact}, Rat.mkRat_eq_div, Fin.cast]"
         for (port, degrees), fact in zip(c.input_slots, c.input_facts)
     )
     script = (
@@ -455,7 +457,7 @@ def refute_field(
         "(Fin.cast (by decide +kernel) i) := by decide +kernel",
         "  rw [values]",
         f"  fin_cases i <;> norm_num [{_FIELD_RULES}.fieldPoint, {_FIELD_RULES}.point, "
-        f"{f.field_lemma}, Rat.mkRat_eq_div]",
+        f"{f.field_lemma}, Rat.mkRat_eq_div, Fin.cast]",
         f"· {_agrees(model)}",
     )
     return RootApplication(

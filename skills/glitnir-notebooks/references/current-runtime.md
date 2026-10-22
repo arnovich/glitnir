@@ -25,7 +25,7 @@ are still unchanged. Missing names or unsupported syntax are not successful
 checks of those source claims. Ordinary `lake env lean` remains useful diagnostic
 validation but is not a substitute for independent replay.
 
-Use installed Lean 4.32.1 and a prepared Lake environment, or a loose file's
+Use installed Lean 4.35.0 and a prepared Lake environment, or a loose file's
 supported default. Sibling notebooks are ordinary Lean imports of the same Lake
 project; an unbuilt import gets a hint to run `lake build`. No dependencies are fetched or built by checking.
 Preserve existing toolchain/import choices and report unsupported setup.

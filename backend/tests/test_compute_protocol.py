@@ -5,7 +5,9 @@ import json
 
 import pytest
 
+from glitnir.compute import protocol
 from glitnir.compute.protocol import context_digest, make_request, stage_project
+from glitnir.lean.project_inspection import TOOLCHAIN
 
 
 def test_candidate_changes_keep_context_but_import_changes_invalidate(compute_project):
@@ -107,10 +109,23 @@ def test_nonstandard_dependency_layout_fails_before_dispatch(compute_project):
 
 def test_remote_submission_refuses_unsupported_inherited_toolchain(tmp_path):
     """Staging a loose file must not discard an unsupported ancestor version."""
-    (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    other = "leanprover/lean4:v4.32.1"
+    assert other != TOOLCHAIN
+    (tmp_path / "lean-toolchain").write_text(other + "\n")
     child = tmp_path / "nested"
     child.mkdir()
     source = child / "Example.lean"
     source.write_text("theorem sample : True := by trivial\n")
-    with pytest.raises(ValueError, match="4.35.0"):
+    with pytest.raises(ValueError, match="4.32.1"):
         make_request(source, "prepared", 60, 4096)
+
+
+def test_a_worker_on_another_lean_cannot_serve_the_request(
+    compute_project, monkeypatch
+):
+    """The checker and context digests both name the supported toolchain."""
+    source = compute_project / "Example.lean"
+    checker, context = protocol.checker_digest(), context_digest(source)
+    monkeypatch.setattr(protocol, "TOOLCHAIN", "leanprover/lean4:v4.99.0")
+    assert protocol.checker_digest() != checker
+    assert context_digest(source) != context

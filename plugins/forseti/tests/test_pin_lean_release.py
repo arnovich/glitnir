@@ -26,7 +26,7 @@ def _project(tmp_path: Path) -> Path:
     """Lay out a release checkout from the committed lockfile, with every file."""
     project = tmp_path / "release"
     project.mkdir()
-    (project / "lean-toolchain").write_text("leanprover/lean4:v4.32.1\n")
+    (project / "lean-toolchain").write_text(release.TOOLCHAIN + "\n")
     (project / "lake-manifest.json").write_bytes(release.LOCKFILE_BYTES)
     manifest = json.loads(release.LOCKFILE_BYTES)
     roots = release.package_roots(project, manifest)

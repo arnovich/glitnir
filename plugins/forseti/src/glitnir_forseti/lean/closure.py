@@ -10,8 +10,8 @@ for each pinned import set:
    transitive closure and the file each module resolves to. It reads module
    headers and data without running any module's code, and runs confined.
 2. Every loaded artifact of every module (``.olean`` and, where present,
-   ``.ir``, ``.olean.server`` and ``.olean.private``) is hashed, and for a
-   package module so is its ``.lean`` source.
+   ``.ir``, ``.ir.sig``, ``.olean.server`` and ``.olean.private``) is hashed,
+   and for a package module so is its ``.lean`` source.
 3. The hashes are folded into one digest per package (and one for the
    toolchain's own modules) and compared with that import set's entry in
    ``lean-replay.v1.json``, which `tools/pin_lean_replay.py` writes from a
@@ -67,7 +67,7 @@ CLOSURE_PROGRAM = Path(__file__).with_name("ImportClosure.lean")
 CLOSURE_SHA256 = "60d07a94daf2298ae5e053a74349efc2fa8a1d826e2192277657f3489becb97d"
 REPLAY_SCHEMA = "gimle.forseti.lean-replay/v2"
 #: The artifacts Lean may load for a module, beside its ``.olean``.
-ARTIFACT_SUFFIXES = (".olean", ".ir", ".olean.server", ".olean.private")
+ARTIFACT_SUFFIXES = (".olean", ".ir", ".ir.sig", ".olean.server", ".olean.private")
 TOOLCHAIN_PACKAGE = "toolchain"
 
 

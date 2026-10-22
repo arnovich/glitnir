@@ -8,6 +8,13 @@ import pytest
 
 from glitnir.lean import project_inspection as inspection
 
+#: The Lean version Glitnir checks, as `TOOLCHAIN` names it.
+VERSION = inspection.supported_version()
+#: Another Lean version, which Glitnir refuses.
+OTHER = "4.32.1"
+#: What `lake --version` prints for the supported Lean.
+LAKE = f"Lake version 5.0.0-src+x (Lean version {VERSION})"
+
 
 def test_missing_or_unsupported_setup_never_launches(tmp_path, monkeypatch):
     """Loose files, absent manifests and unsupported versions stay readable."""
@@ -20,7 +27,7 @@ def test_missing_or_unsupported_setup_never_launches(tmp_path, monkeypatch):
     assert "manifest" in inspection.inspect_project(source)["message"]
     (tmp_path / "lake-manifest.json").write_text("{}")
     (tmp_path / "lean-toolchain").write_text("leanprover/lean4:v4.99.0")
-    assert "4.32.1" in inspection.inspect_project(source)["message"]
+    assert VERSION in inspection.inspect_project(source)["message"]
 
 
 class _Clock:
@@ -96,7 +103,7 @@ def test_the_inspection_is_bounded_as_a_whole(tmp_path, monkeypatch):
         limits.append(timeout_seconds)
         clock.now += 40
         if program is None:
-            return "Lake version 5.0.0-src+x (Lean version 4.32.1)"
+            return LAKE
         raise ValueError("stop here")
 
     monkeypatch.setattr(inspection.time, "monotonic", clock.monotonic)
@@ -130,7 +137,7 @@ def test_extra_imports_are_named_to_the_setup_program(tmp_path, monkeypatch):
     def run(args, *rest, program=None, **kwargs):
         arguments.append(args)
         if program is None:
-            return "Lake version 5.0.0-src+x (Lean version 4.32.1)"
+            return LAKE
         raise ValueError("stop here")
 
     source = _inspectable(tmp_path, monkeypatch, run)
@@ -158,7 +165,7 @@ def test_an_out_of_date_import_is_marked_as_needing_a_build(tmp_path, monkeypatc
 
     def run(args, *rest, program=None, **kwargs):
         if program is None:
-            return "Lake version 5.0.0-src+x (Lean version 4.32.1)"
+            return LAKE
         raise inspection.NeedsBuild("Lake could not inspect this prepared project.")
 
     source = _inspectable(tmp_path, monkeypatch, run)
@@ -250,14 +257,14 @@ def test_artifact_paths_must_be_regular_and_confined(tmp_path):
     value = dict(
         name="A",
         isModule=False,
-        importArts={"B": [str(outside)]},
+        importArts={"B": [[str(outside)]]},
         options={},
         plugins=[],
         dynlibs=[],
     )
     with pytest.raises(ValueError, match="outside"):
         inspection.validate_setup(value, root, root)
-    value["importArts"] = {"B": [str(root)]}
+    value["importArts"] = {"B": [[str(root)]]}
     with pytest.raises(ValueError, match="regular"):
         inspection.validate_setup(value, root, root)
 
@@ -412,8 +419,8 @@ def test_live_cancel_reaps_running_configuration(prepared_lean_project, monkeypa
 
 #: The words every refusal and the banner share after the version sentence.
 OFF = (
-    "Glitnir checks Lean 4.32.1, so checking, proof steps, views, evidence and "
-    "decisions are off; reading works as usual."
+    f"Glitnir checks Lean {VERSION}, so checking, proof steps, views, evidence "
+    "and decisions are off; reading works as usual."
 )
 NO_VERSION = f"This project declares no Lean version. {OFF}"
 #: What a present `lean-toolchain` with no single declaration is refused with.
@@ -443,22 +450,25 @@ def _loose(tmp_path, toolchain: bytes | None) -> dict:
 
 
 def test_the_supported_version_comes_from_the_toolchain():
-    assert inspection.TOOLCHAIN == "leanprover/lean4:v4.32.1"
-    assert inspection.supported_version() == "4.32.1"
+    assert inspection.TOOLCHAIN == "leanprover/lean4:v4.35.0"
+    assert inspection.supported_version() == "4.35.0"
 
 
-# Each spelling elan resolves to leanprover/lean4:v4.32.1 (checked against
+# Each spelling elan resolves to the supported toolchain (checked against
 # elan 4.2.4 with `elan which lean`), with the line endings an editor may add.
 @pytest.mark.parametrize(
     "toolchain",
     [
-        b"leanprover/lean4:v4.32.1",
-        b"leanprover/lean4:v4.32.1\n",
-        b"leanprover/lean4:v4.32.1\r\n",
-        b"  leanprover/lean4:v4.32.1 \t\n",
-        b"v4.32.1\n",
-        b"4.32.1\n",
-        b"leanprover/lean4:4.32.1\n",
+        spelling.format(v=VERSION).encode()
+        for spelling in (
+            "leanprover/lean4:v{v}",
+            "leanprover/lean4:v{v}\n",
+            "leanprover/lean4:v{v}\r\n",
+            "  leanprover/lean4:v{v} \t\n",
+            "v{v}\n",
+            "{v}\n",
+            "leanprover/lean4:{v}\n",
+        )
     ],
 )
 def test_a_lake_project_on_the_supported_version_is_supported(tmp_path, toolchain):
@@ -473,13 +483,13 @@ def test_a_lake_project_on_the_supported_version_is_supported(tmp_path, toolchai
 @pytest.mark.parametrize(
     "toolchain, version",
     [
-        (b"leanprover/lean4:v4.35.0\n", "4.35.0"),
+        (f"leanprover/lean4:v{OTHER}\n".encode(), OTHER),
         (b"leanprover/lean4:nightly-2026-10-01\n", "nightly-2026-10-01"),
-        (b"leanprover/lean4:v4.32.1-rc1\n", "4.32.1-rc1"),
-        (b"leanprover/lean4:v4.32.10\n", "4.32.10"),
+        (f"leanprover/lean4:v{VERSION}-rc1\n".encode(), f"{VERSION}-rc1"),
+        (f"leanprover/lean4:v{VERSION}0\n".encode(), f"{VERSION}0"),
         (b"v4.31.0\r\n", "4.31.0"),
         # elan rejects this name and resolves `stable` to the latest release.
-        (b"lean4:v4.32.1\n", "lean4:v4.32.1"),
+        (f"lean4:v{VERSION}\n".encode(), f"lean4:v{VERSION}"),
         (b"stable\n", "stable"),
         (
             b"leanprover/lean4-nightly:nightly-2026-10-01\n",
@@ -507,7 +517,7 @@ def test_a_lake_project_without_lean_toolchain_declares_no_version(tmp_path):
     }
 
 
-@pytest.mark.parametrize("toolchain", [b"", b"\n", b"v4.32.1\nv4.35.0\n"])
+@pytest.mark.parametrize("toolchain", [b"", b"\n", f"v{OTHER}\nv{VERSION}\n".encode()])
 def test_an_unreadable_lean_toolchain_is_refused_with_its_read_error(
     tmp_path, toolchain
 ):
@@ -520,7 +530,9 @@ def test_an_unreadable_lean_toolchain_is_refused_with_its_read_error(
     }
 
 
-@pytest.mark.parametrize("toolchain", [None, b"leanprover/lean4:v4.32.1\r\n"])
+@pytest.mark.parametrize(
+    "toolchain", [None, f"leanprover/lean4:v{VERSION}\r\n".encode()]
+)
 def test_a_loose_file_with_no_or_the_supported_toolchain_is_supported(
     tmp_path, toolchain
 ):
@@ -529,9 +541,10 @@ def test_a_loose_file_with_no_or_the_supported_toolchain_is_supported(
 
 
 def test_a_loose_file_beside_another_toolchain_is_refused(tmp_path):
-    support = inspection.lean_support(_loose(tmp_path, b"leanprover/lean4:v4.35.0\n"))
+    declared = f"leanprover/lean4:v{OTHER}\n".encode()
+    support = inspection.lean_support(_loose(tmp_path, declared))
     assert support["supported"] is False
-    assert support["message"] == f"This project uses Lean 4.35.0. {OFF}"
+    assert support["message"] == f"This project uses Lean {OTHER}. {OFF}"
     # An unreadable declaration is refused too, as checking refuses it.
     (tmp_path / "lean-toolchain").write_text("a\nb\n")
     support = inspection.lean_support(_loose(tmp_path, None))
@@ -546,7 +559,10 @@ def test_a_loose_file_beside_another_toolchain_is_refused(tmp_path):
 @pytest.mark.parametrize(
     "toolchain, message",
     [
-        (b"leanprover/lean4:v4.35.0\n", f"This project uses Lean 4.35.0. {OFF}"),
+        (
+            f"leanprover/lean4:v{OTHER}\n".encode(),
+            f"This project uses Lean {OTHER}. {OFF}",
+        ),
         (None, NO_VERSION),
         (b"a\nb\n", UNREADABLE),
     ],
@@ -576,7 +592,7 @@ def test_inspection_accepts_every_supported_spelling(tmp_path, monkeypatch):
         raise ValueError("reached Lake")
 
     source = _inspectable(tmp_path, monkeypatch, run)
-    (tmp_path / "lean-toolchain").write_text("v4.32.1\r\n")
+    (tmp_path / "lean-toolchain").write_text(f"v{VERSION}\r\n")
     assert inspection.inspect_project(source)["message"] == "reached Lake"
     assert reached
 
@@ -616,17 +632,17 @@ def test_checking_and_proof_steps_refuse_with_the_same_words(
     source.write_text("theorem t : True := trivial\n")
     if lake:
         (project / "lakefile.toml").write_text('name = "test"')
-    (project / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    (project / "lean-toolchain").write_text(f"leanprover/lean4:v{OTHER}\n")
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     _nothing_runs(tmp_path, monkeypatch)
-    message = f"This project uses Lean 4.35.0. {OFF}"
+    message = f"This project uses Lean {OTHER}. {OFF}"
     checked = project_checking.check_project(source, expected_sha256=digest)
     assert (checked["status"], checked["message"]) == ("unavailable", message)
     checked = project_checking.check_project(
         source, expected_sha256=digest, through_line=1
     )
     assert (checked["status"], checked["message"]) == ("unavailable", message)
-    with pytest.raises(project_checking.SnapshotError, match="Lean 4.35.0"):
+    with pytest.raises(project_checking.SnapshotError, match=f"Lean {OTHER}"):
         project_checking.check_candidate(
             source,
             expected_sha256=digest,
@@ -648,7 +664,7 @@ def test_the_command_line_check_refuses_another_version_up_front(
     project = tmp_path / "p"
     project.mkdir()
     (project / "lakefile.toml").write_text('name = "test"')
-    (project / "lean-toolchain").write_text("leanprover/lean4:v4.35.0\n")
+    (project / "lean-toolchain").write_text(f"leanprover/lean4:v{OTHER}\n")
     source = project / "A.lean"
     source.write_text("theorem t : True := trivial\n")
     _nothing_runs(tmp_path, monkeypatch)
@@ -656,7 +672,7 @@ def test_the_command_line_check_refuses_another_version_up_front(
     out = capsys.readouterr().out
     assert json.loads(out) == {
         "status": "unavailable",
-        "message": f"This project uses Lean 4.35.0. {OFF}",
+        "message": f"This project uses Lean {OTHER}. {OFF}",
         "theorems": [],
     }
 
@@ -667,24 +683,24 @@ def test_the_supported_version_follows_toolchain_alone(tmp_path, monkeypatch):
     The support decision, elan's directory and the Lake version Glitnir
     accepts all follow it.
     """
-    monkeypatch.setattr(inspection, "TOOLCHAIN", "leanprover/lean4:v4.35.0")
-    assert inspection.supported_version() == "4.35.0"
-    assert inspection.toolchain_directory() == "leanprover--lean4---v4.35.0"
+    monkeypatch.setattr(inspection, "TOOLCHAIN", "leanprover/lean4:v4.99.0")
+    assert inspection.supported_version() == "4.99.0"
+    assert inspection.toolchain_directory() == "leanprover--lean4---v4.99.0"
     elan = tmp_path / "elan"
-    bin_ = elan / "toolchains" / "leanprover--lean4---v4.35.0" / "bin"
+    bin_ = elan / "toolchains" / "leanprover--lean4---v4.99.0" / "bin"
     bin_.mkdir(parents=True)
     for name in ("lake", "lean"):
         (bin_ / name).write_text("")
     monkeypatch.setenv("ELAN_HOME", str(elan))
     assert inspection._toolchain() == bin_.parent.resolve()
-    assert inspection.lake_matches("Lake version 5.9.0-src+abc (Lean version 4.35.0)")
+    assert inspection.lake_matches("Lake version 5.9.0-src+abc (Lean version 4.99.0)")
     assert not inspection.lake_matches(
-        "Lake version 5.0.0-src+abc (Lean version 4.32.1)"
+        f"Lake version 5.0.0-src+abc (Lean version {VERSION})"
     )
 
     def run(args, *rest, program=None, **kwargs):
         if program is None:
-            return "Lake version 5.9.0-src+abc (Lean version 4.35.0)"
+            return "Lake version 5.9.0-src+abc (Lean version 4.99.0)"
         raise ValueError("reached setup-file")
 
     inspected = tmp_path / "inspected"
@@ -693,9 +709,11 @@ def test_the_supported_version_follows_toolchain_alone(tmp_path, monkeypatch):
     assert inspection.inspect_project(source)["message"] == "reached setup-file"
     project = tmp_path / "p"
     project.mkdir()
-    assert inspection.lean_support(_lake(project, b"v4.35.0\n"))["supported"]
-    assert inspection.lean_support(_lake(project, b"v4.32.1\n"))["message"] == (
-        "This project uses Lean 4.32.1. Glitnir checks Lean 4.35.0, so checking, "
+    assert inspection.lean_support(_lake(project, b"v4.99.0\n"))["supported"]
+    assert inspection.lean_support(_lake(project, f"v{VERSION}\n".encode()))[
+        "message"
+    ] == (
+        f"This project uses Lean {VERSION}. Glitnir checks Lean 4.99.0, so checking, "
         "proof steps, views, evidence and decisions are off; reading works as "
         "usual."
     )

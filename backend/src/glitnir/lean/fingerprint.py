@@ -17,7 +17,12 @@ import time
 from pathlib import Path
 from typing import Any, NoReturn
 
-from glitnir.lean import axiom_report, project_checking, provider_lean
+from glitnir.lean import (
+    axiom_report,
+    project_checking,
+    project_inspection,
+    provider_lean,
+)
 from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 
@@ -585,6 +590,8 @@ def checker_identity() -> dict[str, Any]:
     The helper programs are the exact files a check copies into its snapshot,
     and the program that elaborates provider Lean for views and evidence, so
     an upgrade that changes checking or evidence invalidates every saved result.
+    The supported toolchain is recorded too, so moving to another Lean
+    invalidates them even when no helper program changes.
     """
     paths = [
         project_checking.PROGRAMS / name
@@ -601,6 +608,7 @@ def checker_identity() -> dict[str, Any]:
         except OSError:
             programs[path.name] = None
     return {
+        "toolchain": project_inspection.TOOLCHAIN,
         "programs": programs,
         "axiom_allowlist": sorted(project_checking.LEAN_AXIOM_ALLOWLIST),
     }
