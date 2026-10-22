@@ -1518,8 +1518,13 @@ def test_the_producer_chooses_nothing_it_cannot_certify() -> None:
     assert tight.reason is service.UnknownReason.EXHAUSTED
 
 
-def test_the_euler_lanes_report_their_constants() -> None:
-    """The producers name the constants Lean will decide, and the stage names."""
+def test_the_euler_lanes_report_their_constants(monkeypatch) -> None:
+    """The producers name the constants Lean will decide, and the stage names.
+
+    With no Lean project configured, the radius lane stops at the replay; a
+    configured project (as on CI's plugin-live job) would prove the claim.
+    """
+    monkeypatch.delenv("FORSETI_LEAN_PROJECT", raising=False)
     outcome, found = service._trig_truncation(EULER_TAIL, LIMITS)
     assert found == trig.RadiusEvidence(3, Fraction(3))
     assert "ρ = 72LK = 648" in outcome.detail
