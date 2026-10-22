@@ -194,8 +194,8 @@ jobs are:
   stepped budget is raised to 600 s there provisionally
   (`FORSETI_CHECK_BUDGET_MS`), until Linux timings set it.
 - **candidate** creates a release candidate from a `main` push when the
-  extension, live and helpers jobs pass and the `RELEASE_CANDIDATES` repository
-  variable is `true`
+  extension, live and helpers jobs and every plugin-live shard pass and the
+  `RELEASE_CANDIDATES` repository variable is `true`
   (`.github/workflows/candidate.yml`).
 
 Keep public CI independent of private repositories. Tests requiring an external

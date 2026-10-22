@@ -308,7 +308,7 @@ jobs:
           ../../.venv/bin/python -m pytest -v --tb=short -rfE --durations=50 \
             -o console_output_style=times "${modules[@]}"
   candidate:
-    needs: [extension, live, helpers]
+    needs: [extension, live, helpers, plugin-live]
     # Release candidates are created only once RELEASE_CANDIDATES is set to true.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RELEASE_CANDIDATES == 'true'
     permissions:

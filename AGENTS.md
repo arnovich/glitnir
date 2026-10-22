@@ -80,10 +80,10 @@ sets both. They are the `test_live_` tests, which the backend's conftest marks
 `live` (a test using `project_toolchain` must have that name). CI's `extension`
 job runs `-m "not live"` with everything else; the parallel `live` job runs
 `-m live`, where a skipped live test fails. Both install the wheels the `build`
-job made, and a candidate needs both jobs and the `helpers` job, which
+job made, and a candidate needs both jobs, the `helpers` job, which
 elaborates every Lean helper program with no output
-(`backend/scripts/check_helpers.py`). The `plugin-live` shards run the plugin's
-tests against a build of the Forseti Lean release it pins
+(`backend/scripts/check_helpers.py`), and every `plugin-live` shard. Those run
+the plugin's tests against a build of the Forseti Lean release it pins
 (`plugins/forseti/tools/live_shards.py` assigns each test module to exactly one
 shard), under
 `FORSETI_REQUIRE_LEAN_PROJECT=1`, where a Lean test that skips fails unless the
