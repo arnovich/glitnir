@@ -46,8 +46,12 @@ The repository has four parts:
   fingerprint it was saved under (`glitnir/lean/fingerprint.py`) still matches.
   The fingerprint names no location, so saved results are portable across
   checkouts and machines, macOS and Linux alike, when the sources, dependencies
-  and compiled artifacts are byte-identical; any build that differs, a
-  path-dependent one included, reads as out of date. A change to what it hashes
+  and compiled artifacts are byte-identical; a build Lake would record
+  differently, a path-dependent one included, reads as out of date. Known gaps,
+  unchanged by portability: a transitive module rebuilt without its importer,
+  `include_str` data files, and artifacts swapped without their trace. A trace
+  file that exists but is no Lake trace makes the environment unknown, so
+  nothing reads as current under it. A change to what the fingerprint hashes
   bumps its `glitnir.environment-fingerprint/vN` tag, which makes every saved
   result out of date once.
 

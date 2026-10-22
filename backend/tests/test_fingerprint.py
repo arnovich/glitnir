@@ -1,7 +1,9 @@
 """The fast environment fingerprint changes exactly when checking inputs change."""
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -223,8 +225,6 @@ def test_a_dirty_dependency_still_changes_a_portable_fingerprint(tmp_path):
 
 def test_a_result_saved_under_a_v3_fingerprint_reads_as_out_of_date(tmp_path):
     """Version 3 hashed whole traces; its digests match nothing now."""
-    import hashlib
-
     from glitnir.notebook.check_records import claim_views, records_from_check
 
     source = _copied_project(tmp_path)
@@ -343,6 +343,49 @@ def test_deeply_nested_trace_records_none(tmp_path):
     (build / "Deep.trace").write_text("[" * 100000)
     result = environment_fingerprint(source, "import Demo.Deep\n")
     assert result["imports"] == {"Demo.Deep": None}
+
+
+def test_a_missing_trace_is_a_known_state(tmp_path):
+    """An import not built (a toolchain module, say) has no trace, every time."""
+    source = _project(tmp_path)
+    text = "import Demo.Missing\n"
+    first, second = (environment_fingerprint(source, text) for _ in range(2))
+    assert first["imports"] == {"Demo.Missing": None}
+    assert first["unknown"] is False
+    assert first["sha256"] == second["sha256"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["{", "[" * 100000, "{}", '{"log": []}', '{"depHash": 1}', "[]"],
+    ids=["invalid", "nested", "empty", "stub", "numeric-hash", "list"],
+)
+def test_a_trace_that_is_no_lake_trace_matches_nothing(tmp_path, content):
+    """A trace file Lake would reject is unknown, never the state of a missing one."""
+    from glitnir.lean.fingerprint import unknown_git_note
+
+    source = _project(tmp_path)
+    text = "import Demo.Broken\n"
+    missing = environment_fingerprint(source, text)
+    (tmp_path / ".lake/build/lib/lean/Demo/Broken.trace").write_text(content)
+    first, second = (environment_fingerprint(source, text) for _ in range(2))
+    assert first["imports"] == {"Demo.Broken": None}
+    assert first["unknown"] is True
+    assert len({missing["sha256"], first["sha256"], second["sha256"]}) == 3
+    assert first["stable_sha256"] == second["stable_sha256"]
+    assert first["stable_sha256"] != missing["stable_sha256"]
+    assert unknown_git_note(first) == (
+        "Could not read the build traces of Demo.Broken; "
+        "results are saved as out of date."
+    )
+
+
+def test_an_unreadable_trace_matches_nothing(tmp_path):
+    """A trace that exists but cannot be read (a directory, here) is unknown."""
+    source = _project(tmp_path)
+    (tmp_path / ".lake/build/lib/lean/Demo/Odd.trace").mkdir()
+    result = environment_fingerprint(source, "import Demo.Odd\n")
+    assert result["unknown"] is True
 
 
 def test_deeply_nested_manifest_has_no_packages(tmp_path):
@@ -1093,8 +1136,6 @@ def _lake_build(root: Path, toolchain: Path) -> None:
 
 def _whole_trace_digest(path: Path) -> str:
     """The version 3 digest: the whole trace but its log."""
-    import hashlib
-
     trace = json.loads(path.read_text())
     trace.pop("log", None)
     return hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest()
@@ -1108,9 +1149,6 @@ def test_live_fingerprint_is_portable_across_checkouts(
     Lake writes each module's absolute source path into its trace, so version 3
     of the fingerprint, which hashed whole traces, never matched there.
     """
-    import hashlib
-    import shutil
-
     from glitnir.notebook.check_records import load_records, records_path
     from glitnir.notebook.source_preview import SourcePreviewService
 
