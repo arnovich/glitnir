@@ -332,7 +332,9 @@ def certify_with_products(
     cancel: threading.Event | None = None,
     dictionary: tuple[Poly, ...] | None = None,
 ) -> LaneOutcome:
-    """Search `certify`'s dictionaries, then constraint products (forseti-lean 027).
+    """Search `certify`'s dictionaries, then constraint products.
+
+    The products are checked by ``Gimle.Forseti.Syntax.Positivstellensatz``.
 
     Only when `certify` exhausts the default and DSOS dictionaries, and no
     dictionary was supplied, is the antecedent augmented with every pairwise

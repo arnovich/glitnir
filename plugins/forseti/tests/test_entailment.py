@@ -1383,7 +1383,7 @@ def test_a_rational_witness_cannot_claim_the_algebraic_environment(no_lean) -> N
     assert "environment" in outcome.reason
 
 
-# --- constraint products (forseti-lean 027) ---------------------------------
+# --- constraint products (Positivstellensatz) --------------------------------------
 
 _ROW = Row(
     SquareSum(()), (SquareSum(()), SquareSum(()), SquareSum(((Fraction(1), ONE),)))

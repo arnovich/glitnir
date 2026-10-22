@@ -171,7 +171,10 @@ def _bind(
     """
     # `simp` reduces the goal's `mkRat` start and closes it for some starts
     # but not others; `<;>` runs `norm_num` only on what remains, so the one
-    # script works for every start (tests/test_trajectory_lean.py).
+    # script works for every start (tests/test_trajectory_lean.py). Lean 4.35's
+    # unusedTactic linter flags the tail on a start `simp` closes alone (such as
+    # 0, which the checked-in examples use), but the tail is live for the others
+    # (the three-state example starts at 2), so it stays.
     return (
         f"have time : forsetiTime = {entry.evolution}.time := by "
         f"simp [forsetiTime, Gimle.Asgard.Model.Evolution.time, {entry.evolution}] "
@@ -332,6 +335,9 @@ def _refute_driven(
         if drivers.start_needs_admission
         else ""
     )
+    # The `<;> norm_num` after the driver's `simp` is dead for the bound 1 the
+    # checked-in examples use (Lean 4.35 flags it), but the bound is the goal's:
+    # `simp` may leave `0 <= mkRat ..` open for other bounds, so it stays.
     script = (
         "unfold forsetiIdentities forsetiContract",
         f"refine ⟨{_identities_proof(entry)}, ?_⟩",

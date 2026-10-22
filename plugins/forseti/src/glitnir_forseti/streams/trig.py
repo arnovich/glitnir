@@ -9,7 +9,8 @@ one-axis bound ``tailBound M ρ r N = M (ρr)^N / (1 − ρr)`` on ``|t| ≤ r``
 the window's ℓ¹ spread plus that error. Every premise is decided by the kernel:
 the size and the ℓ¹ norm of the start through ``Table.sizeLE_toTrig`` and
 ``Table.l1_le_absSum``, and the ℓ¹ norms of the later coefficients through the
-table mirror ``NS.picard`` of the Picard iteration (asgard-lean task 066).
+table mirror ``NS.picard`` of the Picard iteration
+(``Gimle.Asgard.Streams.VorticityTable``).
 
 This module mirrors those quantities exactly so the producer can choose the
 window and say, when no proof is possible, what the certified bound is. The

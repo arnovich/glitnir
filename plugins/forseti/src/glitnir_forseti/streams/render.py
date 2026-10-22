@@ -474,7 +474,7 @@ def refute_field(
     )
 
 
-#: The asgard-lean module the heat truncation root cites (asgard-lean 026).
+#: The asgard-lean module the heat truncation root cites.
 ANALYTIC_HEAT = "Gimle.Asgard.Streams.AnalyticHeat"
 #: The asgard-lean module the Cole–Hopf truncation root cites.
 COLE_HOPF = "Gimle.Asgard.Streams.ColeHopf"

@@ -43,11 +43,13 @@ from .syntax import (
 IMPORT = "Gimle.Forseti.Syntax.Certificate"
 #: The import set replay pins, for `glitnir_forseti.lean.closure`.
 IMPORTS = (IMPORT,)
-#: The checker for real-algebraic counterexamples (forseti-lean 022); it
+#: The checker for real-algebraic counterexamples
+#: (``Gimle.Forseti.Syntax.AlgebraicWitness``); it
 #: imports ``IMPORT`` and pins its own closure.
 ALGEBRAIC_IMPORT = "Gimle.Forseti.Syntax.AlgebraicWitness"
 ALGEBRAIC_IMPORTS = (ALGEBRAIC_IMPORT,)
-#: The checker for degree-2 Positivstellensatz certificates (forseti-lean 027);
+#: The checker for degree-2 Positivstellensatz certificates
+#: (``Gimle.Forseti.Syntax.Positivstellensatz``);
 #: it imports ``IMPORT`` and pins its own closure.
 PSATZ_IMPORT = "Gimle.Forseti.Syntax.Positivstellensatz"
 PSATZ_IMPORTS = (PSATZ_IMPORT,)

@@ -2,7 +2,8 @@
 
 Positive evidence is ``EntailmentCertificate``: one `Row` per consequent
 constraint, each a base square sum and one multiplier per antecedent
-constraint. `PsatzCertificate` (forseti-lean 027) also names pairs of
+constraint. `PsatzCertificate` (``Gimle.Forseti.Syntax.Positivstellensatz``) also names
+pairs of
 antecedent constraints and gives its rows against the antecedent augmented with
 ``−(p_i · p_j) ≤ 0`` per pair (`augment`). Negative evidence is a rational
 `Witness`, named coordinate by coordinate. All are untrusted data: this module

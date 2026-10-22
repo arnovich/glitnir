@@ -487,7 +487,7 @@ def test_oversized_algebraic_witnesses_never_reach_lean(
         assert "malformed" in outcome.reason
 
 
-# --- constraint products (forseti-lean 027) --------------------------------
+# --- constraint products (Positivstellensatz) --------------------------------------
 
 _ONE = Const(Fraction(1))
 #: forseti-lean's own fixture: the pair (0, 1) adds −((−x)(−y)) ≤ 0, and

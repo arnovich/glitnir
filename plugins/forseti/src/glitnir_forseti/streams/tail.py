@@ -110,7 +110,7 @@ class FrontEvidence:
     radii: tuple[Fraction, Fraction]
 
 
-# --- the heat boundary (asgard-lean 025/026) ---------------------------------
+# --- the heat boundary (Gimle.Asgard.Streams.AnalyticHeat) -------------------
 
 
 def weight(profile: ExpSum) -> Fraction:

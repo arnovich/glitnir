@@ -840,7 +840,7 @@ def test_the_report_names_the_front_solution_class() -> None:
 
     front = _solution_class(FRONT_TAIL)
     assert "Burgers circuit at viscosity 1/2" in front
-    assert "asgard-lean ColeHopf" in front and "closed-form front" in front
+    assert "Gimle.Asgard.Streams.ColeHopf" in front and "closed-form front" in front
     heat = _solution_class(EXP_TAIL)
     assert "heat circuit" in heat and "Burgers" not in heat
     assert "Burgers" not in _solution_class(FIELD)

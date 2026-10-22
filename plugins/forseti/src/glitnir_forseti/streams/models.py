@@ -8,11 +8,11 @@ circuit:
 
 - the full-stream identity (``FormalHeatContract.heat_contract``);
 - coefficient claims about the fixture's observed output coefficients
-  (``StreamObservation``, through asgard-lean 023's lowering);
+  (``StreamObservation``, through ``Gimle.Asgard.Streams.Lowering``);
 - evaluated-field claims on a box, about the heat circuit in either basis
-  (``HeatFieldBound``, through asgard-lean 024's realization);
+  (``HeatFieldBound``, through ``Gimle.Asgard.Streams.Realization``);
 - certified truncation of the analytic tail for an exponential-sum boundary
-  (``AnalyticHeat.expSum_truncation``, asgard-lean 025/026).
+  (``AnalyticHeat.expSum_truncation`` in ``Gimle.Asgard.Streams.AnalyticHeat``).
 
 The second is the viscous Burgers circuit ``u_t = ν u_xx − u u_x`` at a
 declared viscosity, whose only lane is the certified truncation of the Cole–Hopf

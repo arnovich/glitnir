@@ -146,7 +146,8 @@ UNIT_PRODUCT = Goal(
     ),
     Atom(Relation.LE, _sub(Mul(_X, _Y), _const(1))),
 )
-#: The product of two constraints itself (forseti-lean 027's pair ``(0, 1)``).
+#: The product of two constraints itself (the pair ``(0, 1)`` of
+#: ``Gimle.Forseti.Syntax.Positivstellensatz``).
 PRODUCT_NONNEG = Goal(
     PLANE,
     And(Atom(Relation.GE, _X), Atom(Relation.GE, _Y)),
