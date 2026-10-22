@@ -42,6 +42,14 @@ The repository has four parts:
   sections describe the behavior users see; AGENTS.md states the invariants
   that the replay cache and incremental replay must keep, and
   `ProjectReplay.lean` documents the argument.
+- **Saved results.** A saved result is current while the environment
+  fingerprint it was saved under (`glitnir/lean/fingerprint.py`) still matches.
+  The fingerprint names no location, so saved results are portable across
+  checkouts and machines, macOS and Linux alike, when the sources, dependencies
+  and compiled artifacts are byte-identical; any build that differs, a
+  path-dependent one included, reads as out of date. A change to what it hashes
+  bumps its `glitnir.environment-fingerprint/vN` tag, which makes every saved
+  result out of date once.
 
 ## Build and test
 
