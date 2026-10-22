@@ -350,15 +350,15 @@ EXAMPLES = (
     ),
     Example(
         "forced-negative",
-        "forced decay: x ≤ −1 for all t ≥ 0, refuted at t = 0 under the zero "
-        "driver, where x = 0",
+        "forced decay, for |u| ≤ 1: x ≤ −1 for all t ≥ 0, refuted at t = 0 under "
+        "the zero driver, where x = 0",
         forced_goal(_at_most(Fraction(-1))),
         "REFUTED",
     ),
     Example(
         "forced-below-one",
-        "forced decay: x ≤ 1 for all t ≥ 0; false (u = cos passes it), but no "
-        "bounded template shows it",
+        "forced decay, for |u| ≤ 1: x ≤ 1 for all t ≥ 0; false (u = −cos takes x "
+        "to 1 + e^(−π) at t = π), but no bounded template shows it",
         forced_goal(_at_most(Fraction(1))),
         "UNKNOWN:exhausted",
     ),
@@ -399,16 +399,16 @@ EXAMPLES = (
     ),
     Example(
         "hedged-energy-at-least-quarter",
-        "hedged spread: V ≥ 1/4 for all t ≥ 0, refuted at t = 0 under the zero "
-        "driver, where V = 0",
+        "hedged spread, for |d| ≤ 1: V ≥ 1/4 for all t ≥ 0, refuted at t = 0 "
+        "under the zero driver, where V = 0",
         hedged_goal(_at_least(Fraction(1, 4)), observe="obs-v"),
         "REFUTED",
     ),
     Example(
         "hedged-below-half",
-        "hedged spread: s ≤ 1/2 for all t ≥ 0; false (d = 1 takes s to "
-        "1/2 + e^(−π/2)/2 at t = π/2), but no bounded template shows it and the "
-        "start does not refute it",
+        "hedged spread, for |d| ≤ 1: s ≤ 1/2 for all t ≥ 0; false (d = 1 takes "
+        "s to 1/2 + e^(−π/2)/2 at t = π/2), but no bounded template shows it and "
+        "the start does not refute it",
         hedged_goal(_at_most(Fraction(1, 2))),
         "UNKNOWN:exhausted",
     ),
@@ -462,8 +462,8 @@ EXAMPLES = (
     ),
     Example(
         "ns-t3-below-10",
-        "T3: E ≤ 10 for all t ≥ 0, from forseti-lean 042's degree-4 tube around "
-        "the member's simulated focus, whose contract gives 9",
+        "T3: E ≤ 10 for all t ≥ 0, from the degree-4 tube (`T3Below9`) around the "
+        "member's simulated focus, whose contract gives 9",
         ns_t3_goal(_at_most(Fraction(10))),
         "PROVEN",
     ),
@@ -476,9 +476,8 @@ EXAMPLES = (
     ),
     Example(
         "ns-t3-below-12",
-        "T3: E ≤ 12 for all t ≥ 0, below the laminar level 25/2 that no "
-        "origin-centred form reaches (forseti-lean 040's ellipsoid; the band "
-        "is now 042's 9)",
+        "T3: E ≤ 12 for all t ≥ 0, below the laminar level 25/2 (the ellipsoid of "
+        "`T3Below12` gives 12; the band is now `T3Below9`'s 9)",
         ns_t3_goal(_at_most(Fraction(12))),
         "PROVEN",
     ),
@@ -499,8 +498,9 @@ EXAMPLES = (
     Example(
         "ns-t3s-rest-ball",
         "T3S: T3's modes at ν = 1/2, f = 1, below the small-forcing threshold: "
-        "the unforced energy R = Σ_{k≠(1,1)} a_k²/λ_k never exceeds its start "
-        "value 6/5 (the laminar line attracts; R decays at rate 1/5)",
+        "the unforced energy R = Σ_{k≠(1,1)} a_k²/|k|² stays in 0 ≤ R ≤ 6/5 for "
+        "all t ≥ 0, where 6/5 is its start value (the laminar line attracts: "
+        "`rest_decays` bounds R by (6/5)·e^(−t/5); this goal poses only the band)",
         ns_t3s_goal(And(_at_least(Fraction(0)), _at_most(Fraction(6, 5)))),
         "PROVEN",
     ),
@@ -542,8 +542,8 @@ EXAMPLES = (
     ),
     Example(
         "ns-k5-below-6",
-        "K5: E ≤ 6 for all t ≥ 0, below the laminar level 25/2: forseti-lean "
-        "041's degree-4 tube around the member's simulated attractor, trapped under a "
+        "K5: E ≤ 6 for all t ≥ 0, below the laminar level 25/2: the degree-4 tube "
+        "(`K5Below6`) around the member's simulated attractor, trapped under a "
         "decrease local to the set",
         ns_k5_goal(_at_most(Fraction(6))),
         "PROVEN",
