@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from glitnir.compute.client import check_remote, from_environment
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
 from glitnir.lean.lexing import code_tokens, command_boundaries, only_comments, scan
 from glitnir.lean.project import describe_project, read_regular
@@ -1236,14 +1237,30 @@ class SourcePreviewService:
                     progress("Reading dependency state")
                     compiled.append(environment_fingerprint(self.path, text))
 
-            result = check_project(
-                self.path,
-                expected_sha256=sha256,
-                cancel=cancel,
-                progress=progress,
-                through_line=through_line,
-                acquired=acquired,
-            )
+            if from_environment() is not None:
+
+                def remote_acquired(context_sha256: str) -> None:
+                    acquired()
+                    if compiled[0].get("compute_context") != context_sha256:
+                        raise ValueError("Dependency context changed before submission")
+
+                result = check_remote(
+                    self.path,
+                    expected_sha256=sha256,
+                    cancel=cancel,
+                    progress=progress,
+                    through_line=through_line,
+                    acquired=remote_acquired,
+                )
+            else:
+                result = check_project(
+                    self.path,
+                    expected_sha256=sha256,
+                    cancel=cancel,
+                    progress=progress,
+                    through_line=through_line,
+                    acquired=acquired,
+                )
             if compiled:
                 environment = compiled[0]
             fingerprint = environment["sha256"]

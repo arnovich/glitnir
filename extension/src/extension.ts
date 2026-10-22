@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import {lstat, realpath} from 'node:fs/promises';
 import * as vscode from 'vscode';
+import {credentialScope, executionEnvironment, executionSettings} from './compute-settings';
 import {Backend, heldWhileDirty} from './backend';
 import {previewHtml} from './webview';
 import {EnvironmentSetup, openSetupGuide} from './setup';
@@ -100,9 +101,13 @@ export function activate(context: vscode.ExtensionContext): void {
     if (epoch !== environmentEpoch) throw new Error('Glitnir settings changed during setup. Open the preview again.');
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before starting Glitnir.');
     if (previews.has(key)) { previews.get(key)!.panel.reveal(vscode.ViewColumn.Beside); return; }
+    const computeEnv = await executionEnvironment(config, context.secrets);
+    if (epoch !== environmentEpoch || shuttingDown) throw new Error('Glitnir settings changed. Open the preview again.');
+    if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before starting Glitnir.');
+    if (previews.has(key)) { previews.get(key)!.panel.reveal(vscode.ViewColumn.Beside); return; }
     const backend = new Backend({
       python: environment.python, cwd, args: ['-I', '-B', '-u', '-m', 'glitnir.notebook', 'serve', uri.fsPath, '--port', '0'],
-      env: {...(environment.processEnv ?? process.env), PYTHONUNBUFFERED: '1',
+      env: {...(environment.processEnv ?? process.env), ...computeEnv, PYTHONUNBUFFERED: '1',
         GLITNIR_ELABORATION_TIMEOUT_MS: String(config.get<number>('elaborationTimeoutMs', 600000)),
         // Left unset unless the user chose a value: the backend then sizes the default to the machine.
         ...(memoryLimitChosen ? {GLITNIR_MEMORY_LIMIT_MB: String(config.get<number>('memoryLimitMb', 16384))} : {})},
@@ -265,12 +270,43 @@ export function activate(context: vscode.ExtensionContext): void {
       else void vscode.window.showInformationMessage('Focus a Glitnir notebook to use its review commands.');
     }));
   }
+  if (context.secrets?.onDidChange) context.subscriptions.push(context.secrets.onDidChange(event => {
+    if (event.key.startsWith('glitnir.taskvalet:')) {
+      environmentEpoch++;
+      for (const preview of [...previews.values()]) preview.panel.dispose();
+    }
+  }));
+  for (const action of ['set', 'clear']) context.subscriptions.push(vscode.commands.registerCommand(
+    'glitnir.' + action + 'TaskvaletCredential', async () => {
+      try {
+        if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before configuring credentials.');
+        const config = vscode.workspace.getConfiguration('glitnir', vscode.window.activeTextEditor?.document.uri);
+        const scope = credentialScope(config);
+        if (action === 'clear') await context.secrets.delete(scope.key);
+        else {
+          const token = await vscode.window.showInputBox({
+            title: 'Taskvalet computation credential', password: true, ignoreFocusOut: true,
+            prompt: 'Credential for ' + scope.server + ', project ' + scope.project,
+            validateInput: value => !value || value.length > 256 || /\s/.test(value) ? 'Enter a valid computation credential.' : undefined,
+          });
+          if (token === undefined) return;
+          if (!vscode.workspace.isTrusted) throw new Error('The workspace is no longer trusted.');
+          await context.secrets.store(scope.key, token);
+        }
+        environmentEpoch++;
+        for (const preview of [...previews.values()]) preview.panel.dispose();
+        void vscode.window.showInformationMessage('Taskvalet credential ' + (action === 'clear' ? 'removed.' : 'stored securely.'));
+      } catch (error) { void vscode.window.showErrorMessage(String(error)); }
+    },
+  ));
+  context.subscriptions.push(vscode.commands.registerCommand('glitnir.openSettings',
+    () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:gimle.glitnir')));
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(event => {
-      if (event.affectsConfiguration('glitnir.pythonPath')) environmentEpoch++;
+      if (executionSettings.some(key => event.affectsConfiguration('glitnir.' + key))) environmentEpoch++;
       let closed = false;
       for (const preview of previews.values()) {
-        if (event.affectsConfiguration('glitnir.pythonPath', preview.uri)) {
+        if (executionSettings.some(key => event.affectsConfiguration('glitnir.' + key, preview.uri))) {
           preview.panel.dispose(); closed = true;
         }
       }

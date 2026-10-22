@@ -246,3 +246,5 @@ notebooks and the claim graph.
   [third-party notices](https://github.com/arnovich/glitnir/blob/main/THIRD_PARTY_NOTICES.md).
   Pull requests are limited to
   [invited collaborators](https://github.com/arnovich/glitnir/blob/main/CONTRIBUTING.md).
+
+For optional remote Lean checks, see [Taskvalet computation workers](https://github.com/arnovich/glitnir/blob/main/docs/taskvalet-compute.md). Execution options are available in VS Code Settings; credentials use SecretStorage.

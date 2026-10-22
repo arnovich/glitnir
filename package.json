@@ -2,7 +2,7 @@
   "name": "glitnir",
   "displayName": "Glitnir \u2014 Lean Notebooks",
   "description": "Read, explore and check Lean notebooks beside their source.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "gimle",
   "license": "MIT",
   "icon": "extension/icon/glitnir-128.png",
@@ -113,6 +113,21 @@
         "command": "glitnir.reviewHelp",
         "title": "Keyboard Shortcuts",
         "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.openSettings",
+        "title": "Open Settings",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.setTaskvaletCredential",
+        "title": "Set Taskvalet Credential",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.clearTaskvaletCredential",
+        "title": "Clear Taskvalet Credential",
+        "category": "Glitnir"
       }
     ],
     "menus": {
@@ -167,7 +182,35 @@
           "minimum": 1024,
           "maximum": 32768,
           "scope": "resource",
-          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change."
+          "description": "Memory limit in megabytes for Lean checks, proof-step recording, views, evidence and decisions, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Changing this setting closes existing previews."
+        },
+        "glitnir.executionBackend": {
+          "type": "string",
+          "enum": [
+            "local",
+            "taskvalet"
+          ],
+          "default": "local",
+          "scope": "resource",
+          "description": "Run saved-file Lean checks locally or submit them asynchronously to Taskvalet. Other notebook operations stay local."
+        },
+        "glitnir.taskvaletServer": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "HTTPS origin of the Taskvalet server, for example https://tasks.example.com. Use Set Taskvalet Credential to store a credential securely."
+        },
+        "glitnir.taskvaletProject": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Taskvalet project permitted by the computation credential."
+        },
+        "glitnir.taskvaletEnvironment": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Versioned prepared environment registered by a computation worker. The source context and installed checker must match."
         }
       }
     },
