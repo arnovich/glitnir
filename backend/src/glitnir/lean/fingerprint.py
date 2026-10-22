@@ -3,6 +3,13 @@
 It reads small files Lean and Lake already maintain, never ``.olean`` files,
 and runs no project code. It decides whether saved results are still current;
 the full identity recorded by an explicit check stays the authority.
+
+The identity names no location: project sources are keyed by their path
+relative to the project, files and dependency states by their contents and
+commits, and each imported module by the build identity in its Lake trace
+(`trace_digest`). Saved results therefore stay current in another checkout,
+on another machine or operating system, exactly when the toolchain, sources,
+dependencies and compiled artifacts are byte-identical there.
 """
 
 import hashlib
@@ -114,16 +121,44 @@ def _trace_relative(module: str) -> Path | None:
     return Path(*parts[:-1], parts[-1] + ".trace")
 
 
+#: The parts of a Lake trace that identify a build; see `trace_digest`.
+_TRACE_IDENTITY = ("schemaVersion", "depHash", "outputs")
+
+
 def trace_digest(path: Path) -> str | None:
-    """Hash a Lake trace without its machine-specific build log."""
+    """Hash the build identity in a Lake trace: its schema, input hash and outputs.
+
+    Only ``schemaVersion``, ``depHash`` and ``outputs`` are hashed. ``depHash``
+    is the hash Lake compares to decide that a module is up to date: it mixes
+    the source text by content, the toolchain, the options and Lean arguments,
+    the module and package names, the libraries, and the import traces and
+    artifact hashes, and holds no path. ``outputs`` holds the content hashes of
+    the files the build produced. Lake 4.35 also writes ``inputs``, a debug
+    dump of the tree whose hashes ``depHash`` mixes, captioned, with the
+    source's absolute path as one caption (Lake never hashes captions);
+    ``log``, the command line with its paths; and ``synthetic``, true for a
+    trace fetched from a cache. All three are dropped, so the same build at
+    another path, or fetched instead of built, has the same digest; Mathlib's
+    traces carry none of them.
+
+    This is sound: dropping ``inputs`` drops only captions, since its hashes
+    are already in ``depHash``. Whatever a location really puts into compiled
+    bytes (a message, ``include_str`` data, a reflected file name) changes
+    ``outputs``, and through the artifact hashes the ``depHash`` of every module
+    importing it, so such a build still differs. A fetched trace records the
+    input hash as its ``depHash``, and equal ``outputs`` are equal bytes.
+
+    Returns None for an unreadable trace, or one without a string ``depHash``,
+    which identifies no build.
+    """
     try:
         trace = json.loads(read_regular(path, _MAX_FILE))
     except (OSError, ValueError, RecursionError):
         return None
-    if not isinstance(trace, dict):
+    if not isinstance(trace, dict) or not isinstance(trace.get("depHash"), str):
         return None
-    trace.pop("log", None)
-    return hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest()
+    identity = {key: trace.get(key) for key in _TRACE_IDENTITY}
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
 def _reason(text: str) -> str:
@@ -622,6 +657,14 @@ def environment_fingerprint(
 ) -> dict[str, Any]:
     """Identify toolchain, Lake files, builds, project sources and dependencies.
 
+    The identity holds no absolute path: the toolchain named by
+    ``lean-toolchain``, the Lake files by content, each dependency by its
+    manifest revision, HEAD and cleanliness, each imported module by its
+    `trace_digest`, the project sources by relative path and content
+    (`project_sources`), and the checker (`checker_identity`). So the same
+    sources and byte-identical builds in another checkout, or on another
+    machine, give the same digest, and results saved there are current here.
+
     `imports` are modules loaded besides the notebook's own, as a view or
     evidence provider's are: their project sources and build traces count as
     the notebook's imports do. `known_packages`, the dependency states of another
@@ -727,7 +770,7 @@ def environment_fingerprint(
 
 def _digest(identity: dict[str, Any]) -> str:
     return hashlib.sha256(
-        b"glitnir.environment-fingerprint/v3\0"
+        b"glitnir.environment-fingerprint/v4\0"
         + json.dumps(identity, sort_keys=True).encode()
     ).hexdigest()
 
