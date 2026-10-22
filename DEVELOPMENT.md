@@ -163,12 +163,12 @@ test allows each block 300 s to check (on CI's Linux runners a block takes
 `FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
 [plugin README](plugins/forseti/README.md) shows how to run them.
 
-Verified on 2026-10-15 against forseti-lean `c65dada` (Lean 4.32.1): the opt-in
-live tests passed for proven and refuted `entailment` and `trajectory` decisions
-and for `simulate` evidence. `stream` decisions and `iterate` evidence have not
-been run through Glitnir's checker yet. CI's `plugin-live` job now runs all of
-the plugin's Lean tests on Linux against the pinned release; run them locally
-for macOS. The plugin README records later runs.
+CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
+pinned release; run them locally for macOS. Its first all-green run was run
+39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
+Lean 4.35.0. `stream` decisions and `iterate` evidence have not been run through
+Glitnir's checker yet (`iterate` needs Python Asgard, which CI does not
+install). The plugin README records the runs.
 
 ## Continuous integration
 
