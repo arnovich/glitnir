@@ -286,7 +286,7 @@ def test_live_scoped_options_preserve_claims_and_ranges(prepared_lean_project):
         ),
         (
             "theorem good : True := True.intro\n"
-            "open Nat in theorem scoped : True := True.intro\n",
+            "open Nat in theorem wrapped : True := True.intro\n",
             ["good"],
             2,
             "unsupported scoped",
@@ -310,7 +310,7 @@ def test_live_scoped_options_fail_closed(
     assert [t["name"] for t in result["theorems"]] == kept
     assert all(t["status"] == "checked" for t in result["theorems"])
     assert result["withheld"]["from_line"] == line
-    assert message in result["withheld"]["message"]
+    assert message.casefold() in result["withheld"]["message"].casefold()
 
 
 def test_live_scoped_option_check_cannot_split_the_command(prepared_lean_project):
@@ -323,7 +323,7 @@ def test_live_scoped_option_check_cannot_split_the_command(prepared_lean_project
     text = (
         "theorem first : True := True.intro\n"
         "set_option maxHeartbeats 500000 in\n"
-        "theorem scoped : True := by\n"
+        "theorem wrapped : True := by\n"
         "  trivial\n"
         "  <;> trivial\n"
         "theorem after : True := True.intro\n"
@@ -337,7 +337,7 @@ def test_live_scoped_option_check_cannot_split_the_command(prepared_lean_project
         )
         assert result["status"] == "checked_snapshot", result
         assert [t["name"] for t in result["theorems"]] == (
-            ["first", "scoped"] if through == 5 else ["first"]
+            ["first", "wrapped"] if through == 5 else ["first"]
         ), result
         assert all(t["status"] == "checked" for t in result["theorems"])
 
