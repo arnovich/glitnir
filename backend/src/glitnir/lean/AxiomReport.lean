@@ -39,8 +39,8 @@ reducibility hints are left out too: they only order the kernel's unfolding,
 never what a term means. A canonical proposition also leaves out the names of
 universe parameters: each constant's are bound by that declaration alone and
 instantiated by position, so it writes their count and each use as its
-position in the list of the constant it occurs in (task 176). `L.{u}` and
-`L.{u_1}` over the same type are then one proposition, while the order of the
+position in the list of the constant it occurs in. `L.{u}` and `L.{u_1}`
+over the same type are then one proposition, while the order of the
 parameters is kept. Everything else is kept, including binder kinds,
 literals, recursor rules and, in a canonical entry, universe parameter names.
 
