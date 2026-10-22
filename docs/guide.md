@@ -218,6 +218,12 @@ every result.
 
 ### What a check accepts
 
+Named theorems may use `set_option ... in`, including nested options. The option
+applies only to that theorem, and its checked source range includes the whole
+wrapper. A partial check cannot split the wrapper from the theorem or shorten its
+proof. Other scoped commands, including `open ... in` and scoped anonymous
+`example` declarations, remain unsupported and withhold the check from there.
+
 Besides declarations, `namespace`/`section`/`end`, `open`, `export`, `variable`,
 `set_option`, `attribute` and module docs, a notebook may use `#print axioms c`.
 It only prints and decides nothing: statuses come from the kernel replay's own

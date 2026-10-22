@@ -42,6 +42,29 @@ private def theoremCommand (stx : Syntax) : Bool :=
   (stx.getKind == ``Lean.Parser.Command.declaration &&
     stx[1].getKind == ``Lean.Parser.Command.theorem) || stx.getKind == `lemma
 
+/-- Peel only scoped options around a named theorem. Other `in` commands stay
+unsupported; in particular, examples keep their existing keyword-only rewrite. -/
+private def scopedTheorem (stx : Syntax) : Option (Array Syntax × Syntax) := Id.run do
+  let mut wrappers := #[]
+  let mut command := stx
+  while command.getKind == ``Lean.Parser.Command.in do
+    unless command.getNumArgs == 3 &&
+        command[0].getKind == ``Lean.Parser.Command.set_option do return none
+    wrappers := wrappers.push command
+    command := command[2]
+  if !wrappers.isEmpty && !theoremCommand command then return none
+  return some (wrappers, command)
+
+/-- Restore the exact scoped syntax around a theorem whose proof was masked. -/
+private def wrapOptions (wrappers : Array Syntax) (command : Syntax) : Syntax :=
+  wrappers.foldr (fun wrapper body => wrapper.setArg 2 body) command
+
+/-- Re-enter the options for display only, after Lean closed the theorem's scope. -/
+private def inOptionScope (wrappers : Array Syntax) (act : Command.CommandElabM α) :
+    Command.CommandElabM α := Command.withScope id do
+  for wrapper in wrappers do Command.elabCommandTopLevel wrapper[0]
+  act
+
 private def exampleCommand (stx : Syntax) : Bool :=
   stx.getKind == ``Lean.Parser.Command.declaration &&
     stx[1].getKind == ``Lean.Parser.Command.example
@@ -182,7 +205,11 @@ def main (args : List String) : IO UInt32 := do
       writeFailure report commandStart.byteIdx declarations
       return 3
     if stx.getKind == ``Lean.Parser.Command.eoi then break
-    unless allowed stx.getKind || printAxioms stx.getKind do
+    let some (wrappers, declaration) := scopedTheorem stx | do
+      IO.eprintln "unsupported scoped reference command; only set_option around named theorems is supported"
+      writeFailure report commandStart.byteIdx declarations
+      return 4
+    unless allowed declaration.getKind || printAxioms declaration.getKind do
       IO.eprintln s!"unsupported reference command: {stx.getKind}"
       writeFailure report commandStart.byteIdx declarations
       return 4
@@ -195,8 +222,8 @@ def main (args : List String) : IO UInt32 := do
     let context : Command.Context := {
       cmdPos := start, fileName := source, fileMap := inputCtx.fileMap,
       snap? := none, cancelTk? := none }
-    let mut command := stx
-    let mut isTheorem := theoremCommand stx
+    let mut command := declaration
+    let mut isTheorem := theoremCommand declaration
     let mut keyword : Option (Nat × Nat) := none
     let mut plainExample : Option (Nat × Nat) := none
     if exampleCommand stx then
@@ -235,7 +262,8 @@ def main (args : List String) : IO UInt32 := do
       return 4
     let before := state.env.constants.map₂.toList.map (·.1)
     let act : Command.CommandElabM Unit := do
-      Command.elabCommandTopLevel (← if isTheorem then noProof command else pure command)
+      let reference ← if isTheorem then noProof command else pure command
+      Command.elabCommandTopLevel (wrapOptions wrappers reference)
     match ← runCommand context state act with
     | none =>
       IO.eprintln "reference elaboration raised an exception"
@@ -267,7 +295,8 @@ def main (args : List String) : IO UInt32 := do
           | some (first, last) => [("keyword", toJson #[first, last])]
           | none => []
         -- Printed in this command's scope; a failure only leaves it out.
-        let statement := match ← runCommand context state (statementText names[0]!) with
+        let statement := match ← runCommand context state
+            (inOptionScope wrappers (statementText names[0]!)) with
           | some (some text, _, _) => [("statement", toJson text)]
           | _ => []
         declarations := declarations.push <| Json.mkObj <| [
