@@ -300,8 +300,6 @@ jobs:
           # A cold first check replays Mathlib and Forseti; let a waiting check
           # outlast it (the editor's timeout setting, at its cap).
           GLITNIR_ELABORATION_TIMEOUT_MS: '1800000'
-          # Provisional, until Linux timings set the stepped budget in the test.
-          FORSETI_CHECK_BUDGET_MS: '600000'
           SHARD: ${{ matrix.shard }}
         run: |
           export FORSETI_LEAN_PROJECT="$RUNNER_TEMP/forseti-lean"

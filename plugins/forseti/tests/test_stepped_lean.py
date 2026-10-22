@@ -22,9 +22,9 @@ marks, where the hold does no work that long. The proofs of a fixed-date bound
 and an expectation may unroll a recursion over every mark (``proxyRec``,
 ``geomSum``), so their cap is lower, and each is checked at it.
 
-A check is held to a budget of `CHECK_BUDGET_MS`, two minutes unless the
+A check is held to a budget of `CHECK_BUDGET_MS`, five minutes unless the
 environment variable ``FORSETI_CHECK_BUDGET_MS`` names another number of
-milliseconds, as a loaded machine may need.
+milliseconds, as a loaded or slower machine may need.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
@@ -61,7 +61,7 @@ from glitnir_forseti.stepped.models import HEDGED_SPREAD_STEPPED
 STANDARD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 #: The longest a block may take to check, in milliseconds, unless the
 #: environment says otherwise (`_check_budget_ms`).
-CHECK_BUDGET_MS = 120_000
+CHECK_BUDGET_MS = 300_000
 #: A block that needs nothing, to have the checker replay a notebook's imports.
 WARM_BLOCK = "theorem warm_up : True := trivial"
 #: The compiled hedged spread a ``sample`` directive names, and its options. The
@@ -305,7 +305,7 @@ def test_an_unset_or_empty_budget_is_the_default(
         monkeypatch.delenv("FORSETI_CHECK_BUDGET_MS", raising=False)
     else:
         monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
-    assert _check_budget_ms() == CHECK_BUDGET_MS == 120_000
+    assert _check_budget_ms() == CHECK_BUDGET_MS == 300_000
 
 
 def test_a_budget_is_a_whole_number_of_milliseconds(

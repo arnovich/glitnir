@@ -158,7 +158,8 @@ under it a test using that checkout that skips at run time fails too; a skip it
 declares with a `skipif` mark (another platform's sandbox probes) or for the
 optional `simulation` input stays a skip. Plugin
 tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live
-test allows each block 120 s to check; on a loaded machine raise that with
+test allows each block 300 s to check (on CI's Linux runners a block takes
+112–122 s); on a loaded or slower machine raise that with
 `FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
 [plugin README](plugins/forseti/README.md) shows how to run them.
 
@@ -194,9 +195,7 @@ jobs are:
   slow Lean modules of each shard, puts every other module in `rest` and gives
   the matrix its shard names, so together the shards run the suite exactly once.
   Each test's name, outcome and time are printed as it finishes. It runs on
-  every pull request and `main` push; no test runs the community REPL. The
-  stepped budget is raised to 600 s there provisionally
-  (`FORSETI_CHECK_BUDGET_MS`), until Linux timings set it.
+  every pull request and `main` push; no test runs the community REPL.
 - **candidate** creates a release candidate from a `main` push when the
   extension, live and helpers jobs and every plugin-live shard pass and the
   `RELEASE_CANDIDATES` repository variable is `true`
