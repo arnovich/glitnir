@@ -67,6 +67,25 @@ large to load again, the whole section is dropped (the views are drawn again
 when asked for) before anything is refused. A drawing grants or changes no
 status. Records without the section (written by 0.1.2) read as holding no
 drawings.
+
+Saved failed evidence runs (the optional `"evidence_failures"` section,
+`{key: entry}`) are keyed like evidence. Each entry is `{"prefix_sha256",
+"fingerprint", "provider", "created", "kind", "message"}`, with the first four
+as for evidence (a failure in an unknown environment is never saved), `kind`
+one of `EVIDENCE_FAILURE_KINDS` and `message` at most `MAX_MESSAGE` characters.
+A failure follows the evidence currency rule (`evidence_status`). A success
+removes the failure saved for its directive; a failure saved after a success
+keeps both. The section is read leniently: an entry that is malformed, or of a
+kind this version does not know (written by a later one), is dropped as the
+file is read, a malformed section reads as empty, and a failure saved before
+the evidence saved for its directive is ignored, so each is gone at the next
+write. Neither makes the file unreadable. Evidence entries and the format are
+unchanged by it, because Glitnir 0.1.2 to 0.1.6 refuse the whole file on any
+other format or evidence entry, but ignore top-level sections they do not know:
+they read these records with their claims and evidence. A check by one of them
+drops the section, and a success saved by one of them leaves an older failure
+in place, which is then ignored. When saving would make the records too large,
+the failures are dropped after the drawings, before anything is refused.
 """
 
 import copy
@@ -107,7 +126,7 @@ RESULTS_TOO_LARGE = (
     "the results file would exceed 16 MiB; nothing saved before was dropped"
 )
 # Saved results that a check carries over but neither makes nor judges.
-_RESULT_SECTIONS = ("evidence", "decisions", "views")
+_RESULT_SECTIONS = ("evidence", "decisions", "views", "evidence_failures")
 _NON_CLAIM_KEYS: dict[str, type] = {
     "start_line": int,
     "end_line": int,
@@ -116,6 +135,14 @@ _NON_CLAIM_KEYS: dict[str, type] = {
 }
 _EVIDENCE_KEYS = ("prefix_sha256", "fingerprint", "provider", "created")
 _VIEW_KEYS = (*_EVIDENCE_KEYS, "provider_sha256")
+_FAILURES = "evidence_failures"
+_FAILURE_KEYS = (*_EVIDENCE_KEYS, "kind", "message")
+#: What made a saved evidence run fail: Lean's own error for the directive, a
+#: provider crash, the provider's refusal, output that is not evidence, or the
+#: run's own time limit.
+EVIDENCE_FAILURE_KINDS = frozenset(
+    {"lean", "provider", "refused", "invalid", "timeout"}
+)
 #: The largest the saved drawings may be together, serialised as saved.
 MAX_VIEWS_BYTES = 4 * 1024 * 1024
 _VERIFICATION_KEYS = frozenset({"status", "message", "axioms", "type"})
@@ -178,6 +205,59 @@ def _evidence_entry_ok(entry: Any) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _failure_entry_ok(entry: Any) -> bool:
+    """Whether `entry` holds the saved fields of a failed evidence run."""
+    if not isinstance(entry, dict) or set(entry) != set(_FAILURE_KEYS):
+        return False
+    if not all(isinstance(entry[key], str) for key in _FAILURE_KEYS):
+        return False
+    return (
+        _created_ok(entry["created"])
+        and entry["kind"] in EVIDENCE_FAILURE_KINDS
+        and len(entry["message"]) <= MAX_MESSAGE
+    )
+
+
+def _before(created: str, other: str) -> bool:
+    """Whether the saved time `created` is strictly earlier than `other`."""
+    return datetime.fromisoformat(created) < datetime.fromisoformat(other)
+
+
+def _lenient_failures(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Return the saved failures still worth showing; malformed ones are dropped.
+
+    A section that is not an object reads as empty. A failure saved before the
+    evidence saved for its directive is out of date and dropped too.
+    """
+    if records is None:
+        return {}
+    failures = records.get(_FAILURES, {})
+    if not isinstance(failures, dict):
+        return {}
+    evidence = records.get("evidence", {})
+    kept = {}
+    for key, entry in failures.items():
+        if not _failure_entry_ok(entry):
+            continue
+        saved = evidence.get(key) if isinstance(evidence, dict) else None
+        if isinstance(saved, dict) and _evidence_entry_ok(saved):
+            if _before(entry["created"], saved["created"]):
+                continue
+        kept[key] = dict(entry)
+    return kept
+
+
+def _with_lenient_failures(records: dict[str, Any]) -> dict[str, Any]:
+    """Return ``records`` with only the failures `_lenient_failures` keeps."""
+    if _FAILURES not in records:
+        return records
+    failures = _lenient_failures(records)
+    result = {k: v for k, v in records.items() if k != _FAILURES}
+    if failures:
+        result[_FAILURES] = failures
+    return result
 
 
 def _view_entry_ok(entry: Any) -> bool:
@@ -264,11 +344,16 @@ def _uses_ok(uses: Any) -> bool:
     )
 
 
-def _shortened(statement: str) -> str:
+def _shortened(statement: str, limit: int = MAX_TYPE) -> str:
     """Return ``statement`` within the saved length, marked when cut."""
-    if len(statement) <= MAX_TYPE:
+    if len(statement) <= limit:
         return statement
-    return statement[: MAX_TYPE - 1] + "…"
+    return statement[: limit - 1] + "…"
+
+
+def failure_message(message: str) -> str:
+    """Return a failed run's message within `MAX_MESSAGE`, marked "…" when cut."""
+    return _shortened(message, MAX_MESSAGE)
 
 
 def _withheld_ok(withheld: Any) -> bool:
@@ -365,7 +450,7 @@ def load_records(notebook: Path) -> dict[str, Any] | None:
         return None
     if not _well_formed(records):
         return None
-    return records
+    return _with_lenient_failures(records)
 
 
 def _upgraded(records: dict[str, Any]) -> dict[str, Any] | None:
@@ -413,13 +498,15 @@ def _too_large(records: dict[str, Any]) -> bool:
 
 
 def _fitted(records: dict[str, Any]) -> dict[str, Any]:
-    """Return ``records``, without its saved drawings if they make it too large.
+    """Return ``records``, without saved drawings and failures if too large.
 
     Drawings are a cache, drawn again when asked for, so they never stop what
-    a check, evidence or a decision found from being saved.
+    a check, evidence or a decision found from being saved. Saved failures
+    only say that a run failed, so they go next.
     """
-    if "views" in records and _too_large(records):
-        return {k: v for k, v in records.items() if k != "views"}
+    for section in ("views", _FAILURES):
+        if section in records and _too_large(records):
+            records = {k: v for k, v in records.items() if k != section}
     return records
 
 
@@ -448,15 +535,16 @@ def records_from_check(
 ) -> dict[str, Any]:
     """Build records from a completed check of ``text``.
 
-    Saved evidence, decisions and drawings in the ``previous`` records are
-    carried over unchanged: a check neither makes nor judges them. The saved
-    drawings are dropped instead when they would make the records too large.
+    Saved evidence, decisions, drawings and failed evidence runs in the
+    ``previous`` records are carried over unchanged: a check neither makes nor
+    judges them. The saved drawings, then the saved failures, are dropped
+    instead when they would make the records too large.
     Raises:
         ValueError: ``fingerprint`` is not an environment digest (see
             `fingerprint_ok`), or the records, with the saved evidence and
             decisions they keep, would be too large to load again even without
-            the drawings. Nothing is then saved, so nothing saved before is
-            lost.
+            the drawings and failures. Nothing is then saved, so nothing saved
+            before is lost.
     """
     if not fingerprint_ok(fingerprint):
         raise ValueError(UNKNOWN_FINGERPRINT)
@@ -533,7 +621,11 @@ def records_from_check(
         records["non_claims"] = non_claims
     kept = dict(records)
     for section in _RESULT_SECTIONS:
-        saved = _saved(previous, section)
+        saved = (
+            _lenient_failures(previous)
+            if section == _FAILURES
+            else _saved(previous, section)
+        )
         if saved:
             kept[section] = saved
     kept = _fitted(kept)
@@ -691,6 +783,17 @@ def saved_views(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     return _saved(records, "views")
 
 
+def saved_evidence_failures(
+    records: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """Return the saved failed evidence runs by directive key, read leniently.
+
+    Malformed failures, failures of kinds this version does not know and
+    failures saved before their directive's evidence are left out.
+    """
+    return _lenient_failures(records)
+
+
 def _refuse_unreadable(
     records: dict[str, Any] | None, notebook: Path | None, action: str
 ) -> None:
@@ -715,11 +818,14 @@ def _with_entry(
 ) -> dict[str, Any]:
     """Save ``entry`` under ``key`` in ``section``, pruning keys not kept.
 
-    Saving evidence or a decision drops the saved drawings when they would make
-    the records too large; saving a drawing never does.
+    Saving anything but a drawing drops the saved drawings, then the saved
+    failures, when they would make the records too large; saving a drawing
+    never does. Failures that `_lenient_failures` drops are dropped here too.
     """
     _refuse_unreadable(records, notebook, f"saving {section}")
     wanted = {*keep, key}
+    if records is not None:
+        records = _with_lenient_failures(records)
     entries = {k: v for k, v in _saved(records, section).items() if k in wanted}
     # A copy, so later changes to the caller's entry never reach the records.
     entries[key] = copy.deepcopy(entry)
@@ -768,6 +874,15 @@ def with_evidence(
         raise ValueError("The evidence entry is malformed.")
     if not fingerprint_ok(entry["fingerprint"]):
         raise ValueError(f"The evidence cannot be saved: {UNKNOWN_FINGERPRINT}.")
+    keep = tuple(keep)
+    if records is not None and _FAILURES in records:
+        # This success replaces the directive's failure; gone directives
+        # lose theirs.
+        wanted = set(keep) - {key}
+        failures = {k: v for k, v in _lenient_failures(records).items() if k in wanted}
+        records = {k: v for k, v in records.items() if k != _FAILURES}
+        if failures:
+            records[_FAILURES] = failures
     return _with_entry(
         records,
         "evidence",
@@ -777,6 +892,48 @@ def with_evidence(
         notebook,
         "remove some evidence directives or shorten their runs",
     )
+
+
+def with_evidence_failure(
+    records: dict[str, Any] | None,
+    key: str,
+    entry: dict[str, Any],
+    keep: Iterable[str],
+    notebook: Path | None = None,
+) -> dict[str, Any]:
+    """Return ``records`` with the failed run ``entry`` saved under ``key``.
+
+    Like ``with_evidence``: failures for keys that are neither ``key`` nor in
+    ``keep`` are dropped, and an unreadable records file is never replaced.
+    The evidence saved for ``key``, if any, is kept: it is still valid for its
+    own source and environment.
+
+    Raises:
+        ValueError: ``entry`` is not a well-formed saved failure (its message
+            within `MAX_MESSAGE`, see `failure_message`), its fingerprint is
+            not an environment digest, an unreadable records file would be
+            overwritten, or the failure does not fit in the records even
+            without the saved drawings: it is then not saved.
+    """
+    if not _failure_entry_ok(entry):
+        raise ValueError("The evidence failure entry is malformed.")
+    if not fingerprint_ok(entry["fingerprint"]):
+        raise ValueError(f"The failure cannot be saved: {UNKNOWN_FINGERPRINT}.")
+    result = _with_entry(
+        records,
+        _FAILURES,
+        key,
+        entry,
+        keep,
+        notebook,
+        "the failure is shown but not saved",
+    )
+    if _FAILURES not in result:
+        raise ValueError(
+            "Saved evidence failures would make the records file too large; "
+            "the failure is shown but not saved."
+        )
+    return result
 
 
 def with_decision(
