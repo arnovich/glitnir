@@ -178,6 +178,7 @@ def evidence_cards(
                 "status": "never",
                 "run_error": None,
                 "snapshot": None,
+                "failure": None,
             }
         )
     return cards

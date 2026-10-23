@@ -69,9 +69,14 @@ earlier as a card with a chart, provenance and a **Run** button, for example
 `-- @evidence simulate dissipative (h := 1/100) (steps := 400)`, or sampled
 paths of a stepped model under random shocks (`-- @evidence sample`). It runs
 only when you click **Run**, one run at a time, and the result is saved in
-`<Notebook>.glitnir.json`. A card is Never run, Running, Current or Out of date
-(anything above the directive, or the environment, changed). Evidence is never
-proof: it changes no claim's status and not the check exit code. Without a
+`<Notebook>.glitnir.json`. A card is Never run, Running, Current, Failed or Out
+of date (anything above the directive, or the environment, changed). A failed
+run is saved too when it failed in Lean, in the provider, with output that is
+not evidence, or at its time limit: the card then reads Failed, or keeps its
+last chart with a note that the last run failed. A provider crash is saved as
+its exception type only. Failures of the setup, such as an unbuilt module or a
+missing Python dependency, are shown but not saved. Evidence is never proof: it changes no claim's status
+and not the check exit code. Without a
 provider the line shows why, and saved results stay viewable.
 
 Views are drawn with the notebook's proofs skipped: theorem and lemma proofs are

@@ -290,7 +290,9 @@ def _iterated(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]
         import gimle.asgard
         import gimle.asgard.rational_interchange  # noqa: F401 - the decoder
     except ImportError as error:  # removed, or broken, since the card was read
-        raise EvidenceError(f"{NEEDS_ASGARD} ({error})") from None
+        # A setup failure, not a refusal of this request: as an ImportError,
+        # Glitnir shows it but never saves it with the notebook.
+        raise ImportError(f"{NEEDS_ASGARD} ({error})") from None
 
     denotation = evidence.update_polynomials(emitted, simulation)
     terms = sum(len(output) for output in denotation.outputs)
