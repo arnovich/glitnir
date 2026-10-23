@@ -405,3 +405,42 @@ def test_live_trace_keeps_header_and_parse_errors(tmp_path, text, expected):
     )
     result = validate_trace(json.loads(report.read_text()), text)
     assert any(expected in error for error in result["errors"]), result["errors"]
+
+
+def test_a_trace_is_kept_awake_and_notes_sleep(tmp_path, monkeypatch, awake_depth):
+    """The whole observation holds the assertion; its progress notes sleep."""
+    import json
+
+    from glitnir.lean import awake as awake_module
+    from glitnir.lean import proof_trace
+
+    class Slept:
+        def note(self) -> str:
+            return " (the computer slept for 3 min)"
+
+    depth = awake_depth(proof_trace)
+    monkeypatch.setattr(awake_module, "SleepWatch", Slept)
+    text = "theorem t : True := by trivial\n"
+    source = tmp_path / "A.lean"
+    source.write_text(text)
+    monkeypatch.setattr(proof_trace, "_toolchain", lambda: tmp_path)
+    held: list[int] = []
+
+    def run(runtime, arguments, **options):
+        held.append(depth[0])
+        Path(arguments[-1]).write_text(
+            json.dumps({"nodes": [], "errors": [], "warnings": []})
+        )
+
+    monkeypatch.setattr(proof_trace, "run_observer", run)
+    messages: list[str] = []
+    result = proof_trace.trace_file(
+        source,
+        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+        progress=messages.append,
+    )
+    assert result["status"] == "ready", result
+    assert held == [1] and depth == [0]
+    assert messages and all(
+        m.endswith(" (the computer slept for 3 min)") for m in messages
+    )

@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from glitnir.lean import replay_cache
 from glitnir.lean.artifacts import olean_path
-from glitnir.lean.awake import awake
+from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.environment import (
     LEAN_AXIOM_ALLOWLIST,
@@ -1008,8 +1008,11 @@ def _check_text(
     expected_sha256 = hashlib.sha256(text.encode()).hexdigest()
     # A check waits for another Lean run, a view say, rather than failing at
     # once, so views drawn one after another never keep it out.
+    # The Mac is kept awake from the slot to the last Lean process: the stages
+    # between Lean runs, the snapshot capture above all, take minutes too.
     with (
         snapshot_slot(cancel=cancellation, waiting=lambda: progress(SLOT_WAITING)),
+        awake(),
         scratch_directory("glitnir-check-") as temporary,
         artifact_lease(temporary) as store,
     ):
@@ -1519,6 +1522,7 @@ def check_project(
     is ever compiled shortened. Where there is none, the check is refused.
     """
     cancellation = cancel if cancel is not None else threading.Event()
+    progress = noting_sleep(progress)
     try:
         if cancellation.is_set():
             raise SnapshotError("Project check cancelled.")

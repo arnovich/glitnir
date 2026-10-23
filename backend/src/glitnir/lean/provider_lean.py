@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean import fingerprint
+from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
@@ -402,7 +403,7 @@ def run_provider_batch(
     provider's imports; when it is a valid digest the prepared Lake setup is
     reused for it (see `_SETUPS`), otherwise it is prepared for this run.
     """
-    report = progress or (lambda _message: None)
+    report = noting_sleep(progress or (lambda _message: None))
     try:
         if describe_project(source)["kind"] != "lake":
             return {"error": LAKE_NEEDED[needs]}
@@ -437,6 +438,7 @@ def run_provider_batch(
         )
         with (
             slot,
+            awake(),
             scratch_directory("glitnir-view-") as temporary,
         ):
             root = Path(temporary).resolve()

@@ -2704,6 +2704,62 @@ def _fake_check_stages(tmp_path, monkeypatch) -> list[list[str]]:
     return calls
 
 
+class _Slept:
+    """A sleep watch whose note a test sets."""
+
+    note_text = ""
+
+    def note(self) -> str:
+        return self.note_text
+
+
+def test_a_check_is_kept_awake_from_capture_to_its_last_lean_run(
+    tmp_path, monkeypatch, awake_depth
+):
+    """The assertion covers the whole check, not only each Lean process.
+
+    The capture between Lean runs is held too, and a progress message after
+    the computer slept says how long it slept.
+    """
+    import hashlib
+
+    from glitnir.lean import awake as awake_module
+    from glitnir.lean import project_checking as checking
+
+    _fake_check_stages(tmp_path, monkeypatch)
+    depth = awake_depth(checking)
+    monkeypatch.setattr(awake_module, "SleepWatch", _Slept)
+    seen: list[tuple[str, int]] = []
+    capture, run = checking.capture, checking.run_observer
+
+    def held_capture(*args, **options):
+        seen.append(("capture", depth[0]))
+        _Slept.note_text = " (the computer slept for 12 min)"
+        return capture(*args, **options)
+
+    def held_run(*args, **options):
+        seen.append(("lean", depth[0]))
+        return run(*args, **options)
+
+    monkeypatch.setattr(checking, "capture", held_capture)
+    monkeypatch.setattr(checking, "run_observer", held_run)
+    monkeypatch.setattr(_Slept, "note_text", "")
+    source = tmp_path / "A.lean"
+    source.write_text("def x : Nat := 1\n")
+    messages: list[str] = []
+    result = checking.check_project(
+        source,
+        expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        progress=messages.append,
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert seen == [("capture", 1)] + [("lean", 1)] * 5
+    assert depth == [0]
+    assert messages[0] == "Preparing isolated environment"
+    assert len(messages) > 1
+    assert all(m.endswith(" (the computer slept for 12 min)") for m in messages[1:])
+
+
 @pytest.mark.parametrize(
     "configured, expected", [(None, "-M16384"), ("20480", "-M20480")]
 )

@@ -1,5 +1,6 @@
 """Shared fixtures for the project-mode Lean checking tests."""
 
+import contextlib
 import os
 
 import pytest
@@ -53,6 +54,31 @@ def no_startup_sweep(monkeypatch):
 def no_caffeinate(monkeypatch):
     """Start no caffeinate, which tests patching `subprocess.Popen` would catch."""
     monkeypatch.setattr("glitnir.lean.awake._enabled", lambda: False)
+
+
+@pytest.fixture
+def awake_depth(monkeypatch):
+    """Replace a module's `awake` with one that counts the blocks holding it.
+
+    `awake_depth(module)` returns a one-item list holding the current depth,
+    so a fake stage can assert that the run keeps the computer awake.
+    """
+
+    def install(module):
+        depth = [0]
+
+        @contextlib.contextmanager
+        def counted():
+            depth[0] += 1
+            try:
+                yield
+            finally:
+                depth[0] -= 1
+
+        monkeypatch.setattr(module, "awake", counted)
+        return depth
+
+    return install
 
 
 @pytest.fixture
