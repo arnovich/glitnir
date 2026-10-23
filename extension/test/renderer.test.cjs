@@ -597,6 +597,90 @@ test('an errored evidence card shows its error, then at most the failed run', as
   } finally { window.close(); }
 });
 
+// A saved failed run as the server lists it on a card.
+function evidenceFailure(fields = {}) {
+  return {kind: 'lean', message: "Line 1: unknown identifier 'x'", created: '2026-10-15T12:00:00+00:00', status: 'current', ...fields};
+}
+
+test('a saved failed run reads Failed with its message, never Never run', async () => {
+  const hostile = '<img src=x onerror=alert(1)>';
+  const window = await renderSnapshot(evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'failed', failure: evidenceFailure({message: `Line 1: ${hostile}`})})]));
+  try {
+    const card = window.document.querySelector('#doc .evidence');
+    const pill = card.querySelector('.box-head .pill');
+    assert.deepEqual([pill.textContent, pill.dataset.tone], ['Failed', 'red']);
+    const notes = [...card.querySelectorAll('.note-line')];
+    assert.deepEqual(notes.map(n => [n.textContent, n.dataset.tone]), [[`The last run failed on 2026-10-15: Line 1: ${hostile}`, 'red']]);
+    assert.equal(window.document.querySelectorAll('#doc img').length, 0, 'the saved message is text');
+    assert.doesNotMatch(card.textContent, /Not run yet/);
+    const run = card.querySelector('[data-act="evidence-run"]');
+    assert.equal(run.textContent, 'Run again');
+    assert.ok(run.classList.contains('primary'));
+  } finally { window.close(); }
+});
+
+test('a failure after a current run notes it above the chart', async () => {
+  const window = await renderSnapshot(evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'current', snapshot: evidenceBody(), failure: evidenceFailure()})]));
+  try {
+    const card = window.document.querySelector('#doc .evidence');
+    assert.equal(card.querySelector('.box-head .pill').textContent, 'Current');
+    const note = card.querySelector('.note-line');
+    assert.equal(note.textContent, "The last run failed on 2026-10-15: Line 1: unknown identifier 'x'");
+    assert.equal(note.dataset.tone, 'red');
+    assert.ok(note.compareDocumentPosition(card.querySelector('.evidence-charts')) & window.Node.DOCUMENT_POSITION_FOLLOWING, 'the note comes before the chart');
+    const run = card.querySelector('[data-act="evidence-run"]');
+    assert.equal(run.textContent, 'Run again');
+    assert.ok(run.classList.contains('secondary'), 'a current card is not urged to run');
+  } finally { window.close(); }
+});
+
+test('an out-of-date failure without saved evidence says an earlier run failed', async () => {
+  const window = await renderSnapshot(evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'stale', failure: evidenceFailure({status: 'stale'})})]));
+  try {
+    const card = window.document.querySelector('#doc .evidence');
+    const pill = card.querySelector('.box-head .pill');
+    assert.deepEqual([pill.textContent, pill.dataset.tone], ['Out of date', 'amber']);
+    const notes = [...card.querySelectorAll('.note-line')].map(n => [n.textContent, n.dataset.tone]);
+    assert.deepEqual(notes, [["An earlier run, on different source or environment, failed: Line 1: unknown identifier 'x'", 'amber']]);
+    assert.doesNotMatch(card.textContent, /Not run yet/);
+    const run = card.querySelector('[data-act="evidence-run"]');
+    assert.equal(run.textContent, 'Run again');
+    assert.ok(run.classList.contains('primary'));
+  } finally { window.close(); }
+});
+
+test('this session\'s run error is shown in place of a saved failure', async () => {
+  const window = await renderSnapshot(evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'failed', run_error: 'crashed', failure: evidenceFailure()})]));
+  try {
+    const notes = [...window.document.querySelectorAll('#doc .evidence .note-line')].map(n => n.textContent);
+    assert.deepEqual(notes, ['The last run failed: crashed']);
+  } finally { window.close(); }
+});
+
+test('saved failures shown as recorded say so, on the page and in its export', async () => {
+  const text = 'def M := 1\n-- @evidence simulate M\n-- @evidence simulate M (h := 1)';
+  const window = await renderSnapshot(evidenceSnapshot(text, [
+    evidenceEntry({line: 2, status: 'failed', failure: evidenceFailure()}),
+    evidenceEntry({line: 3, status: 'current', snapshot: evidenceBody(), failure: evidenceFailure({message: 'later'})}),
+  ], {preview: {mode: 'project', recorded: true, notice: 'Saved results, shown as recorded.', project: {kind: 'lake', root: '.', toolchain: 't'}}}), {katex: true});
+  const shows = (d, where) => {
+    const cards = [...d.querySelectorAll('.evidence')];
+    assert.deepEqual(cards.map(c => c.querySelector('.pill').textContent), ['Failed, as recorded', 'As recorded'], where);
+    assert.equal(cards[0].querySelector('.pill').dataset.tone, 'red', where);
+    assert.match(cards[0].textContent, /The last run failed on 2026-10-15: Line 1: unknown identifier 'x'/, where);
+    assert.match(cards[1].textContent, /The last run failed on 2026-10-15: later/, where);
+    assert.equal(d.querySelectorAll('[data-act="evidence-run"]').length, 0, where);
+  };
+  try {
+    shows(window.document.getElementById('doc'), 'page');
+    let html;
+    window.glitnirHost.saveHTML = async value => { html = value; };
+    await window.document.getElementById('export-html').onclick();
+    const page = new JSDOM(html);
+    try { shows(page.window.document, 'export'); } finally { page.window.close(); }
+  } finally { window.close(); }
+});
+
 test('a directive without its provider shows why and keeps saved evidence', async () => {
   const text = 'def M := 1\n-- @evidence orbit M\n-- @evidence orbit M (n := 2)';
   const reason = 'No installed provider runs `@evidence orbit`. (Provider demo failed to load: <b>boom</b>)';
