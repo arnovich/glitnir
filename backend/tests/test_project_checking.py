@@ -2704,6 +2704,51 @@ def _fake_check_stages(tmp_path, monkeypatch) -> list[list[str]]:
     return calls
 
 
+def test_a_check_reports_how_long_each_stage_took(tmp_path, monkeypatch):
+    """`stage_ms` names every stage a loose file's check runs, in milliseconds."""
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    _fake_check_stages(tmp_path, monkeypatch)
+    source = tmp_path / "A.lean"
+    source.write_text("def x : Nat := 1\n")
+    result = checking.check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    stage_ms = result["stage_ms"]
+    assert list(stage_ms) == [
+        "capture",
+        "read",
+        "compile",
+        "report_reference",
+        "report_candidate",
+        "reports",
+        "replay",
+        "total",
+    ]
+    assert all(type(ms) is int and ms >= 0 for ms in stage_ms.values())
+    assert stage_ms["total"] >= stage_ms["reports"] + stage_ms["replay"]
+
+
+def test_stage_times_add_up_a_repeated_stage_and_survive_a_failure(monkeypatch):
+    from glitnir.lean import project_checking as checking
+
+    clock = iter([0.0, 1.0, 1.5, 2.0, 4.0, 10.0])
+    monkeypatch.setattr(checking.time, "monotonic", lambda: next(clock))
+    stages = checking.StageTimes()
+    with stages.stage("read"):
+        pass
+    with pytest.raises(ValueError):
+        with stages.stage("read"):
+            raise ValueError("stopped")
+    assert stages.summary() == {"read": 2500, "total": 10000}
+    assert checking.stage_summary({"read": 2500, "total": 10000}) == (
+        "read 2.5 s, total 10.0 s"
+    )
+
+
 class _Slept:
     """A sleep watch whose note a test sets."""
 

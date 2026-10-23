@@ -120,12 +120,14 @@ class Checked:
         message: Glitnir's message, which names the failing line otherwise.
         axioms: The axioms the theorem depends on.
         check_ms: How long the check took, in milliseconds.
+        stage_ms: How long each of the check's stages took, in milliseconds.
     """
 
     ok: bool
     message: str
     axioms: tuple[str, ...]
     check_ms: int
+    stage_ms: dict[str, int]
 
 
 def _check(
@@ -140,6 +142,7 @@ def _check(
     header = "".join(f"{line}\n" for line in imports.split("\n"))
     text = f"{header}\n-- @decide {theorem} : (scratch)\n"
     path = write("GlitnirSteppedLive", text)
+    stage_ms: dict[str, int] = {}
     started = time.monotonic()
     verdict = check_candidate(
         path,
@@ -148,6 +151,7 @@ def _check(
         block=block,
         theorem=theorem,
         cancel=threading.Event(),
+        stage_ms=stage_ms,
     )
     elapsed = round((time.monotonic() - started) * 1000)
     return Checked(
@@ -155,6 +159,7 @@ def _check(
         verdict["message"],
         tuple(verdict["axioms"]),
         elapsed,
+        stage_ms,
     )
 
 
@@ -165,14 +170,15 @@ def replayed() -> set[str]:
 
 
 @pytest.fixture
-def check_block(scratch_notebook, replayed: set[str]):
+def check_block(scratch_notebook, replayed: set[str], record_check_stages):
     """Return a function that checks a decision outcome's block, timed.
 
     The outcome's own last stage lists the imports the block needs, so a block
     whose imports are wrong fails here. The first check of an import set
     replays its whole closure in the kernel, which takes minutes and is cached
     for the session (`conftest.private_replay_cache`); a trivial block is
-    checked first, untimed, so that a block's time is its own.
+    checked first, untimed, so that a block's time is its own. Each check's
+    stage times are written to the log (`record_check_stages`).
     """
 
     def check(outcome: dict) -> Checked:
@@ -180,10 +186,15 @@ def check_block(scratch_notebook, replayed: set[str]):
         imports = outcome["stages"][-1][2]
         if imports not in replayed:
             warm = _check(scratch_notebook, imports, WARM_BLOCK, "warm_up")
+            record_check_stages("warm_up", warm.stage_ms)
             assert warm.ok, warm.message
             replayed.add(imports)
             print(f"replay of {imports!r}: {warm.check_ms} ms")
-        return _check(scratch_notebook, imports, outcome["block"], outcome["theorem"])
+        checked = _check(
+            scratch_notebook, imports, outcome["block"], outcome["theorem"]
+        )
+        record_check_stages(outcome["theorem"], checked.stage_ms)
+        return checked
 
     return check
 

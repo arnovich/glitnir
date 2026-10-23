@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
@@ -91,6 +93,51 @@ CARRIAGE_RETURN = (
     "This file contains a carriage return outside a CRLF line ending, which Lean "
     "reads differently from the checker; remove carriage returns and save again."
 )
+
+
+class StageTimes:
+    """How long each stage of a check took, in milliseconds.
+
+    Measured on the monotonic clock, so time the computer slept is left out.
+    Display only: never part of a status, a saved record or an identity. The
+    stages are `resolve` (`lake setup-file`), `capture` (the snapshot), `read`
+    (ProjectRead), `compile` (the candidate), `report_reference` and
+    `report_candidate` (ProjectReport, each with its isolated tree), `reports`
+    (both reports from start to end), `replay_imports` (a one-time replay of
+    the imports, when one runs) and `replay` (ProjectReplay); `total` is the
+    whole call. A stage run again, as when a check retries the source before
+    its first failure, adds up.
+    """
+
+    def __init__(self) -> None:
+        """Start timing the whole call now."""
+        self._started = time.monotonic()
+        self._ms: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    @contextmanager
+    def stage(self, name: str) -> Iterator[None]:
+        """Time the block as stage ``name``, whether or not it raises."""
+        started = time.monotonic()
+        try:
+            yield
+        finally:
+            elapsed = round((time.monotonic() - started) * 1000)
+            with self._lock:
+                self._ms[name] = self._ms.get(name, 0) + elapsed
+
+    def summary(self) -> dict[str, int]:
+        """Return each stage's milliseconds so far, and the `total`."""
+        with self._lock:
+            return {
+                **self._ms,
+                "total": round((time.monotonic() - self._started) * 1000),
+            }
+
+
+def stage_summary(stage_ms: dict[str, int]) -> str:
+    """Write a check's `stage_ms` on one line, in seconds, for logs."""
+    return ", ".join(f"{name} {ms / 1000:.1f} s" for name, ms in stage_ms.items())
 
 
 def _check_stage(root: Path) -> None:
@@ -991,6 +1038,7 @@ def _check_text(
     progress: Callable[[str], None],
     rest: str | None = None,
     acquired: Callable[[], None] = lambda: None,
+    stages: StageTimes | None = None,
 ) -> dict[str, Any]:
     """Check one LF-normalised source text under a private project snapshot.
 
@@ -999,8 +1047,10 @@ def _check_text(
     With ``rest``, the saved text after that prefix, the reader also refuses a
     prefix whose last command Lean would read further into ``rest``.
     ``acquired`` is called once the Lean slot is held, before anything is read.
+    ``stages`` records how long each stage takes (`StageTimes`).
     """
     cancellation = cancel
+    timed = (stages or StageTimes()).stage
     if "\r" in text:
         # Lean converts CRLF again, so a stray carriage return before a line
         # end would move every position Lean reports against these bytes.
@@ -1024,9 +1074,10 @@ def _check_text(
         resolution = None
         if project["kind"] == "lake":
             progress("Resolving project environment")
-            inspected = inspect_project(
-                source, expected_sha256=saved_sha256, cancel=cancellation
-            )
+            with timed("resolve"):
+                inspected = inspect_project(
+                    source, expected_sha256=saved_sha256, cancel=cancellation
+                )
             if inspected["status"] != "resolved":
                 raise SnapshotError(inspected["message"])
             setup = inspected["setup"]
@@ -1056,21 +1107,22 @@ def _check_text(
             )
         root = Path(temporary).resolve()
         progress("Preparing isolated environment")
-        snapshot = capture(
-            root,
-            source,
-            setup,
-            toolchain,
-            project_root,
-            cancellation,
-            configuration=(
-                {item["path"]: item["sha256"] for item in resolution["inputs"]}
-                if resolution
-                else None
-            ),
-            text=text,
-            store=store,
-        )
+        with timed("capture"):
+            snapshot = capture(
+                root,
+                source,
+                setup,
+                toolchain,
+                project_root,
+                cancellation,
+                configuration=(
+                    {item["path"]: item["sha256"] for item in resolution["inputs"]}
+                    if resolution
+                    else None
+                ),
+                text=text,
+                store=store,
+            )
         digest = hashlib.sha256(snapshot.source.read_bytes()).hexdigest()
         if digest != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
@@ -1110,24 +1162,25 @@ def _check_text(
         for directory in builds.values():
             (directory / relative.parent).mkdir(parents=True)
         try:
-            run(
-                [
-                    "lean",
-                    f"-M{memory}",
-                    "--run",
-                    str(reader),
-                    str(snapshot.source),
-                    str(setup_path),
-                    str(snapshot.artifacts),
-                    tag,
-                    str(builds["reference"] / (str(relative) + ".olean")),
-                    str(builds["reference"] / "source-report.json"),
-                    *continuation,
-                ],
-                cwd=builds["reference"],
-                readable=[reader.parent],
-                writable=True,
-            )
+            with timed("read"):
+                run(
+                    [
+                        "lean",
+                        f"-M{memory}",
+                        "--run",
+                        str(reader),
+                        str(snapshot.source),
+                        str(setup_path),
+                        str(snapshot.artifacts),
+                        tag,
+                        str(builds["reference"] / (str(relative) + ".olean")),
+                        str(builds["reference"] / "source-report.json"),
+                        *continuation,
+                    ],
+                    cwd=builds["reference"],
+                    readable=[reader.parent],
+                    writable=True,
+                )
         except SnapshotError as error:
             failure = _reader_failure(
                 error, builds["reference"] / "source-report.json", text
@@ -1172,57 +1225,63 @@ def _check_text(
             check_rewrite(saved_bytes, compiled_bytes, edits)
             compiled_text = compiled_bytes.decode()
         try:
-            run(
-                [
-                    "lean",
-                    f"-M{memory}",
-                    "-DmaxHeartbeats=1000000",
-                    "--setup",
-                    str(setup_path),
-                    "-o",
-                    str(builds["candidate"] / (str(relative) + ".olean")),
-                    str(compiled_source),
-                ],
-                cwd=builds["candidate"],
-                readable=[reader.parent, compiled_source.parent],
-                writable=True,
-            )
+            with timed("compile"):
+                run(
+                    [
+                        "lean",
+                        f"-M{memory}",
+                        "-DmaxHeartbeats=1000000",
+                        "--setup",
+                        str(setup_path),
+                        "-o",
+                        str(builds["candidate"] / (str(relative) + ".olean")),
+                        str(compiled_source),
+                    ],
+                    cwd=builds["candidate"],
+                    readable=[reader.parent, compiled_source.parent],
+                    writable=True,
+                )
         except SnapshotError as error:
             failure = _candidate_failure(error, text, entries, compiled_text, edits)
             if failure is not None:
                 raise failure from error
             raise
-        reports = {}
-        for key, directory in builds.items():
-            isolated = root / (key + "-isolated")
-            # Separate candidate/reference namespaces, without hard links.
-            isolated.mkdir()
-            # Lean resolves a namespace from its first search root. Present the
-            # checked module and its frozen dependencies in one namespace tree.
-            for dependency in snapshot.artifacts.rglob("*"):
-                if dependency.is_file():
-                    target = isolated / dependency.relative_to(snapshot.artifacts)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.symlink_to(dependency)
-            _isolate(directory, isolated, module)
-            # Reporter installs output and dependency roots after
-            # compiling trusted imports. Kernel replay loads no project code.
-            reports[key] = json.loads(
-                run(
-                    [
-                        "lean",
-                        f"-M{memory}",
-                        "--run",
-                        str(reporter),
-                        module,
-                        str(isolated),
-                        str(snapshot.artifacts),
-                    ],
-                    cwd=isolated,
-                    readable=[reader.parent, isolated],
-                    writable=False,
+
+        def report(key: str) -> Any:
+            """Report one build from its own isolated tree."""
+            with timed(f"report_{key}"):
+                isolated = root / (key + "-isolated")
+                # Separate candidate/reference namespaces, without hard links.
+                isolated.mkdir()
+                # Lean resolves a namespace from its first search root. Present
+                # the checked module and its frozen dependencies in one tree.
+                for dependency in snapshot.artifacts.rglob("*"):
+                    if dependency.is_file():
+                        target = isolated / dependency.relative_to(snapshot.artifacts)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.symlink_to(dependency)
+                _isolate(builds[key], isolated, module)
+                # Reporter installs output and dependency roots after
+                # compiling trusted imports. Kernel replay loads no project code.
+                return json.loads(
+                    run(
+                        [
+                            "lean",
+                            f"-M{memory}",
+                            "--run",
+                            str(reporter),
+                            module,
+                            str(isolated),
+                            str(snapshot.artifacts),
+                        ],
+                        cwd=isolated,
+                        readable=[reader.parent, isolated],
+                        writable=False,
+                    )
                 )
-            )
+
+        with timed("reports"):
+            reports = {key: report(key) for key in ("reference", "candidate")}
         text = snapshot.source.read_bytes().decode().replace("\r\n", "\n")
         spans = {e["name"]: (e["start"], e["end"]) for e in entries}
         # The claims each claim uses: display only, like the reporter's axioms.
@@ -1285,20 +1344,21 @@ def _check_text(
                 )
                 started = time.monotonic()
                 try:
-                    imported = _replay_report(
-                        _run(
-                            snapshot,
-                            ["lean", f"-M{memory}", "--run", str(replay), module]
-                            + arguments,
-                            cwd=isolated,
-                            readable=readable,
-                            writable=False,
-                            cancel=cancellation,
-                            deadline=started + IMPORTS_REPLAY_SECONDS,
-                        ),
-                        closure,
-                        imports,
-                    )
+                    with timed("replay_imports"):
+                        imported = _replay_report(
+                            _run(
+                                snapshot,
+                                ["lean", f"-M{memory}", "--run", str(replay), module]
+                                + arguments,
+                                cwd=isolated,
+                                readable=readable,
+                                writable=False,
+                                cancel=cancellation,
+                                deadline=started + IMPORTS_REPLAY_SECONDS,
+                            ),
+                            closure,
+                            imports,
+                        )
                 except SnapshotError as error:
                     raise SnapshotError(
                         "Independent kernel replay failed while replaying the "
@@ -1337,20 +1397,21 @@ def _check_text(
             else "Independently replaying the imported proof closure"
         )
         try:
-            replayed = _replay_report(
-                _run(
-                    snapshot,
-                    ["lean", f"-M{memory}", "--run", str(replay), module]
-                    + [str(isolated), mode],
-                    cwd=isolated,
-                    readable=readable,
-                    writable=False,
-                    cancel=cancellation,
-                    deadline=deadline,
-                ),
-                closure,
-                imports,
-            )
+            with timed("replay"):
+                replayed = _replay_report(
+                    _run(
+                        snapshot,
+                        ["lean", f"-M{memory}", "--run", str(replay), module]
+                        + [str(isolated), mode],
+                        cwd=isolated,
+                        readable=readable,
+                        writable=False,
+                        cancel=cancellation,
+                        deadline=deadline,
+                    ),
+                    closure,
+                    imports,
+                )
         except SnapshotError as error:
             raise SnapshotError(f"Independent kernel replay failed: {error}") from error
         if replayed["replay"] in ("imports only", "imports incremental") or (
@@ -1520,9 +1581,13 @@ def check_project(
     the trusted lexer finds a command end (`CommandBoundaries`); a cut inside
     a command moves back to the end of the command before it, so no command
     is ever compiled shortened. Where there is none, the check is refused.
+
+    A finished check's result carries ``stage_ms``, how long each stage took
+    (`StageTimes`), for display and logs only.
     """
     cancellation = cancel if cancel is not None else threading.Event()
     progress = noting_sleep(progress)
+    stages = StageTimes()
     try:
         if cancellation.is_set():
             raise SnapshotError("Project check cancelled.")
@@ -1569,14 +1634,16 @@ def check_project(
                     progress=progress,
                     rest=rest,
                     acquired=acquired,
+                    stages=stages,
                 ),
                 checked_lines,
             )
             if not requested:
-                return {**result, "withheld": None}
+                return {**result, "withheld": None, "stage_ms": stages.summary()}
             last = requested["through_line"]
             return {
                 **result,
+                "stage_ms": stages.summary(),
                 "source_sha256": expected_sha256,
                 "withheld": {
                     "from_line": last + 1,
@@ -1605,6 +1672,7 @@ def check_project(
                     progress=progress,
                     rest=text[len(prefix) :] if requested else None,
                     acquired=acquired,
+                    stages=stages,
                 ),
                 line,
             )
@@ -1615,6 +1683,7 @@ def check_project(
                 message = f"line {failed}: {message}" if message else f"line {failed}"
             return {
                 **result,
+                "stage_ms": stages.summary(),
                 "source_sha256": expected_sha256,
                 "withheld": {"from_line": line + 1, "message": message, **requested},
             }
@@ -1706,6 +1775,7 @@ def check_candidate(
     block: str,
     theorem: str,
     cancel: threading.Event,
+    stage_ms: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Check the saved file through `insert_after_line` followed by `block`.
 
@@ -1725,7 +1795,11 @@ def check_candidate(
     Anything that says nothing about the block (cancellation, a busy slot, a
     timeout, an unavailable environment or a changed file) raises
     `SnapshotError` with the checker's message.
+    A ``stage_ms`` dictionary is filled with how long each stage took
+    (`StageTimes`), whatever the outcome: for logs only, never in the verdict,
+    which a decision saves.
     """
+    stages = StageTimes()
     try:
         if cancel.is_set():
             raise SnapshotError("Project check cancelled.")
@@ -1747,6 +1821,7 @@ def check_candidate(
                 saved_sha256=expected_sha256,
                 cancel=cancel,
                 progress=lambda _: None,
+                stages=stages,
             )
         except CommandFailure as failure:
             verdict: dict[str, Any] = {
@@ -1770,3 +1845,6 @@ def check_candidate(
         raise
     except (OSError, ValueError, RecursionError, SandboxUnavailable) as error:
         raise SnapshotError(str(error)) from error
+    finally:
+        if stage_ms is not None:
+            stage_ms.update(stages.summary())

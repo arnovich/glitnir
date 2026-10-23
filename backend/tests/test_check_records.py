@@ -77,6 +77,13 @@ def views(text, fingerprint=FP):
     return {v["name"]: v for v in found}
 
 
+def test_stage_times_are_not_saved():
+    """A check's `stage_ms` is for display and logs; the records hold none."""
+    records = records_from_check(TEXT, {**RESULT, "stage_ms": {"total": 5}}, FP)
+    assert records == records_from_check(TEXT, RESULT, FP)
+    assert "stage_ms" not in json.dumps(records)
+
+
 def test_same_short_names_keep_their_own_lines():
     found = views(TEXT)
     assert (found["A.result"]["start_line"], found["B.result"]["start_line"]) == (4, 7)

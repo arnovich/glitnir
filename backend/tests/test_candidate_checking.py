@@ -45,7 +45,7 @@ def _fake(monkeypatch, theorems=None, error=None):
     """Replace the Lean check; record the checked text and its bound digest."""
     calls = []
 
-    def fake(source, text, *, saved_sha256, cancel, progress):
+    def fake(source, text, *, saved_sha256, cancel, progress, stages):
         calls.append((source, text, saved_sha256))
         if error is not None:
             raise error(text) if callable(error) else error
@@ -301,6 +301,36 @@ def test_environment_errors_are_raised_as_snapshot_errors(tmp_path, monkeypatch)
 
 
 LIVE_NOTEBOOK = "import Example.Helper\n-- @decide t : two plus two\n"
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_stage_times_are_filled_but_never_part_of_the_verdict(
+    tmp_path, monkeypatch, fails
+):
+    """A decision saves the verdict, so the times go to the caller's dict only."""
+    source, sha256 = _saved(tmp_path)
+
+    def fake(source, text, *, stages, **_):
+        with stages.stage("read"):
+            pass
+        if fails:
+            raise checking.CommandFailure("bad", offset=text.index("theorem t"))
+        return {"status": "checked_snapshot", "theorems": [_theorem("t", "checked", 4)]}
+
+    monkeypatch.setattr(checking, "_check_text", fake)
+    stage_ms: dict[str, int] = {}
+    verdict = checking.check_candidate(
+        source,
+        expected_sha256=sha256,
+        insert_after_line=2,
+        block=BLOCK,
+        theorem="t",
+        cancel=threading.Event(),
+        stage_ms=stage_ms,
+    )
+    assert verdict["status"] == ("rejected" if fails else "checked"), verdict
+    assert set(verdict) == {"status", "message", "axioms", "type"}
+    assert set(stage_ms) == {"read", "total"}
 
 
 @pytest.mark.parametrize(

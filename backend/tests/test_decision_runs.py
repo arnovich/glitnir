@@ -195,7 +195,7 @@ def test_a_proven_decision_with_axioms_is_saved_with_their_names(tmp_path, monke
     ]
     seen: list = []
 
-    def check_text(source, text, *, saved_sha256, cancel, progress):
+    def check_text(source, text, *, saved_sha256, cancel, progress, stages):
         seen.append(text)
         theorem = {
             "name": "Decided_band.band",
