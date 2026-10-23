@@ -1,4 +1,4 @@
-"""Tests for trajectory root goals that need no Lean (task 112, ODE lane).
+"""Tests for trajectory root goals that need no Lean.
 
 Goal encoding, support decisions, rendering, the replay's binding checks and
 the service's reasons run here; Lean's checks of the root theorems are in
@@ -642,7 +642,7 @@ def test_oscillator_goals_need_its_declared_start() -> None:
     )
 
 
-# --- driven models (task 170) -----------------------------------------------
+# --- driven models -----------------------------------------------
 
 DECAY = FORCED_DECAY.observations["obs-x"]
 DECAY_GOAL = forced_goal(Atom(Relation.LE, Var(0)))

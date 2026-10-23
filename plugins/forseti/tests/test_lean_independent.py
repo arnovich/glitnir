@@ -1,4 +1,4 @@
-"""Tests for the out-of-process axiom check (task 129).
+"""Tests for the out-of-process axiom check.
 
 The comparison of module reports runs without Lean. The live tests replay the
 attacks that defeated reading ``#print axioms`` from the elaborating process,
@@ -262,7 +262,7 @@ def test_an_honest_proof_is_still_accepted(lean_project) -> None:
     assert result["independent"]["status"] == "confirmed"
 
 
-# ----- let in a statement (task 147) ---------------------------------------------
+# ----- let in a statement ---------------------------------------------
 
 #: Lean turns a theorem's non-dependent ``let`` into ``have`` but keeps an
 #: axiom's as written; the report prints both without that kernel-ignored flag.
@@ -337,16 +337,16 @@ def test_a_let_statement_changed_beyond_elaboration_is_refused(
 def test_a_let_differing_only_in_what_the_kernel_ignores_is_the_same_statement(
     lean_project, monkeypatch, statement, script
 ) -> None:
-    """``nondep`` and binder names: the kernel reads the same term (task 154)."""
+    """``nondep`` and binder names: the kernel reads the same term."""
     check = _swapped_candidate(monkeypatch, statement, script)
     assert check.status is IndependentStatus.CONFIRMED, check
 
 
-# ----- propositions, not statement text (task 150) -------------------------------
+# ----- propositions, not statement text -------------------------------
 
 #: A term that elaborates to ``True`` exactly when the environment holds
 #: ``marker``, like the probe that made a checked claim vouch for ``False``
-#: where it was assumed (task 150's r1).
+#: where it was assumed.
 PROBE = """import Lean
 
 open Lean Elab Term in
@@ -408,7 +408,7 @@ _UNIVERSE_CASES = {
 def test_universe_parameter_names_are_not_part_of_a_proposition(
     lean_project,
 ) -> None:
-    """They are bound per declaration and instantiated by position (task 176)."""
+    """They are bound per declaration and instantiated by position."""
     bound = {
         key: _bound(f"import Lean\n{text}", "forsetiClaim_0")
         for key, text in _UNIVERSE_CASES.items()
@@ -441,7 +441,7 @@ def test_a_match_auxiliary_agrees_under_another_name(lean_project) -> None:
     assert first != _bound(f"axiom second {other}", "second")
 
 
-# ----- match and section variables (task 154) -----------------------------------
+# ----- match and section variables -----------------------------------
 
 #: A ``match`` makes an auxiliary ``Foo.forsetiSearch.match_1``, and both it and
 #: the statement carry binder names whose hygiene differs between two modules.
@@ -524,7 +524,7 @@ def test_a_theorem_taking_variables_its_axiom_drops_is_refused(
     """A theorem takes these section variables and the later axiom does not.
 
     The two readings are different propositions (the last proves ``1 = 2``
-    from ``Fact False``), so no reading is confirmed (task 154).
+    from ``Fact False``), so no reading is confirmed.
     """
     result = check_unit(statement, script, prelude=prelude, timeout_ms=TIMEOUT_MS)
     assert result["accepted"] is False

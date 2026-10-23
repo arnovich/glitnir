@@ -4,7 +4,7 @@ A goal binds the original circuit by model key, its interpretation, the
 obligation (a well-posed contract), the time axis and start, the initial
 state by initial-port ID, the observed output port, a quantifier over the
 forward domain, and a postcondition: a quantifier-free formula over the one
-observed coordinate, in task 111's exact syntax. A goal about a driven model
+observed coordinate, in the entailment lane's exact syntax. A goal about a driven model
 also binds its driver precondition: each bounded driver port with a bound
 ``B``, read as "the drivers are admitted and ``|u| ≤ B`` on the domain".
 

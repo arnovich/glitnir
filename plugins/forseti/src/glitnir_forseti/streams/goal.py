@@ -17,10 +17,10 @@ potential of the Burgers front). The claims are:
   window ``(N_t, N_x)`` uniformly on the box ``|t| ≤ r_t``, ``|x| ≤ r_x``.
 
 A field claim read as ``analytic-field`` is about the analytic field of a
-stream with a certified truncation (task 190): its box is symmetric about
+stream with a certified truncation: its box is symmetric about
 the origin and its postcondition a band ``lo ≤ u ≤ hi``, or one side of one.
 
-A trigonometric stream (task 217) is declared by its start, a finite list of
+A trigonometric stream is declared by its start, a finite list of
 modes ``(k₁, k₂, c)`` meaning ``c·e^{i k·x}`` on the torus, and its claims are
 one-axis: ``trig-truncation``, the field's series through ``t``-degree ``N − 1``
 is within ``ε`` of its sum on ``|t| ≤ r``, and ``trig-band``, a band on that

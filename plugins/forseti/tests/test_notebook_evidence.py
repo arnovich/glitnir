@@ -1,4 +1,4 @@
-"""Tests for reading, expanding and running simulation evidence (task 127).
+"""Tests for reading, expanding and running simulation evidence.
 
 The directive reader, the exact expansion and the floating-point runs are
 tested here on fields Lean emitted for the model fixtures
@@ -146,7 +146,7 @@ def test_rk4_is_more_accurate_and_blow_ups_are_flagged() -> None:
     assert blown["finite"] is False
 
 
-# ----- discrete iteration (task 092) ----------------------------------------------
+# ----- discrete iteration ----------------------------------------------
 
 
 WINDUP = next(
@@ -199,7 +199,7 @@ def test_the_update_is_iterated_with_inputs_taken_in_turn() -> None:
     assert run["finite"] is True
 
 
-# ----- coefficients with no finite decimal form (task 144) -------------------------
+# ----- coefficients with no finite decimal form -------------------------
 
 
 THIRD = {
@@ -298,7 +298,7 @@ def _row(nodes: list[list]) -> list:
 def _wire_trees(draw: st.DrawFn, inputs: int, outputs: int, depth: int) -> list:
     """Draw a well-typed exact wire tree from ``inputs`` to ``outputs`` wires.
 
-    Uses the node set task 144's review fuzzed, with decimal coefficients. An
+    Uses the node set an earlier fuzzing review used, with decimal coefficients. An
     atomic node of the right type is preferred; at depth zero with none, the
     wires are passed through, dropped or started from constants.
     """
@@ -345,7 +345,7 @@ _ARITIES = st.tuples(st.integers(0, _WIRES), st.integers(0, _WIRES))
 def test_the_expansion_agrees_with_asgards_denotation_on_random_fields(
     data: st.DataObject,
 ) -> None:
-    """Evidence's expansion and Asgard's cannot drift apart (task 164).
+    """Evidence's expansion and Asgard's cannot drift apart.
 
     Terms, coefficients and their order must be equal wherever both expand;
     each side keeps its own size limits, which these small fields rarely reach.

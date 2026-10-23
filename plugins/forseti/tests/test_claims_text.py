@@ -1,4 +1,4 @@
-"""Tests for the textual goal syntax (task 136).
+"""Tests for the textual goal syntax.
 
 Every corpus goal must survive render-then-parse unchanged, since the notebook
 and the agent write goals as text and the deciders regenerate Lean from the
@@ -373,7 +373,7 @@ def test_any_viscosity_round_trips(viscosity: str) -> None:
     assert parse_goal(render_goal(goal)) == goal
 
 
-# ----- the short trajectory form (task 141) ------------------------------------
+# ----- the short trajectory form ------------------------------------
 
 LONG = (
     "trajectory three-state interpretation continuous-real obligation contract"
@@ -572,7 +572,7 @@ def test_any_trajectory_goal_round_trips_in_both_forms(
         assert parse_goal(short) == goal
 
 
-# ----- driver preconditions (task 170) ---------------------------------------
+# ----- driver preconditions ---------------------------------------
 
 DRIVEN_LONG = (
     "trajectory forced-decay interpretation continuous-real obligation contract"

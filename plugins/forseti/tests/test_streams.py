@@ -840,7 +840,7 @@ def test_the_report_names_the_front_solution_class() -> None:
 
     front = _solution_class(FRONT_TAIL)
     assert "Burgers circuit at viscosity 1/2" in front
-    assert "asgard-lean ColeHopf" in front and "closed-form front" in front
+    assert "Gimle.Asgard.Streams.ColeHopf" in front and "closed-form front" in front
     heat = _solution_class(EXP_TAIL)
     assert "heat circuit" in heat and "Burgers" not in heat
     assert "Burgers" not in _solution_class(FIELD)
@@ -856,7 +856,7 @@ def test_exponential_sum_terms_are_a_tuple() -> None:
         )
 
 
-# --- field bands on the front (task 190) ---------------------------------------
+# --- field bands on the front ---------------------------------------
 
 NU = Fraction(1, 2)
 BAND = band_goal(front_band(Fraction(2, 5), Fraction(3, 5)))

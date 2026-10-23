@@ -1,4 +1,4 @@
-"""Tests for confining untrusted Lean processes (tasks 129 and 133)."""
+"""Tests for confining untrusted Lean processes."""
 
 import os
 import platform

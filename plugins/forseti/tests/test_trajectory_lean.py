@@ -1,4 +1,4 @@
-r"""Live Lean tests for trajectory root goals (task 112, ODE lane).
+r"""Live Lean tests for trajectory root goals.
 
 They run against the pinned standalone release, and fail instead of skipping
 under the gate::
@@ -274,7 +274,7 @@ def test_a_misstated_model_entry_proves_and_refutes_nothing(lean_test_project) -
     ids=["0", "1", "2", "1/2", "-3/2"],
 )
 def test_the_time_binding_closes_for_any_start(lean_test_project, start) -> None:
-    """The rendered time step closes for every start (task 165).
+    """The rendered time step closes for every start.
 
     Some starts `simp` alone closes and some it does not; the script is the
     same for both. The evolution is a concrete literal, as every registered

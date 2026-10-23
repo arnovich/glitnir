@@ -1,8 +1,8 @@
-"""Search and replay Lean-checked predicate entailments (task 111).
+"""Search and replay Lean-checked predicate entailments.
 
 A request is one closed goal ``P ⊨ Q`` over an ordered context, with explicit
 limits. Untrusted producers look for evidence: Z3 for a rational or
-real-algebraic counterexample, and Z3 again for the weights of 017's
+real-algebraic counterexample, and Z3 again for the weights of the
 fixed-dictionary square certificate. Evidence becomes a result only through
 `replay_artifact`, which regenerates the Lean checker application from the
 independently supplied goal and checks it in a fresh sandboxed process against

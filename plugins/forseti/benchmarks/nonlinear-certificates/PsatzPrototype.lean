@@ -1,8 +1,8 @@
 import Gimle.Forseti.Syntax.Certificate
 
-/-! # Prototype: degree-2 Positivstellensatz certificates (task 034)
+/-! # Prototype: degree-2 Positivstellensatz certificates
 
-Task 111's certificate proves `P ⊨ Q` from an identity
+The existing entailment certificate proves `P ⊨ Q` from an identity
 `−q = σ₀ + Σᵢ σᵢ · (−pᵢ)` in the *quadratic module* of the antecedent: every
 constraint is used alone. `x ≥ 0 ∧ y ≥ 0 ⊨ x·y ≥ 0` has no such identity at any
 degree, because `x·y` needs the *product* of two constraints.
@@ -105,7 +105,7 @@ def plane : Context := ⟨["x", "y"], by decide, by decide, by decide⟩
 def x : Gimle.Asgard.Polynomial.Expr 2 := .var ⟨0, by decide⟩
 def y : Gimle.Asgard.Polynomial.Expr 2 := .var ⟨1, by decide⟩
 
-/-- The unit disk, 017's first goal, needs no product: `σ₀ = y²`, `σ₁ = 1`. -/
+/-- The unit disk, the first goal of ``Examples/PredicateCertificates``, needs no product: `σ₀ = y²`, `σ₁ = 1`. -/
 def disk : Goal where
   context := plane
   antecedent := .atom .le (.add (.add (.mul x x) (.mul y y)) (.neg (.constant 1)))
@@ -141,7 +141,7 @@ theorem boxProduct_proved : boxProduct.Entailment :=
 
 /-- `x² ≤ 1 ∧ y² ≤ 1 ⊨ x·y ≤ 1` needs the off-diagonal square `(x − y)²`:
 `1 − x·y = ½(x − y)² + ½(1 − x²) + ½(1 − y²)`. The certificate format already
-admits it; 111's diagonal dictionary search does not find it. -/
+admits it; the default diagonal-dictionary search does not find it. -/
 def unitProduct : Goal where
   context := plane
   antecedent := .and (.atom .le (.add (.mul x x) (.neg (.constant 1))))

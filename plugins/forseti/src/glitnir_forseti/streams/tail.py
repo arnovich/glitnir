@@ -5,7 +5,7 @@ For an exponential-sum profile ``Σᵢ cᵢ·e^(aᵢx)``, asgard-lean's
 reconstructs from that boundary is within ``ε`` of its window ``N`` on a box,
 given ``ρ > 0`` with every ``|aᵢ|·ρ ≤ 1``, a box strictly inside the radii
 ``[ρ², ρ]``, and ``tailBound ≤ ε`` for the majorant ``Σᵢ |cᵢ|``. Each premise is
-decided by the kernel. The evidence is ``ρ`` alone (task 135).
+decided by the kernel. The evidence is ``ρ`` alone.
 
 For the viscous Burgers circuit at ``ν > 0``, ``ColeHopf.front_truncation``
 proves the same of every stream it reconstructs from the ``t = 0`` slice of the
@@ -13,7 +13,7 @@ front ``−2ν φ_x/φ``, where ``φ`` is the heat stream of the exponential-sum
 profile: given ``ρ`` as above, radii ``r`` strictly inside the heat radii
 ``[ρ²/ν, ρ]`` at which the inverse is majorized (``smallEnough``), a box
 strictly inside ``r/2``, and ``tailBound ≤ ε`` for the front's majorant. The
-evidence is ``ρ`` and ``r`` (task 187).
+evidence is ``ρ`` and ``r``.
 
 This module mirrors both bounds exactly so the producer can choose the
 evidence and say, when no proof is possible, what the certified bound is. The
@@ -57,7 +57,7 @@ class TailEvidence:
 
 @dataclass(frozen=True, slots=True)
 class WindowEvidence:
-    """A checked window of the front, for a field band (task 190).
+    """A checked window of the front, for a field band.
 
     Attributes:
         rho: The profile radius ``ρ``.
@@ -110,7 +110,7 @@ class FrontEvidence:
     radii: tuple[Fraction, Fraction]
 
 
-# --- the heat boundary (asgard-lean 025/026) ---------------------------------
+# --- the heat boundary (Gimle.Asgard.Streams.AnalyticHeat) -------------------
 
 
 def weight(profile: ExpSum) -> Fraction:
@@ -369,7 +369,7 @@ def _best_radii(
     )
 
 
-# --- the front's window, for field bands (task 190) ---------------------------
+# --- the front's window, for field bands ---------------------------
 
 
 def exp_sum(profile: ExpSum, j: int) -> Fraction:

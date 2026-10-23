@@ -6,7 +6,7 @@
         [--lean-project P] [--wall-time-ms N]
 
 A goal file is a ``gimle.forseti.stream-goal/v2`` document. ``decide``
-searches with task 111's Z3 producers and needs the ``z3`` extra; ``replay``
+searches with the entailment lane's Z3 producers and needs the ``z3`` extra; ``replay``
 imports no solver and re-checks retained exact evidence with the Lean
 toolchain alone. Both print one JSON object; ``replay`` exits 0 only when the
 root is validated.
@@ -152,21 +152,24 @@ def _solution_class(goal: StreamGoal) -> str:
                 "the analytic field of every stream the Burgers circuit at viscosity "
                 f"{goal.viscosity} reconstructs from the t = 0 slice of the Cole–Hopf "
                 "front of the potential profile, against its window, uniformly on "
-                f"|t| <= {r_t}, |x| <= {r_x} (asgard-lean ColeHopf); a certified "
-                "convergent series, not a claim that the real field solves the PDE "
+                f"|t| <= {r_t}, |x| <= {r_x} (Lean module "
+                "Gimle.Asgard.Streams.ColeHopf); a certified convergent series, not a "
+                "claim that the real field solves the PDE "
                 "or equals the closed-form front"
             )
         return (
             "the analytic field of every stream the heat circuit reconstructs from "
             "the profile, against its window, uniformly on |t| <= "
-            f"{r_t}, |x| <= {r_x} (asgard-lean 025/026); a certified convergent "
+            f"{r_t}, |x| <= {r_x} (Lean module Gimle.Asgard.Streams.AnalyticHeat); "
+            "a certified convergent "
             "series, not a claim that the real field solves the PDE"
         )
     if isinstance(goal.claim, FieldClaim):
         (t0, t1), (x0, x1) = goal.claim.time, goal.claim.space
         return (
             "the real field of the finite polynomial stream realizing the output "
-            f"(asgard-lean 024), on t in [{t0}, {t1}], x in [{x0}, {x1}]; not a claim "
+            "(Lean module Gimle.Asgard.Streams.Realization), "
+            f"on t in [{t0}, {t1}], x in [{x0}, {x1}]; not a claim "
             "about arbitrary smooth fields"
         )
     return f"formal power series ({goal.basis.upper()}); no convergence claim"
