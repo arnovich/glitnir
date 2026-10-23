@@ -41,11 +41,15 @@ A view is a picture of an object, never evidence that a claim holds.
 
 `-- @evidence <verb> <target> (options)` on a line of its own requests a simulation
 of an object defined earlier. It shows as a card with a chart (and a phase plane
-if asked), provenance and a status: Never run, Running, Current or Out of date.
+if asked), provenance and a status: Never run, Running, Current, Failed or Out of
+date.
 Nothing runs when the preview opens. The user presses **Run** on the card: one run
 at a time. Lean runs in the sandbox; the provider computes from its output. The
 result is saved in `<Notebook>.glitnir.json` under `evidence`, kept when checking,
 and goes out of date when anything above the directive or the environment changes.
+A run that fails in Lean, in the provider or at its time limit is saved too, under
+`evidence_failures`, with its message; a later successful run replaces it. Setup
+failures (an unbuilt module, Lake or the sandbox) are only shown.
 If the file would exceed 16 MiB or the existing file cannot be read, the run still
 happens but its result is not saved; the card shows why. Never hand-edit it.
 
