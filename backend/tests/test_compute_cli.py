@@ -168,3 +168,61 @@ def test_worker_cli_capacity_covers_default_editor_request(
         == 0
     )
     assert capacities and capacities[0] >= memory_limit_mb()
+
+
+def test_registry_checks_credential_for_every_project(tmp_path, monkeypatch, capsys):
+    from glitnir.compute.environments import Recipe
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    recipes = [
+        Recipe(
+            p,
+            "env",
+            "https://example.test/repo.git",
+            "a" * 40,
+            TOOLCHAIN,
+            ("Example",),
+            1000,
+        )
+        for p in ("a", "b")
+    ]
+    monkeypatch.setattr("glitnir.compute.__main__.load_registry", lambda _: recipes)
+    credential = tmp_path / "credential.json"
+    credential.write_text(
+        json.dumps(
+            {"url": "https://tasks.example.test", "projects": ["a"], "token": "secret"}
+        )
+    )
+    credential.chmod(0o600)
+    called = []
+    monkeypatch.setattr(
+        "glitnir.compute.__main__.run_workers",
+        lambda workers, stop: called.extend(workers),
+    )
+    args = [
+        "--server",
+        "https://tasks.example.test",
+        "--credential-file",
+        str(credential),
+        "worker",
+        "--registry",
+        str(tmp_path / "registry.toml"),
+        "--cache",
+        str(tmp_path / "cache"),
+        "--journal",
+        str(tmp_path / "journal"),
+    ]
+    assert main(args) == 2
+    assert not called
+    credential.write_text(
+        json.dumps(
+            {
+                "url": "https://tasks.example.test",
+                "projects": ["a", "b"],
+                "token": "secret",
+            }
+        )
+    )
+    assert main(args) == 0
+    assert [w.client.settings.project for w in called] == ["a", "b"]
+    assert all(w.capabilities["environments"] == ["env"] for w in called)

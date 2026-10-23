@@ -202,7 +202,13 @@ class Client:
                 raise ValueError("Taskvalet check cancelled")
             job = self.request("GET", f"/jobs/{identity}")
             state = job.get("state") if isinstance(job, dict) else None
-            progress(f"Taskvalet job {identity}: {state}")
+            phase = job.get("phase") if isinstance(job, dict) else None
+            detail = (
+                phase
+                if state == "running" and phase in {"preparing", "checking"}
+                else state
+            )
+            progress(f"Taskvalet job {identity}: {detail}")
             if state in {"completed", "cancelled", "timed_out", "interrupted"}:
                 assert isinstance(job, dict)
                 return job

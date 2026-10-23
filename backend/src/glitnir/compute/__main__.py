@@ -10,8 +10,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from glitnir.compute.client import Client, Settings, result_from_job, save_receipt
+from glitnir.compute.environments import EnvironmentCache, load_registry
 from glitnir.compute.protocol import make_request, validate_request
-from glitnir.compute.worker import Worker, execute
+from glitnir.compute.worker import Worker, execute, run_workers
 from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
 
 
@@ -37,7 +38,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         command = commands.add_parser(name)
         command.add_argument("receipt", type=Path)
     worker = commands.add_parser("worker")
-    worker.add_argument("--prepared", type=Path, required=True)
+    source = worker.add_mutually_exclusive_group(required=True)
+    source.add_argument("--prepared", type=Path)
+    source.add_argument("--registry", type=Path)
+    worker.add_argument("--cache", type=Path)
+    worker.add_argument("--cache-max-entries", type=int, default=4)
+    worker.add_argument("--cache-max-bytes", type=int, default=64 * 1024**3)
     worker.add_argument("--journal", type=Path, required=True)
     worker.add_argument("--max-seconds", type=int, default=1800)
     worker.add_argument("--max-memory-mb", type=int, default=DEFAULT_MEMORY_LIMIT_MB)
@@ -58,6 +64,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.output, execute(args.prepared, request, args.scratch, stop)
             )
             return 0
+        recipes = (
+            load_registry(args.registry)
+            if args.command == "worker" and args.registry
+            else []
+        )
+        projects = {r.project for r in recipes} or {args.project}
+        if recipes and (args.project or args.environment):
+            raise ValueError(
+                "Registry selects destinations; omit global project/environment options"
+            )
+        if recipes and args.cache is None:
+            raise ValueError("Registry workers require --cache")
         token = os.environ.get("GLITNIR_TASKVALET_TOKEN", "")
         if args.credential_file:
             if args.credential_file.stat().st_mode & 0o077:
@@ -65,11 +83,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             credential = json.loads(args.credential_file.read_text())
             if credential.get("url", "").rstrip("/") != args.server.rstrip(
                 "/"
-            ) or args.project not in credential.get("projects", []):
+            ) or not projects.issubset(credential.get("projects", [])):
                 raise ValueError(
                     "Credential file belongs to a different server or project"
                 )
             token = credential["token"]
+        if recipes:
+            cache = EnvironmentCache(
+                args.cache,
+                max_entries=args.cache_max_entries,
+                max_bytes=args.cache_max_bytes,
+            )
+            workers = []
+            for project in sorted(projects):
+                selected = [r for r in recipes if r.project == project]
+                client = Client(
+                    Settings(
+                        args.server,
+                        project,
+                        selected[0].environment,
+                        token,
+                        os.environ.get("GLITNIR_TASKVALET_CA_FILE"),
+                    )
+                )
+                workers.append(
+                    Worker(
+                        client,
+                        None,
+                        args.journal / project,
+                        recipes=selected,
+                        cache=cache,
+                        max_seconds=args.max_seconds,
+                        max_memory_mb=args.max_memory_mb,
+                    )
+                )
+            run_workers(workers, stop)
+            return 0
         client = Client(
             Settings(
                 args.server,

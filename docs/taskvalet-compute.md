@@ -187,3 +187,84 @@ optional integration skips), and all 303 extension tests. Backend and plugin
 format/lint/type checks passed. The universal VSIX and isolated packaged macOS
 host check passed. These checks used the integrated release worktree; CI binds
 its own built assets to the eventual candidate commit.
+
+## Dynamic registered workers
+
+A worker service can prepare several registered projects on demand and switch
+between them. Install the matching updated Taskvalet server first. The existing
+`--prepared` command remains available.
+
+Create an operator-controlled TOML registry:
+
+```toml
+[[environments]]
+project = "lab"
+environment = "example-v1"
+repository = "https://example.com/team/example.git"
+commit = "0123456789abcdef0123456789abcdef01234567"
+toolchain = "leanprover/lean4:v4.35.0"
+targets = ["Example"]
+max_bytes = 8589934592
+# Optional for projects using Mathlib:
+mathlib_cache = true
+```
+
+Replace the example repository/commit with a real audited commit. Register
+another table for each project/environment pair. Repositories must be HTTPS
+without embedded credentials or absolute local Git mirrors. Private repositories
+can use an operator-maintained mirror. Targets are explicit Lake targets.
+The repository must commit its supported `lean-toolchain` and `lake-manifest.json`;
+dependencies must be Git dependencies pinned to full commits in the standard
+`.lake/packages` directory. Path dependencies, subdirectories, overrides and
+other Lean versions are currently refused. Install the supported Lean toolchain
+before starting; workers never ask elan to download one. For Mathlib projects,
+`mathlib_cache = true` runs the fixed `lake --keep-toolchain exe cache get` command
+before the build, reusing compiled dependency downloads instead of compiling
+Mathlib from scratch. It is off by default and remains part of the same deadline,
+quota and trusted-recipe boundary. A failed download fails preparation; it does
+not silently fall back to a potentially hours-long build.
+
+```sh
+python -m glitnir.compute \
+  --server https://tasks.example.com \
+  --credential-file /secure/compute-worker.json \
+  worker --registry /srv/lean/environments.toml \
+  --cache /srv/lean/environment-cache --journal /srv/lean/job-journal \
+  --cache-max-entries 4 --cache-max-bytes 34359738368 \
+  --max-memory-mb 8192
+```
+
+Omit global project/environment options: the registry selects them. The credential
+must cover every registered Taskvalet project. The service takes a startup
+snapshot of the registry, registers one worker per project, and polls them in
+order without running two jobs simultaneously. Restart after changing recipes;
+use a new environment ID for a different intended project revision. Clients keep
+selecting the Taskvalet project and environment settings as before.
+
+Jobs show `preparing` and then `checking`. Queue time, preparation and checking
+share the submitted timeout, so a cold build may need a larger timeout (up to
+1800 seconds). Submission remains asynchronous. A cancelled or failed build
+publishes no ready entry; failed jobs are not automatically resubmitted.
+
+The cache key binds the complete recipe, toolchain and installed checker. Each
+entry reserves its full `max_bytes` from the shared budget, including Git data,
+build HOME/temp and candidate staging. Least recently used entries are evicted
+under an exclusive lock; the active entry is locked through checking. Publication
+is atomic. An incomplete candidate copy or journal left by a stopped worker is
+discarded before reuse; its verified prepared build is retained. Full cached-file inventories are verified before reuse, so reuse saves
+building but still performs disk reads. Prepared files are read-only. Only
+contained regular artifact links are materialized; source/configuration,
+directory and escaping links are refused. Candidate context binding and native
+independent kernel replay still run for every job.
+
+Build recipes are **trusted operator code**: Lake configuration/build hooks can
+execute programs. Clearing environment credentials and using a private HOME is
+not filesystem isolation from the service account. Run under a dedicated account
+with only compute-worker credentials and read access to intended mirrors. Build
+subprocess groups are supervised, including parent death; deliberately detached
+processes require whole-service containment (for example systemd
+`KillMode=control-group`). Configure aggregate CPU/RAM limits on that service.
+The job's memory setting bounds the native checker, not every trusted build tool.
+Disk and output ceilings are monitored and can overshoot between polls; use a
+filesystem quota when a hard disk ceiling is required. Worker journals and the
+native artifact/replay caches have separate retention/budgets.
