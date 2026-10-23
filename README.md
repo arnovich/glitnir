@@ -40,7 +40,9 @@ buttons in the preview.
 - **Checking:** **Check saved file** replays the saved file in Lean's kernel,
   independently of the project's compiled files, and marks each claim
   **checked**, **admitted** (it uses `sorry`) or **assumptions** (it uses extra
-  axioms). Results are saved beside the notebook in `<Notebook>.glitnir.json`.
+  axioms). Results are saved beside the notebook in `<Notebook>.glitnir.json`,
+  and stay current in another clone or on another machine with byte-identical
+  builds.
 - **Proof steps:** **Explore Proof Steps** records a proof's tactic tree once,
   then lets you walk it with the goals before and after each step.
 - **Evidence and decisions:** `-- @evidence` directives show simulations as cards

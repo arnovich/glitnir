@@ -194,6 +194,8 @@ rm -rf ~/.local/share/glitnir/backends/<earlier wheel SHA-256>
 A release that changes the replay program shows saved results as out of date
 once, and its first check replays the imports again (see [Imports and
 caches](https://github.com/arnovich/glitnir/blob/main/docs/guide.md#imports-and-caches)).
+A release that changes how the environment is identified shows them as out of
+date once, too.
 
 ## Troubleshooting
 
@@ -233,8 +235,8 @@ and package installs, and each preview's backend output.
 - **Checks time out.** Raise `glitnir.elaborationTimeoutMs` (up to 30 minutes)
   and reopen the preview. The first replay of a new set of imports has its own
   60-minute limit and can take long for Mathlib; later checks reuse it.
-- **Results show as out of date after an upgrade.** The replay program changed;
-  check again (see [Imports and caches](https://github.com/arnovich/glitnir/blob/main/docs/guide.md#imports-and-caches)).
+- **Results show as out of date after an upgrade.** The replay program, or how
+  the environment is identified, changed; check again (see [Imports and caches](https://github.com/arnovich/glitnir/blob/main/docs/guide.md#imports-and-caches)).
 - **The cache uses a lot of disk.** Delete `glitnir/replay` and
   `glitnir/artifacts` in your user cache directory at any time; the next check
   rebuilds what it needs.
