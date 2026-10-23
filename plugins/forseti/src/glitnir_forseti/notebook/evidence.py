@@ -926,11 +926,16 @@ def update_polynomials(
     ports = states + len(simulation.inputs[0]) + len(simulation.parameter)
     if denotation.input_degree != ports or denotation.output_degree != states:
         raise EvidenceError(
-            f"the circuit maps {denotation.input_degree} ports to "
+            f"the circuit maps {_counted(denotation.input_degree, 'port')} to "
             f"{denotation.output_degree}, not {ports} (state, inputs, parameters) "
             f"to {states}"
         )
     return denotation
+
+
+def _counted(number: int, noun: str) -> str:
+    """Return ``number`` with ``noun`` in the singular for one, else the plural."""
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
 
 
 def iterate(denotation: Any, simulation: Simulation) -> dict[str, Any]:

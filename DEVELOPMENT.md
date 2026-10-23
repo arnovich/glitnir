@@ -178,9 +178,11 @@ test allows each block 300 s to check (on CI's Linux runners a block takes
 CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
 pinned release; run them locally for macOS. Its first all-green run was run
 39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
-Lean 4.35.0. `stream` decisions and `iterate` evidence have not been run through
-Glitnir's checker yet (`iterate` needs Python Asgard, which CI does not
-install). The plugin README records the runs.
+Lean 4.35.0. `stream` decisions and `iterate` evidence were verified on
+2026-10-23, locally on macOS (Glitnir 0.1.5, Lean 4.35.0). CI covers `stream`
+decisions in `tests/test_stream_decision_lean.py`; `iterate` needs Python
+Asgard, which CI does not install, so it stays a local check. The plugin README
+records the runs.
 
 ## Continuous integration
 
