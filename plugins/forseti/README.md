@@ -27,8 +27,17 @@ clicked. The notebook loads `Gimle.Asgard.Compile.RationalInterchange` and
 ```
 
 `simulate` options are `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`;
-`iterate` options are `state`, `inputs`, `parameter`, `steps` and `names`. Numbers
-are plain decimals or fractions (at most 40 digits per part). `simulate` needs
+`iterate` options are `state`, `inputs`, `parameter`, `steps` and `names`. When
+`names` is given it must name every port of the circuit, state first, then the
+inputs, then the parameters, not just the states. For a circuit with two states,
+one input and one parameter, `x+ = a*x + u`, `y+ = y + x`:
+
+```lean
+-- @evidence iterate driven (state := 1, 0) (inputs := 1; -1) (parameter := 1/2) (steps := 40) (names := x, y, u, a)
+```
+
+Naming only `x, y` is refused ("Names must name all 4 ports, state first.").
+Numbers are plain decimals or fractions (at most 40 digits per part). `simulate` needs
 nothing beyond this package. `iterate` needs Python Asgard (`gimle-asgard`),
 which is not on PyPI: install it into the backend's environment from its own
 wheel or checkout. Without it the card says so before anything runs.
@@ -100,9 +109,13 @@ sandbox probes (`tests/test_lean_release.py`,
 `tests/test_live_lean_gate.py`, `tests/test_lean_independent.py`,
 `tests/test_lean_sandbox_attacks.py` and the unit tests). The view preamble
 drew a circuit and a model in `tests/test_views_lean.py` on macOS against the
-same release on 2026-10-22; CI runs it from then on. `stream` decisions have
-not yet been checked through Glitnir's project runner, and `iterate` evidence
-has not run.
+same release on 2026-10-22; CI runs it from then on. `stream` decisions and
+`iterate` evidence were verified on 2026-10-23, locally on macOS with Glitnir
+0.1.5 and Lean 4.35.0: six stream goals were decided, accepted and checked by
+the project runner, and `iterate` evidence matched exact and float64 references.
+CI covers `stream` decisions with `tests/test_stream_decision_lean.py` (the
+`streams` shard: a proven and a refuted heat-field bound, accepted and
+project-checked); `iterate` needs Python Asgard and stays a local check.
 
 Development: from the repository root, build it with
 `uv build plugins/forseti --wheel --out-dir plugins/forseti/dist`, install the
