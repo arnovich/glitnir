@@ -412,3 +412,195 @@ def artifact_store_test_space(request, monkeypatch):
             "glitnir.lean.artifact_store._free_bytes",
             lambda _descriptor: (100 * 1024**3, 1024**4),
         )
+
+
+@pytest.fixture
+def registered_repositories(tmp_path, monkeypatch):
+    """Two real pinned Git trees; only the Lake build is substituted."""
+    import subprocess
+
+    from glitnir.compute.environments import Recipe
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    recipes = []
+    builds = []
+    for name, value in [("a", 1), ("b", 2)]:
+        root = tmp_path / name
+        root.mkdir()
+        (root / "lakefile.toml").write_text(
+            'name = "example"\n[[lean_lib]]\nname = "Helper"\n'
+            '[[lean_lib]]\nname = "Example"\n'
+        )
+        (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+        (root / "lake-manifest.json").write_text(
+            '{"version": "1.1.0", "packagesDir": ".lake/packages", '
+            '"packages": [], "name": "example", "lakeDir": ".lake"}\n'
+        )
+        (root / "Helper.lean").write_text(f"def value : Nat := {value}\n")
+        (root / "Example.lean").write_text(
+            f"import Helper\ntheorem result : value = {value} := rfl\n"
+        )
+        for args in (
+            ["init", "-q"],
+            [
+                "add",
+                "lakefile.toml",
+                "lean-toolchain",
+                "lake-manifest.json",
+                "Helper.lean",
+                "Example.lean",
+            ],
+            [
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+        ):
+            subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True
+        ).strip()
+        recipes.append(
+            Recipe("lab", name, str(root), commit, TOOLCHAIN, ("Example",), 10000000)
+        )
+    monkeypatch.setattr(
+        "glitnir.compute.environments._toolchain", lambda: tmp_path / "toolchain"
+    )
+
+    def run(command, cwd):
+        if command[0].endswith("/lake") and "--version" in command:
+            from glitnir.lean.project_inspection import supported_version
+
+            return f"Lake (Lean version {supported_version()})"
+        if command[0].endswith("/lake"):
+            builds.append(cwd)
+            (cwd / ".lake").mkdir(exist_ok=True)
+            (cwd / ".lake/artifact").write_text("built")
+            return ""
+        return subprocess.check_output(
+            command, cwd=cwd, text=True, stderr=subprocess.PIPE
+        )
+
+    return recipes, run, builds
+
+
+@pytest.fixture
+def dynamic_worker_case(registered_repositories, tmp_path, monkeypatch):
+    """Exercise the actual worker/supervisor with tiny Git trees and a fake Lake."""
+    import sys
+    import time
+    from pathlib import Path
+
+    from glitnir.compute.client import Client, Settings
+    from glitnir.compute.environments import EnvironmentCache
+    from glitnir.compute.protocol import make_request
+    from glitnir.compute.worker import Worker
+    from glitnir.lean.project_inspection import supported_version
+
+    recipes, _, _ = registered_repositories
+    toolchain = tmp_path / "toolchain"
+    (toolchain / "bin").mkdir(parents=True)
+    lake = toolchain / "bin/lake"
+    lake.write_text(
+        f"#!{sys.executable}\nimport sys,time\n"
+        'if "--version" in sys.argv: '
+        f'print("Lake (Lean version {supported_version()})")\n'
+    )
+    lake.chmod(0o700)
+    cache = EnvironmentCache(tmp_path / "cache", max_bytes=40000000)
+    client = Client(Settings("https://tasks.example.test", "lab", "a", "secret"))
+    worker = Worker(client, None, tmp_path / "journal", recipes=recipes, cache=cache)
+    request = make_request(Path(recipes[0].repository) / "Example.lean", "a", 60, 4096)
+    # Check-stage refusal is fast and still exercises the real isolated checker child.
+    request["context_sha256"] = "f" * 64
+    calls = []
+
+    def send(method, path, body=None):
+        calls.append((path, body))
+        if path.endswith("/claim"):
+            return {
+                "job": {
+                    "id": request["request_id"],
+                    "request": request,
+                    "deadline": time.time() + 60,
+                },
+                "lease": "a" * 64,
+            }
+        return {"state": "running"}
+
+    monkeypatch.setattr(client, "request", send)
+    return worker, lake, calls, request
+
+
+@pytest.fixture
+def registered_git_dependency(tmp_path, project_toolchain):
+    """A real locked dependency and root, built locally before freezing its recipe."""
+    import json
+    import subprocess
+
+    from glitnir.compute.environments import Recipe
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    def run(args, cwd):
+        return subprocess.check_output(
+            args, cwd=cwd, text=True, stderr=subprocess.STDOUT, timeout=180
+        )
+
+    dependency = tmp_path / "dependency"
+    dependency.mkdir()
+    (dependency / "lakefile.toml").write_text(
+        'name = "dependency"\n[[lean_lib]]\nname = "Dep"\n'
+    )
+    (dependency / "Dep.lean").write_text("def depValue : Nat := 7\n")
+
+    def commit(root, files):
+        run(["git", "init", "-q"], root)
+        run(["git", "add", *files], root)
+        run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            root,
+        )
+        return run(["git", "rev-parse", "HEAD"], root).strip()
+
+    dependency_rev = commit(dependency, ["lakefile.toml", "Dep.lean"])
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "lakefile.toml").write_text(
+        'name = "example"\n[[require]]\nname = "dependency"\n'
+        + f'git = {json.dumps(str(dependency))}\nrev = "{dependency_rev}"\n'
+        + '[[lean_lib]]\nname = "Example"\n'
+    )
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (root / "Example.lean").write_text(
+        "import Dep\ntheorem result : depValue = 7 := rfl\n"
+    )
+    run(
+        [str(project_toolchain / "bin/lake"), "--keep-toolchain", "build", "Example"],
+        root,
+    )
+    revision = commit(
+        root, ["lakefile.toml", "lean-toolchain", "lake-manifest.json", "Example.lean"]
+    )
+    return (
+        Recipe(
+            "lab", "dependency", str(root), revision, TOOLCHAIN, ("Example",), 50000000
+        ),
+        run,
+    )
