@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import stat
+import tempfile
 import threading
 import time
 import unicodedata
@@ -21,6 +22,7 @@ from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
     check_project,
+    check_seconds,
     through_line_end,
 )
 from glitnir.lean.project_inspection import inspect_project, lean_support
@@ -44,16 +46,19 @@ from glitnir.notebook.check_records import (
     decision_status,
     evidence_prefix_sha256,
     evidence_status,
+    failure_message,
     load_records,
     non_claim_views,
     records_from_check,
     save_records,
     saved_decisions,
     saved_evidence,
+    saved_evidence_failures,
     saved_views,
     view_status,
     with_decision,
     with_evidence,
+    with_evidence_failure,
     with_view,
     without_decision,
 )
@@ -390,32 +395,73 @@ def _with_saved_evidence(
     providers: Providers | None = None,
     compare_environment: bool = True,
 ) -> list[dict[str, Any]]:
-    """Show each card's saved snapshot, current or stale; nothing is recomputed.
+    """Show each card's saved snapshot and failure; nothing is recomputed.
 
     A run's environment includes its provider's modules, so each card is
     compared with the fingerprint taken with them. Without
     `compare_environment` no fingerprint is taken: cards are shown as recorded.
+    A saved failure is shown as `_shown_failure` says.
     """
     saved = saved_evidence(records)
-    found = [card for card in cards if card["key"] in saved]
+    failures = saved_evidence_failures(records)
+    found = [card for card in cards if card["key"] in saved or card["key"] in failures]
     if not found:
-        return cards  # no saved evidence, no fingerprint
+        return cards  # nothing saved, no fingerprint
     for card in found:
         environment = ""
         if compare_environment:
             provider = providers.evidence.get(card["verb"]) if providers else None
             imports = _provider_imports(provider) if provider is not None else ()
             environment = _environment(fingerprint, imports)
-        entry = saved[card["key"]]
-        card["status"] = evidence_status(
-            entry,
-            text,
-            card["line"],
-            environment,
-            compare_environment=compare_environment,
-        )
-        card["snapshot"] = checked_evidence(entry["snapshot"])
+        entry = saved.get(card["key"])
+        if entry is not None:
+            card["status"] = evidence_status(
+                entry,
+                text,
+                card["line"],
+                environment,
+                compare_environment=compare_environment,
+            )
+            card["snapshot"] = checked_evidence(entry["snapshot"])
+        failure = failures.get(card["key"])
+        if failure is not None:
+            card["failure"] = _shown_failure(
+                card, failure, text, environment, compare_environment
+            )
     return cards
+
+
+def _shown_failure(
+    card: dict[str, Any],
+    failure: dict[str, Any],
+    text: str,
+    environment: str,
+    compare_environment: bool,
+) -> dict[str, Any] | None:
+    """Return a card's saved failure as shown, or None when it is hidden.
+
+    A failure follows the evidence currency rule. One that is out of date is
+    hidden behind a current snapshot, and, as recorded, always: a static page
+    shows only what was recorded for its source. Without a snapshot the card
+    reads failed, or out of date for a failure that is.
+    """
+    status = evidence_status(
+        failure,
+        text,
+        card["line"],
+        environment,
+        compare_environment=compare_environment,
+    )
+    if status == "stale" and (not compare_environment or card["status"] == "current"):
+        return None
+    if card["snapshot"] is None:
+        card["status"] = "failed" if status == "current" else "stale"
+    return {
+        "kind": failure["kind"],
+        "message": failure["message"],
+        "created": failure["created"],
+        "status": status,
+    }
 
 
 def _with_saved_decisions(
@@ -471,11 +517,17 @@ def _unavailable_words(providers: Providers | None, section: str) -> dict[str, s
 def _with_runs(
     cards: list[dict[str, Any]], running: str | None, run_errors: dict[str, str]
 ) -> list[dict[str, Any]]:
-    """Mark the card being run and show each card's last run error."""
+    """Mark the card being run and show each card's last run error.
+
+    This session's run error takes the place of a saved failure, which it
+    repeats or replaces, so no failure is shown twice.
+    """
     for card in cards:
         if card["key"] == running:
             card["status"] = "running"
         card["run_error"] = run_errors.get(card["key"])
+        if card["run_error"] is not None and card.get("failure") is not None:
+            card["failure"] = None
     return cards
 
 
@@ -666,13 +718,20 @@ def _uncompared(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Mark saved results that were not compared with any environment.
 
     Their status is the saved one; whether it is still current is unknown,
-    so claims have no currency and saved evidence and decisions read as
-    uncompared rather than out of date.
+    so claims have no currency and saved evidence, failures and decisions read
+    as uncompared rather than out of date.
     """
     for claim in snapshot["project_claims"]:
         claim["current"] = None
     for card in [*snapshot["evidence"], *snapshot["decisions"]]:
-        if card.get("snapshot") is not None or card.get("outcome") is not None:
+        failure = card.get("failure")
+        if failure is not None:
+            failure["status"] = "uncompared"
+        if (
+            card.get("snapshot") is not None
+            or card.get("outcome") is not None
+            or failure is not None
+        ):
             if card["status"] != "running":
                 card["status"] = "uncompared"
     return snapshot
@@ -767,6 +826,30 @@ def _prose(cells: list[dict[str, Any]]) -> list[str]:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _names_local_path(message: str, notebook: Path) -> bool:
+    """Whether ``message`` names a directory of this machine it may mention.
+
+    The notebook's directory and project, the home directory and the
+    temporary directory are looked for, as given and resolved.
+    """
+    places = [notebook.parent, Path.home(), Path(tempfile.gettempdir())]
+    try:
+        root = describe_project(notebook)["root"]
+    except Exception:  # noqa: BLE001 - the other places are still looked for
+        root = None
+    if root:
+        places.append(Path(root))
+    names = set()
+    for place in places:
+        for form in (place, place.absolute()):
+            names.add(str(form))
+            try:
+                names.add(str(form.resolve()))
+            except (OSError, RuntimeError):
+                pass
+    return any(name != "/" and name in message for name in names)
 
 
 @dataclass(frozen=True)
@@ -2005,19 +2088,43 @@ class SourcePreviewService:
         self._run_lock.release()
 
     def _evidence_run(self, job: _EvidenceJob) -> str | None:
-        """Elaborate, compute, validate and save; return the error, if any."""
-        provider, request = job.provider, job.request
+        """Elaborate, compute, validate and save; return the error, if any.
+
+        A failure that says something about the directive is saved too
+        (`_save_failure`); the error returned is the run's own either way.
+        """
+        provider = job.provider
         try:  # provider code must never break the preview
             imports = tuple(provider.imports)
+        except BaseException as failure:
+            return provider_failure(provider, failure)
+        # Taken before the run so an environment change during it leaves the
+        # saved evidence out of date, and before the provider's command so a
+        # failure in it can be saved.
+        environment = environment_fingerprint(self.path, job.text, imports)
+        message, kind = self._evidence_attempt(job, imports, environment)
+        if message is not None and kind is not None:
+            self._save_failure(job, environment, kind, message)
+        return message
+
+    def _evidence_attempt(
+        self, job: _EvidenceJob, imports: tuple[str, ...], environment: dict[str, Any]
+    ) -> tuple[str | None, str | None]:
+        """Run the job; return its error, if any, and the kind of a saved failure.
+
+        The kind (`check_records.EVIDENCE_FAILURE_KINDS`) is None for an error
+        that is not saved: anything but the directive's own Lean error, the
+        provider's crash or refusal, output that is not evidence, or the run's
+        own time limit.
+        """
+        provider, request = job.provider, job.request
+        fingerprint = environment["sha256"]
+        try:  # provider code must never break the preview
             preamble = provider.preamble
             marker = provider.marker
             command = provider.command(request)
         except BaseException as failure:
-            return provider_failure(provider, failure)
-        # Taken before the run so an environment change during it leaves the
-        # saved evidence out of date.
-        environment = environment_fingerprint(self.path, job.text, imports)
-        fingerprint = environment["sha256"]
+            return provider_failure(provider, failure), "provider"
         result = run_provider_lean(
             self.path,
             expected_sha256=job.sha256,
@@ -2033,23 +2140,32 @@ class SourcePreviewService:
             environment_sha256=None if environment.get("unknown") else fingerprint,
         )
         if "payload" not in result:
-            return str(result["error"])
+            if result.get("timed_out") is True:
+                limit = f"{check_seconds():g}"
+                return f"The run reached its time limit of {limit} s.", "timeout"
+            return str(result["error"]), "lean" if result.get("lean") is True else None
         try:
             payload = json.loads(result["payload"])
         except (ValueError, RecursionError):
-            return f"Provider {provider.name} printed evidence that is not JSON."
+            return (
+                f"Provider {provider.name} printed evidence that is not JSON.",
+                "invalid",
+            )
         try:
             body = provider.compute(request, payload)
         except ValueError as failure:
             # A provider's way of saying it cannot serve this request: its
             # message is meant for the reader, not a crash report.
-            return str(failure) or provider_failure(provider, failure)
+            return str(failure) or provider_failure(provider, failure), "refused"
         except BaseException as failure:
-            return provider_failure(provider, failure)
+            return provider_failure(provider, failure), "provider"
         try:
             snapshot = checked_evidence(body)
         except ValueError as failure:
-            return f"Provider {provider.name} returned invalid evidence: {failure}"
+            return (
+                f"Provider {provider.name} returned invalid evidence: {failure}",
+                "invalid",
+            )
         entry = {
             "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
             "fingerprint": fingerprint,
@@ -2063,7 +2179,7 @@ class SourcePreviewService:
             except (OSError, ValueError):
                 unchanged = False
             if not unchanged:
-                return CHANGED_DURING_RUN
+                return CHANGED_DURING_RUN, None
             try:
                 records = with_evidence(
                     load_records(self.path),
@@ -2074,11 +2190,48 @@ class SourcePreviewService:
                 )
                 save_records(self.path, records)
             except ValueError as failure:
-                return str(failure)
+                return str(failure), None
             except OSError as failure:
-                return f"Evidence could not be saved: {failure}."
+                return f"Evidence could not be saved: {failure}.", None
         # Saved, but under a fingerprint that matches nothing: say why.
-        return unknown_git_note(environment)
+        return unknown_git_note(environment), None
+
+    def _save_failure(
+        self, job: _EvidenceJob, environment: dict[str, Any], kind: str, message: str
+    ) -> None:
+        """Save a failed run in the notebook's records, if it may be.
+
+        Not when the preview is closing, the environment is unknown, the
+        message names a local path (committed records hold none), or the
+        saved source is no longer the one that was run. Saving never replaces
+        the run's own error: a failure that cannot be saved is only shown.
+        """
+        if self._cancel.is_set() or environment.get("unknown"):
+            return
+        if _names_local_path(message, self.path):
+            return
+        entry = {
+            "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
+            "fingerprint": environment["sha256"],
+            "provider": job.provider.name,
+            "created": datetime.now(UTC).isoformat(timespec="seconds"),
+            "kind": kind,
+            "message": failure_message(message),
+        }
+        with self._records_lock:
+            try:
+                if _sha256(self._text()) != job.sha256:
+                    return  # changed during the run
+                records = with_evidence_failure(
+                    load_records(self.path),
+                    job.key,
+                    entry,
+                    keep=job.keep,
+                    notebook=self.path,
+                )
+                save_records(self.path, records)
+            except Exception:  # noqa: BLE001 - the run's error is still shown
+                return
 
     def run_decision(self, sha256: str, line: int) -> str:
         """Start deciding the directive at `line`; return its card key.

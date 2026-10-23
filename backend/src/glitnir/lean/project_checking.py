@@ -51,6 +51,8 @@ from glitnir.lean.scratch import scratch_directory
 
 PROGRAMS = Path(__file__).parent
 OUTPUT_BYTES = 16 * 1024**2
+#: What `run_observer` raises when a run reaches its own deadline.
+TIMED_OUT = "Project check timed out."
 MEMORY_EXHAUSTED = (
     "Lean reached its memory limit of {limit} MB. The limit includes the library "
     "files Lean loads (about 4–5 GB with Mathlib) as well as its working memory. "
@@ -214,7 +216,7 @@ def run_observer(
                 if cancel.is_set():
                     raise SnapshotError("Project check cancelled.")
                 if time.monotonic() >= deadline:
-                    raise SnapshotError("Project check timed out.")
+                    raise SnapshotError(TIMED_OUT)
                 if any(
                     os.fstat(stream.fileno()).st_size > OUTPUT_BYTES
                     for stream in (out, err)

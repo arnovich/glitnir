@@ -707,3 +707,39 @@ def test_setup_cache_key_includes_the_whole_header(tmp_path, monkeypatch, change
         line=4,
     )
     assert len(calls) == 2
+
+
+def test_errors_of_the_directive_itself_are_marked_as_lean_s(tmp_path, monkeypatch):
+    """Only the directive's own errors are marked; the caller may save those."""
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    _reporting(monkeypatch, {"information": [], "errors": [{"text": "unknown c"}]})
+    assert _run(source) == {"error": "Line 4: unknown c", "lean": True}
+    _reporting(monkeypatch, {"information": [], "errors": []})
+    assert _run(source) == {"error": "The provider printed no evidence.", "lean": True}
+
+
+def test_reaching_the_run_time_limit_is_marked(tmp_path, monkeypatch):
+    from glitnir.lean import provider_lean
+    from glitnir.lean.project_checking import TIMED_OUT
+    from glitnir.lean.project_snapshot import SnapshotError
+
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+
+    def run(*_arguments, **_options):
+        raise SnapshotError(TIMED_OUT)
+
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+    assert _run(source) == {"error": TIMED_OUT, "transient": True, "timed_out": True}
+    # A batch of views reports the same failure unmarked.
+    source.write_text(TEN)
+    assert _batch(source, imports=("Demo.View",)) == {
+        "error": TIMED_OUT,
+        "transient": True,
+    }
+
+
+def test_setup_failures_are_not_marked(tmp_path, monkeypatch):
+    source = _lake(tmp_path, monkeypatch, {})
+    _forbid_lean(monkeypatch)
+    result = _run(source)
+    assert set(result) == {"error"}

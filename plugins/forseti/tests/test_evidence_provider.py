@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from glitnir.notebook.check_records import load_records, saved_evidence_failures
 from glitnir.notebook.evidence_cards import checked_evidence
 from glitnir.providers import EvidenceProvider, Providers, load_providers
 
@@ -562,10 +563,13 @@ def test_a_decode_rational_error_becomes_the_card_run_error(
         "",
         None,
     )
-    assert (card["status"], card["snapshot"]) == ("never", None)
+    # A refusal: shown, and saved as the run's failure.
+    assert (card["status"], card["snapshot"]) == ("failed", None)
     assert card["run_error"] == (
         "Python Asgard could not read the circuit: fake: unreadable circuit"
     )
+    [failure] = saved_evidence_failures(load_records(service.path)).values()
+    assert (failure["kind"], failure["message"]) == ("refused", card["run_error"])
 
 
 @pytest.mark.parametrize(
