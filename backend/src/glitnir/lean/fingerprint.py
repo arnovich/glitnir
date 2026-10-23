@@ -3,6 +3,13 @@
 It reads small files Lean and Lake already maintain, never ``.olean`` files,
 and runs no project code. It decides whether saved results are still current;
 the full identity recorded by an explicit check stays the authority.
+
+The identity names no location: project sources are keyed by their path
+relative to the project, files and dependency states by their contents and
+commits, and each imported module by the build identity in its Lake trace
+(`trace_digest`). Saved results therefore stay current in another checkout,
+on another machine or operating system, exactly when the toolchain, sources,
+dependencies and compiled artifacts are byte-identical there.
 """
 
 import hashlib
@@ -114,16 +121,47 @@ def _trace_relative(module: str) -> Path | None:
     return Path(*parts[:-1], parts[-1] + ".trace")
 
 
+#: The parts of a Lake trace that identify a build; see `trace_digest`.
+_TRACE_IDENTITY = ("schemaVersion", "depHash", "outputs")
+
+
 def trace_digest(path: Path) -> str | None:
-    """Hash a Lake trace without its machine-specific build log."""
+    """Hash the build identity in a Lake trace: its schema, input hash and outputs.
+
+    Only ``schemaVersion``, ``depHash`` and ``outputs`` are hashed. ``depHash``
+    is the hash Lake compares to decide that a module is up to date: it mixes
+    the source text by content, the toolchain, the options and Lean arguments,
+    the module and package names, the libraries, and the import traces and
+    artifact hashes, and holds no path. ``outputs`` holds the content hashes of
+    the files the build produced. Lake 4.35 also writes ``inputs``, a debug
+    dump of the tree whose hashes ``depHash`` mixes, captioned, with the
+    source's absolute path as one caption (Lake never hashes captions);
+    ``log``, the command line with its paths; and ``synthetic``, true for a
+    trace fetched from a cache. All three are dropped, so the same build at
+    another path, or fetched instead of built, has the same digest when the
+    recorded outputs are equal; Mathlib's traces carry none of them. (A fetch
+    from a local cache can record an extra ``l`` output, and then reads as
+    out of date: the safe direction.)
+
+    This is sound: dropping ``inputs`` drops only captions, since its hashes
+    are already in ``depHash``. Whatever a location really puts into compiled
+    bytes (a message, ``include_str`` data, a reflected file name) changes
+    ``outputs``, and through the artifact hashes the ``depHash`` of every module
+    importing it, so such a build still differs. A fetched trace records the
+    input hash as its ``depHash``, and equal ``outputs`` are equal bytes.
+
+    Returns None for an unreadable trace, or one without a string ``depHash``,
+    which identifies no build. `environment_fingerprint` makes such a trace,
+    unlike a missing one, an unknown state.
+    """
     try:
         trace = json.loads(read_regular(path, _MAX_FILE))
     except (OSError, ValueError, RecursionError):
         return None
-    if not isinstance(trace, dict):
+    if not isinstance(trace, dict) or not isinstance(trace.get("depHash"), str):
         return None
-    trace.pop("log", None)
-    return hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest()
+    identity = {key: trace.get(key) for key in _TRACE_IDENTITY}
+    return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
 def _reason(text: str) -> str:
@@ -622,6 +660,19 @@ def environment_fingerprint(
 ) -> dict[str, Any]:
     """Identify toolchain, Lake files, builds, project sources and dependencies.
 
+    The identity holds no absolute path: the toolchain named by
+    ``lean-toolchain``, the Lake files by content, each dependency by its
+    manifest revision, HEAD and cleanliness, each imported module by its
+    `trace_digest`, the project sources by relative path and content
+    (`project_sources`), and the checker (`checker_identity`). Under remote
+    execution it also holds ``execution``, the selected backend and its
+    Taskvalet URL, project and environment; ``compute_context``, the prepared
+    dependency context by relative path and content; and ``compute_checker``,
+    the installed checker's files by relative path and content. None of them
+    holds a path either. So the same sources and byte-identical builds in
+    another checkout, or on another machine, give the same digest, and
+    results saved there are current here.
+
     `imports` are modules loaded besides the notebook's own, as a view or
     evidence provider's are: their project sources and build traces count as
     the notebook's imports do. `known_packages`, the dependency states of another
@@ -629,8 +680,10 @@ def environment_fingerprint(
     than asking git again.
 
     Saved results keep only the digest. When the HEAD or cleanliness of a
-    git dependency is unknown (see `git_state`), or a project source could
-    not be read (see `project_sources`), the digest also covers a fresh random
+    git dependency is unknown (see `git_state`), a project source could not
+    be read (see `project_sources`), or an import's trace exists but is no
+    Lake trace (`trace_digest` gives None; it is then listed under
+    ``unreadable_traces``), the digest also covers a fresh random
     value, so it matches no saved result, not even one saved while the state
     was unknown, and nothing saved under it is ever current. Results then
     read as out of date until the state is known again; an unknown state is
@@ -675,19 +728,21 @@ def environment_fingerprint(
             )
             packages.append({"name": entry["name"], "rev": entry.get("rev"), **state})
     traces: dict[str, str | None] = {}
+    unreadable: list[str] = []
     for module in named:
         relative = _trace_relative(module)
         traces[module] = None
         if relative is None:
             continue
-        traces[module] = next(
-            (
-                digest
-                for base in roots
-                if (digest := trace_digest(base / ".lake/build/lib/lean" / relative))
-            ),
-            None,
-        )
+        for base in roots:
+            path = base / ".lake/build/lib/lean" / relative
+            traces[module] = trace_digest(path)
+            if traces[module] is not None:
+                break
+            if _exists(path):
+                # Present but no Lake trace: unknown, never a missing build.
+                unreadable.append(module)
+                break
     identity = {
         "toolchain": project.get("toolchain"),
         "files": files,
@@ -696,6 +751,8 @@ def environment_fingerprint(
         "sources": sources,
         "checker": checker_identity(),
     }
+    if unreadable:
+        identity["unreadable_traces"] = sorted(unreadable)
     from glitnir.compute.client import execution_identity
     from glitnir.compute.protocol import checker_digest, context_digest
 
@@ -704,8 +761,10 @@ def environment_fingerprint(
         identity["execution"] = execution
         identity["compute_context"] = context_digest(source)
         identity["compute_checker"] = checker_digest()
-    unknown = any("reason" in package for package in packages) or bool(
-        sources and sources["unknown"]
+    unknown = (
+        any("reason" in package for package in packages)
+        or bool(sources and sources["unknown"])
+        or bool(unreadable)
     )
     stable: dict[str, Any] = {
         **identity,
@@ -725,15 +784,26 @@ def environment_fingerprint(
     }
 
 
+def _exists(path: Path) -> bool:
+    """Whether something is at `path`; True when that cannot be told."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
 def _digest(identity: dict[str, Any]) -> str:
     return hashlib.sha256(
-        b"glitnir.environment-fingerprint/v3\0"
+        b"glitnir.environment-fingerprint/v4\0"
         + json.dumps(identity, sort_keys=True).encode()
     ).hexdigest()
 
 
 def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
-    """Explain the dependencies whose git state a fingerprint could not read.
+    """Explain the git states, sources and build traces a fingerprint could not read.
 
     Returns:
         A sentence naming them and why, or None when every state is known.
@@ -743,6 +813,7 @@ def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
         if "reason" in package:
             names.setdefault(package["reason"], []).append(package["name"])
     sources = (fingerprint.get("sources") or {}).get("unknown") or []
+    traces = fingerprint.get("unreadable_traces") or []
     notes = []
     if names:
         parts = "; ".join(f"{', '.join(found)}: {why}" for why, found in names.items())
@@ -750,6 +821,9 @@ def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
     if sources:
         shown = ", ".join(sources[:5]) + (", …" if len(sources) > 5 else "")
         notes.append(f"Could not read the project sources ({shown})")
+    if traces:
+        shown = ", ".join(traces[:5]) + (", …" if len(traces) > 5 else "")
+        notes.append(f"Could not read the build traces of {shown}")
     if not notes:
         return None
     return "; ".join(notes) + "; results are saved as out of date."

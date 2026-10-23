@@ -1,7 +1,9 @@
 """The fast environment fingerprint changes exactly when checking inputs change."""
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -59,12 +61,203 @@ def test_direct_imports_handles_nested_and_trailing_comments():
     assert direct_imports("/- unclosed\nimport A") == []
 
 
-def test_trace_digest_ignores_build_logs(tmp_path):
-    first, second = tmp_path / "a.trace", tmp_path / "b.trace"
-    first.write_text(json.dumps({"depHash": "aa", "log": [{"message": "/x"}]}))
-    second.write_text(json.dumps({"depHash": "aa", "log": [{"message": "/y"}]}))
-    assert trace_digest(first) == trace_digest(second)
+def _lake_trace(root: str, **changes) -> dict:
+    """A Lake 4.35 module trace, as `lake build` writes it under `root`."""
+    source = f"{root}/src/Demo/Base.lean"
+    trace = {
+        "synthetic": False,
+        "schemaVersion": "2025-09-10",
+        "outputs": {
+            "o": ["d38bab13c7e11970.olean"],
+            "m": False,
+            "i": "7cf730b9456a20ff.ilean",
+            "c": "eb70cff95869e9c9.c",
+        },
+        "log": [{"message": f".> lean {source} -o {root}/.lake/x", "level": "trace"}],
+        "inputs": [
+            ["deps", [["imports", "00000000000006bb"]]],
+            ["Lean 4.35.0, commit eb6cafb", "407ce514b71d5a10"],
+            [source, "4b76c7a070fe7a42"],
+            ["options", [["-DautoImplicit=false", "4a85acb881fd49d0"]]],
+            ["Module.name: Demo.Base", "5915f570797032cd"],
+        ],
+        "depHash": "1f6e75af085721d2",
+    }
+    trace.update(changes)
+    return trace
+
+
+def _write_trace(path: Path, trace: object) -> Path:
+    path.write_text(json.dumps(trace))
+    return path
+
+
+def test_trace_digest_ignores_path_captions_synthetic_and_logs(tmp_path):
+    """Lake hashes no caption, so a build elsewhere or fetched has the same digest."""
+    built = _write_trace(tmp_path / "a.trace", _lake_trace("/home/runner/work/p"))
+    moved = _lake_trace("/Users/me/longer/path/p", synthetic=True)
+    moved["log"] = [{"message": "a lint warning", "level": "warning"}]
+    elsewhere = _write_trace(tmp_path / "b.trace", moved)
+    assert trace_digest(built) is not None
+    assert trace_digest(built) == trace_digest(elsewhere)
     assert trace_digest(tmp_path / "missing.trace") is None
+
+
+def test_a_trace_without_inputs_equals_a_built_one(tmp_path):
+    """Mathlib's fetched traces carry only schemaVersion, depHash and outputs."""
+    built = _lake_trace("/home/runner/work/p")
+    fetched = {key: built[key] for key in ("schemaVersion", "depHash", "outputs")}
+    assert trace_digest(_write_trace(tmp_path / "a.trace", built)) == trace_digest(
+        _write_trace(tmp_path / "b.trace", fetched)
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"depHash": "1f6e75af085721d3"},
+        {"schemaVersion": "2026-01-01"},
+        *(
+            {"outputs": {**_lake_trace("/p")["outputs"], key: value}}
+            for key, value in (
+                ("o", ["d38bab13c7e11971.olean"]),
+                ("i", "7cf730b9456a20fe.ilean"),
+                ("c", "eb70cff95869e9c8.c"),
+                ("r", ["0123456789abcdef.olean.server"]),
+                ("rs", ["0123456789abcdef.olean.private"]),
+                ("m", True),
+            )
+        ),
+    ],
+)
+def test_trace_digest_changes_with_the_build_identity(tmp_path, changes):
+    base = trace_digest(_write_trace(tmp_path / "a.trace", _lake_trace("/p")))
+    changed = trace_digest(
+        _write_trace(tmp_path / "b.trace", _lake_trace("/p", **changes))
+    )
+    assert changed is not None and changed != base
+
+
+@pytest.mark.parametrize(
+    "content",
+    ['"1f6e75af085721d2"', "1234", "[1, 2]", "null", "{}", '{"log": []}', "{"],
+)
+def test_non_dict_and_stub_traces_have_no_digest(tmp_path, content):
+    """A trace with no depHash identifies no build, so it is never a digest."""
+    (tmp_path / "t.trace").write_text(content)
+    assert trace_digest(tmp_path / "t.trace") is None
+
+
+def _copied_project(root: Path) -> Path:
+    """`_project` at `root`, with a trace naming `root` as Lake writes it."""
+    root.mkdir(parents=True, exist_ok=True)
+    source = _project(root)
+    trace = root / ".lake/build/lib/lean/Demo/Base.trace"
+    _write_trace(trace, _lake_trace(str(root)))
+    module = root / "Demo/Base.lean"
+    module.parent.mkdir()
+    module.write_text("def x : Nat := 1\n")
+    return source
+
+
+def test_a_project_built_at_another_path_has_the_same_fingerprint(tmp_path):
+    """Saved results stay current in another checkout of identical builds."""
+    first = _copied_project(tmp_path / "a/project")
+    second = _copied_project(tmp_path / "b/much/longer/project")
+    text = first.read_text()
+    one = environment_fingerprint(first, text)
+    two = environment_fingerprint(second, text)
+    assert one["imports"]["Demo.Base"] is not None
+    assert one["sha256"] == two["sha256"]
+    assert one["stable_sha256"] == two["stable_sha256"]
+    (second.parent / "Demo/Base.lean").write_text("def x : Nat := 2\n")
+    assert environment_fingerprint(second, text)["sha256"] != one["sha256"]
+
+
+def _git(directory: Path, *args: str) -> str:
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+        "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+        "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z",
+    }
+    done = subprocess.run(
+        ["git", *args], cwd=directory, check=True, capture_output=True, env=env
+    )
+    return done.stdout.decode().strip()
+
+
+def _project_with_git_dependency(root: Path) -> Path:
+    source = _copied_project(root)
+    dependency = root / ".lake/packages/dep"
+    dependency.mkdir(parents=True)
+    _git(dependency, "init", "-q")
+    (dependency / "Dep.lean").write_text("def y : Nat := 1\n")
+    _git(dependency, "add", "Dep.lean")
+    _git(dependency, "commit", "-qm", "init")
+    head = _git(dependency, "rev-parse", "HEAD")
+    (root / "lake-manifest.json").write_text(
+        json.dumps(
+            {
+                "version": "1.2.0",
+                "packages": [{"name": "dep", "type": "git", "rev": head}],
+            }
+        )
+    )
+    return source
+
+
+def test_a_dirty_dependency_still_changes_a_portable_fingerprint(tmp_path):
+    first = _project_with_git_dependency(tmp_path / "a/project")
+    second = _project_with_git_dependency(tmp_path / "b/x/project")
+    text = first.read_text()
+    one = environment_fingerprint(first, text)
+    assert one["packages"][0]["clean"] is True
+    assert environment_fingerprint(second, text)["sha256"] == one["sha256"]
+    (tmp_path / "b/x/project/.lake/packages/dep/Dep.lean").write_text("def y := 2\n")
+    dirty = environment_fingerprint(second, text)
+    assert dirty["packages"][0]["clean"] is False
+    assert dirty["sha256"] != one["sha256"]
+
+
+def test_a_result_saved_under_a_v3_fingerprint_reads_as_out_of_date(tmp_path):
+    """Version 3 hashed whole traces; its digests match nothing now."""
+    from glitnir.notebook.check_records import claim_views, records_from_check
+
+    source = _copied_project(tmp_path)
+    found = environment_fingerprint(source, source.read_text())
+    identity = {
+        key: found[key]
+        for key in ("toolchain", "files", "packages", "imports", "sources", "checker")
+    }
+    v3 = hashlib.sha256(
+        b"glitnir.environment-fingerprint/v3\0"
+        + json.dumps(identity, sort_keys=True).encode()
+    ).hexdigest()
+    text = "theorem t : True := True.intro\n"
+    result = {
+        "status": "checked_snapshot",
+        "source_sha256": "s",
+        "environment_sha256": "e",
+        "withheld": None,
+        "theorems": [
+            {
+                "name": "t",
+                "status": "checked",
+                "axioms": [],
+                "start_line": 1,
+                "end_line": 1,
+                "proposition_sha256": "p",
+            }
+        ],
+    }
+    records = records_from_check(text, result, v3)
+    assert [v["current"] for v in claim_views(text, records, v3)] == [True]
+    [view] = claim_views(text, records, found["sha256"])
+    assert view["current"] is False
 
 
 def test_rebuilt_dependency_changes_the_fingerprint(tmp_path):
@@ -150,6 +343,49 @@ def test_deeply_nested_trace_records_none(tmp_path):
     (build / "Deep.trace").write_text("[" * 100000)
     result = environment_fingerprint(source, "import Demo.Deep\n")
     assert result["imports"] == {"Demo.Deep": None}
+
+
+def test_a_missing_trace_is_a_known_state(tmp_path):
+    """An import not built (a toolchain module, say) has no trace, every time."""
+    source = _project(tmp_path)
+    text = "import Demo.Missing\n"
+    first, second = (environment_fingerprint(source, text) for _ in range(2))
+    assert first["imports"] == {"Demo.Missing": None}
+    assert first["unknown"] is False
+    assert first["sha256"] == second["sha256"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["{", "[" * 100000, "{}", '{"log": []}', '{"depHash": 1}', "[]"],
+    ids=["invalid", "nested", "empty", "stub", "numeric-hash", "list"],
+)
+def test_a_trace_that_is_no_lake_trace_matches_nothing(tmp_path, content):
+    """A trace file Lake would reject is unknown, never the state of a missing one."""
+    from glitnir.lean.fingerprint import unknown_git_note
+
+    source = _project(tmp_path)
+    text = "import Demo.Broken\n"
+    missing = environment_fingerprint(source, text)
+    (tmp_path / ".lake/build/lib/lean/Demo/Broken.trace").write_text(content)
+    first, second = (environment_fingerprint(source, text) for _ in range(2))
+    assert first["imports"] == {"Demo.Broken": None}
+    assert first["unknown"] is True
+    assert len({missing["sha256"], first["sha256"], second["sha256"]}) == 3
+    assert first["stable_sha256"] == second["stable_sha256"]
+    assert first["stable_sha256"] != missing["stable_sha256"]
+    assert unknown_git_note(first) == (
+        "Could not read the build traces of Demo.Broken; "
+        "results are saved as out of date."
+    )
+
+
+def test_an_unreadable_trace_matches_nothing(tmp_path):
+    """A trace that exists but cannot be read (a directory, here) is unknown."""
+    source = _project(tmp_path)
+    (tmp_path / ".lake/build/lib/lean/Demo/Odd.trace").mkdir()
+    result = environment_fingerprint(source, "import Demo.Odd\n")
+    assert result["unknown"] is True
 
 
 def test_deeply_nested_manifest_has_no_packages(tmp_path):
@@ -885,3 +1121,88 @@ def test_headers_are_kept_by_digest_never_by_text(monkeypatch):
     header_imports("import B\n")
     header_imports("import C\n")
     assert len(fingerprint._HEADERS) == 2
+
+
+def _lake_build(root: Path, toolchain: Path) -> None:
+    subprocess.run(
+        [str(toolchain / "bin/lake"), "--keep-toolchain", "build", "Example"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(toolchain)},
+    )
+
+
+def _whole_trace_digest(path: Path) -> str:
+    """The version 3 digest: the whole trace but its log."""
+    trace = json.loads(path.read_text())
+    trace.pop("log", None)
+    return hashlib.sha256(json.dumps(trace, sort_keys=True).encode()).hexdigest()
+
+
+def test_live_fingerprint_is_portable_across_checkouts(
+    prepared_lean_project, project_toolchain, tmp_path
+):
+    """Results checked in one checkout are current in a rebuild at another path.
+
+    Lake writes each module's absolute source path into its trace, so version 3
+    of the fingerprint, which hashed whole traces, never matched there.
+    """
+    from glitnir.notebook.check_records import load_records, records_path
+    from glitnir.notebook.source_preview import SourcePreviewService
+
+    first = prepared_lean_project
+    source = first / "src/Example.lean"
+    text = source.read_text()
+    service = SourcePreviewService(source)
+    try:
+        service.check(hashlib.sha256(text.encode()).hexdigest())
+        service._worker.join(timeout=900)
+        assert not service._worker.is_alive()
+        assert service._check["status"] == "checked_snapshot", service._check
+        [claim] = service.snapshot()["project_claims"]
+    finally:
+        service.close()
+    assert (claim["name"], claim["current"]) == ("result", True)
+    assert load_records(source) is not None
+
+    # A fresh build of the same sources at another, longer path, not a copy.
+    second = tmp_path / "b/x/project"
+    shutil.copytree(first, second, ignore=shutil.ignore_patterns(".lake"))
+    assert not (second / ".lake").exists()
+    _lake_build(second, project_toolchain)
+    moved = second / "src/Example.lean"
+    shutil.copyfile(records_path(source), records_path(moved))
+    traces = [
+        root / ".lake/build/lib/lean/Example/Helper.trace" for root in (first, second)
+    ]
+    assert str(second).encode() in traces[1].read_bytes()
+    assert _whole_trace_digest(traces[0]) != _whole_trace_digest(traces[1])
+    assert trace_digest(traces[0]) == trace_digest(traces[1])
+
+    def current() -> bool:
+        service = SourcePreviewService(moved)
+        try:
+            [claim] = service.snapshot()["project_claims"]
+        finally:
+            service.close()
+        return claim["current"]
+
+    assert current() is True
+    helper = second / "src/Example/Helper.lean"
+    original = helper.read_text()
+    helper.write_text("def helper : Nat := 0 + 1\n")
+    _lake_build(second, project_toolchain)
+    assert trace_digest(traces[1]) != trace_digest(traces[0])
+    assert current() is False
+    helper.write_text(original)
+    _lake_build(second, project_toolchain)
+    assert current() is True
+    lakefile = second / "lakefile.toml"
+    lakefile.write_text(
+        lakefile.read_text().replace("autoImplicit = false", "autoImplicit = true")
+    )
+    _lake_build(second, project_toolchain)
+    assert trace_digest(traces[1]) != trace_digest(traces[0])
+    assert current() is False

@@ -186,7 +186,10 @@ Results are saved beside the notebook in `<Notebook>.glitnir.json`; a result goe
 out of date when anything above the claim changes (any edit above it, not only
 to declarations it uses), when an edit below it continues its command (another
 proof step, `where`, `termination_by`), or the toolchain, `lake-manifest.json`, a rebuilt
-import or a dependency checkout changes. If a command fails, only the claims
+import or a dependency checkout changes. Where the project lives does not count:
+a committed `.glitnir.json` stays current in another clone or on another machine
+whose sources, dependencies and compiled imports are byte-identical, and reads
+as out of date otherwise. If a command fails, only the claims
 from that command onward are withheld, and they show as plain source under a
 "Checking stopped at line N" banner. See the
 [authoring skill](https://github.com/arnovich/glitnir/blob/main/skills/glitnir-notebooks/SKILL.md)
@@ -310,7 +313,8 @@ them. Delete it at any time to free the space.
 
 Upgrading to a version that changes the replay program invalidates saved results
 once (they show as out of date) and the recorded import replays, so the first
-check after an upgrade replays the imports again.
+check after an upgrade replays the imports again. A version that changes how the
+environment is identified shows saved results as out of date once, too.
 
 ### Uses and the claim graph
 

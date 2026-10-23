@@ -61,6 +61,13 @@ Glitnir supports exactly one Lean version, `project_inspection.TOOLCHAIN` (today
 programs are edited for that version directly, with no compatibility layers,
 and must elaborate on it with no output. Lake's `importArts` are read only
 through `glitnir/lean/artifacts.py`.
+The environment fingerprint (`fingerprint.py`) decides when a saved result is
+current. It holds no location, so saved results are portable across checkouts
+and machines when the compiled artifacts are byte-identical: an imported module
+counts only by its Lake trace's `schemaVersion`, `depHash` and `outputs`
+(`trace_digest`), never by `inputs` captions, `log` or `synthetic`. Never add a
+value that names a path, and bump the `glitnir.environment-fingerprint/vN` tag
+whenever what it hashes changes.
 Simulation is evidence, never proof. The core has one checking mode (project) and no runtime
 dependencies; Forseti-specific code lives in `plugins/forseti` (`glitnir-forseti`,
 loaded through the `glitnir.providers` entry point). Run its tests, black, isort,
