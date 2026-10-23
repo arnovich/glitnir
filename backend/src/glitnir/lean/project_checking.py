@@ -1582,8 +1582,9 @@ def check_project(
     a command moves back to the end of the command before it, so no command
     is ever compiled shortened. Where there is none, the check is refused.
 
-    A finished check's result carries ``stage_ms``, how long each stage took
-    (`StageTimes`), for display and logs only.
+    A finished check's result, and an unavailable one once a stage ran,
+    carries ``stage_ms``, how long each stage took (`StageTimes`), for
+    display and logs only.
     """
     cancellation = cancel if cancel is not None else threading.Event()
     progress = noting_sleep(progress)
@@ -1688,7 +1689,17 @@ def check_project(
                 "withheld": {"from_line": line + 1, "message": message, **requested},
             }
     except (OSError, ValueError, RecursionError, SandboxUnavailable) as error:
-        return {"status": "unavailable", "message": str(error), "theorems": []}
+        unavailable: dict[str, Any] = {
+            "status": "unavailable",
+            "message": str(error),
+            "theorems": [],
+        }
+        stage_ms = stages.summary()
+        if len(stage_ms) > 1:
+            # How far it got, as for a finished check: a timeout's stages say
+            # where its time went. A refusal before any stage has none.
+            unavailable["stage_ms"] = stage_ms
+        return unavailable
 
 
 def candidate_text(saved: str, insert_after_line: int, block: str) -> str:

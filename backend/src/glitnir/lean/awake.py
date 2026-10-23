@@ -10,9 +10,10 @@ from collections.abc import Callable, Iterator
 
 CAFFEINATE = "/usr/bin/caffeinate"
 _STOP_SECONDS = 2.0
-#: Sleep shorter than this is not reported; the wall clock may be adjusted a
-#: little while a run is in progress.
-NOTED_SLEEP_SECONDS = 30.0
+#: Sleep shorter than this is not reported. A maintenance DarkWake slice lasts
+#: about 10 s and a stage's own time varies by more than that, so only sleep
+#: of a minute or more explains a slow stage.
+NOTED_SLEEP_SECONDS = 60.0
 
 _lock = threading.Lock()
 _holders = 0
@@ -45,10 +46,14 @@ def awake() -> Iterator[None]:
 
 
 def _acquire() -> None:
+    """Count one more holder, starting caffeinate for the first.
+
+    The holder is counted only once the start has been tried, so a start
+    that raises anything at all counts nothing: a later run starts again.
+    """
     global _holders, _process
     with _lock:
-        _holders += 1
-        if _holders == 1 and _enabled():
+        if _holders == 0 and _enabled():
             try:
                 _process = subprocess.Popen(
                     [CAFFEINATE, "-i", "-w", str(os.getpid())],
@@ -56,17 +61,25 @@ def _acquire() -> None:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-            except OSError:
+            except Exception:  # A failure to start is ignored.
                 _process = None
+        _holders += 1
 
 
 def _release() -> None:
+    """Count one holder less, stopping caffeinate after the last one.
+
+    It is stopped outside the lock, so a run starting meanwhile never waits
+    for it; such a run starts its own.
+    """
     global _holders, _process
+    process = None
     with _lock:
         _holders -= 1
-        if _holders == 0 and _process is not None:
+        if _holders == 0:
             process, _process = _process, None
-            _stop(process)
+    if process is not None:
+        _stop(process)
 
 
 def _stop(process: "subprocess.Popen[bytes]") -> None:
@@ -82,30 +95,52 @@ def _stop(process: "subprocess.Popen[bytes]") -> None:
         pass
 
 
+def _with_sleep() -> Callable[[], float] | None:
+    """Return a monotonic clock that keeps counting while the computer sleeps.
+
+    That is `CLOCK_BOOTTIME` on Linux and `CLOCK_MONOTONIC` on macOS, where
+    Python's `time.monotonic` is the uptime clock instead. Neither moves when
+    the wall clock is set or stepped (by NTP, say). None elsewhere.
+    """
+    if sys.platform.startswith("linux") and hasattr(time, "CLOCK_BOOTTIME"):
+        clock = time.CLOCK_BOOTTIME
+    elif sys.platform == "darwin" and hasattr(time, "CLOCK_MONOTONIC"):
+        clock = time.CLOCK_MONOTONIC
+    else:
+        return None
+    return lambda: time.clock_gettime(clock)
+
+
 class SleepWatch:
     """Measure how long the computer slept since the watch was started.
 
-    `time.monotonic` stops while the computer sleeps (on macOS and Linux) and
-    `time.time` does not, so the difference of their advances is the time
-    asleep. That is also why no monotonic deadline fires during sleep.
+    `time.monotonic` stops while the computer sleeps (on macOS and Linux),
+    which is also why no deadline fires during sleep, and the clock of
+    `_with_sleep` does not; the difference of their advances is the time
+    asleep. The wall clock is never used, so setting it is no sleep. Where no
+    such clock exists, no sleep is measured.
     """
 
     def __init__(
         self,
-        wall: Callable[[], float] = time.time,
+        with_sleep: Callable[[], float] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Start the watch now."""
-        self._wall = wall
+        """Start the watch now; ``with_sleep`` defaults to `_with_sleep`."""
+        self._with_sleep = with_sleep or _with_sleep()
         self._monotonic = monotonic
-        self._wall_start = wall()
         self._monotonic_start = monotonic()
+        self._with_sleep_start = (
+            self._with_sleep() if self._with_sleep is not None else 0.0
+        )
 
     def slept_seconds(self) -> float:
         """Return the seconds the computer slept since the watch started."""
-        wall = self._wall() - self._wall_start
+        if self._with_sleep is None:
+            return 0.0
+        total = self._with_sleep() - self._with_sleep_start
         awake_for = self._monotonic() - self._monotonic_start
-        return max(0.0, wall - awake_for)
+        return max(0.0, total - awake_for)
 
     def note(self) -> str:
         """Return " (the computer slept for N min)", or "" for no notable sleep."""

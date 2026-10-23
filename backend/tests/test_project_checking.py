@@ -2732,6 +2732,33 @@ def test_a_check_reports_how_long_each_stage_took(tmp_path, monkeypatch):
     assert stage_ms["total"] >= stage_ms["reports"] + stage_ms["replay"]
 
 
+def test_a_check_that_times_out_still_reports_its_stages(tmp_path, monkeypatch):
+    """An unavailable result says how far the check got and how long it took."""
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    _fake_check_stages(tmp_path, monkeypatch)
+    fake = checking.run_observer
+
+    def run(toolchain, arguments, **options):
+        if "-o" in arguments:
+            raise SnapshotError("Project check timed out.")
+        return fake(toolchain, arguments, **options)
+
+    monkeypatch.setattr(checking, "run_observer", run)
+    source = tmp_path / "A.lean"
+    source.write_text("def x : Nat := 1\n")
+    result = checking.check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert (result["status"], result["message"]) == (
+        "unavailable",
+        "Project check timed out.",
+    )
+    assert list(result["stage_ms"]) == ["capture", "read", "compile", "total"]
+
+
 def test_stage_times_add_up_a_repeated_stage_and_survive_a_failure(monkeypatch):
     from glitnir.lean import project_checking as checking
 

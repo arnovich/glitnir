@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import threading
 from typing import Any
 
@@ -143,23 +144,51 @@ def test_a_failed_start_is_not_retried_by_nested_holders(
     assert starts == [1]
 
 
+def test_a_start_failing_in_any_way_counts_no_holder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A start that raises something other than OSError leaks no hold.
+
+    Otherwise the count never returns to zero, and no later run would start
+    caffeinate again.
+    """
+    attempts: list[int] = []
+
+    def popen(*args: Any, **options: Any) -> _Process:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("cannot fork")
+        return _Process()
+
+    monkeypatch.setattr(awake_module, "_enabled", lambda: True)
+    monkeypatch.setattr(awake_module.subprocess, "Popen", popen)
+    with awake_module.awake():
+        pass
+    assert awake_module._holders == 0
+    with awake_module.awake():
+        assert awake_module._process is not None
+    assert attempts == [1, 1]
+    assert awake_module._holders == 0 and awake_module._process is None
+
+
 class _Clocks:
-    """A wall clock and a monotonic clock that stops while "asleep"."""
+    """A monotonic clock that stops while "asleep" and one that does not."""
 
     def __init__(self) -> None:
         self.monotonic_now = 1000.0
-        self.wall_now = 1_700_000_000.0
+        self.with_sleep_now = 5000.0
 
     def run(self, seconds: float) -> None:
         self.monotonic_now += seconds
-        self.wall_now += seconds
+        self.with_sleep_now += seconds
 
     def sleep(self, seconds: float) -> None:
-        self.wall_now += seconds
+        self.with_sleep_now += seconds
 
     def watch(self) -> SleepWatch:
         return SleepWatch(
-            wall=lambda: self.wall_now, monotonic=lambda: self.monotonic_now
+            with_sleep=lambda: self.with_sleep_now,
+            monotonic=lambda: self.monotonic_now,
         )
 
 
@@ -167,14 +196,13 @@ class _Clocks:
     "slept, note",
     [
         (0, ""),
-        (29, ""),
-        (45, " (the computer slept for 45 s)"),
+        (45, ""),
+        (59, ""),
+        (90, " (the computer slept for 90 s)"),
         (720, " (the computer slept for 12 min)"),
     ],
 )
-def test_sleep_is_the_wall_time_the_monotonic_clock_missed(
-    slept: float, note: str
-) -> None:
+def test_sleep_is_the_time_the_monotonic_clock_missed(slept: float, note: str) -> None:
     clocks = _Clocks()
     watch = clocks.watch()
     clocks.run(300)
@@ -184,13 +212,34 @@ def test_sleep_is_the_wall_time_the_monotonic_clock_missed(
     assert watch.note() == note
 
 
-def test_a_wall_clock_set_back_is_no_sleep() -> None:
+@pytest.mark.parametrize("step", [3600.0, -3600.0])
+def test_setting_the_wall_clock_is_no_sleep(
+    monkeypatch: pytest.MonkeyPatch, step: float
+) -> None:
+    """An NTP step or a manual change moves neither clock the watch reads."""
     clocks = _Clocks()
     watch = clocks.watch()
+    stepped = awake_module.time.time() + step
+    monkeypatch.setattr(awake_module.time, "time", lambda: stepped)
     clocks.run(60)
-    clocks.wall_now -= 3600
     assert watch.slept_seconds() == 0.0
     assert watch.note() == ""
+
+
+def test_the_real_clocks_count_no_sleep_over_a_moment() -> None:
+    """On macOS and Linux the watch reads two real clocks that agree awake."""
+    watch = SleepWatch()
+    assert 0.0 <= watch.slept_seconds() < 1.0
+    if sys.platform in ("darwin", "linux"):
+        assert awake_module._with_sleep() is not None
+
+
+def test_without_a_sleep_counting_clock_no_sleep_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(awake_module, "_with_sleep", lambda: None)
+    watch = SleepWatch()
+    assert watch.slept_seconds() == 0.0 and watch.note() == ""
 
 
 def test_progress_notes_the_sleep_since_the_run_started(

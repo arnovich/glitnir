@@ -42,6 +42,9 @@ CHECK_STAGES = "check_stages"
 class _StageReporter:
     """Write each recorded check's stage times after its test's outcome.
 
+    The same reporter is in `backend/tests/conftest.py`; the two test trees are
+    separate packages, and register it under different names.
+
     CI captures test output, so a print would show only for a failure; this
     line is in every log and says where a check's time goes.
     """
@@ -58,14 +61,17 @@ class _StageReporter:
         writer = self._config.pluginmanager.get_plugin("terminalreporter")
         if writer is None:
             return
-        for key, (label, stage_ms) in report.user_properties:
+        for key, value in report.user_properties:
             if key == CHECK_STAGES:
+                label, stage_ms = value
                 writer.write_line(f"check stages {label}: {stage_summary(stage_ms)}")
 
 
 def pytest_configure(config):
     """Report the stage times tests record with `record_check_stages`."""
-    config.pluginmanager.register(_StageReporter(config), "glitnir-check-stages")
+    config.pluginmanager.register(
+        _StageReporter(config), "glitnir-forseti-check-stages"
+    )
 
 
 @pytest.fixture
