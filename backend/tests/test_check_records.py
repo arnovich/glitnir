@@ -1926,13 +1926,29 @@ def test_saving_drops_drawings_then_failures_before_refusing(monkeypatch):
     assert saved_evidence(records) == {KEY: _entry()}
 
 
-def test_a_failure_that_does_not_fit_is_not_saved(monkeypatch):
+def test_a_failure_that_does_not_fit_is_not_saved(tmp_path, monkeypatch):
+    """Refused, never saved by dropping the other saved failures to fit it."""
+    notebook = tmp_path / "N.lean"
     previous = with_evidence(None, KEY, _entry(), [KEY, OTHER_KEY])
     previous = with_evidence_failure(previous, OTHER_KEY, _failure(), [KEY, OTHER_KEY])
-    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 10)
     long = _failure(message="x" * MAX_MESSAGE)
-    with pytest.raises(ValueError, match="not saved"):
-        with_evidence_failure(previous, KEY, long, [KEY, OTHER_KEY])
+    # It fits only without the saved failures, which would then be lost.
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 10)
+    with pytest.raises(ValueError) as raised:
+        with_evidence_failure(previous, KEY, long, [KEY, OTHER_KEY], notebook)
+    assert str(raised.value) == (
+        "Saved evidence failures would make the records file too large; "
+        "the failure is shown but not saved."
+    )
+    # It does not fit even without them.
+    evidence_only = {k: v for k, v in previous.items() if k != "evidence_failures"}
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(evidence_only) - 1)
+    with pytest.raises(ValueError) as raised:
+        with_evidence_failure(previous, KEY, long, [KEY, OTHER_KEY], notebook)
+    assert str(raised.value) == (
+        "Saved evidence_failures would make N.glitnir.json larger than 16 MiB; "
+        "the failure is shown but not saved."
+    )
 
 
 def test_records_with_failures_keep_what_older_readers_need(tmp_path):

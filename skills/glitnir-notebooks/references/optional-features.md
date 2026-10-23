@@ -47,9 +47,10 @@ Nothing runs when the preview opens. The user presses **Run** on the card: one r
 at a time. Lean runs in the sandbox; the provider computes from its output. The
 result is saved in `<Notebook>.glitnir.json` under `evidence`, kept when checking,
 and goes out of date when anything above the directive or the environment changes.
-A run that fails in Lean, in the provider or at its time limit is saved too, under
-`evidence_failures`, with its message; a later successful run replaces it. Setup
-failures (an unbuilt module, Lake or the sandbox) are only shown.
+A run that fails in Lean, in the provider, with output that is not evidence, or at
+its time limit is saved too, under `evidence_failures`; a later successful run
+replaces it. A provider crash is saved as its exception type only. Setup failures
+(an unbuilt module, Lake, the sandbox or a missing Python dependency) are only shown.
 If the file would exceed 16 MiB or the existing file cannot be read, the run still
 happens but its result is not saved; the card shows why. Never hand-edit it.
 

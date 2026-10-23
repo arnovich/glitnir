@@ -657,6 +657,32 @@ test('this session\'s run error is shown in place of a saved failure', async () 
   } finally { window.close(); }
 });
 
+test('a run that failed and was saved this session offers Run again', async () => {
+  // The server shows this session's error in place of the failure it saved.
+  const window = await renderSnapshot(evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'failed', run_error: 'Line 1: unknown identifier', failure: null})]));
+  try {
+    const card = window.document.querySelector('#doc .evidence');
+    assert.equal(card.querySelector('.box-head .pill').textContent, 'Failed');
+    assert.equal(card.querySelector('[data-act="evidence-run"]').textContent, 'Run again');
+  } finally { window.close(); }
+});
+
+test('an unsaved run error comes first and the saved failure reads as earlier', async () => {
+  const busy = 'Another Lean run is in progress; retry when it finishes.';
+  const window = await renderSnapshot(evidenceSnapshot(EVIDENCE_TEXT, [
+    evidenceEntry({status: 'failed', run_error: busy, failure: evidenceFailure({earlier: true})}),
+  ]));
+  try {
+    const card = window.document.querySelector('#doc .evidence');
+    const notes = [...card.querySelectorAll('.note-line')].map(n => [n.textContent, n.dataset.tone]);
+    assert.deepEqual(notes, [
+      [`The last run failed: ${busy}`, 'red'],
+      ["An earlier run failed on 2026-10-15: Line 1: unknown identifier 'x'", 'red'],
+    ]);
+    assert.equal(card.querySelector('[data-act="evidence-run"]').textContent, 'Run again');
+  } finally { window.close(); }
+});
+
 test('saved failures shown as recorded say so, on the page and in its export', async () => {
   const text = 'def M := 1\n-- @evidence simulate M\n-- @evidence simulate M (h := 1)';
   const window = await renderSnapshot(evidenceSnapshot(text, [

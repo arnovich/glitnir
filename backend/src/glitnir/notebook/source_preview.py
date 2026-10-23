@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -95,6 +96,8 @@ from glitnir.providers import (
     ViewProvider,
     load_providers,
 )
+
+_LOG = logging.getLogger(__name__)
 
 NOTICE = (
     "Saved-source preview. Check this file explicitly "
@@ -515,19 +518,27 @@ def _unavailable_words(providers: Providers | None, section: str) -> dict[str, s
 
 
 def _with_runs(
-    cards: list[dict[str, Any]], running: str | None, run_errors: dict[str, str]
+    cards: list[dict[str, Any]],
+    running: str | None,
+    run_errors: dict[str, str],
+    saved: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Mark the card being run and show each card's last run error.
 
-    This session's run error takes the place of a saved failure, which it
-    repeats or replaces, so no failure is shown twice.
+    A run error that this session also saved as the card's failure (its key
+    in ``saved``) takes the failure's place, so no failure is shown twice.
+    Any other run error says nothing about the directive (a busy slot, a
+    setup failure), so a saved failure stays shown, marked ``earlier``.
     """
     for card in cards:
         if card["key"] == running:
             card["status"] = "running"
         card["run_error"] = run_errors.get(card["key"])
-        if card["run_error"] is not None and card.get("failure") is not None:
-            card["failure"] = None
+        failure = card.get("failure")
+        if card["run_error"] is not None and failure is not None:
+            card["failure"] = (
+                None if card["key"] in saved else {**failure, "earlier": True}
+            )
     return cards
 
 
@@ -828,6 +839,31 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _crash(
+    provider: EvidenceProvider, failure: BaseException
+) -> tuple[str, tuple[str, str] | None]:
+    """Word a provider crash, and the failure to save for it, if any.
+
+    A crash's text is not written for the reader and may name any path or
+    URL, so only its exception type is saved. An `ImportError` is a missing
+    or broken dependency, a setup failure that says nothing about the
+    directive: it is shown, never saved.
+    """
+    message = provider_failure(provider, failure)
+    if isinstance(failure, ImportError):
+        return message, None
+    return message, (
+        "provider",
+        f"Provider {provider.name} failed: {type(failure).__name__}",
+    )
+
+
+def _not_saved(kind: str, reason: str) -> bool:
+    """Log why a failed run was not saved, never its message; return False."""
+    _LOG.debug("A failed evidence run (%s) was not saved: %s.", kind, reason)
+    return False
+
+
 def _names_local_path(message: str, notebook: Path) -> bool:
     """Whether ``message`` names a directory of this machine it may mention.
 
@@ -1084,6 +1120,8 @@ class SourcePreviewService:
         self._decision_cancel: threading.Event | None = None
         self._running: str | None = None
         self._run_errors: dict[str, str] = {}
+        # Keys whose last run error was also saved as the card's failure.
+        self._saved_failures: set[str] = set()
         # Every read-modify-write of the records file, so none drops another's.
         self._records_lock = threading.Lock()
 
@@ -1436,6 +1474,7 @@ class SourcePreviewService:
             observation = self._check
             inspection = self._inspection
             running, run_errors = self._running, dict(self._run_errors)
+            saved_failures = frozenset(self._saved_failures)
         records = load_records(self.path)
         project_claims: list[dict[str, Any]] = []
         project_non_claims: list[dict[str, int]] = []
@@ -1509,6 +1548,7 @@ class SourcePreviewService:
                     ),
                     running,
                     run_errors,
+                    saved_failures,
                 )
             ),
             "decisions": (
@@ -2069,53 +2109,66 @@ class SourcePreviewService:
     def _run_evidence_work(self, job: _EvidenceJob) -> None:
         """Run one job, keeping its error for the card; always end the run."""
         error: str | None = None
+        saved = False
         try:
-            error = self._evidence_run(job)
+            error, saved = self._evidence_run(job)
         except Exception as failure:  # the run must always end
             error = f"Evidence run failed: {failure}"
         finally:
-            self._end_run(job.key, error)
+            self._end_run(job.key, error, saved)
 
-    def _end_run(self, key: str, error: str | None) -> None:
-        """Keep a run's error for its card and open the gate for the next run."""
+    def _end_run(self, key: str, error: str | None, saved: bool = False) -> None:
+        """Keep a run's error for its card and open the gate for the next run.
+
+        `saved` says the error was also saved as the card's failure.
+        """
         with self._state_lock:
             self._running = None
             self._decision_cancel = None
+            if saved:
+                self._saved_failures.add(key)
+            else:
+                self._saved_failures.discard(key)
             if error is not None:
                 self._run_errors[key] = error
                 while len(self._run_errors) > MAX_RUN_ERRORS:
-                    del self._run_errors[next(iter(self._run_errors))]
+                    oldest = next(iter(self._run_errors))
+                    del self._run_errors[oldest]
+                    self._saved_failures.discard(oldest)
         self._run_lock.release()
 
-    def _evidence_run(self, job: _EvidenceJob) -> str | None:
+    def _evidence_run(self, job: _EvidenceJob) -> tuple[str | None, bool]:
         """Elaborate, compute, validate and save; return the error, if any.
 
         A failure that says something about the directive is saved too
         (`_save_failure`); the error returned is the run's own either way.
+        The flag says whether it was saved.
         """
         provider = job.provider
         try:  # provider code must never break the preview
             imports = tuple(provider.imports)
         except BaseException as failure:
-            return provider_failure(provider, failure)
+            return provider_failure(provider, failure), False
         # Taken before the run so an environment change during it leaves the
         # saved evidence out of date, and before the provider's command so a
         # failure in it can be saved.
         environment = environment_fingerprint(self.path, job.text, imports)
-        message, kind = self._evidence_attempt(job, imports, environment)
-        if message is not None and kind is not None:
-            self._save_failure(job, environment, kind, message)
-        return message
+        message, to_save = self._evidence_attempt(job, imports, environment)
+        if message is None or to_save is None:
+            return message, False
+        kind, saved = to_save
+        return message, self._save_failure(job, environment, kind, saved)
 
     def _evidence_attempt(
         self, job: _EvidenceJob, imports: tuple[str, ...], environment: dict[str, Any]
-    ) -> tuple[str | None, str | None]:
-        """Run the job; return its error, if any, and the kind of a saved failure.
+    ) -> tuple[str | None, tuple[str, str] | None]:
+        """Run the job; return its error, if any, and the failure to save.
 
-        The kind (`check_records.EVIDENCE_FAILURE_KINDS`) is None for an error
-        that is not saved: anything but the directive's own Lean error, the
-        provider's crash or refusal, output that is not evidence, or the run's
-        own time limit.
+        The failure is its kind (`check_records.EVIDENCE_FAILURE_KINDS`) and
+        the message to save, or None for an error that is not saved: anything
+        but the directive's own Lean error, the provider's crash or refusal,
+        output that is not evidence, or the run's own time limit. A crash is
+        saved as its exception type alone (`_crash`).
         """
         provider, request = job.provider, job.request
         fingerprint = environment["sha256"]
@@ -2124,7 +2177,7 @@ class SourcePreviewService:
             marker = provider.marker
             command = provider.command(request)
         except BaseException as failure:
-            return provider_failure(provider, failure), "provider"
+            return _crash(provider, failure)
         result = run_provider_lean(
             self.path,
             expected_sha256=job.sha256,
@@ -2142,30 +2195,29 @@ class SourcePreviewService:
         if "payload" not in result:
             if result.get("timed_out") is True:
                 limit = f"{check_seconds():g}"
-                return f"The run reached its time limit of {limit} s.", "timeout"
-            return str(result["error"]), "lean" if result.get("lean") is True else None
+                timed_out = f"The run reached its time limit of {limit} s."
+                return timed_out, ("timeout", timed_out)
+            error = str(result["error"])
+            return error, ("lean", error) if result.get("lean") is True else None
         try:
             payload = json.loads(result["payload"])
         except (ValueError, RecursionError):
-            return (
-                f"Provider {provider.name} printed evidence that is not JSON.",
-                "invalid",
-            )
+            invalid = f"Provider {provider.name} printed evidence that is not JSON."
+            return invalid, ("invalid", invalid)
         try:
             body = provider.compute(request, payload)
         except ValueError as failure:
             # A provider's way of saying it cannot serve this request: its
             # message is meant for the reader, not a crash report.
-            return str(failure) or provider_failure(provider, failure), "refused"
+            refused = str(failure) or provider_failure(provider, failure)
+            return refused, ("refused", refused)
         except BaseException as failure:
-            return provider_failure(provider, failure), "provider"
+            return _crash(provider, failure)
         try:
             snapshot = checked_evidence(body)
         except ValueError as failure:
-            return (
-                f"Provider {provider.name} returned invalid evidence: {failure}",
-                "invalid",
-            )
+            invalid = f"Provider {provider.name} returned invalid evidence: {failure}"
+            return invalid, ("invalid", invalid)
         entry = {
             "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
             "fingerprint": fingerprint,
@@ -2198,18 +2250,21 @@ class SourcePreviewService:
 
     def _save_failure(
         self, job: _EvidenceJob, environment: dict[str, Any], kind: str, message: str
-    ) -> None:
-        """Save a failed run in the notebook's records, if it may be.
+    ) -> bool:
+        """Save a failed run in the notebook's records, if it may be; say if it was.
 
         Not when the preview is closing, the environment is unknown, the
         message names a local path (committed records hold none), or the
         saved source is no longer the one that was run. Saving never replaces
-        the run's own error: a failure that cannot be saved is only shown.
+        the run's own error: a failure that cannot be saved is only shown, and
+        logged without its message, which may name a path.
         """
-        if self._cancel.is_set() or environment.get("unknown"):
-            return
+        if self._cancel.is_set():
+            return _not_saved(kind, "the preview is closing")
+        if environment.get("unknown"):
+            return _not_saved(kind, "the environment is unknown")
         if _names_local_path(message, self.path):
-            return
+            return _not_saved(kind, "its message names a local path")
         entry = {
             "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
             "fingerprint": environment["sha256"],
@@ -2221,7 +2276,7 @@ class SourcePreviewService:
         with self._records_lock:
             try:
                 if _sha256(self._text()) != job.sha256:
-                    return  # changed during the run
+                    return _not_saved(kind, "the saved source changed during the run")
                 records = with_evidence_failure(
                     load_records(self.path),
                     job.key,
@@ -2230,8 +2285,14 @@ class SourcePreviewService:
                     notebook=self.path,
                 )
                 save_records(self.path, records)
-            except Exception:  # noqa: BLE001 - the run's error is still shown
-                return
+            except Exception as error:  # noqa: BLE001 - the run's error is shown
+                _LOG.warning(
+                    "A failed evidence run (%s) was not saved: %s",
+                    kind,
+                    type(error).__name__,
+                )
+                return False
+        return True
 
     def run_decision(self, sha256: str, line: int) -> str:
         """Start deciding the directive at `line`; return its card key.

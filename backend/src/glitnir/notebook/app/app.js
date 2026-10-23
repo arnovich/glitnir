@@ -861,8 +861,9 @@
     // Without a provider nothing can run it, so current saved evidence is
     // only saved; out-of-date evidence still says so.
     const [tone, label] = staticPage && running ? ['amber', 'Running at export'] : recorded() && entry.status === 'current' ? ['muted', 'As recorded'] : recorded() && entry.status === 'failed' ? ['red', 'Failed, as recorded'] : !entry.provider && snap && entry.status === 'current' ? ['muted', 'Saved'] : Object.hasOwn(EVIDENCE_STATUS, entry.status) ? EVIDENCE_STATUS[entry.status] : ['muted', entry.status];
-    // A saved failed run; this session's own run error, if any, takes its place.
-    const failure = entry.run_error || (running && !staticPage) ? null : entry.failure;
+    // A saved failed run. This session's run error takes its place, unless the
+    // server marks the saved failure as earlier than that unsaved error.
+    const failure = (entry.run_error && !entry.failure?.earlier) || (running && !staticPage) ? null : entry.failure;
     const what = `${esc(entry.verb || '?')} <code>${esc(entry.target || '?')}</code>${entry.provider ? ` · ${esc(entry.provider)}` : ''}`;
     const pill = entry.error && !snap ? '' : `<span class="pill" data-tone="${tone}">${esc(label)}</span>`;
     const head = `<div class="box-head"><span class="tag">Evidence · not proof</span><span class="small">${what}</span><span class="evidence-state">${pill}${lineLinkHTML(line, line)}</span></div>`;
@@ -893,13 +894,13 @@
       const day = /^\d{4}-\d{2}-\d{2}/.test(failure.created || '') ? ` on ${esc(failure.created.slice(0, 10))}` : '';
       body = (failure.status === 'stale'
         ? note('amber', `<span class="lean-message">An earlier run, on different source or environment, failed: ${esc(failure.message)}</span>`)
-        : note('red', `<span class="lean-message">The last run failed${day}: ${esc(failure.message)}</span>`)) + body;
+        : note('red', `<span class="lean-message">${failure.earlier ? 'An earlier run' : 'The last run'} failed${day}: ${esc(failure.message)}</span>`)) + body;
     }
     if (entry.status === 'stale' && snap && (!entry.error || !entry.provider)) body = note('amber', `Out of date: ${recorded() ? 'the saved source' : 'the source or its environment'} changed since this run.${entry.provider && !recorded() && !leanOff() ? ' Run it again to update it.' : ''}`) + body;
     if (entry.run_error) body = note('red', `<span class="lean-message">The last run failed: ${esc(entry.run_error)}</span>`) + body;
     if (entry.unavailable && !entry.error) body = note('amber', `${esc(entry.unavailable)} Saved evidence remains viewable.`) + body;
     if (entry.error) body = note('red', esc(entry.error) + (snap ? ' Saved evidence remains viewable.' : '')) + body;
-    if (!staticPage && runnable && !running && !linkedPath() && !recorded() && !leanOff()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap || entry.failure ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
+    if (!staticPage && runnable && !running && !linkedPath() && !recorded() && !leanOff()) action = `<div class="claim-actions"><button type="button" class="${entry.status === 'current' ? 'secondary' : 'primary'}" data-act="evidence-run" data-line="${line}" data-sha="${esc(UI.data.sha256)}">${icon('replay')}${snap || entry.failure || entry.status === 'failed' || entry.status === 'stale' ? 'Run again' : 'Run'}</button><span class="small muted">Evidence never changes a claim's status.</span></div>`;
     return `<section data-document-start="${line}" data-document-end="${line}" class="cell box evidence">${head}${body}${action}</section>`;
   }
 

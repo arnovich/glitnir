@@ -1795,6 +1795,9 @@ def test_provider_failures_become_the_card_run_error(
         service.close()
     assert (card["status"], card["run_error"]) == ("failed", message)
     [(saved_key, saved)] = _saved_failures(service).items()
+    # A crash's text is not written for the reader: only its type is saved.
+    if kind == "provider":
+        message = message.rsplit(": ", 1)[0]
     assert (saved_key, saved["kind"], saved["message"]) == (key, kind, message)
 
 
@@ -3491,3 +3494,142 @@ def test_uncompared_results_mark_saved_failures_uncompared():
     )
     assert [c["status"] for c in snapshot["evidence"]] == ["uncompared", "running"]
     assert [c["failure"]["status"] for c in snapshot["evidence"]] == ["uncompared"] * 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError("cannot open /opt/x/data.csv"),
+        FileNotFoundError(2, "No such file or directory", "/Volumes/y/model.json"),
+        RuntimeError("GET https://api.example.test/v1/runs?token=s3cr3t failed"),
+    ],
+)
+@pytest.mark.parametrize("where", ["command", "compute"])
+def test_a_provider_crash_saves_only_its_exception_type(
+    tmp_path, monkeypatch, error, where
+):
+    """The crash's text, which may name any path or URL, is never written."""
+    from glitnir.notebook.check_records import records_path
+
+    def crash(*_arguments):
+        raise error
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, _evidence_provider(**{where: crash})
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    kind = type(error).__name__
+    assert card["run_error"] == f"Provider demo failed: {kind}: {error}"
+    [saved] = _saved_failures(service).values()
+    assert (saved["kind"], saved["message"]) == (
+        "provider",
+        f"Provider demo failed: {kind}",
+    )
+    written = records_path(service.path).read_text()
+    for secret in ("/opt/x", "/Volumes/y", "s3cr3t", "api.example.test"):
+        assert secret not in written
+
+
+@pytest.mark.parametrize("where", ["command", "compute"])
+def test_a_missing_or_broken_dependency_is_shown_but_not_saved(
+    tmp_path, monkeypatch, where
+):
+    """An ImportError is a setup failure: it says nothing about the directive."""
+
+    def missing(*_arguments):
+        raise ModuleNotFoundError("No module named 'gimle.asgard'")
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, _evidence_provider(**{where: missing})
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == (
+        "Provider demo failed: ModuleNotFoundError: No module named 'gimle.asgard'"
+    )
+    assert (card["status"], _saved_failures(service)) == ("never", {})
+
+
+def test_an_unsaved_failure_is_logged_without_its_message(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from glitnir.notebook.check_records import records_path
+
+    secret = str(tmp_path / "private.csv")
+    provider = _evidence_provider(compute=_raises(ValueError(f"Cannot read {secret}")))
+    service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
+    caplog.set_level(logging.DEBUG, logger="glitnir.notebook.source_preview")
+    try:
+        _run_evidence(service)
+    finally:
+        service.close()
+    assert not records_path(service.path).exists()
+    [record] = [r for r in caplog.records if "not saved" in r.getMessage()]
+    assert "local path" in record.getMessage()
+    assert all(secret not in r.getMessage() for r in caplog.records)
+
+
+def test_a_failure_that_cannot_be_written_is_logged_by_its_error_type(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from glitnir.notebook.check_records import records_path
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
+    )
+    records_path(service.path).write_text("not json")
+    caplog.set_level(logging.DEBUG, logger="glitnir.notebook.source_preview")
+    try:
+        _run_evidence(service)
+    finally:
+        service.close()
+    [record] = [r for r in caplog.records if "not saved" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    assert "ValueError" in record.getMessage()
+    assert "A.glitnir.json" not in record.getMessage()
+
+
+def test_an_unsaved_failure_keeps_the_saved_one_readable_as_earlier(
+    tmp_path, monkeypatch
+):
+    """A busy slot after a saved failure says nothing new about the directive."""
+    busy = {"error": "Another Lean run is in progress; retry when it finishes."}
+    outcomes = iter([dict(_LEAN_ERROR), busy, dict(_LEAN_ERROR), busy])
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: next(outcomes)
+    )
+    try:
+        _run_evidence(service)
+        saved_now = _card(service)
+        _run_evidence(service)
+        after_busy = _card(service)
+    finally:
+        service.close()
+    # Saved by this session's run: shown once, as the run error.
+    assert (saved_now["run_error"], saved_now["failure"]) == (
+        _LEAN_ERROR["error"],
+        None,
+    )
+    # Not saved: the session's error is the latest, the saved one is earlier.
+    assert (after_busy["status"], after_busy["run_error"]) == ("failed", busy["error"])
+    assert after_busy["failure"]["message"] == _LEAN_ERROR["error"]
+    assert after_busy["failure"]["earlier"] is True
+    reopened = SourcePreviewService(service.path)
+    try:
+        _run_evidence(reopened)  # saves the same failure again
+        assert _card(reopened)["failure"] is None
+        _run_evidence(reopened)  # busy
+        assert _card(reopened)["failure"]["earlier"] is True
+    finally:
+        reopened.close()
