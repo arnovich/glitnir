@@ -14,6 +14,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from glitnir.notebook.evidence_cards import checked_evidence
@@ -455,6 +456,20 @@ def test_simulate_does_not_use_the_stand_in(fake_asgard) -> None:
 def test_ports_that_do_not_match_the_directive_are_refused(fake_asgard) -> None:
     request = forseti.parse("iterate", "update", "(state := 1, 1) (parameter := 1)")
     with pytest.raises(EvidenceError, match="maps 2 ports to 1, not 3"):
+        forseti.compute(request, UPDATE)
+
+
+@pytest.mark.parametrize(
+    ("degree", "words"), [(1, "maps 1 port to 2,"), (3, "maps 3 ports to 2,")]
+)
+def test_the_port_mismatch_message_counts_ports(
+    fake_asgard, monkeypatch, degree: int, words: str
+) -> None:
+    """One port is singular, any other number plural."""
+    stub = SimpleNamespace(input_degree=degree, output_degree=2)
+    monkeypatch.setattr(evidence, "exact_polynomials", lambda _node: stub)
+    request = forseti.parse("iterate", "update", "(state := 1) (parameter := 1)")
+    with pytest.raises(EvidenceError, match=words):
         forseti.compute(request, UPDATE)
 
 
