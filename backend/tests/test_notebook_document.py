@@ -236,6 +236,22 @@ def test_the_literal_lines_stay_with_their_tactic() -> None:
     assert claim.proof == 'have h : "a\n\n  b".length = 5 := by decide\ntrivial'
 
 
+@pytest.mark.parametrize("body", _LITERAL_PROOFS.values(), ids=_LITERAL_PROOFS)
+def test_a_proof_read_as_written_is_the_files_body_line_for_line(body: str) -> None:
+    """Each line is the file's, or the file's with the two spaces taken off."""
+    claim = parse_notebook(_proof_notebook(body)).claim("c")
+    written = body.split("\n")
+    read = claim.proof.split("\n")
+    assert len(read) == len(written)
+    if claim.as_written:
+        assert all(
+            line == original or "  " + line == original
+            for line, original in zip(read, written)
+        ), claim.proof
+    else:
+        assert claim.proof == _old_proof(body)
+
+
 def test_the_later_claims_are_unaffected() -> None:
     text = _proof_notebook(_LITERAL_PROOFS["blank-line"])
     assert parse_notebook(text).claim("later").proof == "trivial"
