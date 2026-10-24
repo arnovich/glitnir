@@ -4,8 +4,6 @@ These exercise only the core parser: cell boundaries, claim headers, universe
 lists and proofs that hold multi-line literals. Nothing here runs Lean.
 """
 
-from pathlib import Path
-
 import pytest
 
 from glitnir.lean.lexing import scan
@@ -13,7 +11,6 @@ from glitnir.notebook.document import (
     CellKind,
     NotebookError,
     parse_notebook,
-    read_notebook,
     split_lines,
 )
 
@@ -77,10 +74,7 @@ def test_a_claim_name_keeps_its_universe_list() -> None:
     assert first.name == "L.{v, u}"
     assert first.universes == ".{v, u}"
     assert first.statement == "(α : Sort u) (β : Sort v) (a : α) : a = a"
-    assert first.signature == ".{v, u} (α : Sort u) (β : Sort v) (a : α) : a = a"
-    assert second.universes == "" and second.signature == second.statement
-    cell = notebook.cell_of("L.{v, u}")
-    assert cell.name_at == (1, len("theorem "))
+    assert second.universes == ""
 
 
 @pytest.mark.parametrize(
@@ -105,19 +99,21 @@ def test_a_universe_list_is_copied_only_when_it_holds_bare_names(universes) -> N
         f"theorem L{universes} (α : Sort u) (a : α) : a = a := by\n  rfl\n"
     ).claims[0]
     assert claim.universes == ""
-    assert claim.signature == claim.statement
-
-
-def test_a_claims_base_name_leaves_out_its_universes() -> None:
-    first, second = parse_notebook(UNIVERSES).claims
-    assert first.base_name == "L"
-    assert second.base_name == "M"
 
 
 def _notebook(body: str) -> str:
     return (
         f"import Mathlib\n\ntheorem c : True := by\n{body}\n\n"
         "def after := 1\n\ntheorem later : after = 1 := by\n  rfl\n"
+    )
+
+
+def _cell_of(notebook, name: str):
+    """The cell holding the named claim."""
+    return next(
+        cell
+        for cell in notebook.cells
+        if cell.claim is not None and cell.claim.name == name
     )
 
 
@@ -144,7 +140,7 @@ _CUT_UNSURE = {
 def test_where_the_scan_is_unsure_first_the_claim_ends_as_before(body: str) -> None:
     text = _notebook(body)
     notebook = parse_notebook(text)
-    cell = notebook.cell_of("c")
+    cell = _cell_of(notebook, "c")
     assert cell.end_line == _line_based_end(text, cell.start_line)
     assert notebook.claim("c").proof == body.split("\n")[0][2:]
 
@@ -167,7 +163,7 @@ _OPEN_BEFORE = {
 @pytest.mark.parametrize("text", _OPEN_BEFORE.values(), ids=_OPEN_BEFORE)
 def test_the_file_before_the_proof_must_agree(text: str) -> None:
     notebook = parse_notebook(text)
-    cell = notebook.cell_of("c")
+    cell = _cell_of(notebook, "c")
     assert cell.end_line == _line_based_end(text, cell.start_line)
 
 
@@ -237,13 +233,12 @@ _LITERAL_PROOFS = {
 def test_the_literal_lines_stay_with_their_tactic() -> None:
     text = _proof_notebook(_LITERAL_PROOFS["blank-line"])
     claim = parse_notebook(text).claim("c")
-    assert claim.script == ('have h : "a\n\n  b".length = 5 := by decide', "trivial")
     assert claim.proof == 'have h : "a\n\n  b".length = 5 := by decide\ntrivial'
 
 
 def test_the_later_claims_are_unaffected() -> None:
     text = _proof_notebook(_LITERAL_PROOFS["blank-line"])
-    assert parse_notebook(text).claim("later").script == ("trivial",)
+    assert parse_notebook(text).claim("later").proof == "trivial"
 
 
 # Ordinary proofs: no literal spans a line and the scan is settled. They keep
@@ -265,9 +260,6 @@ def test_an_ordinary_proof_is_read_as_before(body: str) -> None:
     claim = parse_notebook(_proof_notebook(body)).claim("c")
     assert claim.as_written
     assert claim.proof == _old_proof(body)
-    assert claim.script == tuple(
-        line for line in split_lines(_old_proof(body)) if line.strip(_BLANKS)
-    )
 
 
 def test_an_unsettled_proof_at_one_space_is_not_checked() -> None:
@@ -278,29 +270,8 @@ def test_an_unsettled_proof_at_one_space_is_not_checked() -> None:
     assert not notebook.claim("c").as_written
 
 
-@pytest.mark.parametrize("body", _LITERAL_PROOFS.values(), ids=_LITERAL_PROOFS)
-def test_the_block_of_a_proof_read_as_written_is_the_files(body: str) -> None:
-    # Every line the file writes after ``:= by``, leading blank lines too.
-    assert parse_notebook(_proof_notebook(body)).claim("c").block == body
-
-
-@pytest.mark.parametrize("body", _ORDINARY_PROOFS.values(), ids=_ORDINARY_PROOFS)
-def test_the_block_of_an_ordinary_proof_is_shown_as_before(body: str) -> None:
-    # The workbench used to put two spaces before every line of the
-    # proof; a blank line showed as two spaces, which look the same as none.
-    claim = parse_notebook(_proof_notebook(body)).claim("c")
-    before = "  " + claim.proof.replace("\n", "\n  ")
-    assert claim.block == "\n".join(line.rstrip(" ") for line in before.split("\n"))
-
-
 def test_split_lines_breaks_at_newlines_only() -> None:
     assert split_lines("") == []
     assert split_lines("a") == ["a"]
     assert split_lines("a\n") == ["a"]
     assert split_lines("a\n\nb c\r\n") == ["a", "", "b c\r"]
-
-
-def test_a_notebook_file_is_read_as_its_exact_text(tmp_path: Path) -> None:
-    path = tmp_path / "N.lean"
-    path.write_bytes('def s := "a\rb c"\r\ndef t := 1\n'.encode())
-    assert read_notebook(path) == 'def s := "a\rb c"\ndef t := 1\n'

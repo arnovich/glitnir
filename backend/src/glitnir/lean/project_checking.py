@@ -686,17 +686,6 @@ class CommandFailure(SnapshotError):
         self.note = note
 
 
-def line_start(data: bytes, offset: int) -> int:
-    """Return the start of the line holding byte ``offset`` of ``data``.
-
-    Every place a check stops comes from the untrusted reader. Saved results
-    hash whole lines, so a check must stop at a line start: one stopped inside
-    a line would let its claim's hash cover text that was never compiled.
-    Moving back only withholds more.
-    """
-    return data.rfind(b"\n", 0, offset) + 1
-
-
 def example_tag(text: str) -> str:
     """Return the prefix of the names the examples of ``text`` are checked under.
 

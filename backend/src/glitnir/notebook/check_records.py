@@ -2,7 +2,7 @@
 
 A claim's saved result is current while the environment fingerprint and the
 exact source text up to the end of the claim are unchanged, and the claim's
-command still ends at its last line (`command_ends_at`). Any edit above a
+command still ends at its last line (`CommandBoundaries.ends_at`). Any edit above a
 claim, prose and blank lines included, marks it out of date, because Lean code
 can read module-doc prose and line positions. Edits below a claim leave it
 current, unless they continue its command (a proof step, `where`,
