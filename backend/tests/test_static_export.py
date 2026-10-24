@@ -19,7 +19,7 @@ from glitnir.notebook.check_records import (
     with_evidence_failure,
     with_view,
 )
-from glitnir.notebook.evidence_cards import checked_evidence, evidence_key
+from glitnir.notebook.evidence_cards import evidence_key
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.notebook.static_export import RECORDED_NOTICE, SavedNotebook
 from glitnir.providers import (
@@ -28,6 +28,7 @@ from glitnir.providers import (
     Providers,
     ViewProvider,
 )
+from glitnir.providers.outcomes import checked_evidence
 
 DIRECTIVE = "-- @evidence simulate c (h := 1/10)"
 TEXT = (

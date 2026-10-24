@@ -7,8 +7,8 @@ comment is not one; where the scan is unsure, lines are read as in
 `evidence_cards`. A decision only proposes a Lean block that the project
 checker then checks, so reading too much costs at most a card that fails.
 
-A provider's outcome is untrusted; `checked_decision` is all of it the preview
-and the saved records ever see.
+A provider's outcome is untrusted; `providers.outcomes.checked_decision` is
+all of it the preview and the saved records ever see.
 """
 
 import hashlib
@@ -36,18 +36,6 @@ BAD_NAME = (
     "Decision names are Lean identifiers: a letter, then letters, digits or "
     "underscores."
 )
-OUTCOME_STATUSES = ("proven", "refuted", "unknown")
-_OUTCOME_KEYS = frozenset({"status", "reason", "stages", "block", "theorem"})
-MAX_REASON = 200
-MAX_STAGES = 32
-MAX_STAGE_TEXT = 500
-MAX_BLOCK_BYTES = 200_000
-MAX_THEOREM = 200
-# The theorem a block declares: a Lean identifier, possibly qualified.
-_THEOREM = re.compile(r"[A-Za-z_][A-Za-z0-9_']*(?:\.[A-Za-z_][A-Za-z0-9_']*)*")
-# A line that, once inserted, would be read as a `@decide`, `@evidence` or
-# `@view` directive (or a mistyped one).
-_DIRECTIVE_LINE = re.compile(r"\s*--\s*@")
 
 
 def decision_key(directive_text: str, occurrence: int) -> str:
@@ -186,91 +174,3 @@ def decision_cards(
             }
         )
     return cards
-
-
-def _bounded(value: Any, what: str, limit: int) -> str:
-    if not isinstance(value, str) or len(value) > limit:
-        raise ValueError(f"{what} must be text of at most {limit} characters.")
-    return value
-
-
-def _checked_stages(stages: Any) -> list[list[str]]:
-    if not isinstance(stages, list) or len(stages) > MAX_STAGES:
-        raise ValueError(f"stages must be a list of at most {MAX_STAGES} entries.")
-    checked = []
-    for stage in stages:
-        if not isinstance(stage, list) or len(stage) != 3:
-            raise ValueError("stages must hold [stage, outcome, detail] entries.")
-        checked.append(
-            [_bounded(part, "A stage entry", MAX_STAGE_TEXT) for part in stage]
-        )
-    return checked
-
-
-def _checked_block(block: Any) -> str:
-    """Return the block exactly as given; anything that needs cleaning is refused."""
-    if not isinstance(block, str) or not block.strip():
-        raise ValueError("A proven or refuted decision needs a Lean block.")
-    if "\r" in block or "\x00" in block:
-        raise ValueError("The block may not contain carriage returns or NUL.")
-    lines = block.split("\n")
-    # Inserted after a directive, a leading comment line would continue its goal.
-    if lines[0].lstrip().startswith("--"):
-        raise ValueError("The block may not start with a comment line.")
-    for number, line in enumerate(lines, start=1):
-        if _DIRECTIVE_LINE.match(line):
-            raise ValueError(
-                f"The block may not contain directive comments (line {number})."
-            )
-    # Editors may trim these on save, and the inserted block would then differ.
-    if block.endswith("\n"):
-        raise ValueError("The block may not end with a newline.")
-    if any(line != line.rstrip() for line in lines):
-        raise ValueError("The block may not end a line with whitespace.")
-    try:
-        size = len(block.encode("utf-8"))
-    except UnicodeEncodeError:
-        raise ValueError("The block is not valid text.") from None
-    if size > MAX_BLOCK_BYTES:
-        raise ValueError(f"The block may hold at most {MAX_BLOCK_BYTES} bytes.")
-    return block
-
-
-def checked_decision(outcome: Any) -> dict[str, Any]:
-    """Return a normalised copy of a provider's outcome, or raise ValueError.
-
-    `status` is required; `reason` and `stages` default to empty. A proven or
-    refuted outcome names the `theorem` its `block` declares; an unknown one
-    has neither. The block is never rewritten, so the block the checker sees is
-    exactly the one saved and inserted.
-    """
-    if not isinstance(outcome, dict):
-        raise ValueError("A decision outcome must be an object.")
-    unknown = set(outcome) - _OUTCOME_KEYS
-    if unknown:
-        names = ", ".join(sorted(str(key) for key in unknown))
-        raise ValueError(f"The decision outcome has unknown keys: {names}.")
-    status = outcome.get("status")
-    if not isinstance(status, str) or status not in OUTCOME_STATUSES:
-        raise ValueError("status must be proven, refuted or unknown.")
-    checked: dict[str, Any] = {
-        "status": status,
-        "reason": _bounded(outcome.get("reason", ""), "reason", MAX_REASON),
-        "stages": _checked_stages(outcome.get("stages", [])),
-        "block": None,
-        "theorem": None,
-    }
-    block, theorem = outcome.get("block"), outcome.get("theorem")
-    if status == "unknown":
-        if block is not None or theorem is not None:
-            raise ValueError("An unknown decision has no block or theorem.")
-        return checked
-    checked["block"] = _checked_block(block)
-    if (
-        not isinstance(theorem, str)
-        or len(theorem) > MAX_THEOREM
-        or not _THEOREM.fullmatch(theorem)
-    ):
-        raise ValueError("theorem must name the Lean theorem the block declares.")
-    checked["theorem"] = theorem
-    return checked

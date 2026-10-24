@@ -30,8 +30,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from glitnir.notebook.evidence_cards import MAX_SERIES, MAX_TEXT
 from glitnir.providers import EvidenceProvider, EvidenceRequest
+from glitnir.providers.outcomes import MAX_SERIES, MAX_TEXT
 
 from glitnir_forseti.notebook import evidence
 from glitnir_forseti.notebook.evidence import EvidenceError, SamplePlan, Simulation

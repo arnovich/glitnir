@@ -9,13 +9,13 @@ from glitnir.notebook import decision_cards as decision_module
 from glitnir.notebook.decision_cards import (
     BAD_NAME,
     INCOMPLETE,
-    checked_decision,
     decision_cards,
     decision_directives,
     decision_key,
 )
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
+from glitnir.providers.outcomes import checked_decision
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64

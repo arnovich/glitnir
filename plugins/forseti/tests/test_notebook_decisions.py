@@ -9,8 +9,8 @@ import dataclasses
 from fractions import Fraction
 
 import pytest
-from glitnir.notebook.decision_cards import checked_decision
 from glitnir.notebook.document import parse_notebook
+from glitnir.providers.outcomes import checked_decision
 
 from glitnir_forseti.claims.decide import Decision, LeanApplication
 from glitnir_forseti.claims.text import parse_goal

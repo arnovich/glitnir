@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean.provider_lean import run_provider_batch
-from glitnir.notebook.drawings import checked_drawing
 from glitnir.providers import ViewProvider
+from glitnir.providers.outcomes import checked_drawing
 
 
 def view_provider_sha256(

@@ -102,9 +102,11 @@ from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
-from glitnir.notebook.decision_cards import checked_decision
-from glitnir.notebook.drawings import checked_drawing
-from glitnir.notebook.evidence_cards import checked_evidence
+from glitnir.providers.outcomes import (
+    checked_decision,
+    checked_drawing,
+    checked_evidence,
+)
 
 FORMAT = "glitnir.project-checks/v2"
 #: The earlier format, read and upgraded to `FORMAT` on loading.

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from glitnir import providers
-from glitnir.notebook.drawings import checked_drawing
+from glitnir.providers.outcomes import checked_drawing
 
 
 def _provider(name, kinds):
@@ -333,3 +333,15 @@ def test_malformed_decision_providers_are_rejected(monkeypatch, changes):
     monkeypatch.setattr(providers, "_entry_points", lambda: entries)
     loaded = providers.load_providers()
     assert set(loaded.decisions) == {"other"} and set(loaded.errors) == {"bad"}
+
+
+def test_outcomes_module_owns_provider_output_validation() -> None:
+    from glitnir.providers import outcomes
+
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"/>'
+    assert outcomes.checked_drawing(svg) == {"svg": svg}
+    with pytest.raises(ValueError, match="Evidence"):
+        outcomes.checked_evidence({})
+    with pytest.raises(ValueError, match="status must be"):
+        outcomes.checked_decision({"status": "nonsense"})
+    assert outcomes.MAX_SAMPLES > 0 and outcomes.MAX_BLOCK_BYTES > 0

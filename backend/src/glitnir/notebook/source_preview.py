@@ -65,7 +65,6 @@ from glitnir.notebook.check_records import (
     without_decision,
 )
 from glitnir.notebook.decision_cards import (
-    checked_decision,
     decision_cards,
     decision_directives,
     decision_request,
@@ -76,9 +75,7 @@ from glitnir.notebook.document import (
     parse_notebook,
     split_lines,
 )
-from glitnir.notebook.drawings import checked_drawing
 from glitnir.notebook.evidence_cards import (
-    checked_evidence,
     directive_lines,
     evidence_cards,
     evidence_directives,
@@ -96,6 +93,11 @@ from glitnir.providers import (
     Providers,
     ViewProvider,
     load_providers,
+)
+from glitnir.providers.outcomes import (
+    checked_decision,
+    checked_drawing,
+    checked_evidence,
 )
 
 _LOG = logging.getLogger(__name__)
