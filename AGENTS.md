@@ -122,9 +122,9 @@ To validate and publish a candidate:
    plugin bindings in `glitnir-candidate.json`. The plugin is released at the
    package version (bump `plugins/forseti/pyproject.toml` with `package.json`),
    and its `glitnir` requirement must admit the released backend. The first
-   release after the package layering of 2026-10-23 must raise that floor to its
-   own version: the plugin imports `glitnir.providers.outcomes`, which earlier
-   backends lack.
+   release after the package layering of 2026-10-23 (0.1.8) raised that floor
+   to `>=0.1.8`: the plugin imports `glitnir.providers.outcomes`, which earlier
+   backends lack. A release test fails if the floor drops below it.
 3. Install those exact assets with a fresh profile on macOS and Linux. Exercise
    uv setup, environment reuse and failure/cancellation recovery.
 4. Review release notes and obtain the owner's publication approval. Publish the
