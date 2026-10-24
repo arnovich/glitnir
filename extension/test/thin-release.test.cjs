@@ -32,7 +32,7 @@ async function fixture(t) {
   const entries = {'extension/package.json': metadata, 'extension/dist/editor-runtime.json': editor, 'extension/dist/extension.js': 'code', 'extension/dist/probe.py': 'probe', 'extension/dist/providers.py': 'providers', 'extension.vsixmanifest': '<Identity Version="0.1.0" />'};
   await zip(vsix, entries);
   const wheel = path.join(root, 'glitnir-0.1.0-py3-none-any.whl');
-  await zip(wheel, {'glitnir/notebook/__main__.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
+  await zip(wheel, {'glitnir/notebook/__main__.py': 'entry', 'glitnir/service/server.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
   const bytes = await fs.readFile(wheel);
   metadata.glitnirBackend = {asset:path.basename(wheel),size:bytes.length,sha256:require('node:crypto').createHash('sha256').update(bytes).digest('hex'),tag:identity.tag};
   const plugin = path.join(root, 'glitnir_forseti-0.1.0-py3-none-any.whl');
@@ -165,9 +165,21 @@ test('candidate wheel must contain the portable server and no native runtime', a
     {'python/bin/python': 'interpreter'},
     {'glitnir-0.1.0.dist-info/WHEEL': 'Root-Is-Purelib: false\nTag: cp312-cp312-linux_x86_64\n'},
   ]) {
-    await zip(f.wheel, {'glitnir/notebook/__main__.py': 'server', ...bad});
+    await zip(f.wheel, {'glitnir/notebook/__main__.py': 'entry', 'glitnir/service/server.py': 'server', ...bad});
     await assert.rejects(checkBackendWheel(f.wheel));
   }
+});
+
+test('a backend wheel with only the notebook shim and no server is refused; either server location is accepted', async t => {
+  const f = await fixture(t);
+  const {checkBackendWheel} = require('../scripts/package-thin.cjs');
+  const wheelInfo = {'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'};
+  await zip(f.wheel, {'glitnir/notebook/__main__.py': 'entry', ...wheelInfo});
+  await assert.rejects(checkBackendWheel(f.wheel), /no notebook server/);
+  await zip(f.wheel, {'glitnir/notebook/__main__.py': 'entry', 'glitnir/notebook/server.py': 'server', ...wheelInfo});
+  await checkBackendWheel(f.wheel);
+  await zip(f.wheel, {'glitnir/notebook/__main__.py': 'entry', 'glitnir/service/server.py': 'server', ...wheelInfo});
+  await checkBackendWheel(f.wheel);
 });
 
 

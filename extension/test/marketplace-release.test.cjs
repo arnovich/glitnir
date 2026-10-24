@@ -21,7 +21,7 @@ async function zip(file, entries) {
 }
 // A candidate directory as the draft workflow uploads it, with its VSIX packaged
 // for the release (default) or pre-release channel.
-async function candidate(t, {preRelease = false, plugins = 'pinned', wheelFiles = {'glitnir/notebook/__main__.py': 'entry'}} = {}) {
+async function candidate(t, {preRelease = false, plugins = 'pinned', wheelFiles = {'glitnir/notebook/__main__.py': 'entry', 'glitnir/service/server.py': 'server'}} = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'glitnir-marketplace-'));
   t.after(() => fs.rm(root, {recursive: true, force: true}));
   const wheel = path.join(root, 'glitnir-0.1.0-py3-none-any.whl');

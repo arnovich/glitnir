@@ -65,7 +65,10 @@ async function checkBackendWheel(file) {
       wheelMetadata = Buffer.concat(chunks).toString('utf8');
     }
   }
+  // The notebook entry point is a shim from the package layering onward, so it alone proves nothing:
+  // also require the server it starts, in its old (notebook) or current (service) place.
   assert(names.has('glitnir/notebook/__main__.py'), 'Backend wheel has no notebook entry point');
+  assert(names.has('glitnir/notebook/server.py') || names.has('glitnir/service/server.py'), 'Backend wheel has no notebook server');
   assert(wheelMetadata && /^Root-Is-Purelib: true$/m.test(wheelMetadata), 'Backend wheel must be pure Python');
   assert.deepEqual(wheelMetadata.split('\n').filter(line => line.startsWith('Tag: ')), ['Tag: py3-none-any'], 'Backend wheel must be universal');
 }
