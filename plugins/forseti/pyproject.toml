@@ -1,6 +1,6 @@
 [project]
 name = "glitnir-forseti"
-version = "0.1.6"
+version = "0.1.7"
 description = "Forseti circuit, model and dynamics views for Glitnir notebooks"
 readme = "README.md"
 license = "MIT"
