@@ -49,7 +49,13 @@ class EvidenceProvider:
     `parse(verb, target, options_text)` raises `ValueError` on bad input.
     `command(request)` is Lean that prints `marker` followed by JSON, which
     `compute(request, payload)` turns into an evidence snapshot; a `ValueError`
-    it raises is shown on the card as its message alone. `preamble` and the
+    it raises is shown on the card as its message alone. That message is also
+    saved as the run's failure in the notebook's committed
+    `<Notebook>.glitnir.json`, so it must name no local path or secret (one
+    naming a local directory Glitnir knows is not saved, but nothing else is
+    filtered). Any other exception from `command` or `compute` is shown with
+    its text but saved as its type alone, and an `ImportError` (a missing or
+    broken dependency) is shown but never saved. `preamble` and the
     command are elaborated in the scopes `ViewProvider` describes.
     `unavailable()` names a missing optional dependency, or returns None.
     `parse` and `unavailable` run on every preview refresh, so they must be

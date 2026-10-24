@@ -1649,6 +1649,22 @@ def _card(service, line=4):
     return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
 
 
+def _saved_failures(service):
+    """The failed runs saved in the service's records, as a reader reads them."""
+    from glitnir.notebook.check_records import load_records, saved_evidence_failures
+
+    return saved_evidence_failures(load_records(service.path))
+
+
+def _reopened(service, line=4):
+    """The card a new preview of the same notebook shows, before any run."""
+    reopened = SourcePreviewService(service.path)
+    try:
+        return _card(reopened, line)
+    finally:
+        reopened.close()
+
+
 def test_an_evidence_run_waits_for_the_slot_and_counts_its_modules(
     tmp_path, monkeypatch
 ):
@@ -1725,54 +1741,64 @@ def _raises(error):
 
 
 @pytest.mark.parametrize(
-    "changes, message",
+    "changes, message, kind",
     [
         (
             {"compute": lambda request, payload: 1 / 0},
             "Provider demo failed: ZeroDivisionError: division by zero",
+            "provider",
         ),
         (
             {"compute": _raises(ValueError("The model has no states."))},
             "The model has no states.",
+            "refused",
         ),
         (
             {"compute": _raises(_ExpectedError("Option h must be positive."))},
             "Option h must be positive.",
+            "refused",
         ),
         (
             {"compute": _raises(ValueError())},
             "Provider demo failed: ValueError: ",
+            "refused",
         ),
         (
             {"compute": _raises(KeyError("x"))},
             "Provider demo failed: KeyError: 'x'",
+            "provider",
         ),
         (
             {"command": lambda request: [][0]},
             "Provider demo failed: IndexError: list index out of range",
+            "provider",
         ),
         (
             {"compute": lambda request, payload: _evidence_body(format="other")},
             "Provider demo returned invalid evidence: "
             "Evidence format must be glitnir.evidence/v1.",
+            "invalid",
         ),
     ],
 )
 def test_provider_failures_become_the_card_run_error(
-    tmp_path, monkeypatch, changes, message
+    tmp_path, monkeypatch, changes, message, kind
 ):
-    from glitnir.notebook.check_records import records_path
-
+    """Each is shown at once and saved as a failure of its kind."""
     service, _calls = _evidence_service(
         tmp_path, monkeypatch, _evidence_provider(**changes)
     )
     try:
-        _run_evidence(service)
+        key = _run_evidence(service)
         card = _card(service)
     finally:
         service.close()
-    assert (card["status"], card["run_error"]) == ("never", message)
-    assert not records_path(service.path).exists()
+    assert (card["status"], card["run_error"]) == ("failed", message)
+    [(saved_key, saved)] = _saved_failures(service).items()
+    # A crash's text is not written for the reader: only its type is saved.
+    if kind == "provider":
+        message = message.rsplit(": ", 1)[0]
+    assert (saved_key, saved["kind"], saved["message"]) == (key, kind, message)
 
 
 def test_unreadable_payloads_and_runner_errors_become_run_errors(tmp_path, monkeypatch):
@@ -1813,6 +1839,7 @@ def test_runs_are_refused_without_lean(tmp_path, monkeypatch, sha, line, message
         service.close()
     assert str(raised.value) == message
     assert service._evidence_worker is None
+    assert _saved_failures(service) == {}
 
 
 def _rejecting(verb, target, options):
@@ -3103,3 +3130,506 @@ def test_every_lean_request_is_refused_up_front_on_another_version(
     service._run_lock.release()
     assert service._running is None and service._run_errors == {}
     service.close()
+
+
+# ----- saved evidence failures --------------------------------------------------
+
+_LEAN_ERROR = {"error": "Line 2: unknown constant 'x'", "lean": True}
+_TIMED_OUT = {"error": "Project check timed out.", "transient": True, "timed_out": True}
+
+
+@pytest.mark.parametrize(
+    "result, kind, message",
+    [
+        (_LEAN_ERROR, "lean", "Line 2: unknown constant 'x'"),
+        (
+            {"error": "The provider printed no evidence.", "lean": True},
+            "lean",
+            "The provider printed no evidence.",
+        ),
+        (
+            {"payload": "{not json"},
+            "invalid",
+            "Provider demo printed evidence that is not JSON.",
+        ),
+        (_TIMED_OUT, "timeout", "The run reached its time limit of 90 s."),
+    ],
+)
+def test_each_lean_side_failure_is_saved_with_its_kind(
+    tmp_path, monkeypatch, result, kind, message
+):
+    """Saved beside the notebook; a new preview shows it, not "never"."""
+    from glitnir.notebook.check_records import evidence_prefix_sha256
+
+    monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", "90000")
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(result)
+    )
+    try:
+        key = _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    # This session's own error is shown once, as the run error.
+    assert (card["status"], card["run_error"], card["failure"]) == (
+        "failed",
+        message,
+        None,
+    )
+    [(saved_key, saved)] = _saved_failures(service).items()
+    assert saved_key == key
+    assert {k: v for k, v in saved.items() if k != "created"} == {
+        "prefix_sha256": evidence_prefix_sha256(EVIDENCE_TEXT, 4),
+        "fingerprint": FP,
+        "provider": "demo",
+        "kind": kind,
+        "message": message,
+    }
+    assert saved["created"].endswith("+00:00")
+    reopened = _reopened(service)
+    assert (reopened["status"], reopened["run_error"], reopened["snapshot"]) == (
+        "failed",
+        None,
+        None,
+    )
+    assert reopened["failure"] == {
+        "kind": kind,
+        "message": message,
+        "created": saved["created"],
+        "status": "current",
+    }
+
+
+def test_a_long_failure_message_is_saved_cut_to_the_limit(tmp_path, monkeypatch):
+    from glitnir.notebook.check_records import MAX_MESSAGE
+
+    long = {"error": "Line 2: " + "x" * 3000, "lean": True}
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(long)
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == long["error"]
+    [saved] = _saved_failures(service).values()
+    assert len(saved["message"]) == MAX_MESSAGE and saved["message"].endswith("…")
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"error": "Evidence run cancelled.", "transient": True},
+        {"error": "Another Lean run is in progress; retry when it finishes."},
+        {"error": "Waiting for another Lean run timed out.", "transient": True},
+        {"error": "Evidence needs a Lake project; see the README."},
+        {"error": "Project inspection timed out."},
+        {"error": "Lake could not read the project configuration."},
+        {"error": "The sandbox is not available on this system."},
+        {"error": "This evidence needs `import Demo.Evidence` in the notebook."},
+        {"error": "Project check exceeded its output limit."},
+    ],
+)
+def test_failures_that_say_nothing_about_the_directive_are_not_saved(
+    tmp_path, monkeypatch, result
+):
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(result)
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert (card["status"], card["run_error"]) == ("never", result["error"])
+    assert _saved_failures(service) == {}
+    assert _reopened(service)["status"] == "never"
+
+
+def test_a_setup_error_naming_a_local_path_is_never_saved(tmp_path, monkeypatch):
+    """Lake's "build these modules" advice names the project root: not saved."""
+    from glitnir.lean import provider_lean
+    from glitnir.notebook import source_preview
+    from glitnir.notebook.check_records import records_path
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        source_preview, "run_provider_lean", provider_lean.run_provider_lean
+    )
+    (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
+    (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    toolchain = tmp_path / "toolchain"
+    toolchain.mkdir()
+    monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
+    own = {
+        "name": "A",
+        "isModule": False,
+        "importArts": {},
+        "plugins": [],
+        "dynlibs": [],
+        "options": {},
+    }
+
+    def inspect(path, *, expected_sha256, cancel, imports=()):
+        if imports:  # the provider's module is not built
+            return {"status": "unresolved", "needs_build": True, "message": "x"}
+        return {"status": "resolved", "setup": own, "resolution": {"inputs": []}}
+
+    monkeypatch.setattr(provider_lean, "inspect_project", inspect)
+    monkeypatch.setattr(
+        provider_lean, "run_observer", lambda *a, **k: pytest.fail("Lean ran")
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    root = str(tmp_path.resolve())
+    assert root in card["run_error"] and "lake build Demo.Evidence" in card["run_error"]
+    assert not records_path(service.path).exists()
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        lambda tmp_path: str(tmp_path / "data.csv"),
+        lambda tmp_path: str(tmp_path.resolve() / "data.csv"),
+        lambda tmp_path: str(Path.home() / "secret" / "data.csv"),
+    ],
+)
+def test_a_failure_naming_a_local_path_is_shown_but_never_saved(
+    tmp_path, monkeypatch, where
+):
+    """A provider's message is saved into committed records, so no path is."""
+    path = where(tmp_path)
+    provider = _evidence_provider(compute=_raises(ValueError(f"Cannot read {path}.")))
+    service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == f"Cannot read {path}."
+    assert _saved_failures(service) == {}
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {"sha256": FP, "unknown": True, "packages": []},
+        {"sha256": "", "packages": []},
+    ],
+)
+def test_a_failure_in_an_unknown_environment_is_not_saved(
+    tmp_path, monkeypatch, environment
+):
+    from glitnir.notebook import source_preview
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
+    )
+    monkeypatch.setattr(
+        source_preview, "environment_fingerprint", lambda *a: environment
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == _LEAN_ERROR["error"]
+    assert _saved_failures(service) == {}
+
+
+def test_a_failure_while_the_preview_closes_is_not_saved(tmp_path, monkeypatch):
+    def run(source, **options):
+        options["cancel"].set()
+        return dict(_LEAN_ERROR)
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    try:
+        _run_evidence(service)
+    finally:
+        service.close()
+    assert _saved_failures(service) == {}
+
+
+def test_a_refused_start_saves_nothing(tmp_path, monkeypatch):
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.notebook.check_records import records_path
+    from glitnir.notebook.source_preview import RUN_BUSY
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch)
+    try:
+        with service._run_lock:
+            with pytest.raises(SnapshotError, match=RUN_BUSY):
+                service.run_evidence(_evidence_sha(), 4)
+    finally:
+        service.close()
+    assert not records_path(service.path).exists()
+
+
+def test_a_failure_whose_source_changed_during_the_run_is_not_saved(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "A.lean"
+
+    def run(source, **options):
+        path.write_text(EVIDENCE_TEXT + "-- edited\n")
+        return dict(_LEAN_ERROR)
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == _LEAN_ERROR["error"]
+    assert _saved_failures(service) == {}
+
+
+def test_a_failure_that_cannot_be_saved_still_shows_its_own_error(
+    tmp_path, monkeypatch
+):
+    from glitnir.notebook.check_records import records_path
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
+    )
+    sidecar = records_path(service.path)
+    sidecar.write_text("not json")
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == _LEAN_ERROR["error"]
+    assert sidecar.read_text() == "not json"
+
+
+def test_a_saved_failure_goes_out_of_date_with_the_text_above_or_the_environment(
+    tmp_path, monkeypatch
+):
+    from glitnir.notebook import source_preview
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
+    )
+    try:
+        _run_evidence(service)
+    finally:
+        service.close()
+    assert _reopened(service)["status"] == "failed"
+    service.path.write_text(EVIDENCE_TEXT + "def later := 2\n")
+    assert _reopened(service)["status"] == "failed", "edits below change nothing"
+    service.path.write_text(EVIDENCE_TEXT.replace("def M := 1", "def M := 2"))
+    card = _reopened(service)
+    assert (card["status"], card["failure"]["status"]) == ("stale", "stale")
+    service.path.write_text(EVIDENCE_TEXT)
+    monkeypatch.setattr(
+        source_preview, "environment_fingerprint", lambda *a: {"sha256": "9" * 64}
+    )
+    card = _reopened(service)
+    assert (card["status"], card["failure"]["status"]) == ("stale", "stale")
+
+
+def test_a_failure_after_a_success_keeps_the_snapshot_and_a_success_clears_it(
+    tmp_path, monkeypatch
+):
+    from glitnir.notebook.check_records import load_records, saved_evidence
+
+    outcomes = iter([{"payload": "{}"}, dict(_LEAN_ERROR), {"payload": "{}"}])
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: next(outcomes)
+    )
+    try:
+        key = _run_evidence(service)
+        _run_evidence(service)
+        failed = _reopened(service)
+        _run_evidence(service)
+        cleared = _reopened(service)
+    finally:
+        service.close()
+    assert (failed["status"], failed["snapshot"] is not None) == ("current", True)
+    assert failed["failure"]["status"] == "current"
+    assert failed["failure"]["message"] == _LEAN_ERROR["error"]
+    assert (cleared["status"], cleared["failure"]) == ("current", None)
+    assert key in saved_evidence(load_records(service.path))
+    assert _saved_failures(service) == {}
+
+
+def test_an_out_of_date_failure_is_hidden_behind_a_current_snapshot(
+    tmp_path, monkeypatch
+):
+    from glitnir.notebook import source_preview
+
+    outcomes = iter([{"payload": "{}"}, dict(_LEAN_ERROR)])
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: next(outcomes)
+    )
+    other = {"sha256": "9" * 64}
+    try:
+        _run_evidence(service)  # current in FP
+        monkeypatch.setattr(source_preview, "environment_fingerprint", lambda *a: other)
+        _run_evidence(service)  # fails in another environment
+        in_other = _reopened(service)
+        monkeypatch.setattr(
+            source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
+        )
+        in_first = _reopened(service)
+    finally:
+        service.close()
+    assert (in_other["status"], in_other["failure"]["status"]) == ("stale", "current")
+    assert (in_first["status"], in_first["failure"]) == ("current", None)
+
+
+def test_uncompared_results_mark_saved_failures_uncompared():
+    from glitnir.notebook.source_preview import _uncompared
+
+    failure = {"kind": "lean", "message": "m", "created": "c", "status": "stale"}
+    card = {"status": "stale", "snapshot": None, "failure": dict(failure)}
+    running = {"status": "running", "snapshot": None, "failure": dict(failure)}
+    snapshot = _uncompared(
+        {"project_claims": [], "evidence": [card, running], "decisions": []}
+    )
+    assert [c["status"] for c in snapshot["evidence"]] == ["uncompared", "running"]
+    assert [c["failure"]["status"] for c in snapshot["evidence"]] == ["uncompared"] * 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError("cannot open /opt/x/data.csv"),
+        FileNotFoundError(2, "No such file or directory", "/Volumes/y/model.json"),
+        RuntimeError("GET https://api.example.test/v1/runs?token=s3cr3t failed"),
+    ],
+)
+@pytest.mark.parametrize("where", ["command", "compute"])
+def test_a_provider_crash_saves_only_its_exception_type(
+    tmp_path, monkeypatch, error, where
+):
+    """The crash's text, which may name any path or URL, is never written."""
+    from glitnir.notebook.check_records import records_path
+
+    def crash(*_arguments):
+        raise error
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, _evidence_provider(**{where: crash})
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    kind = type(error).__name__
+    assert card["run_error"] == f"Provider demo failed: {kind}: {error}"
+    [saved] = _saved_failures(service).values()
+    assert (saved["kind"], saved["message"]) == (
+        "provider",
+        f"Provider demo failed: {kind}",
+    )
+    written = records_path(service.path).read_text()
+    for secret in ("/opt/x", "/Volumes/y", "s3cr3t", "api.example.test"):
+        assert secret not in written
+
+
+@pytest.mark.parametrize("where", ["command", "compute"])
+def test_a_missing_or_broken_dependency_is_shown_but_not_saved(
+    tmp_path, monkeypatch, where
+):
+    """An ImportError is a setup failure: it says nothing about the directive."""
+
+    def missing(*_arguments):
+        raise ModuleNotFoundError("No module named 'gimle.asgard'")
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, _evidence_provider(**{where: missing})
+    )
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == (
+        "Provider demo failed: ModuleNotFoundError: No module named 'gimle.asgard'"
+    )
+    assert (card["status"], _saved_failures(service)) == ("never", {})
+
+
+def test_an_unsaved_failure_is_logged_without_its_message(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from glitnir.notebook.check_records import records_path
+
+    secret = str(tmp_path / "private.csv")
+    provider = _evidence_provider(compute=_raises(ValueError(f"Cannot read {secret}")))
+    service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
+    caplog.set_level(logging.DEBUG, logger="glitnir.notebook.source_preview")
+    try:
+        _run_evidence(service)
+    finally:
+        service.close()
+    assert not records_path(service.path).exists()
+    [record] = [r for r in caplog.records if "not saved" in r.getMessage()]
+    assert "local path" in record.getMessage()
+    assert all(secret not in r.getMessage() for r in caplog.records)
+
+
+def test_a_failure_that_cannot_be_written_is_logged_by_its_error_type(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    from glitnir.notebook.check_records import records_path
+
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
+    )
+    records_path(service.path).write_text("not json")
+    caplog.set_level(logging.DEBUG, logger="glitnir.notebook.source_preview")
+    try:
+        _run_evidence(service)
+    finally:
+        service.close()
+    [record] = [r for r in caplog.records if "not saved" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    assert "ValueError" in record.getMessage()
+    assert "A.glitnir.json" not in record.getMessage()
+
+
+def test_an_unsaved_failure_keeps_the_saved_one_readable_as_earlier(
+    tmp_path, monkeypatch
+):
+    """A busy slot after a saved failure says nothing new about the directive."""
+    busy = {"error": "Another Lean run is in progress; retry when it finishes."}
+    outcomes = iter([dict(_LEAN_ERROR), busy, dict(_LEAN_ERROR), busy])
+    service, _calls = _evidence_service(
+        tmp_path, monkeypatch, runner=lambda source, **options: next(outcomes)
+    )
+    try:
+        _run_evidence(service)
+        saved_now = _card(service)
+        _run_evidence(service)
+        after_busy = _card(service)
+    finally:
+        service.close()
+    # Saved by this session's run: shown once, as the run error.
+    assert (saved_now["run_error"], saved_now["failure"]) == (
+        _LEAN_ERROR["error"],
+        None,
+    )
+    # Not saved: the session's error is the latest, the saved one is earlier.
+    assert (after_busy["status"], after_busy["run_error"]) == ("failed", busy["error"])
+    assert after_busy["failure"]["message"] == _LEAN_ERROR["error"]
+    assert after_busy["failure"]["earlier"] is True
+    reopened = SourcePreviewService(service.path)
+    try:
+        _run_evidence(reopened)  # saves the same failure again
+        assert _card(reopened)["failure"] is None
+        _run_evidence(reopened)  # busy
+        assert _card(reopened)["failure"]["earlier"] is True
+    finally:
+        reopened.close()

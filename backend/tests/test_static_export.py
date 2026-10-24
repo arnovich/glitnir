@@ -16,6 +16,7 @@ from glitnir.notebook.check_records import (
     records_path,
     save_records,
     with_evidence,
+    with_evidence_failure,
     with_view,
 )
 from glitnir.notebook.evidence_cards import checked_evidence, evidence_key
@@ -486,3 +487,52 @@ def test_a_check_in_an_unknown_environment_saves_nothing(
     assert "Results could not be saved" in check["message"]
     assert "fingerprint is unknown" in check["message"]
     assert records_path(saved).read_bytes() == before
+
+
+def _failure(text: str = TEXT) -> dict:
+    return {
+        "prefix_sha256": evidence_prefix_sha256(text, 6),
+        "fingerprint": "8" * 64,
+        "provider": "demo",
+        "created": "2026-10-15T12:00:00Z",
+        "kind": "lean",
+        "message": "Line 3: unknown identifier 'd'",
+    }
+
+
+def _save_failure(path: Path, *, keep_evidence: bool) -> None:
+    key = evidence_key(DIRECTIVE, 0)
+    records = load_records(path)
+    assert records is not None
+    if not keep_evidence:
+        records = {k: v for k, v in records.items() if k != "evidence"}
+    save_records(path, with_evidence_failure(records, key, _failure(), [key]))
+
+
+@pytest.mark.parametrize("keep_evidence", [True, False])
+def test_saved_failures_are_shown_as_recorded(
+    saved: Path, nothing_runs, keep_evidence
+) -> None:
+    """In whatever environment they were recorded, like every saved result."""
+    _save_failure(saved, keep_evidence=keep_evidence)
+    with SavedNotebook(saved) as notebook:
+        [card] = notebook.snapshot()["evidence"]
+    assert card["status"] == ("current" if keep_evidence else "failed")
+    assert card["failure"] == {
+        "kind": "lean",
+        "message": "Line 3: unknown identifier 'd'",
+        "created": "2026-10-15T12:00:00Z",
+        "status": "current",
+    }
+
+
+@pytest.mark.parametrize("keep_evidence", [True, False])
+def test_saved_failures_for_other_source_are_hidden(
+    saved: Path, nothing_runs, keep_evidence
+) -> None:
+    _save_failure(saved, keep_evidence=keep_evidence)
+    saved.write_text(TEXT.replace("c : Nat := 1", "c : Nat := 2"))
+    with SavedNotebook(saved) as notebook:
+        [card] = notebook.snapshot()["evidence"]
+    assert card["failure"] is None
+    assert card["status"] == ("stale" if keep_evidence else "never")

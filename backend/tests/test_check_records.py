@@ -8,6 +8,8 @@ import pytest
 
 from glitnir.notebook import check_records
 from glitnir.notebook.check_records import (
+    EVIDENCE_FAILURE_KINDS,
+    MAX_MESSAGE,
     MAX_VIEWS_BYTES,
     RESULTS_TOO_LARGE,
     _serialised,
@@ -16,16 +18,19 @@ from glitnir.notebook.check_records import (
     decision_status,
     evidence_prefix_sha256,
     evidence_status,
+    failure_message,
     load_records,
     records_from_check,
     records_path,
     save_records,
     saved_decisions,
     saved_evidence,
+    saved_evidence_failures,
     saved_views,
     view_status,
     with_decision,
     with_evidence,
+    with_evidence_failure,
     with_view,
     without_decision,
 )
@@ -1716,3 +1721,261 @@ def test_view_status_follows_the_text_through_the_directive_and_environment():
         )
         == "stale"
     )
+
+
+# ----- saved evidence failures --------------------------------------------------
+
+OTHER_NOTE = "-- @evidence simulate N"
+OTHER_KEY = evidence_key(OTHER_NOTE, 0)
+
+
+def _failure(text=NOTEBOOK, line=3, fingerprint=FP, **changes):
+    return {
+        "prefix_sha256": evidence_prefix_sha256(text, line),
+        "fingerprint": fingerprint,
+        "provider": "demo",
+        "created": "2026-10-15T12:00:00Z",
+        "kind": "lean",
+        "message": "Line 2: unknown identifier 'x'",
+        **changes,
+    }
+
+
+def _write_raw(notebook: Path, records: dict) -> None:
+    records_path(notebook).write_text(json.dumps(records))
+
+
+def test_a_failure_round_trips_and_prunes_directives_that_are_gone(tmp_path: Path):
+    notebook = tmp_path / "N.lean"
+    records = with_evidence_failure(None, "gone", _failure(), ["gone"])
+    records = with_evidence_failure(records, OTHER_KEY, _failure(), ["gone", OTHER_KEY])
+    records = with_evidence_failure(records, KEY, _failure(), [OTHER_KEY], notebook)
+    assert set(saved_evidence_failures(records)) == {OTHER_KEY, KEY}
+    assert records["claims"] == [] and "evidence" not in records
+    save_records(notebook, records)
+    loaded = load_records(notebook)
+    assert loaded == records
+    assert saved_evidence_failures(loaded)[KEY] == _failure()
+
+
+@pytest.mark.parametrize("kind", sorted(EVIDENCE_FAILURE_KINDS))
+def test_each_failure_kind_is_saved(kind):
+    records = with_evidence_failure(None, KEY, _failure(kind=kind), [KEY])
+    assert saved_evidence_failures(records)[KEY]["kind"] == kind
+
+
+def test_the_failure_kinds_are_those_a_run_saves():
+    assert EVIDENCE_FAILURE_KINDS == {
+        "lean",
+        "provider",
+        "refused",
+        "invalid",
+        "timeout",
+    }
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {**_failure(), "extra": 1},
+        {k: v for k, v in _failure().items() if k != "message"},
+        _failure(kind="cancelled"),
+        _failure(kind=None),
+        _failure(message=3),
+        _failure(message="x" * (MAX_MESSAGE + 1)),
+        _failure(created="yesterday"),
+        _failure(provider=3),
+        _failure(prefix_sha256=None),
+    ],
+)
+def test_a_malformed_failure_is_refused(entry):
+    with pytest.raises(ValueError, match="malformed"):
+        with_evidence_failure(None, KEY, entry, [KEY])
+
+
+def test_a_message_of_the_limit_is_saved():
+    message = "x" * MAX_MESSAGE
+    records = with_evidence_failure(None, KEY, _failure(message=message), [KEY])
+    assert saved_evidence_failures(records)[KEY]["message"] == message
+
+
+def test_failure_message_cuts_a_long_message_to_the_limit():
+    assert failure_message("short") == "short"
+    cut = failure_message("x" * (MAX_MESSAGE + 50))
+    assert len(cut) == MAX_MESSAGE and cut.endswith("…")
+    assert failure_message("x" * MAX_MESSAGE) == "x" * MAX_MESSAGE
+
+
+@pytest.mark.parametrize("fingerprint", ["", "unknown", "F" * 64])
+def test_a_failure_in_an_unknown_environment_is_never_saved(fingerprint):
+    with pytest.raises(ValueError, match="unknown"):
+        with_evidence_failure(None, KEY, _failure(fingerprint=fingerprint), [KEY])
+
+
+def test_a_success_removes_the_failure_and_prunes_failures_of_gone_directives():
+    records = with_evidence_failure(None, KEY, _failure(), [KEY, OTHER_KEY, "gone"])
+    records = with_evidence_failure(records, OTHER_KEY, _failure(), [KEY, OTHER_KEY])
+    records = with_evidence_failure(records, "gone", _failure(), [KEY, OTHER_KEY])
+    records = with_evidence(records, KEY, _entry(), [OTHER_KEY])
+    assert saved_evidence(records) == {KEY: _entry()}
+    assert set(saved_evidence_failures(records)) == {OTHER_KEY}
+    records = with_evidence(records, OTHER_KEY, _entry(), [KEY])
+    assert "evidence_failures" not in records
+
+
+def test_a_failure_after_a_success_keeps_both(tmp_path: Path):
+    notebook = tmp_path / "N.lean"
+    records = with_evidence(None, KEY, _entry(), [KEY])
+    later = _failure(created="2026-10-16T09:30:00+00:00")
+    records = with_evidence_failure(records, KEY, later, [KEY], notebook)
+    save_records(notebook, records)
+    loaded = load_records(notebook)
+    assert saved_evidence(loaded) == {KEY: _entry()}
+    assert saved_evidence_failures(loaded) == {KEY: later}
+
+
+def test_a_check_carries_the_saved_failures_over():
+    previous = with_evidence_failure(None, KEY, _failure(), [KEY])
+    records = records_from_check(TEXT, RESULT, FP, previous)
+    assert saved_evidence_failures(records) == {KEY: _failure()}
+    assert "evidence_failures" not in records_from_check(TEXT, RESULT, FP)
+
+
+@pytest.mark.parametrize(
+    "failures",
+    [
+        [],
+        "broken",
+        {KEY: []},
+        {KEY: {**_failure(), "extra": 1}},
+        {KEY: _failure(kind="from-a-later-version")},
+        {KEY: _failure(message="x" * (MAX_MESSAGE + 1))},
+        {KEY: _failure(created="2026-10-15")},
+        {KEY: _failure(fingerprint=1)},
+    ],
+)
+def test_a_malformed_failure_is_dropped_while_claims_and_evidence_load(
+    tmp_path, failures
+):
+    notebook = tmp_path / "N.lean"
+    records = with_evidence(records_from_check(TEXT, RESULT, FP), KEY, _entry(), [KEY])
+    _write_raw(notebook, {**records, "evidence_failures": failures})
+    loaded = load_records(notebook)
+    assert loaded is not None
+    assert [c["name"] for c in loaded["claims"]] == ["A.result", "B.result"]
+    assert saved_evidence(loaded) == {KEY: _entry()}
+    assert saved_evidence_failures(loaded) == {}
+    assert "evidence_failures" not in loaded
+
+
+def test_only_the_malformed_failures_are_dropped(tmp_path):
+    notebook = tmp_path / "N.lean"
+    failures = {KEY: _failure(), OTHER_KEY: _failure(kind="from-a-later-version")}
+    _write_raw(
+        notebook,
+        {**with_evidence(None, KEY, _entry(), [KEY]), "evidence_failures": failures},
+    )
+    assert saved_evidence_failures(load_records(notebook)) == {KEY: _failure()}
+
+
+def test_a_failure_older_than_the_saved_evidence_is_ignored_then_dropped(tmp_path):
+    """An older Glitnir saved a success without removing the failure before it."""
+    notebook = tmp_path / "N.lean"
+    records = with_evidence(None, KEY, _entry(), [KEY, OTHER_KEY])  # 12:00 on 14th
+    older = _failure(created="2026-10-14T11:59:59Z")
+    tie = _failure(created="2026-10-14T12:00:00+00:00")
+    _write_raw(
+        notebook,
+        {**records, "evidence_failures": {KEY: older, OTHER_KEY: _failure()}},
+    )
+    loaded = load_records(notebook)
+    assert saved_evidence_failures(loaded) == {OTHER_KEY: _failure()}
+    # Dropped at the next write, whatever that write saves.
+    written = records_from_check(TEXT, RESULT, FP, loaded)
+    assert saved_evidence_failures(written) == {OTHER_KEY: _failure()}
+    # On a tie the failure counts as newer.
+    _write_raw(notebook, {**records, "evidence_failures": {KEY: tie}})
+    assert saved_evidence_failures(load_records(notebook)) == {KEY: tie}
+
+
+def test_saved_failures_follow_the_evidence_currency_rule():
+    entry = _failure()
+    assert evidence_status(entry, NOTEBOOK, 3, FP) == "current"
+    assert evidence_status(entry, NOTEBOOK + "more\n", 3, FP) == "current"
+    assert evidence_status(
+        entry, NOTEBOOK.replace("def M := 1", "def M := 2"), 3, FP
+    ) == ("stale")
+    assert evidence_status(entry, NOTEBOOK, 3, GP) == "stale"
+
+
+def test_saving_drops_drawings_then_failures_before_refusing(monkeypatch):
+    """Drawings go first, then saved failures, before anything is refused."""
+    previous = with_evidence(None, KEY, _entry(), [KEY, OTHER_KEY])
+    previous = with_evidence_failure(previous, OTHER_KEY, _failure(), [KEY, OTHER_KEY])
+    previous = with_view(previous, VIEW_KEY, _view(), [VIEW_KEY])
+    no_views = {k: v for k, v in previous.items() if k != "views"}
+    neither = {k: v for k, v in no_views.items() if k != "evidence_failures"}
+    monkeypatch.setattr(
+        check_records,
+        "_MAX_RECORDS",
+        _size(records_from_check(TEXT, RESULT, FP, no_views)) + 10,
+    )
+    records = records_from_check(TEXT, RESULT, FP, previous)
+    assert "views" not in records
+    assert saved_evidence_failures(records) == {OTHER_KEY: _failure()}
+    monkeypatch.setattr(
+        check_records,
+        "_MAX_RECORDS",
+        _size(records_from_check(TEXT, RESULT, FP, neither)) + 10,
+    )
+    records = records_from_check(TEXT, RESULT, FP, previous)
+    assert "views" not in records and "evidence_failures" not in records
+    assert saved_evidence(records) == {KEY: _entry()}
+
+
+def test_a_failure_that_does_not_fit_is_not_saved(tmp_path, monkeypatch):
+    """Refused, never saved by dropping the other saved failures to fit it."""
+    notebook = tmp_path / "N.lean"
+    previous = with_evidence(None, KEY, _entry(), [KEY, OTHER_KEY])
+    previous = with_evidence_failure(previous, OTHER_KEY, _failure(), [KEY, OTHER_KEY])
+    long = _failure(message="x" * MAX_MESSAGE)
+    # It fits only without the saved failures, which would then be lost.
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 10)
+    with pytest.raises(ValueError) as raised:
+        with_evidence_failure(previous, KEY, long, [KEY, OTHER_KEY], notebook)
+    assert str(raised.value) == (
+        "Saved evidence failures would make the records file too large; "
+        "the failure is shown but not saved."
+    )
+    # It does not fit even without them.
+    evidence_only = {k: v for k, v in previous.items() if k != "evidence_failures"}
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(evidence_only) - 1)
+    with pytest.raises(ValueError) as raised:
+        with_evidence_failure(previous, KEY, long, [KEY, OTHER_KEY], notebook)
+    assert str(raised.value) == (
+        "Saved evidence_failures would make N.glitnir.json larger than 16 MiB; "
+        "the failure is shown but not saved."
+    )
+
+
+def test_records_with_failures_keep_what_older_readers_need(tmp_path):
+    """Glitnir 0.1.2 to 0.1.6 read these records only while this holds.
+
+    They require the exact format, fail the whole file on an evidence entry of
+    any other key set, and ignore top-level sections they do not know.
+    """
+    notebook = tmp_path / "N.lean"
+    records = with_evidence(
+        records_from_check(TEXT, RESULT, FP), KEY, _entry(), [KEY, OTHER_KEY]
+    )
+    records = with_evidence_failure(records, KEY, _failure(), [KEY, OTHER_KEY])
+    records = with_evidence_failure(records, OTHER_KEY, _failure(), [KEY, OTHER_KEY])
+    save_records(notebook, records)
+    saved = json.loads(records_path(notebook).read_text())
+    assert check_records.FORMAT == "glitnir.project-checks/v2"
+    assert saved["format"] == "glitnir.project-checks/v2"
+    assert [set(entry) for entry in saved["evidence"].values()] == [
+        {"prefix_sha256", "fingerprint", "provider", "created", "snapshot"}
+    ]
+    assert set(saved["evidence_failures"]) == {KEY, OTHER_KEY}
+    assert "evidence_failures" in check_records._RESULT_SECTIONS

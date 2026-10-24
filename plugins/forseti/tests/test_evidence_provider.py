@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from glitnir.notebook.check_records import load_records, saved_evidence_failures
 from glitnir.notebook.evidence_cards import checked_evidence
 from glitnir.providers import EvidenceProvider, Providers, load_providers
 
@@ -202,10 +203,11 @@ def test_iterate_needs_asgard_and_simulate_does_not(monkeypatch) -> None:
     assert forseti.iterate_unavailable() == forseti.NEEDS_ASGARD
     assert forseti.parse("simulate", "m", "").verb == "simulate"
     # Without Asgard the card cannot run; a run that gets here anyway fails
-    # with the reason, never with an import error.
-    with pytest.raises(EvidenceError) as refused:
+    # with the reason, as the setup failure (an ImportError) it is.
+    with pytest.raises(ImportError) as missing:
         forseti.compute(forseti.parse("iterate", "update", HALVING), UPDATE)
-    assert str(refused.value).startswith(forseti.NEEDS_ASGARD)
+    assert not isinstance(missing.value, ValueError)
+    assert str(missing.value).startswith(forseti.NEEDS_ASGARD)
 
 
 def test_iterate_shows_at_most_sixteen_states(fake_asgard) -> None:
@@ -562,10 +564,31 @@ def test_a_decode_rational_error_becomes_the_card_run_error(
         "",
         None,
     )
-    assert (card["status"], card["snapshot"]) == ("never", None)
+    # A refusal: shown, and saved as the run's failure.
+    assert (card["status"], card["snapshot"]) == ("failed", None)
     assert card["run_error"] == (
         "Python Asgard could not read the circuit: fake: unreadable circuit"
     )
+    [failure] = saved_evidence_failures(load_records(service.path)).values()
+    assert (failure["kind"], failure["message"]) == ("refused", card["run_error"])
+
+
+def test_asgard_missing_at_run_time_is_shown_but_never_saved(
+    tmp_path, monkeypatch
+) -> None:
+    """Removed or broken since the card was read: a setup failure, not saved."""
+    monkeypatch.setattr(forseti, "asgard_installed", lambda: True)
+    monkeypatch.setitem(sys.modules, "gimle.asgard", None)
+    service = _service(tmp_path, monkeypatch, json.dumps(UPDATE))
+    try:
+        card = _run_card(service, 2)
+    finally:
+        service.close()
+    assert card["run_error"].startswith(
+        f"Provider forseti failed: ImportError: {forseti.NEEDS_ASGARD}"
+    )
+    assert card["status"] == "never"
+    assert saved_evidence_failures(load_records(service.path)) == {}
 
 
 @pytest.mark.parametrize(

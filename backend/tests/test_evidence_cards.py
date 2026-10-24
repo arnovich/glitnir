@@ -171,6 +171,7 @@ def test_cards_pass_the_option_text_to_the_provider():
         "status": "never",
         "run_error": None,
         "snapshot": None,
+        "failure": None,
     }
 
 

@@ -305,7 +305,10 @@ reads a saved notebook and its saved results for the canonical renderer:
   extra to install; `run_prompts=True` keeps those prompts. A result saved
   without a known environment fingerprint is never shown as recorded, and
   `preview.project` gives the project's root relative to the notebook, so the
-  snapshot holds no local absolute path.
+  snapshot holds no local absolute path. Saved failed evidence runs are shown
+  as recorded too: a card whose last run failed for this source says so
+  ("Failed, as recorded", or a note above its chart), and a failure recorded
+  for other source is not shown.
 - `asset(path, sha256)` returns an image the prose shows.
 - `view_imports()` lists the modules to build before drawing views.
 - `draw_view(cell, line)` returns the view's saved drawing from the `views`

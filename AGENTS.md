@@ -21,7 +21,7 @@ the `glitnir.evidence/v1` format, the `EvidenceProvider`/`EvidenceRequest` and
 `DecisionProvider`/`DecisionRequest` interfaces in `glitnir/providers.py`,
 `POST /api/decide/run`, `/api/decide/stop` and `/api/decide/discard`,
 `GET /api/decide/candidate`, the webview-to-extension `acceptDecision` message and
-the `evidence`, `decisions` and `views` sections of `<Notebook>.glitnir.json` are interfaces: change them only deliberately, never as renaming or branding.
+the `evidence`, `decisions`, `views` and `evidence_failures` sections of `<Notebook>.glitnir.json` are interfaces: change them only deliberately, never as renaming or branding.
 
 Run `npm test`, `npm run package` and the isolated `npm run test:host` when host
 behavior changes. Set `GLITNIR_BUILD_PYTHON` to the compatible installed runtime.

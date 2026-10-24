@@ -14,7 +14,12 @@ from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_checking import OUTPUT_BYTES, check_seconds, run_observer
+from glitnir.lean.project_checking import (
+    OUTPUT_BYTES,
+    TIMED_OUT,
+    check_seconds,
+    run_observer,
+)
 from glitnir.lean.project_inspection import MODULE_NAME, _toolchain, inspect_project
 from glitnir.lean.project_snapshot import (
     SLOT_BUSY,
@@ -536,7 +541,11 @@ def run_provider_lean(
 
     Returns the one view's result from `run_provider_batch`: `{"payload":
     text, "proofs_skipped": bool}` or `{"error": message}`, which a failure
-    of the whole run also is.
+    of the whole run also is. An error of the directive itself (Lean's first
+    error, or no marked output) is marked `"lean": True`, and a run that
+    reached its own time limit `"timed_out": True`: those say something about
+    the directive. Nothing else is marked: a setup, sandbox or slot failure,
+    or a cancellation, may name local paths or pass by itself.
     """
     result = run_provider_batch(
         source,
@@ -553,8 +562,12 @@ def run_provider_lean(
         environment_sha256=environment_sha256,
     )
     if "views" not in result:
+        if result.get("error") == TIMED_OUT:
+            return {**result, "timed_out": True}
         return result
     view: dict[str, Any] = result["views"][0]
+    if "error" in view:
+        return {**view, "lean": True}
     return view
 
 
