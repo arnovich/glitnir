@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from patching import patch_fingerprint
 
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_views import view_provider_sha256
@@ -21,7 +22,12 @@ from glitnir.notebook.check_records import (
 )
 from glitnir.notebook.directives import evidence_key
 from glitnir.notebook.source_preview import SourcePreviewService
-from glitnir.notebook.static_export import RECORDED_NOTICE, SavedNotebook
+from glitnir.notebook.static_export import (
+    RECORDED_NOTICE,
+    SavedNotebook,
+    _unfingerprinted,
+)
+from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import (
     EvidenceProvider,
     EvidenceRequest,
@@ -146,6 +152,7 @@ def nothing_runs(monkeypatch):
         "save_records",
     ):
         monkeypatch.setattr(source_preview, name, forbidden)
+    monkeypatch.setattr(preview_snapshot, "environment_fingerprint", forbidden)
 
 
 def _tree(root: Path) -> dict[str, tuple[int, str]]:
@@ -157,6 +164,41 @@ def _tree(root: Path) -> dict[str, tuple[int, str]]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def test_build_snapshot_equals_the_service_snapshot(saved: Path, nothing_runs) -> None:
+    from glitnir.preview.snapshot import PreviewState, build_snapshot, read_source
+
+    service = SourcePreviewService(saved)
+    try:
+        text = read_source(saved)
+        expected = service._snapshot(text, _unfingerprinted, compare_environment=False)
+        actual = build_snapshot(
+            saved,
+            text,
+            _unfingerprinted,
+            PreviewState(),
+            service._providers,
+            compare_environment=False,
+        )
+    finally:
+        service.close()
+    assert actual == expected
+
+
+def test_snapshot_and_view_imports_do_not_use_the_service(
+    saved: Path, nothing_runs
+) -> None:
+    with SavedNotebook(saved) as page:
+        service, page._service = page._service, None  # any use raises AttributeError
+        try:
+            snapshot = page.snapshot()
+            assert snapshot["preview"]["recorded"] is True
+            assert page.view_imports() == sorted(page.view_imports())
+            [name] = {entry["name"] for entry in snapshot["project_claims"]}
+            assert name
+        finally:
+            page._service = service
 
 
 def test_saved_results_are_shown_as_recorded(saved: Path, nothing_runs) -> None:
@@ -182,10 +224,8 @@ def test_the_editor_preview_compares_the_same_results_with_its_environment(
     saved: Path, monkeypatch
 ) -> None:
     """The contrast: in another environment the live preview says out of date."""
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "1" * 64, "packages": []},
+    patch_fingerprint(
+        monkeypatch, lambda *_a, **_k: {"sha256": "1" * 64, "packages": []}
     )
     snapshot = SourcePreviewService(saved).snapshot()
     assert "recorded" not in snapshot["preview"]
@@ -246,10 +286,8 @@ def test_draw_view_waits_for_the_drawing(
     saved: Path, monkeypatch, draw_each_alone
 ) -> None:
     monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "2" * 64, "packages": []},
+    patch_fingerprint(
+        monkeypatch, lambda *_a, **_k: {"sha256": "2" * 64, "packages": []}
     )
     drawn = []
 
@@ -329,10 +367,8 @@ def test_draw_view_draws_when_saved_prefix_differs(
 ) -> None:
     _with_saved_drawing(saved, TEXT.replace("c : Nat := 1", "c : Nat := 0"))
     monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "8" * 64, "packages": []},
+    patch_fingerprint(
+        monkeypatch, lambda *_a, **_k: {"sha256": "8" * 64, "packages": []}
     )
     drawn = []
 
@@ -354,10 +390,8 @@ def test_draw_view_reports_a_failed_drawing(
     saved: Path, monkeypatch, draw_each_alone
 ) -> None:
     monkeypatch.setattr(static_export, "POLL_SECONDS", 0.01)
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": "2" * 64, "packages": []},
+    patch_fingerprint(
+        monkeypatch, lambda *_a, **_k: {"sha256": "2" * 64, "packages": []}
     )
     draw_each_alone(lambda path, **options: {"error": "needs import Demo.View"})
     with SavedNotebook(saved) as notebook:
@@ -373,7 +407,7 @@ def test_draw_view_reports_a_failure_to_read_for_it(saved: Path, monkeypatch) ->
     def gone(*_arguments, **_options):
         raise OSError("environment unreadable")
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", gone)
+    patch_fingerprint(monkeypatch, gone)
     with SavedNotebook(saved) as notebook:
         [view] = notebook.snapshot()["views"]
         assert notebook.draw_view(view["cell"], view["line"]) == {
@@ -406,10 +440,8 @@ def test_the_snapshot_names_no_local_project_path(tmp_path: Path, nothing_runs):
 def test_the_editor_preview_and_linked_notebooks_are_never_as_recorded(
     saved: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *_a, **_k: {"sha256": RECORDED, "packages": []},
+    patch_fingerprint(
+        monkeypatch, lambda *_a, **_k: {"sha256": RECORDED, "packages": []}
     )
     (saved.parent / "B.lean").write_text("def b : Nat := 2\n")
     service = SourcePreviewService(saved)
@@ -436,7 +468,7 @@ def _failing(*_arguments, **_options):
 def test_an_unknown_environment_shows_saved_results_out_of_date(
     saved: Path, monkeypatch, fingerprint
 ) -> None:
-    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    patch_fingerprint(monkeypatch, fingerprint)
     snapshot = SourcePreviewService(saved).snapshot()
     assert [claim["current"] for claim in snapshot["project_claims"]] == [False]
     assert [card["status"] for card in snapshot["evidence"]] == ["stale"]
@@ -456,7 +488,7 @@ def test_results_saved_under_an_empty_fingerprint_are_never_current(
     for entry in records["evidence"].values():
         entry["fingerprint"] = ""
     file.write_text(json.dumps(records))
-    monkeypatch.setattr(source_preview, "environment_fingerprint", _empty)
+    patch_fingerprint(monkeypatch, _empty)
     snapshot = SourcePreviewService(saved).snapshot()
     assert [claim["current"] for claim in snapshot["project_claims"]] == [False]
     assert [card["status"] for card in snapshot["evidence"]] == ["stale"]
@@ -472,7 +504,7 @@ def test_a_check_in_an_unknown_environment_saves_nothing(
     from glitnir.notebook.check_records import records_path
 
     before = records_path(saved).read_bytes()
-    monkeypatch.setattr(source_preview, "environment_fingerprint", _empty)
+    patch_fingerprint(monkeypatch, _empty)
     monkeypatch.setattr(
         source_preview, "check_project", lambda *a, **k: _result(k["expected_sha256"])
     )

@@ -34,8 +34,16 @@ from typing import Any
 from glitnir.lean.fingerprint import direct_imports, header_imports
 from glitnir.notebook.directives import view_keys
 from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview import assets
 from glitnir.preview.cards import provider_imports, view_provider_hash
 from glitnir.preview.editor import _APP
+from glitnir.preview.snapshot import (
+    PreviewState,
+    build_snapshot,
+    cells,
+    prose,
+    read_source,
+)
 
 #: The words a snapshot from saved results carries as its `preview.notice`.
 RECORDED_NOTICE = (
@@ -80,6 +88,7 @@ class SavedNotebook:
         """Keep the notebook's location; nothing is read or started yet."""
         self.path = path
         self._service = SourcePreviewService(path, save_drawings=False)
+        self._providers = self._service._providers
 
     def __enter__(self) -> "SavedNotebook":
         """Return this notebook; `close` runs when the block ends."""
@@ -99,8 +108,13 @@ class SavedNotebook:
         self._service.close()
 
     def _recorded(self, text: str) -> dict[str, Any]:
-        return self._service._snapshot(
-            text, _unfingerprinted, compare_environment=False
+        return build_snapshot(
+            self.path,
+            text,
+            _unfingerprinted,
+            PreviewState(),
+            self._providers,
+            compare_environment=False,
         )
 
     def snapshot(self, *, run_prompts: bool = False) -> dict[str, Any]:
@@ -129,7 +143,7 @@ class SavedNotebook:
             The snapshot, in the shape ``GET /api/notebook`` serves. Its
             ``sha256`` is the saved source's SHA-256, with CRLF read as LF.
         """
-        snapshot = self._recorded(self._service._text())
+        snapshot = self._recorded(read_source(self.path))
         preview = snapshot["preview"]
         preview["recorded"] = True
         preview["notice"] = RECORDED_NOTICE
@@ -150,7 +164,9 @@ class SavedNotebook:
             glitnir.preview.assets.AssetError: The image is not listed, has
                 another hash or cannot be read.
         """
-        return self._service.asset(reference, sha256)
+        text = read_source(self.path)
+        found = assets.references(prose(cells(text)))
+        return assets.read(self.path, found, reference, sha256)
 
     def view_imports(self) -> list[str]:
         """List the modules Lean loads to draw this notebook's views, sorted.
@@ -162,13 +178,13 @@ class SavedNotebook:
         needs none. The views are found as in `snapshot`, which reads the
         saved results to place claims; nothing is compared or run.
         """
-        text = self._service._text()
+        text = read_source(self.path)
         views = [view for view in self._recorded(text)["views"] if not view["error"]]
         if not views:
             return []
         header = header_imports(text)
         modules = set(direct_imports(text) if header is None else header)
-        providers = self._service._providers()
+        providers = self._providers()
         for view in views:
             modules.update(provider_imports(providers.views[view["kind"]]))
         return sorted(modules)

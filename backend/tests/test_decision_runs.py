@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from patching import patch_fingerprint
 
 from glitnir.lean import project_checking
 from glitnir.lean.project_inspection import TOOLCHAIN
@@ -120,9 +121,7 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
         {},
     )
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
-    )
+    patch_fingerprint(monkeypatch, lambda *a: {"sha256": FP})
     monkeypatch.setattr(source_preview, "check_candidate", check or checked)
     monkeypatch.setattr(source_preview, "provider_imports_error", imports_ok)
     monkeypatch.setattr(
@@ -833,7 +832,6 @@ def test_close_waits_for_all_workers_within_one_deadline(tmp_path, monkeypatch):
 
 
 def test_a_failing_fingerprint_is_computed_once_per_snapshot(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
 
     service, _calls = _service(tmp_path, monkeypatch)
     try:
@@ -844,7 +842,7 @@ def test_a_failing_fingerprint_is_computed_once_per_snapshot(tmp_path, monkeypat
             calls.append(1)
             raise RuntimeError("git exploded")
 
-        monkeypatch.setattr(source_preview, "environment_fingerprint", failing)
+        patch_fingerprint(monkeypatch, failing)
         card = _card(service)
     finally:
         service.close()
@@ -1031,12 +1029,8 @@ _UNKNOWN_NOTE = (
 
 def test_decision_saved_under_unknown_git_state_explains_it(tmp_path, monkeypatch):
     """The decision is saved; the card's run error says why it is out of date."""
-    from glitnir.notebook import source_preview
-
     service, _ = _service(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: _UNKNOWN_GIT
-    )
+    patch_fingerprint(monkeypatch, lambda *a: _UNKNOWN_GIT)
     try:
         key = _run(service)
         card = _card(service)

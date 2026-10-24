@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
+from patching import patch_fingerprint
 
 from glitnir.lean.fingerprint import environment_fingerprint
 from glitnir.notebook.check_records import (
@@ -254,12 +255,11 @@ def test_a_nested_project_is_shown_as_saved_and_never_fingerprinted(
     linked = nested / "ThreeState.lean"
     linked.write_text(LINKED, encoding="utf-8")
     save_records(linked, records_from_check(LINKED, RESULT, "5" * 64))
-    from glitnir.notebook import source_preview
 
     def refuse(*args, **kwargs):
         raise AssertionError("a nested project must not be fingerprinted")
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", refuse)
+    patch_fingerprint(monkeypatch, refuse)
     service = SourcePreviewService(root / "Main.lean")
     snapshot = service.linked("nested/ThreeState.lean")
     assert snapshot["preview"]["linked"]["compared"] is False
