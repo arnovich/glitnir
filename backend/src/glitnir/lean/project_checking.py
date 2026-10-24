@@ -4,8 +4,10 @@ import hashlib
 import json
 import os
 import re
+import resource
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -128,6 +130,11 @@ class StageTimes:
             with self._lock:
                 self._ms[name] = self._ms.get(name, 0) + elapsed
 
+    def record(self, name: str, value: int) -> None:
+        """PROBE (drop before merge): set entry ``name`` to ``value``."""
+        with self._lock:
+            self._ms[name] = value
+
     def summary(self) -> dict[str, int]:
         """Return each stage's milliseconds so far, and the `total`."""
         with self._lock:
@@ -139,7 +146,78 @@ class StageTimes:
 
 def stage_summary(stage_ms: dict[str, int]) -> str:
     """Write a check's `stage_ms` on one line, in seconds, for logs."""
-    return ", ".join(f"{name} {ms / 1000:.1f} s" for name, ms in stage_ms.items())
+    return ", ".join(_stage_entry(name, ms) for name, ms in stage_ms.items())
+
+
+def _stage_entry(name: str, ms: int) -> str:
+    """One `stage_summary` entry; PROBE entries (drop before merge) are raw."""
+    if ".n." in name or ".probe." in name:
+        return name if ms == -1 else f"{name} {ms}"
+    return f"{name} {ms / 1000:.1f} s"
+
+
+# PROBE (drop before merge): with GLITNIR_HELPER_TIMINGS=1 in the checker's
+# environment, Lean helpers get it too and ProjectReplay writes timings to
+# standard error (its `Probe` namespace). `run_observer` keeps those lines for
+# the calling thread and `_drain_probe` adds them to the check's `StageTimes`.
+# Nothing here changes a result.
+_PROBE_LINE = re.compile(r"glitnir-(timing|count|clock|probe) (\S+) ?(.*)")
+_probe = threading.local()
+
+
+def _probing() -> bool:
+    """PROBE (drop before merge): whether helper timings are requested."""
+    return os.environ.get("GLITNIR_HELPER_TIMINGS") == "1"
+
+
+def _keep_probe(stderr: str, started_ns: int, usage: Any) -> None:
+    """PROBE (drop before merge): keep one helper run's timing lines."""
+    try:
+        ended_ns = time.monotonic_ns()
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        entries: list[tuple[str, int]] = [
+            ("child_user", round((after.ru_utime - usage.ru_utime) * 1000)),
+            ("child_sys", round((after.ru_stime - usage.ru_stime) * 1000)),
+            # Linux reports kilobytes, macOS bytes.
+            (
+                "n.children_maxrss_mb",
+                after.ru_maxrss // (1024**2 if sys.platform == "darwin" else 1024),
+            ),
+        ]
+        clocks = {}
+        for line in stderr.splitlines():
+            match = _PROBE_LINE.fullmatch(line.strip())
+            if match is None:
+                continue
+            kind, label, value = match.groups()
+            if kind == "clock" and value.isdigit():
+                clocks[label] = int(value)
+            elif kind == "timing" and value.isdigit():
+                entries.append((label, int(value)))
+            elif kind == "count" and value.isdigit():
+                entries.append((f"n.{label}", int(value)))
+            elif kind == "probe" and value in ("true", "false"):
+                entries.append((f"probe.{label}", int(value == "true")))
+            elif kind == "probe":
+                entries.append((f"probe.{label} {value}".strip(), -1))
+        # Lean's and Python's monotonic clocks agree on Linux, not on macOS.
+        derived = [
+            ("startup", clocks.get("main", -1) - started_ns),
+            ("teardown", ended_ns - clocks.get("exit", ended_ns + 1)),
+        ]
+        for name, ns in derived:
+            if 0 <= ns < 3600 * 10**9:
+                entries.append((name, ns // 1000000))
+        _probe.entries = entries
+    except Exception:  # noqa: BLE001 - a probe never changes a check
+        _probe.entries = []
+
+
+def _drain_probe(stages: StageTimes, stage: str) -> None:
+    """PROBE (drop before merge): record the last helper run's lines."""
+    for name, value in getattr(_probe, "entries", []):
+        stages.record(f"{stage}.{name}", value)
+    _probe.entries = []
 
 
 def _check_stage(root: Path) -> None:
@@ -238,6 +316,12 @@ def run_observer(
         "HOME": "/nonexistent",
         "LANG": "C.UTF-8",
     }
+    probing = _probing()  # PROBE (drop before merge)
+    if probing:
+        environment["GLITNIR_HELPER_TIMINGS"] = "1"
+        _probe.entries = []
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        started_ns = time.monotonic_ns()
     command = confine(
         [str(toolchain / "bin" / arguments[0]), *arguments[1:]],
         readable=readable,
@@ -283,6 +367,8 @@ def run_observer(
                 texts.append(
                     stream.read(OUTPUT_BYTES + 1).decode("utf-8", errors="replace")
                 )
+            if probing:  # PROBE (drop before merge)
+                _keep_probe(texts[1], started_ns, usage)
             if process.returncode != 0:
                 limit = next(
                     (a[2:] for a in arguments if re.fullmatch(r"-M\d+", a)), None
@@ -1052,7 +1138,8 @@ def _check_text(
     ``stages`` records how long each stage takes (`StageTimes`).
     """
     cancellation = cancel
-    timed = (stages or StageTimes()).stage
+    stage_times = stages or StageTimes()  # PROBE (drop before merge): was inline
+    timed = stage_times.stage
     if "\r" in text:
         # Lean converts CRLF again, so a stray carriage return before a line
         # end would move every position Lean reports against these bytes.
@@ -1361,6 +1448,7 @@ def _check_text(
                             closure,
                             imports,
                         )
+                        _drain_probe(stage_times, "replay_imports")  # PROBE
                 except SnapshotError as error:
                     raise SnapshotError(
                         "Independent kernel replay failed while replaying the "
@@ -1414,6 +1502,7 @@ def _check_text(
                     closure,
                     imports,
                 )
+                _drain_probe(stage_times, "replay")  # PROBE (drop before merge)
         except SnapshotError as error:
             raise SnapshotError(f"Independent kernel replay failed: {error}") from error
         if replayed["replay"] in ("imports only", "imports incremental") or (

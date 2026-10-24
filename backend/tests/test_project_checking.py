@@ -3253,3 +3253,38 @@ def test_uses_beyond_the_cap_are_marked_truncated(tmp_path, monkeypatch):
     result, _, _, _ = _staged_examples(tmp_path, monkeypatch)
     assert all(len(t["uses"]) == checking.MAX_USES for t in result["theorems"])
     assert all(t["uses_truncated"] is True for t in result["theorems"])
+
+
+def test_probe_lines_reach_the_stage_summary():
+    """PROBE (drop before merge): helper timing lines land in `stage_ms`."""
+    import resource
+    import time
+
+    from glitnir.lean import project_checking as checking
+
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    started = time.monotonic_ns()
+    stderr = (
+        f"glitnir-clock main {started + 5_000_000}\n"
+        "glitnir-timing rebuild 1200\n"
+        "glitnir-count constants 42\n"
+        "glitnir-probe direct_equals_rebuild true\n"
+        "glitnir-probe data_unlike_rec 1 [Two.rec]\n"
+        "unrelated line\n"
+        f"glitnir-clock exit {started}\n"
+    )
+    checking._keep_probe(stderr, started, usage)
+    stages = checking.StageTimes()
+    checking._drain_probe(stages, "replay")
+    summary = stages.summary()
+    assert summary["replay.rebuild"] == 1200
+    assert summary["replay.n.constants"] == 42
+    assert summary["replay.probe.direct_equals_rebuild"] == 1
+    assert summary["replay.probe.data_unlike_rec 1 [Two.rec]"] == -1
+    assert summary["replay.startup"] == 5 and summary["replay.teardown"] >= 0
+    line = checking.stage_summary(summary)
+    assert "replay.rebuild 1.2 s" in line
+    assert "replay.n.constants 42" in line
+    assert "replay.probe.data_unlike_rec 1 [Two.rec]," in line
+    checking._drain_probe(stages, "replay")  # Drained once only.
+    assert stages.summary()["replay.rebuild"] == 1200
