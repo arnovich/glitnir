@@ -201,7 +201,8 @@ jobs:
           GLITNIR_TEST_PROOF_TRACE: '1'
           # PROBE (drop before merge): ProjectReplay phase timings in 'check stages'.
           GLITNIR_HELPER_TIMINGS: '1'
-        run: ../.venv/bin/python -m pytest -m live -rs --durations=30
+        # PROBE (drop before merge): only the new replay tests, with full tracebacks.
+        run: ../.venv/bin/python -m pytest -m live -rs -vv --tb=long tests/test_project_checking.py -k "imported_recursor or restated_over_a_base or environment_mirror or decide_alike_through"
   helpers:
     needs: build
     runs-on: ubuntu-24.04
