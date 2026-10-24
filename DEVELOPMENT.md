@@ -167,6 +167,14 @@ output. Run it after changing a helper or `TOOLCHAIN`:
 .venv/bin/python backend/scripts/check_helpers.py
 ```
 
+Two helpers mirror private Lean 4.35.0 structures with `unsafeCast`:
+`ProjectReplay.lean`'s `KernelFields` (`Kernel.Environment`, through which
+`rebuild` places the replayed imports in an empty environment) and
+`ProjectReport.lean`'s `ExportedAxioms`. When changing `TOOLCHAIN`, compare
+each with the new Lean's source field by field. `rebuild` refuses to run on any
+other Lean version and checks the mirror against the public accessors before
+using it, so a stale mirror fails the check rather than building anything.
+
 The plugin's live tests need a built Forseti Lean checkout, with the modules
 its view and evidence providers load built too (`lake build
 Gimle.Asgard.Compile.RationalInterchange Gimle.Asgard.Model.Continuous
