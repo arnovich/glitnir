@@ -40,3 +40,23 @@ test('installed runtime probe takes no Lean project argument', () => {
     assert.match(JSON.parse(result.stdout).error, /no arguments/);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
+
+test('installed runtime probe reports a backend without the service package as incompatible', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'glitnir-old-backend-'));
+  try {
+    copyFileSync(path.resolve(__dirname, '../scripts/probe.py'), path.join(root, 'probe.py'));
+    copyFileSync(path.resolve(__dirname, '../../dist/editor-runtime.json'), path.join(root, 'editor-runtime.json'));
+    // A stand-in for a pre-layering backend: the package exists, glitnir.service does not.
+    mkdirSync(path.join(root, 'old', 'glitnir'), {recursive: true});
+    writeFileSync(path.join(root, 'old', 'glitnir', '__init__.py'), '');
+    writeFileSync(path.join(root, 'run.py'), [
+      'import runpy, sys',
+      `sys.path.insert(0, ${JSON.stringify(path.join(root, 'old'))})`,
+      `sys.argv = [${JSON.stringify(path.join(root, 'probe.py'))}]`,
+      `runpy.run_path(${JSON.stringify(path.join(root, 'probe.py'))}, run_name='__main__')`,
+    ].join('\n'));
+    const result = spawnSync(python, ['-I', path.join(root, 'run.py')], {encoding: 'utf8', cwd: root});
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(JSON.parse(result.stdout).error, /incompatible with this Glitnir build/);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
