@@ -37,10 +37,11 @@ from urllib.parse import parse_qs, urlparse
 
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.lean.scratch import sweep_stale_scratch
-from glitnir.notebook.assets import AssetError
 from glitnir.notebook.document import NotebookError
-from glitnir.notebook.source_preview import NotebookLinkError, SourcePreviewService
+from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.notebook.static_export import export_styles
+from glitnir.preview.assets import AssetError
+from glitnir.preview.linked import NotebookLinkError
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY_BYTES = 65_536

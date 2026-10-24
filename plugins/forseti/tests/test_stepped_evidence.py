@@ -123,7 +123,7 @@ def test_sample_directive_parses_with_defaults() -> None:
 
 def test_a_sample_directive_is_read_from_a_notebook() -> None:
     """Glitnir's core finds the line and hands its parts to `read_directive`."""
-    from glitnir.notebook.evidence_cards import evidence_directives
+    from glitnir.notebook.directives import evidence_directives
 
     text = f"def u := 1\n-- @evidence sample {HEDGED} {REQUIRED} (paths := 10)\n"
     cell = {"index": 0, "kind": "source", "start": 1, "end": 3, "text": text}

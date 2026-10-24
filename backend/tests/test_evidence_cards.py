@@ -11,14 +11,14 @@ from glitnir.notebook.check_records import (
     save_records,
     with_evidence,
 )
-from glitnir.notebook.evidence_cards import (
+from glitnir.notebook.directives import (
     BAD_TARGET,
-    INCOMPLETE,
-    evidence_cards,
+    INCOMPLETE_EVIDENCE,
     evidence_directives,
     evidence_key,
 )
 from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview.cards import evidence_cards
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.providers.outcomes import checked_evidence
 
@@ -132,9 +132,9 @@ def test_incomplete_indented_and_misnamed_directives_are_errors():
     )
     found = evidence_directives(_cells(text), text)
     assert [(e["verb"], e["target"], e["error"]) for e in found] == [
-        ("", "", INCOMPLETE),
-        ("simulate", "", INCOMPLETE),
-        ("simulate", "M", INCOMPLETE),
+        ("", "", INCOMPLETE_EVIDENCE),
+        ("simulate", "", INCOMPLETE_EVIDENCE),
+        ("simulate", "M", INCOMPLETE_EVIDENCE),
         ("simulate", "M!", BAD_TARGET),
     ]
 
@@ -488,3 +488,19 @@ def test_snapshot_serves_the_normalised_copy_of_saved_evidence(
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert card["snapshot"] == entry["snapshot"]
     assert card["snapshot"] is not entry["snapshot"]
+
+
+def test_directives_module_parses_all_three_kinds() -> None:
+    from glitnir.notebook.directives import (
+        decision_directives,
+        evidence_directives,
+        view_directives,
+    )
+
+    text = "-- @evidence simulate f\n-- @decide g : 1 = 1\n-- @view circuit h\n"
+    cells = [
+        {"kind": "source", "index": 0, "start": 1, "end": 3, "text": text.rstrip("\n")}
+    ]
+    assert [d["line"] for d in evidence_directives(cells, text)] == [1]
+    assert [d["line"] for d in decision_directives(cells, text)] == [2]
+    assert [d["line"] for d in view_directives(cells, text)] == [3]

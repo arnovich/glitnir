@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from glitnir.notebook import editor
-from glitnir.notebook.editor import export_renderer, runtime_info
+from glitnir.preview import editor
+from glitnir.preview.editor import export_renderer, runtime_info
 
 
 def test_renderer_export_is_complete_and_matches_runtime(tmp_path: Path) -> None:
