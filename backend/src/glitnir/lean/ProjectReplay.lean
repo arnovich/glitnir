@@ -630,6 +630,26 @@ unsafe def differences (a b : Kernel.Environment) : IO Unit := do
     for (kind, (n, names)) in m.toList do
       IO.eprintln s!"glitnir-probe {label}_{kind} {n} {names.toList}"
 
+/-- For each kind, how many of `a`'s constants hold expressions that are the very
+objects of `b`'s (`shared_*`), and how many `sameKernel` compares node by node
+(`compared_*`). -/
+unsafe def sharing (a b : Kernel.Environment) : IO Unit := do
+  let mut shared : Std.HashMap String Nat := {}
+  let mut compared : Std.HashMap String Nat := {}
+  for (name, info) in a.constants.toList do
+    let some other := b.constants.find? name | continue
+    let same := (constantExprs info).length == (constantExprs other).length &&
+      ((constantExprs info).zip (constantExprs other)).all fun (x, y) =>
+        ptrAddrUnsafe x == ptrAddrUnsafe y
+    if same then
+      shared := shared.insert (kindOf info) (shared.getD (kindOf info) 0 + 1)
+    else
+      compared := compared.insert (kindOf info) (compared.getD (kindOf info) 0 + 1)
+  for (kind, n) in shared.toList do
+    count true s!"shared_{kind}" n
+  for (kind, n) in compared.toList do
+    count true s!"compared_{kind}" n
+
 /-- Compare `direct` (this program's `rebuild`) with the old walk over the same
 constants, on standard error. Run after the result is printed; never throws. -/
 unsafe def compare (direct : Kernel.Environment) (constants : Std.HashMap Name ConstantInfo) :
@@ -712,6 +732,10 @@ unsafe def main (args : List String) : IO UInt32 := do
       t ← Probe.mark on "kernel_replay" t
       importsReplayed := sameKernel replayed rebuilt
       t ← Probe.mark on "same_kernel" t
+      if on then
+        try Probe.sharing replayed rebuilt
+        catch error => IO.eprintln s!"glitnir-probe error {error}"
+        t ← Probe.mark on "probe_sharing" t
       if on then probeDirect := some rebuilt
       -- A later, larger closure may rebuild this one from its module data.
       extendable := match mergeModules env.header.moduleData with
