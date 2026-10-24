@@ -277,7 +277,7 @@ def test_persistent_scratch_is_marked_and_registered_for_exit(temp_root, monkeyp
 
 
 def test_check_command_sweeps_before_checking(tmp_path, monkeypatch):
-    from glitnir.notebook import __main__ as cli
+    from glitnir.service import cli
 
     events = []
     monkeypatch.setattr(cli, "sweep_stale_scratch", lambda: events.append("sweep"))
@@ -295,7 +295,7 @@ def test_check_command_sweeps_before_checking(tmp_path, monkeypatch):
 def test_serve_sweeps_in_the_background(tmp_path, monkeypatch):
     import threading
 
-    from glitnir.notebook import server as module
+    from glitnir.service import server as module
 
     swept = threading.Event()
     monkeypatch.setenv("GLITNIR_SERVER_TOKEN", "a" * 64)

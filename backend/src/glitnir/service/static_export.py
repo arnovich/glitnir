@@ -33,7 +33,6 @@ from typing import Any
 
 from glitnir.lean.fingerprint import direct_imports, header_imports
 from glitnir.notebook.directives import view_keys
-from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.preview import assets
 from glitnir.preview.cards import provider_imports, view_provider_hash
 from glitnir.preview.editor import _APP
@@ -44,6 +43,7 @@ from glitnir.preview.snapshot import (
     prose,
     read_source,
 )
+from glitnir.service.preview import SourcePreviewService
 
 #: The words a snapshot from saved results carries as its `preview.notice`.
 RECORDED_NOTICE = (

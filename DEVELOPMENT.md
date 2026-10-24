@@ -301,7 +301,7 @@ and `extension/media/setup.md`, to a uv release at least two weeks old.
 ## Static export (galleries)
 
 A gallery can publish notebooks from their committed `<Notebook>.glitnir.json`
-without running any checks. `glitnir.notebook.static_export.SavedNotebook`
+without running any checks. `glitnir.service.static_export.SavedNotebook`
 reads a saved notebook and its saved results for the canonical renderer:
 
 - `snapshot(run_prompts=False)` returns the snapshot the renderer reads from
@@ -346,7 +346,7 @@ the prepared data and refuse anything else:
 import json
 from pathlib import Path
 
-from glitnir.notebook.static_export import SavedNotebook, export_styles
+from glitnir.service.static_export import SavedNotebook, export_styles
 
 with SavedNotebook(Path("examples/Decay.lean")) as notebook:
     snapshot = notebook.snapshot()  # GET /api/notebook

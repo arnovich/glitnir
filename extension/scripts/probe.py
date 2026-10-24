@@ -12,7 +12,7 @@ def main() -> None:
             raise ValueError("Glitnir requires Python 3.12 or newer")
         if len(sys.argv) > 1:
             raise ValueError("The environment probe takes no arguments")
-        from glitnir.notebook import server
+        from glitnir.service import server
         from glitnir.preview.editor import runtime_info
 
         expected = json.loads(

@@ -7,8 +7,8 @@ import sys
 def test_editor_imports_do_not_load_decision_producers() -> None:
     code = """
 import sys
-from glitnir.notebook.__main__ import main
-from glitnir.notebook.server import make_server
+from glitnir.service.cli import main
+from glitnir.service.server import make_server
 from glitnir_forseti import providers
 providers()
 for name in (

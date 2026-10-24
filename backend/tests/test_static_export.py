@@ -8,7 +8,6 @@ import pytest
 
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_views import view_provider_sha256
-from glitnir.notebook import source_preview, static_export
 from glitnir.notebook.check_records import (
     evidence_prefix_sha256,
     load_records,
@@ -20,12 +19,6 @@ from glitnir.notebook.check_records import (
     with_view,
 )
 from glitnir.notebook.directives import evidence_key
-from glitnir.notebook.source_preview import SourcePreviewService
-from glitnir.notebook.static_export import (
-    RECORDED_NOTICE,
-    SavedNotebook,
-    _unfingerprinted,
-)
 from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import (
     EvidenceProvider,
@@ -34,6 +27,14 @@ from glitnir.providers import (
     ViewProvider,
 )
 from glitnir.providers.outcomes import checked_evidence
+from glitnir.service import preview as source_preview
+from glitnir.service import static_export
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.static_export import (
+    RECORDED_NOTICE,
+    SavedNotebook,
+    _unfingerprinted,
+)
 
 DIRECTIVE = "-- @evidence simulate c (h := 1/10)"
 TEXT = (

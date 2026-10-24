@@ -22,13 +22,13 @@ from glitnir.notebook.check_records import (
     records_path,
     save_records,
 )
-from glitnir.notebook.server import make_server
-from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.preview.linked import (
     MAX_SOURCE_BYTES,
     NotebookLinkError,
     read_linked_notebook,
 )
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.server import make_server
 
 MAIN = "/-! # Scalar decay\n\nSee [the states](ThreeState.lean). -/\n"
 LINKED = (

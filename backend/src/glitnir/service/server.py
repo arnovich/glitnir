@@ -38,10 +38,10 @@ from urllib.parse import parse_qs, urlparse
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.lean.scratch import sweep_stale_scratch
 from glitnir.notebook.document import NotebookError
-from glitnir.notebook.source_preview import SourcePreviewService
-from glitnir.notebook.static_export import export_styles
 from glitnir.preview.assets import AssetError
 from glitnir.preview.linked import NotebookLinkError
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.static_export import export_styles
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY_BYTES = 65_536

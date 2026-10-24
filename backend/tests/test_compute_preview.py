@@ -6,7 +6,7 @@ import pytest
 
 from glitnir.compute.protocol import context_digest
 from glitnir.notebook.check_records import load_records
-from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.service.preview import SourcePreviewService
 
 
 @pytest.mark.parametrize("change_before_acquisition", [False, True])
@@ -41,8 +41,8 @@ def test_remote_preview_records_exact_context_or_refuses_drift(
     def local(*args, **kwargs):
         pytest.fail("The remote preview invoked the local checker")
 
-    monkeypatch.setattr("glitnir.notebook.source_preview.check_remote", remote)
-    monkeypatch.setattr("glitnir.notebook.source_preview.check_project", local)
+    monkeypatch.setattr("glitnir.service.preview.check_remote", remote)
+    monkeypatch.setattr("glitnir.service.preview.check_project", local)
     service = SourcePreviewService(source)
     try:
         service.check(sha)

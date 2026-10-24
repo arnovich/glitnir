@@ -688,7 +688,7 @@ def claim_views(
     A claim saved under a fingerprint that is not a digest is never current.
     Without ``compare_environment``, each claim is compared only with its
     saved source, in the environment it was recorded in: it is shown as
-    recorded (`glitnir.notebook.static_export`) and ``fingerprint`` is unused.
+    recorded (`glitnir.service.static_export`) and ``fingerprint`` is unused.
     """
     if records is None:
         return []

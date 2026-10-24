@@ -61,7 +61,6 @@ from glitnir.notebook.directives import (
 from glitnir.notebook.document import (
     NotebookError,
 )
-from glitnir.notebook.proof_steps import ProofSteps
 from glitnir.preview import assets
 from glitnir.preview.cards import (
     decision_cards,
@@ -105,6 +104,7 @@ from glitnir.providers.outcomes import (
     checked_drawing,
     checked_evidence,
 )
+from glitnir.service.proof_steps import ProofSteps
 
 _LOG = logging.getLogger(__name__)
 

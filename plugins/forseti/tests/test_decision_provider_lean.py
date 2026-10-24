@@ -68,7 +68,7 @@ def notebook(forseti_lake_project):
 
 def _decide(path: Path, line: int) -> dict:
     """Decide the directive at `line` through the preview service; return its card."""
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     sha = hashlib.sha256(NOTEBOOK.encode()).hexdigest()
     service = SourcePreviewService(path)

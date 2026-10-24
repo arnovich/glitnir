@@ -355,7 +355,7 @@ def test_live_claim_uses_name_their_notebook_module(prepared_lean_project):
     from glitnir.lean.project_checking import check_project
     from glitnir.lean.project_inspection import _toolchain
     from glitnir.notebook.check_records import records_from_check, save_records
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     root = prepared_lean_project
     (root / "src/Example/Helper.lean").write_text(
@@ -411,7 +411,7 @@ def test_live_check_through_the_first_of_two_claims(prepared_lean_project):
     import hashlib
 
     from glitnir.lean.project_checking import check_project
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     source = prepared_lean_project / "src/Example.lean"
     text = (
@@ -3066,7 +3066,7 @@ def test_every_check_stage_uses_the_configured_memory_limit(
     import json
 
     from glitnir.lean import limits
-    from glitnir.notebook.__main__ import main
+    from glitnir.service.cli import main
 
     source = tmp_path / "A.lean"
     source.write_text("def x : Nat := 1\n")

@@ -12,11 +12,11 @@ from glitnir.notebook.directives import (
     decision_directives,
     decision_key,
 )
-from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import decision_cards
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
 from glitnir.providers.outcomes import checked_decision
+from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64
@@ -315,7 +315,7 @@ def test_snapshot_lists_decisions_without_processes_or_deciding(
 ):
     import subprocess
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("snapshot executed a process")
@@ -345,7 +345,7 @@ def test_snapshot_lists_decisions_without_processes_or_deciding(
 
 
 def test_a_decision_directive_alone_loads_providers(tmp_path: Path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     loads: list[int] = []
     monkeypatch.setattr(
@@ -555,7 +555,7 @@ def _saved_decision(path: Path, verification=None, **changes):
 
 
 def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def fingerprint(*args):
         if fingerprints is not None:

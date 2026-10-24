@@ -65,7 +65,7 @@ async function checkBackendWheel(file) {
       wheelMetadata = Buffer.concat(chunks).toString('utf8');
     }
   }
-  assert(names.has('glitnir/notebook/server.py'), 'Backend wheel has no notebook server');
+  assert(names.has('glitnir/service/server.py'), 'Backend wheel has no notebook server');
   assert(wheelMetadata && /^Root-Is-Purelib: true$/m.test(wheelMetadata), 'Backend wheel must be pure Python');
   assert.deepEqual(wheelMetadata.split('\n').filter(line => line.startsWith('Tag: ')), ['Tag: py3-none-any'], 'Backend wheel must be universal');
 }

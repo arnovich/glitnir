@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from glitnir.notebook import source_preview
 from glitnir.preview import snapshot as preview_snapshot
+from glitnir.service import preview as source_preview
 
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
@@ -121,8 +121,8 @@ def record_check_stages(request, monkeypatch):
 @pytest.fixture(autouse=True)
 def no_startup_sweep(monkeypatch):
     """Keep startup sweeps out of the developer's real temp directory."""
-    monkeypatch.setattr("glitnir.notebook.__main__.sweep_stale_scratch", lambda: None)
-    monkeypatch.setattr("glitnir.notebook.server.sweep_stale_scratch", lambda: None)
+    monkeypatch.setattr("glitnir.service.cli.sweep_stale_scratch", lambda: None)
+    monkeypatch.setattr("glitnir.service.server.sweep_stale_scratch", lambda: None)
 
 
 @pytest.fixture(autouse=True)
@@ -177,7 +177,7 @@ def draw_each_alone(monkeypatch):
                 ]
             }
 
-        monkeypatch.setattr("glitnir.notebook.source_preview.render_project_views", run)
+        monkeypatch.setattr("glitnir.service.preview.render_project_views", run)
 
     return install
 

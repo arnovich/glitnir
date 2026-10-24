@@ -25,7 +25,7 @@ async function candidate(t, {preRelease = false, plugins = 'pinned'} = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'glitnir-marketplace-'));
   t.after(() => fs.rm(root, {recursive: true, force: true}));
   const wheel = path.join(root, 'glitnir-0.1.0-py3-none-any.whl');
-  await zip(wheel, {'glitnir/notebook/server.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
+  await zip(wheel, {'glitnir/service/server.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
   const bytes = await fs.readFile(wheel);
   const metadata = {publisher: 'gimle', name: 'glitnir', version: '0.1.0', glitnirBackend: {asset: path.basename(wheel), size: bytes.length, sha256: digest(bytes), tag: identity.tag}};
   const plugin = path.join(root, 'glitnir_forseti-0.1.0-py3-none-any.whl');

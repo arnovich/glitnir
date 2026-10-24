@@ -65,7 +65,7 @@ def _accept(path, candidate: dict) -> None:
 def test_live_stream_decisions_are_accepted_and_project_checked(
     scratch_notebook,
 ) -> None:
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     path = scratch_notebook("GlitnirStreamDecisionLive", NOTEBOOK)
     service = SourcePreviewService(path)

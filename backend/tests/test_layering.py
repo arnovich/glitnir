@@ -8,19 +8,10 @@ import glitnir
 
 LAYERS = ("providers", "lean", "compute", "notebook", "preview", "service")
 ROOT = Path(glitnir.__file__).parent
-#: Service code still in `notebook` until it moves to `service`; each may
-#: import `preview`. Delete this set when `glitnir.service` exists.
-SERVICE_UNTIL_MOVED = {
-    "glitnir.notebook.server",
-    "glitnir.notebook.source_preview",
-    "glitnir.notebook.static_export",
-}
 
 
 def _layer(module: str) -> int:
     """Return the layer of a `glitnir.*` module; the bare package is below all."""
-    if module in SERVICE_UNTIL_MOVED:
-        return LAYERS.index("service")
     parts = module.split(".")
     return LAYERS.index(parts[1]) if len(parts) > 1 and parts[1] in LAYERS else -1
 

@@ -526,9 +526,9 @@ def test_live_evidence_run_saves_a_current_snapshot(prepared_lean_project, monke
     import subprocess
 
     from glitnir.lean.project_inspection import _toolchain
-    from glitnir.notebook import source_preview
     from glitnir.notebook.check_records import load_records
     from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
+    from glitnir.service import preview as source_preview
 
     root = prepared_lean_project
     toolchain = _toolchain()

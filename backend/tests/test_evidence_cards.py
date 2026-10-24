@@ -17,11 +17,11 @@ from glitnir.notebook.directives import (
     evidence_directives,
     evidence_key,
 )
-from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import evidence_cards
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.providers.outcomes import checked_evidence
+from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64
@@ -191,8 +191,8 @@ def test_a_missing_dependency_is_reported_as_unavailable():
 
 def test_snapshot_says_which_listed_verbs_cannot_run(tmp_path: Path, monkeypatch):
     """A verb whose provider lacks a dependency is listed with the reason."""
-    from glitnir.notebook import source_preview
     from glitnir.providers import Providers
+    from glitnir.service import preview as source_preview
 
     ready = _provider()
     lacking = _provider(unavailable=lambda: "Needs Python Asgard.")
@@ -258,7 +258,7 @@ def test_unreadable_provider_answers_become_card_errors():
 def test_snapshot_lists_evidence_without_processes(tmp_path: Path, monkeypatch):
     import subprocess
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("snapshot executed a process")
@@ -411,7 +411,7 @@ def _saved_entry(text: str, line: int, fingerprint: str) -> dict:
 
 
 def _saved_service(tmp_path: Path, monkeypatch, fingerprint: str):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     monkeypatch.setattr(source_preview, "load_providers", lambda: _loaded(_provider()))
     calls: list[int] = []
