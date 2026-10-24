@@ -195,7 +195,7 @@ def test_a_proven_decision_with_axioms_is_saved_with_their_names(tmp_path, monke
     ]
     seen: list = []
 
-    def check_text(source, text, *, saved_sha256, cancel, progress):
+    def check_text(source, text, *, saved_sha256, cancel, progress, stages):
         seen.append(text)
         theorem = {
             "name": "Decided_band.band",
@@ -1044,3 +1044,32 @@ def test_decision_saved_under_unknown_git_state_explains_it(tmp_path, monkeypatc
         service.close()
     assert card["run_error"] == _UNKNOWN_NOTE
     assert key in _saved(tmp_path / "A.lean")
+
+
+def test_a_decision_run_is_kept_awake_while_deciding_and_checking(
+    tmp_path, monkeypatch, awake_depth
+):
+    """Deciding can take minutes before the candidate check: one held run."""
+    from glitnir.notebook import source_preview
+
+    depth = awake_depth(source_preview)
+    held: list[tuple[str, int]] = []
+
+    def decide(request, cancel):
+        held.append(("decide", depth[0]))
+        return _outcome()
+
+    def check(source, **options):
+        held.append(("check", depth[0]))
+        return dict(CHECKED)
+
+    service, _calls = _service(
+        tmp_path, monkeypatch, _decision_provider(decide=decide), check=check
+    )
+    try:
+        _run(service)
+        assert _card(service)["status"] == "candidate"
+    finally:
+        service.close()
+    assert held == [("decide", 1), ("check", 1)]
+    assert depth == [0]

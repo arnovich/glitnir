@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.compute.client import check_remote, from_environment
+from glitnir.lean.awake import awake
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
 from glitnir.lean.lexing import code_tokens, command_boundaries, only_comments, scan
 from glitnir.lean.project import describe_project, read_regular
@@ -2111,7 +2112,9 @@ class SourcePreviewService:
         error: str | None = None
         saved = False
         try:
-            error, saved = self._evidence_run(job)
+            # The provider's own computation may take minutes after Lean too.
+            with awake():
+                error, saved = self._evidence_run(job)
         except Exception as failure:  # the run must always end
             error = f"Evidence run failed: {failure}"
         finally:
@@ -2461,7 +2464,9 @@ class SourcePreviewService:
         """Run one decision, keeping its error for the card; always end the run."""
         error: str | None = None
         try:
-            error = self._decision_run(job, cancel)
+            # Deciding and then checking the candidate: one run, kept awake.
+            with awake():
+                error = self._decision_run(job, cancel)
         except Exception as failure:  # the run must always end
             error = f"Decision run failed: {failure}"
         finally:

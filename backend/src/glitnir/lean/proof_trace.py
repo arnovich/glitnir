@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean.artifacts import map_artifacts
+from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.environment import MAX_TIMEOUT_MS
 from glitnir.lean.limits import (
     SessionLimits,
@@ -176,6 +177,7 @@ def trace_file(
 ) -> dict[str, Any]:
     """Observe copied saved source with read-only dependencies; never check a proof."""
     cancellation = cancel if cancel is not None else threading.Event()
+    progress = noting_sleep(progress)
     try:
         timeout = (
             SessionLimits(
@@ -201,6 +203,7 @@ def trace_file(
             raise SnapshotError("Saved source changed; refresh and retry.")
         with (
             snapshot_slot(),
+            awake(),
             scratch_directory("glitnir-trace-") as temporary,
         ):
             root = Path(temporary).resolve()

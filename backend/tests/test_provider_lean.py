@@ -709,6 +709,29 @@ def test_setup_cache_key_includes_the_whole_header(tmp_path, monkeypatch, change
     assert len(calls) == 2
 
 
+def test_a_provider_run_is_kept_awake(tmp_path, monkeypatch, awake_depth):
+    """A view or evidence run holds the assertion from its slot to its end."""
+    from glitnir.lean import provider_lean
+
+    source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    depth = awake_depth(provider_lean)
+    held: list[int] = []
+
+    def run(runtime, arguments, **options):
+        held.append(depth[0])
+        view = {"proofs_skipped": False, "information": ["demoMark:1"], "errors": []}
+        Path(arguments[-1]).write_text(json.dumps({"views": [view]}))
+
+    monkeypatch.setattr(provider_lean, "run_observer", run)
+    messages: list[str] = []
+    assert _run(source, progress=messages.append) == {
+        "payload": "1",
+        "proofs_skipped": False,
+    }
+    assert held == [1] and depth == [0]
+    assert messages
+
+
 def test_errors_of_the_directive_itself_are_marked_as_lean_s(tmp_path, monkeypatch):
     """Only the directive's own errors are marked; the caller may save those."""
     source = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})

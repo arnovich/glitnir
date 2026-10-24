@@ -1,6 +1,8 @@
 """Shared fixtures for the project-mode Lean checking tests."""
 
+import contextlib
 import os
+from pathlib import Path
 
 import pytest
 
@@ -42,6 +44,77 @@ def pytest_runtest_makereport(item, call):
     return report
 
 
+#: The `user_properties` key a live test's project checks are recorded under.
+CHECK_STAGES = "check_stages"
+
+
+class _StageReporter:
+    """Write each recorded check's stage times after its test's outcome.
+
+    The same reporter is in `plugins/forseti/tests/conftest.py`; the two test trees are
+    separate packages, and register it under different names.
+
+    The live jobs capture test output, so a print would show only for a
+    failure; this line is in every CI log and says where a check's time goes.
+    """
+
+    def __init__(self, config) -> None:
+        self._config = config
+
+    @pytest.hookimpl(trylast=True)
+    def pytest_runtest_logreport(self, report):
+        if report.when != "call":
+            return
+        from glitnir.lean.project_checking import stage_summary
+
+        writer = self._config.pluginmanager.get_plugin("terminalreporter")
+        if writer is None:
+            return
+        for key, value in report.user_properties:
+            if key == CHECK_STAGES:
+                label, stage_ms = value
+                writer.write_line(f"check stages {label}: {stage_summary(stage_ms)}")
+
+
+def pytest_configure(config):
+    """Report the stage times live tests record (`record_check_stages`)."""
+    config.pluginmanager.register(_StageReporter(config), "glitnir-check-stages")
+
+
+@pytest.fixture(autouse=True)
+def record_check_stages(request, monkeypatch):
+    """Record the stage times of every project check a live test runs.
+
+    `check_project` and `check_candidate` are wrapped, unchanged otherwise, so
+    the live job's log shows each check's stages (`_StageReporter`).
+    """
+    if request.node.get_closest_marker("live") is None:
+        return
+    from glitnir.lean import project_checking
+
+    def record(label, stage_ms):
+        request.node.user_properties.append((CHECK_STAGES, (label, dict(stage_ms))))
+
+    check_project = project_checking.check_project
+    check_candidate = project_checking.check_candidate
+
+    def project(source, **options):
+        result = check_project(source, **options)
+        if isinstance(result.get("stage_ms"), dict):
+            record(f"{request.node.name} {Path(source).name}", result["stage_ms"])
+        return result
+
+    def candidate(source, **options):
+        stage_ms = options.setdefault("stage_ms", {})
+        try:
+            return check_candidate(source, **options)
+        finally:
+            record(f"{request.node.name} {Path(source).name} candidate", stage_ms)
+
+    monkeypatch.setattr(project_checking, "check_project", project)
+    monkeypatch.setattr(project_checking, "check_candidate", candidate)
+
+
 @pytest.fixture(autouse=True)
 def no_startup_sweep(monkeypatch):
     """Keep startup sweeps out of the developer's real temp directory."""
@@ -53,6 +126,31 @@ def no_startup_sweep(monkeypatch):
 def no_caffeinate(monkeypatch):
     """Start no caffeinate, which tests patching `subprocess.Popen` would catch."""
     monkeypatch.setattr("glitnir.lean.awake._enabled", lambda: False)
+
+
+@pytest.fixture
+def awake_depth(monkeypatch):
+    """Replace a module's `awake` with one that counts the blocks holding it.
+
+    `awake_depth(module)` returns a one-item list holding the current depth,
+    so a fake stage can assert that the run keeps the computer awake.
+    """
+
+    def install(module):
+        depth = [0]
+
+        @contextlib.contextmanager
+        def counted():
+            depth[0] += 1
+            try:
+                yield
+            finally:
+                depth[0] -= 1
+
+        monkeypatch.setattr(module, "awake", counted)
+        return depth
+
+    return install
 
 
 @pytest.fixture

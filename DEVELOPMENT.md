@@ -147,6 +147,15 @@ Replay-cache tests that only need a recorded base start from a per-test copy of
 one recorded once per session (`recorded_replay_cache`); tests of the cold path
 use `fresh_replay_cache`.
 
+Each project check a backend live test runs through
+`project_checking.check_project` or `check_candidate` (looked up when called,
+so not those made through the editor service or the compute worker), and each
+block the plugin's stepped live test checks, writes a `check stages <test>
+<file>: resolve 4.2 s, capture …` line after the test's outcome, so CI logs
+show where each check's time goes.
+The stages are those of the result's `stage_ms` (see
+`project_checking.StageTimes`), which is never saved in `.glitnir.json`.
+
 Glitnir runs its Lean helper programs (`backend/src/glitnir/lean/*.lean`) with
 `lean --run` and reads JSON from their output, so they must elaborate on the
 supported Lean with no messages at all; a deprecation warning breaks a check.
