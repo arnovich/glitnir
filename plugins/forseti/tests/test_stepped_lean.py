@@ -177,8 +177,9 @@ def check_block(scratch_notebook, replayed: set[str], record_check_stages):
     whose imports are wrong fails here. The first check of an import set
     replays its whole closure in the kernel, which takes minutes and is cached
     for the session (`conftest.private_replay_cache`); a trivial block is
-    checked first, untimed, so that a block's time is its own. Each check's
-    stage times are written to the log (`record_check_stages`).
+    checked first, untimed, so that a block's time is its own, and the block's
+    check must reuse that replay rather than replay the imports again. Each
+    check's stage times are written to the log (`record_check_stages`).
     """
 
     def check(outcome: dict) -> Checked:
@@ -194,6 +195,12 @@ def check_block(scratch_notebook, replayed: set[str], record_check_stages):
             scratch_notebook, imports, outcome["block"], outcome["theorem"]
         )
         record_check_stages(outcome["theorem"], checked.stage_ms)
+        # The warm-up's import replay was recorded, so this check reuses it:
+        # a refused record would replay the closure (minutes) on every check.
+        assert "replay_imports" not in checked.stage_ms, checked.stage_ms
+        if checked.ok:
+            # A checked block was replayed over the recorded imports.
+            assert "replay" in checked.stage_ms, checked.stage_ms
         return checked
 
     return check
