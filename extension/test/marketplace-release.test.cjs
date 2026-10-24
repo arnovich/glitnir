@@ -21,11 +21,11 @@ async function zip(file, entries) {
 }
 // A candidate directory as the draft workflow uploads it, with its VSIX packaged
 // for the release (default) or pre-release channel.
-async function candidate(t, {preRelease = false, plugins = 'pinned'} = {}) {
+async function candidate(t, {preRelease = false, plugins = 'pinned', wheelFiles = {'glitnir/notebook/__main__.py': 'entry'}} = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'glitnir-marketplace-'));
   t.after(() => fs.rm(root, {recursive: true, force: true}));
   const wheel = path.join(root, 'glitnir-0.1.0-py3-none-any.whl');
-  await zip(wheel, {'glitnir/service/server.py': 'server', 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
+  await zip(wheel, {...wheelFiles, 'glitnir-0.1.0.dist-info/WHEEL': 'Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n'});
   const bytes = await fs.readFile(wheel);
   const metadata = {publisher: 'gimle', name: 'glitnir', version: '0.1.0', glitnirBackend: {asset: path.basename(wheel), size: bytes.length, sha256: digest(bytes), tag: identity.tag}};
   const plugin = path.join(root, 'glitnir_forseti-0.1.0-py3-none-any.whl');
@@ -90,6 +90,13 @@ test('a published release verifies its exact VSIX, checksum and channel', async 
   assert.equal(result.version, '0.1.0'); assert.equal(result.sha, identity.sha); assert.equal(result.preRelease, false);
   assert.equal(result.vsix, path.join(directory, 'glitnir-0.1.0.vsix'));
   assert.equal(result.sha256, digest(await fs.readFile(result.vsix)));
+});
+
+test('a release whose backend wheel has the pre-service layout still verifies, so a retry stays possible', async t => {
+  const directory = await candidate(t, {wheelFiles: {'glitnir/notebook/server.py': 'server', 'glitnir/notebook/__main__.py': 'entry'}});
+  const api = await published(directory);
+  const result = await verifyPublishedRelease(api, directory, {...options, eventSha: identity.sha});
+  assert.equal(result.version, '0.1.0');
 });
 
 test('a pre-release publishes only a VSIX packaged as a pre-release', async t => {

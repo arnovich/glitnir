@@ -108,7 +108,7 @@ test('wheel inspection refuses the core, non-providers and malformed archives', 
 test('wheel inspection refuses every path that could write outside the provider', async () => {
   const refuse = async (files, pattern, name = FORSETI) => assert.rejects(packages.inspectWheel(name, await forseti(files)), pattern, JSON.stringify(files));
   // Case-insensitive file systems (macOS) would let these overwrite the core.
-  for (const file of ['glitnir/service/server.py', 'Glitnir/__init__.py', 'GLITNIR/x.py', 'glitnir.py', 'Glitnir.cpython-312-darwin.so',
+  for (const file of ['glitnir/notebook/server.py', 'Glitnir/__init__.py', 'GLITNIR/x.py', 'glitnir.py', 'Glitnir.cpython-312-darwin.so',
     'glitnir_forseti-0.1.0.data/purelib/glitnir/__init__.py', 'glitnir_forseti-0.1.0.data/platlib/Glitnir/__init__.py']) {
     await refuse({[file]: ''}, /files of the Glitnir backend itself/);
   }

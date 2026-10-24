@@ -711,7 +711,7 @@ def registered_git_dependency(tmp_path, project_toolchain):
 def patch_fingerprint(monkeypatch):
     """Return a function replacing `environment_fingerprint` where it is used.
 
-    The service's runs call it through `source_preview`; the snapshot's
+    The service's runs call it through `glitnir.service.preview`; the snapshot's
     `Fingerprints` calls it through `glitnir.preview.snapshot`.
     """
 
