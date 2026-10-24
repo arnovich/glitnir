@@ -25,8 +25,8 @@ over the closure's modules in load order) and R(X) for `rebuild X`.
 - `imports-only` replays X into an empty environment, giving K, and reports
   `imports_replayed` only when R(X) and K hold equal constants and the same
   `quotInit` (`sameKernel`). Every constant in K was kernel-checked, so then
-  every constant R(X) adds unchecked is one the kernel accepted, in an
-  environment holding the same constants.
+  every constant R(X) adds unchecked equals one the kernel accepted or itself
+  generated, in an environment holding the same constants.
 - `imports-incremental BASE` does the same with a cheaper K. BASE lists the
   modules of a closure S recorded earlier, in its recorded load order; the
   caller passes it only when this exact program reported `imports_replayed`
@@ -52,16 +52,31 @@ closure's data in load order gives X exactly, so that a later, larger closure
 may use this one as its BASE. A record built on a base stands on that base's
 record, back to one whose K was a fresh replay.
 
-`rebuild` is Lean's `Kernel.Environment.replay` algorithm with one change:
-definitions, theorems, axioms and opaque constants are added without type
-checking; their checks are what an import mode already did. Inductive types and
-the quotient are still added through the kernel's checked `addDecl` (so `quotInit`
-is set only by the kernel's own `init_quot`), and generated constructors and
-recursors must equal the imported ones.
+`rebuild` places every safe, total constant of its map, unchanged, into the
+constant map of `mkEmptyEnvironment`'s kernel environment, and sets `quotInit`
+exactly when they include a quotient constant. It runs no kernel check, walks no
+dependencies and changes no other field. The import modes accept R(X) only when
+it equals K (`sameKernel`): the same names, each with a constant equal field by
+field, and the same `quotInit`, where the kernel itself checked every constant of
+K and its own `init_quot` set `quotInit`. Definitions, theorems, axioms and
+opaque constants in R(X) are X's own values, the ones K's replay handed to the
+kernel (an incremental K's base, R(Y), holds Y's, found equal to an earlier K
+in the same way). Inductive types, constructors, recursors and the quotient
+are what the kernel generates itself in K, so R(X) holds imported copies, and
+`sameKernel` also compares their expressions node by node, binder names and
+annotations included, with the data Lean caches in each node and the kernel
+trusts without recomputing (`sameExprData`); `==` on expressions ignores
+binder names and annotations, and of that data compares only the hash. A
+forged constant under a name K lacks changes the count, and a forged quotient
+constant differs from what `init_quot` created, so neither is recorded.
+`Kernel.Environment`'s constructor is private: `rebuild` writes its
+fields through `KernelFields`, a mirror of Lean 4.35.0's layout, and builds
+nothing on another Lean or unless the mirror reads the same fields as the public
+accessors, both of the empty environment and of the one it built.
 
-Every kernel check here passes `maxRecDepth` 0 to `addDeclCore`, as Lean's own
-`Kernel.Environment.replay` and `leanchecker` do: from Lean 4.35 on, 0 means
-unbounded, so no check is cut short by a recursion limit.
+Every kernel check here runs in Lean's own `Kernel.Environment.replay`, which
+passes `maxRecDepth` 0 to `addDeclCore`, as `leanchecker` does: from Lean 4.35
+on, 0 means unbounded, so no check is cut short by a recursion limit.
 
 In `imports-cached`, when MODULE declares an imported name (Lean's import merges
 a theorem restated under the same name and statement into one constant, which
@@ -140,14 +155,76 @@ def sameConstant : ConstantInfo → ConstantInfo → Bool
   | .recInfo a, .recInfo b => a == b
   | _, _ => false
 
-/-- Whether two kernel environments hold equal constants and the same `quotInit`. -/
-def sameKernel (a b : Kernel.Environment) : Bool :=
+/-- Whether two levels are alike node by node, with the same cached data
+(`Level.data`) at every node. -/
+unsafe def sameLevelData (a b : Level) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b || a.data == b.data && match a, b with
+    | .zero, .zero => true
+    | .succ u, .succ v => sameLevelData u v
+    | .max u v, .max u' v' | .imax u v, .imax u' v' => sameLevelData u u' && sameLevelData v v'
+    | .param n, .param m => n == m
+    | .mvar n, .mvar m => n == m
+    | _, _ => false
+
+/-- Whether two expressions are alike node by node, binder names and annotations
+included, with the same cached data (`Expr.data`: hash, loose bound variable
+range and flags) at every node and levels alike in theirs (`sameLevelData`).
+`==` on `Expr` ignores binder names and annotations and, of the cached data,
+which the kernel trusts without recomputing, compares only the hash. Pairs of
+nodes already found alike are remembered and not compared again. -/
+unsafe def sameExprData (a b : Expr) : StateM (Std.HashSet (USize × USize)) Bool := do
+  if ptrAddrUnsafe a == ptrAddrUnsafe b then return true
+  unless a.data == b.data do return false
+  let key := (ptrAddrUnsafe a, ptrAddrUnsafe b)
+  if (← get).contains key then return true
+  let same ← match a, b with
+    | .bvar i, .bvar j => pure (i == j)
+    | .fvar x, .fvar y => pure (x == y)
+    | .mvar x, .mvar y => pure (x == y)
+    | .sort u, .sort v => pure (sameLevelData u v)
+    | .const m us, .const n vs =>
+      pure (m == n && us.length == vs.length && (us.zip vs).all fun (u, v) => sameLevelData u v)
+    | .app f x, .app g y => sameExprData f g <&&> sameExprData x y
+    | .lam n t e i, .lam m s f j | .forallE n t e i, .forallE m s f j =>
+      pure (n == m && i == j) <&&> sameExprData t s <&&> sameExprData e f
+    | .letE n t v e d, .letE m s w f c =>
+      pure (n == m && d == c) <&&> sameExprData t s <&&> sameExprData v w <&&> sameExprData e f
+    | .lit l, .lit k => pure (l == k)
+    | .mdata d e, .mdata c f => pure (d == c) <&&> sameExprData e f
+    | .proj s i e, .proj t j f => pure (s == t && i == j) <&&> sameExprData e f
+    | _, _ => pure false
+  if same then modify (·.insert key)
+  return same
+
+/-- The expressions of a constant the kernel generates itself, when it adds an
+inductive declaration or the quotient; none for any other constant. -/
+def generatedExprs : ConstantInfo → Option (List Expr)
+  | .inductInfo v => some [v.type]
+  | .ctorInfo v => some [v.type]
+  | .recInfo v => some (v.type :: v.rules.map (·.rhs))
+  | .quotInfo v => some [v.type]
+  | _ => none
+
+/-- Whether two kernel environments hold equal constants and the same `quotInit`:
+the same names, each with constants equal field by field (`sameConstant`) and,
+for those the kernel generates itself (`generatedExprs`), with expressions alike
+node by node (`sameExprData`). -/
+unsafe def sameKernel (a b : Kernel.Environment) : Bool :=
   a.quotInit == b.quotInit &&
     a.constants.fold (fun n _ _ => n + 1) 0 == b.constants.fold (fun n _ _ => n + 1) 0 &&
-    a.constants.fold (init := true) fun same name info =>
-      same && match b.constants.find? name with
-        | some other => sameConstant info other
-        | none => false
+    (a.constants.fold (init := (true, ({} : Std.HashSet (USize × USize))))
+      fun (same, seen) name info =>
+        if !same then (false, seen) else
+        match b.constants.find? name with
+        | none => (false, seen)
+        | some other =>
+          if !sameConstant info other then (false, seen) else
+          match generatedExprs info, generatedExprs other with
+          | some xs, some ys =>
+            if xs.length != ys.length then (false, seen) else
+            (xs.zip ys).foldl (init := (true, seen)) fun (same, seen) (x, y) =>
+              if same then (sameExprData x y).run seen else (false, seen)
+          | _, _ => (true, seen)).1
 
 /-- Whether two constant maps hold the same names with equal constants. -/
 def sameConstants (a b : Std.HashMap Name ConstantInfo) : Bool :=
@@ -219,107 +296,56 @@ def kernelQuotient (env : Environment) : IO Bool := do
     | some (.quotInfo created), some (.quotInfo imported) => sameQuotient created imported
     | _, _ => false
 
-namespace Rebuild
+/-- The fields of Lean 4.35.0's `Kernel.Environment`, in order. Its constructor
+is private; `rebuild` writes an environment through this mirror. The two private
+extension arrays are only carried along. -/
+structure KernelFields where
+  constants : ConstMap
+  quotInit : Bool
+  diagnostics : Kernel.Diagnostics
+  const2ModIdx : Std.HashMap Name ModuleIdx
+  extensions : NonScalar
+  irBaseExts : NonScalar
+  header : EnvironmentHeader
 
-/-- Lean 4.35.0's `Lean.Kernel.Environment.Replay` state. -/
-structure State where
-  env : Kernel.Environment
-  remaining : NameSet := {}
-  pending : NameSet := {}
-  postponedConstructors : NameSet := {}
-  postponedRecursors : NameSet := {}
+/-- Whether `fields`, read through the mirror, holds what `env`'s public
+accessors read: the same objects and the same `quotInit`. The flag is read last,
+only where the objects already matched. -/
+unsafe def readsAs (fields : KernelFields) (env : Kernel.Environment) : Bool :=
+  ptrAddrUnsafe fields.constants == ptrAddrUnsafe env.constants &&
+    ptrAddrUnsafe fields.diagnostics == ptrAddrUnsafe env.diagnostics &&
+    ptrAddrUnsafe fields.const2ModIdx == ptrAddrUnsafe env.const2ModIdx &&
+    ptrAddrUnsafe fields.header == ptrAddrUnsafe env.header &&
+    fields.quotInit == env.quotInit
 
-abbrev M := ReaderT (Std.HashMap Name ConstantInfo) <| StateRefT State IO
-
-def addDecl (d : Declaration) (check : Bool) : M Unit := do
-  let env := (← get).env
-  -- Recursion depth 0 is unbounded, as in Lean's own `Kernel.Environment.replay`.
-  let result := if check then env.addDeclCore 0 0 d none else env.addDeclWithoutChecking d
-  match result with
-  | .ok env => modify fun s => { s with env := env }
-  | .error _ => throw <| IO.userError "rebuilding the imported environment failed"
-
-def isTodo (name : Name) : M Bool := do
-  let r := (← get).remaining
-  if r.contains name then
-    modify fun s => { s with remaining := s.remaining.erase name, pending := s.pending.insert name }
-    return true
-  else
-    return false
-
-mutual
-/-- `Lean.Kernel.Environment.Replay.replayConstant`, adding values unchecked. -/
-partial def replayConstant (name : Name) : M Unit := do
-  if ← isTodo name then
-    let some ci := (← read)[name]? | unreachable!
-    replayConstants ci.getUsedConstantsAsSet
-    if (← get).pending.contains name then
-      match ci with
-      | .defnInfo info => addDecl (.defnDecl info) false
-      | .thmInfo info =>
-        if let some (.thmInfo info') := (← get).env.find? ci.name then
-          if info.name == info'.name && info.type == info'.type &&
-              info.levelParams == info'.levelParams && info.all == info'.all then
-            return
-        addDecl (.thmDecl info) false
-      | .axiomInfo info => addDecl (.axiomDecl info) false
-      | .opaqueInfo info => addDecl (.opaqueDecl info) false
-      | .inductInfo info =>
-        let all ← info.all.mapM fun n => do pure <| ((← read)[n]!)
-        for o in all do
-          modify fun s =>
-            { s with remaining := s.remaining.erase o.name, pending := s.pending.erase o.name }
-        let ctorInfo ← all.mapM fun ci => do
-          pure (ci, ← ci.inductiveVal!.ctors.mapM fun n => do pure ((← read)[n]!))
-        for (_, ctors) in ctorInfo do
-          for ctor in ctors do
-            replayConstants ctor.getUsedConstantsAsSet
-        let types : List InductiveType := ctorInfo.map fun ⟨ci, ctors⟩ =>
-          { name := ci.name
-            type := ci.type
-            ctors := ctors.map fun ci => { name := ci.name, type := ci.type } }
-        addDecl (.inductDecl info.levelParams info.numParams types false) true
-      | .ctorInfo info =>
-        modify fun s => { s with postponedConstructors := s.postponedConstructors.insert info.name }
-      | .recInfo info =>
-        modify fun s => { s with postponedRecursors := s.postponedRecursors.insert info.name }
-      | .quotInfo _ =>
-        replayConstant ``Eq
-        addDecl .quotDecl true
-      modify fun s => { s with pending := s.pending.erase name }
-
-partial def replayConstants (names : NameSet) : M Unit := do
-  for n in names do replayConstant n
-end
-
-def checkPostponed : M Unit := do
-  for ctor in (← get).postponedConstructors do
-    match (← get).env.find? ctor, (← read)[ctor]? with
-    | some (.ctorInfo info), some (.ctorInfo info') =>
-      unless info == info' do throw <| IO.userError s!"Invalid constructor {ctor}"
-    | _, _ => throw <| IO.userError s!"No such constructor {ctor}"
-  for rec in (← get).postponedRecursors do
-    match (← get).env.find? rec, (← read)[rec]? with
-    | some (.recInfo info), some (.recInfo info') =>
-      unless info == info' do throw <| IO.userError s!"Invalid recursor {rec}"
-    | _, _ => throw <| IO.userError s!"No such recursor {rec}"
-
-end Rebuild
-
-/-- The environment a fresh replay of `constants` builds, from an empty
-environment, without type checking definition, theorem, axiom or opaque values. -/
-def rebuild (constants : Std.HashMap Name ConstantInfo) : IO Kernel.Environment := do
-  let mut remaining : NameSet := ∅
-  for (n, ci) in constants.toList do
-    if !ci.isUnsafe && !ci.isPartial then
-      remaining := remaining.insert n
-  let empty ← mkEmptyEnvironment
-  let (_, s) ← StateRefT'.run (s := { env := empty.toKernelEnv, remaining }) do
-    ReaderT.run (r := constants) do
-      for n in remaining do
-        Rebuild.replayConstant n
-      Rebuild.checkPostponed
-  return s.env
+/-- R(`constants`): `mkEmptyEnvironment`'s kernel environment with every safe,
+total constant placed unchanged in its constant map, and `quotInit` set exactly
+when they include a quotient constant. Nothing is type checked; see the module
+documentation for why the import modes may use it. It refuses to build on any
+Lean but 4.35.0, or when `KernelFields` does not read what the public accessors
+read, before writing (both values of `quotInit` included) and after. -/
+unsafe def rebuild (constants : Std.HashMap Name ConstantInfo) : IO Kernel.Environment := do
+  unless Lean.versionString == "4.35.0" do
+    throw <| IO.userError s!"rebuilding the imports needs Lean 4.35.0, not {Lean.versionString}"
+  let empty := (← mkEmptyEnvironment).toKernelEnv
+  let fields : KernelFields := unsafeCast empty
+  unless readsAs fields empty do
+    throw <| IO.userError "unexpected kernel environment layout"
+  -- `quotInit` is written where the public accessor reads it.
+  let flipped : Kernel.Environment := unsafeCast { fields with quotInit := !fields.quotInit }
+  unless flipped.quotInit != empty.quotInit do
+    throw <| IO.userError "unexpected kernel environment layout"
+  let mut map := fields.constants
+  let mut quot := false
+  for (name, info) in constants do
+    if info.isUnsafe || info.isPartial then continue
+    if info matches .quotInfo _ then quot := true
+    map := map.insert name info
+  let built := { fields with constants := map, quotInit := quot }
+  let env : Kernel.Environment := unsafeCast built
+  unless readsAs built env do
+    throw <| IO.userError "unexpected kernel environment layout"
+  return env
 
 /-- `collectAxioms` reads nothing but this environment. -/
 instance : MonadEnv (StateM Environment) where
@@ -378,7 +404,7 @@ def readBase (file : System.FilePath) : IO (Array String) := do
 
 /-- Replay only the constants of the modules outside `base` over the rebuilt
 base, or none when `base` cannot be such a base for this closure. -/
-def incremental (env : Environment) (imported : Std.HashMap Name ConstantInfo)
+unsafe def incremental (env : Environment) (imported : Std.HashMap Name ConstantInfo)
     (base : Array String) : IO (Option Kernel.Environment) := do
   let names := env.header.moduleNames
   let mut index : Std.HashMap String Nat := {}
@@ -440,6 +466,8 @@ unsafe def main (args : List String) : IO UInt32 := do
     let mut extendable := false
     let mut baseModules : Option Nat := none
     if mode == "imports-only" || mode == "imports-incremental" then
+      -- Built first, so that a `rebuild` that refuses does so before the replay.
+      let rebuilt ← rebuild imported
       let fromBase ← match base with
         | some names => incremental env imported names
         | none => pure none
@@ -447,7 +475,6 @@ unsafe def main (args : List String) : IO UInt32 := do
         | some checked => pure checked
         | none => do
           Kernel.Environment.replay imported (← mkEmptyEnvironment).toKernelEnv
-      let rebuilt ← rebuild imported
       importsReplayed := sameKernel replayed rebuilt
       -- A later, larger closure may rebuild this one from its module data.
       extendable := match mergeModules env.header.moduleData with
