@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from patching import patch_fingerprint
 
 from glitnir.notebook import directives as directives_module
 from glitnir.notebook.directives import (
@@ -14,6 +13,7 @@ from glitnir.notebook.directives import (
     decision_key,
 )
 from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import decision_cards
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
 from glitnir.providers.outcomes import checked_decision
@@ -563,7 +563,8 @@ def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
         return {"sha256": FP}
 
     monkeypatch.setattr(source_preview, "load_providers", lambda: _loaded(_provider()))
-    patch_fingerprint(monkeypatch, fingerprint)
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(module, "environment_fingerprint", fingerprint)
     path = tmp_path / "A.lean"
     path.write_text(DECIDING)
     return path, SourcePreviewService(path)
@@ -628,7 +629,9 @@ def test_accepting_and_editing_around_a_decision(tmp_path, monkeypatch):
     assert _status(service) == "stale"
 
 
-def test_a_failing_fingerprint_shows_saved_decisions_as_stale(tmp_path, monkeypatch):
+def test_a_failing_fingerprint_shows_saved_decisions_as_stale(
+    tmp_path, monkeypatch, patch_fingerprint
+):
 
     path, service = _decision_snapshot(tmp_path, monkeypatch)
     _saved_decision(path)
@@ -636,7 +639,7 @@ def test_a_failing_fingerprint_shows_saved_decisions_as_stale(tmp_path, monkeypa
     def boom(*args):
         raise RuntimeError("git exploded")
 
-    patch_fingerprint(monkeypatch, boom)
+    patch_fingerprint(boom)
     assert _status(service) == "stale"
 
 

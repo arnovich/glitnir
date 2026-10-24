@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from patching import patch_fingerprint
 
 from glitnir.notebook.check_records import (
     evidence_prefix_sha256,
@@ -19,6 +18,7 @@ from glitnir.notebook.directives import (
     evidence_key,
 )
 from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import evidence_cards
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.providers.outcomes import checked_evidence
@@ -420,7 +420,8 @@ def _saved_service(tmp_path: Path, monkeypatch, fingerprint: str):
         calls.append(1)
         return {"sha256": fingerprint}
 
-    patch_fingerprint(monkeypatch, environment)
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(module, "environment_fingerprint", environment)
     text = f"def M := 1\n{DIRECTIVE}\n"
     path = tmp_path / "A.lean"
     path.write_text(text)
@@ -468,7 +469,7 @@ def test_snapshot_with_claims_but_no_evidence_fingerprints_once(
 
 
 def test_snapshot_reads_saved_evidence_as_stale_when_the_fingerprint_fails(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, patch_fingerprint
 ):
 
     path, _text, _calls, entry = _saved_service(tmp_path, monkeypatch, FP)
@@ -476,7 +477,7 @@ def test_snapshot_reads_saved_evidence_as_stale_when_the_fingerprint_fails(
     def boom(*_arguments):
         raise OSError("no environment")
 
-    patch_fingerprint(monkeypatch, boom)
+    patch_fingerprint(boom)
     [card] = SourcePreviewService(path).snapshot()["evidence"]
     assert (card["status"], card["snapshot"]) == ("stale", entry["snapshot"])
 

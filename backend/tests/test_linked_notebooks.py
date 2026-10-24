@@ -14,7 +14,6 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
-from patching import patch_fingerprint
 
 from glitnir.lean.fingerprint import environment_fingerprint
 from glitnir.notebook.check_records import (
@@ -244,7 +243,7 @@ def test_a_link_must_spell_the_file_as_its_directory_does(server, project) -> No
 
 
 def test_a_nested_project_is_shown_as_saved_and_never_fingerprinted(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, patch_fingerprint
 ) -> None:
     root = tmp_path / "proj"
     nested = root / "nested"
@@ -259,7 +258,7 @@ def test_a_nested_project_is_shown_as_saved_and_never_fingerprinted(
     def refuse(*args, **kwargs):
         raise AssertionError("a nested project must not be fingerprinted")
 
-    patch_fingerprint(monkeypatch, refuse)
+    patch_fingerprint(refuse)
     service = SourcePreviewService(root / "Main.lean")
     snapshot = service.linked("nested/ThreeState.lean")
     assert snapshot["preview"]["linked"]["compared"] is False

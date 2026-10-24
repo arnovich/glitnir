@@ -12,7 +12,6 @@ import threading
 from pathlib import Path
 
 import pytest
-from patching import patch_fingerprint
 
 from glitnir.notebook.__main__ import main
 from glitnir.notebook.check_records import records_path
@@ -649,7 +648,9 @@ def test_evidence_run_http_starts_listed_directives_only(tmp_path, monkeypatch):
         httpd.server_close()
 
 
-def test_decision_http_runs_stops_and_discards_listed_directives(tmp_path, monkeypatch):
+def test_decision_http_runs_stops_and_discards_listed_directives(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """Decisions name the saved digest and a listed line; refusals are conflicts."""
     from glitnir.notebook import source_preview
     from glitnir.providers import DecisionProvider, DecisionRequest, Providers
@@ -675,7 +676,7 @@ def test_decision_http_runs_stops_and_discards_listed_directives(tmp_path, monke
         "load_providers",
         lambda: Providers({}, {}, {"sum": provider}, {}),
     )
-    patch_fingerprint(monkeypatch, lambda *a: {"sha256": "f" * 64})
+    patch_fingerprint(lambda *a: {"sha256": "f" * 64})
     monkeypatch.setattr(
         source_preview, "provider_imports_error", lambda source, **options: None
     )

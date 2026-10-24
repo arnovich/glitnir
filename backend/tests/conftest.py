@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from glitnir.notebook import source_preview
+from glitnir.preview import snapshot as preview_snapshot
+
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
 
@@ -702,3 +705,18 @@ def registered_git_dependency(tmp_path, project_toolchain):
         ),
         run,
     )
+
+
+@pytest.fixture
+def patch_fingerprint(monkeypatch):
+    """Return a function replacing `environment_fingerprint` where it is used.
+
+    The service's runs call it through `source_preview`; the snapshot's
+    `Fingerprints` calls it through `glitnir.preview.snapshot`.
+    """
+
+    def patch(fake):
+        monkeypatch.setattr(source_preview, "environment_fingerprint", fake)
+        monkeypatch.setattr(preview_snapshot, "environment_fingerprint", fake)
+
+    return patch
