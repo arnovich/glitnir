@@ -35,7 +35,10 @@ The repository has four parts:
 - **Layers.** The backend has six packages: `glitnir.providers`, `glitnir.lean`,
   `glitnir.compute`, `glitnir.notebook`, `glitnir.preview` and `glitnir.service`.
   A module imports only from its own layer or below, and
-  `backend/tests/test_layering.py` enforces it.
+  `backend/tests/test_layering.py` enforces it. `glitnir.preview` holds the
+  renderer's view-model and assets and starts no thread or server, but it is
+  not side-effect free: the editor's `--export` command writes the renderer
+  bundle, and snapshot fingerprints may run git.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by
