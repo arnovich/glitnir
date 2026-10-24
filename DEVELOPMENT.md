@@ -344,7 +344,9 @@ results are matched to the saved source result by result, so a gallery that
 must publish only complete results should also compare the results file's
 `source_sha256` with the snapshot's `sha256`.
 
-Render the snapshot with the packaged renderer (`glitnir/preview/app`), and
+Render the snapshot with the packaged renderer (`glitnir/preview/app`; a gallery
+finds its assets with `glitnir.preview.editor.renderer_directory()`, never the
+private `_APP`), and
 export it with its **Export HTML**, through the same `window.glitnirHost`
 interface the editor uses (`fetch`, `asset` and `saveHTML`). Answer `fetch` from
 the prepared data and refuse anything else:

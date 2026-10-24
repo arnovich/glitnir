@@ -35,7 +35,7 @@ from glitnir.lean.fingerprint import direct_imports, header_imports
 from glitnir.notebook.directives import view_keys
 from glitnir.preview import assets
 from glitnir.preview.cards import provider_imports, view_provider_hash
-from glitnir.preview.editor import _APP
+from glitnir.preview.editor import renderer_directory
 from glitnir.preview.snapshot import (
     PreviewState,
     build_snapshot,
@@ -262,7 +262,8 @@ class SavedNotebook:
 
 def export_styles() -> str:
     """Return offline CSS, retaining the vendored KaTeX and font licences."""
-    katex = _APP / "katex"
+    app = renderer_directory()
+    katex = app / "katex"
     css = (katex / "katex.min.css").read_text()
 
     def embed(match: re.Match[str]) -> str:
@@ -278,10 +279,10 @@ def export_styles() -> str:
         (
             f"/* KaTeX (MIT licence)\n{licence}\n*/",
             f"/* KaTeX fonts (SIL OFL 1.1)\n{font_licence}\n*/",
-            (_APP / "app.css").read_text(),
-            (_APP / "cards.css").read_text(),
-            (_APP / "circuits.css").read_text(),
+            (app / "app.css").read_text(),
+            (app / "cards.css").read_text(),
+            (app / "circuits.css").read_text(),
             css,
-            (_APP / "export.css").read_text(),
+            (app / "export.css").read_text(),
         )
     )

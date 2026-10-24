@@ -24,6 +24,15 @@ class RuntimeInfo(TypedDict):
     rendererSha256: str
 
 
+def renderer_directory() -> Path:
+    """Return the directory holding the packaged renderer (`app/`).
+
+    This is the supported way for a gallery to locate the renderer's assets
+    (`app.js`, the stylesheets, `katex/`); do not reach for private names.
+    """
+    return _APP
+
+
 def _assets() -> list[Path]:
     """Return only shipped assets, in a path-stable order."""
     return sorted(

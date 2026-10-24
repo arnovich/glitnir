@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from glitnir.preview import editor
-from glitnir.preview.editor import export_renderer, runtime_info
+from glitnir.preview.editor import (
+    export_renderer,
+    renderer_directory,
+    runtime_info,
+)
 
 
 def test_renderer_export_is_complete_and_matches_runtime(tmp_path: Path) -> None:
@@ -58,3 +62,11 @@ def test_cli_exports_the_installed_contract(
     editor.main()
     assert json.loads(capsys.readouterr().out) == runtime_info()
     assert (destination / "index.html").is_file()
+
+
+def test_renderer_directory_locates_the_assets_a_gallery_needs() -> None:
+    """The public accessor points at the packaged renderer, not a copy."""
+    directory = renderer_directory()
+    assert directory == editor._APP
+    for name in ("index.html", "app.js", "app.css", "katex/katex.min.css"):
+        assert (directory / name).is_file()
