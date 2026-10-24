@@ -2379,7 +2379,7 @@ def test_drawing_is_saved_and_reused_without_lean(
 ):
     from glitnir.lean.project_views import view_provider_sha256
     from glitnir.notebook.check_records import evidence_prefix_sha256
-    from glitnir.notebook.evidence_cards import evidence_key
+    from glitnir.notebook.directives import evidence_key
 
     service, renders = _saving_view_service(tmp_path, monkeypatch, draw_each_alone)
     try:
@@ -2557,7 +2557,7 @@ def test_saved_drawings_of_identical_directives_keep_their_own_keys(
     monkeypatch,
     draw_each_alone,
 ):
-    from glitnir.notebook.evidence_cards import evidence_key
+    from glitnir.notebook.directives import evidence_key
 
     text = "def c := 1\n-- @view circuit c\ndef d := 2\n-- @view circuit c\n"
     service, renders = _saving_view_service(
@@ -2652,7 +2652,7 @@ def _ask(service, line: int) -> dict:
 
 
 def _key(text: str, line: int) -> str:
-    from glitnir.notebook.evidence_cards import evidence_key
+    from glitnir.notebook.directives import evidence_key
 
     return evidence_key(text.split("\n")[line - 1], 0)
 

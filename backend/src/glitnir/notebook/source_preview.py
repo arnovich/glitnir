@@ -19,7 +19,7 @@ from typing import Any, Callable
 from glitnir.compute.client import check_remote, from_environment
 from glitnir.lean.awake import awake
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
-from glitnir.lean.lexing import code_tokens, command_boundaries, only_comments, scan
+from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -64,10 +64,13 @@ from glitnir.notebook.check_records import (
     with_view,
     without_decision,
 )
-from glitnir.notebook.decision_cards import (
-    decision_cards,
+from glitnir.notebook.decision_cards import decision_cards, decision_request
+from glitnir.notebook.directives import (
     decision_directives,
-    decision_request,
+    evidence_directives,
+    starts_command,
+    view_directives,
+    view_keys,
 )
 from glitnir.notebook.document import (
     CellKind,
@@ -76,10 +79,7 @@ from glitnir.notebook.document import (
     split_lines,
 )
 from glitnir.notebook.evidence_cards import (
-    directive_lines,
     evidence_cards,
-    evidence_directives,
-    evidence_key,
     evidence_request,
     provider_failure,
     provider_unavailable,
@@ -108,16 +108,6 @@ NOTICE = (
 )
 
 
-_VIEW_DIRECTIVE = re.compile(r"--\s*@view\s+(\w+)\s+(\S+)\s*(?:using\s+(.+))?\s*")
-_VIEW_START = re.compile(r"--\s*@view\b")
-INCOMPLETE_VIEW = (
-    "This view directive is incomplete. Write it at the start of a line as "
-    "`-- @view <kind> <name>`."
-)
-# A view name is a Lean identifier, possibly qualified.
-_VIEW_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
-BAD_VIEW_NAME = "View names must be Lean identifiers."
-MAX_USING = 16
 MAX_CACHED_VIEWS = 64
 RUN_BUSY = "A provider run is already in progress."
 CLOSED = "This preview is closed."
@@ -164,103 +154,11 @@ INSPECTION_CANCELLED = "Project inspection cancelled."
 Fingerprint = Callable[..., str]
 
 
-def _directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
-    """Find `-- @view <kind> <name> [using a, b]` lines in source cells.
-
-    As for evidence and decisions, only lines Lean reads as comment lines of
-    `source` count; the same text in a string or block comment does not.
-    """
-    candidates = [
-        index
-        for index, line in enumerate(source.split("\n"))
-        if _VIEW_START.match(line.strip()) is not None
-    ]
-    if not candidates:
-        return []
-    readable = directive_lines(source, candidates)
-    found: list[dict[str, Any]] = []
-    for cell in cells:
-        if cell["kind"] != "source":
-            continue
-        for offset, text in enumerate(cell["text"].split("\n")):
-            if cell["start"] + offset - 1 not in readable:
-                continue
-            match = _VIEW_DIRECTIVE.fullmatch(text)
-            if match is None:
-                start = _VIEW_START.match(text.strip())
-                if start is not None:  # listed so the reader sees the mistake
-                    words = start.string[start.end() :].split()
-                    found.append(
-                        {
-                            "cell": cell["index"],
-                            "line": cell["start"] + offset,
-                            "kind": words[0] if words else "",
-                            "name": words[1] if len(words) > 1 else "",
-                            "using": [],
-                            "error": INCOMPLETE_VIEW,
-                        }
-                    )
-                continue
-            kind, name, tail = match.groups()
-            tail = (tail or "").strip()
-            if tail.startswith("[") and tail.endswith("]"):
-                tail = tail[1:-1]
-            using = [item.strip() for item in tail.split(",") if item.strip()]
-            error = ""
-            if not all(_VIEW_NAME.fullmatch(item) for item in [name, *using]):
-                using, error = [], BAD_VIEW_NAME
-            elif len(using) > MAX_USING:
-                using, error = [], f"Too many `using` names (at most {MAX_USING})."
-            found.append(
-                {
-                    "cell": cell["index"],
-                    "line": cell["start"] + offset,
-                    "kind": kind,
-                    "name": name,
-                    "using": using,
-                    "error": error,
-                }
-            )
-    return found
-
-
-def _view_keys(text: str, views: list[dict[str, Any]]) -> dict[int, str]:
-    """Map each listed view directive's line to its saved-drawing key.
-
-    As for evidence, the key is the directive's line text and its index among
-    identical listed directive lines (`evidence_key`).
-    """
-    lines = text.split("\n")
-    seen: dict[str, int] = {}
-    keys: dict[int, str] = {}
-    for view in views:
-        source = lines[view["line"] - 1]
-        normal = source.rstrip()
-        occurrence = seen.get(normal, 0)
-        seen[normal] = occurrence + 1
-        keys[view["line"]] = evidence_key(source, occurrence)
-    return keys
-
-
 def _view_provider_sha256(providers: Providers, view: dict[str, Any]) -> str | None:
     """Hash what the listed `view`'s provider adds to draw it, or None."""
     return view_provider_sha256(
         providers.views[view["kind"]], view["kind"], view["name"], tuple(view["using"])
     )
-
-
-def _starts_command(text: str, line: int) -> bool:
-    """Whether the directive at one-based `line` of `text` lies between commands.
-
-    The trusted lexer must find that the command before it ends above it
-    (`CommandBoundaries.ends_at(line - 1)`), or nothing but comments may
-    precede it. A run elaborates the notebook cut at each of its directives,
-    so only such a directive is drawn in a run with others.
-    """
-    if command_boundaries(text).ends_at(line - 1):
-        return True
-    before = "\n".join(text.split("\n", line - 1)[: line - 1])
-    return only_comments(before, docstrings=0)
 
 
 def _with_providers(
@@ -1511,7 +1409,7 @@ class SourcePreviewService:
             cells = _split_at_claims(cells, project_claims, lines)
         for index, entry in enumerate(cells):
             entry.update(id=f"cell-{index}", index=index)
-        views = _directives(cells, text)
+        views = view_directives(cells, text)
         evidence = evidence_directives(cells, text)
         decisions = decision_directives(cells, text)
         # Providers load only when a directive needs them.
@@ -1628,7 +1526,7 @@ class SourcePreviewService:
         Never waits for Lean. Views are drawn in a worker, one Lean run at a
         time and each run bounded by the check time limit. A run draws the
         view asked for and, when its directive starts between commands
-        (`_starts_command`), every other listed view of the same provider
+        (`starts_command`), every other listed view of the same provider
         that does too and has no current drawing, in memory or saved. A view
         whose run of several timed out is drawn alone (`_draw_views`). Each
         view of the run answers `{"status": "drawing", "message": ...,
@@ -1675,7 +1573,7 @@ class SourcePreviewService:
         if cached is not None:
             return _labelled(cached, uncertain)
         digest = None if uncertain else str(environment["sha256"])
-        keys = _view_keys(text, views)
+        keys = view_keys(text, views)
         saved = {} if digest is None else saved_views(load_records(self.path))
 
         def job_for(view: dict[str, Any]) -> _ViewJob | dict[str, Any]:
@@ -1713,7 +1611,7 @@ class SourcePreviewService:
         with self._state_lock:
             timed_out = set(self._timed_out)
         members = [(asked, entry)]
-        if key not in timed_out and _starts_command(text, line):
+        if key not in timed_out and starts_command(text, line):
             for view in views:
                 if len(members) == MAX_CACHED_VIEWS:
                     break  # every answer of the run must outlast it
@@ -1722,7 +1620,7 @@ class SourcePreviewService:
                     and not view["error"]
                     and providers.views.get(view["kind"]) is provider
                     and (sha256, stable, view["line"]) not in timed_out
-                    and _starts_command(text, view["line"])
+                    and starts_command(text, view["line"])
                 ):
                     member = job_for(view)
                     if isinstance(member, _ViewJob):

@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from glitnir.notebook import decision_cards as decision_module
-from glitnir.notebook.decision_cards import (
+from glitnir.notebook import directives as directives_module
+from glitnir.notebook.decision_cards import decision_cards
+from glitnir.notebook.directives import (
     BAD_NAME,
-    INCOMPLETE,
-    decision_cards,
+    INCOMPLETE_DECISION,
     decision_directives,
     decision_key,
 )
@@ -160,10 +160,10 @@ def test_incomplete_indented_and_misnamed_directives_are_errors():
     )
     found = _found(text)
     assert [(e["name"], e["kind"], e["error"]) for e in found] == [
-        ("", "", INCOMPLETE),
-        ("band", "", INCOMPLETE),
-        ("band", "", INCOMPLETE),
-        ("indented", "entailment", INCOMPLETE),
+        ("", "", INCOMPLETE_DECISION),
+        ("band", "", INCOMPLETE_DECISION),
+        ("band", "", INCOMPLETE_DECISION),
+        ("indented", "entailment", INCOMPLETE_DECISION),
         ("1band", "entailment", BAD_NAME),
         ("N.band", "entailment", BAD_NAME),
         ("band!", "entailment", BAD_NAME),
@@ -179,7 +179,7 @@ def test_a_repeated_name_is_an_error_on_the_later_directive():
     )
     found = _found(text)
     assert [entry["error"] for entry in found] == [
-        INCOMPLETE,
+        INCOMPLETE_DECISION,
         "",
         "Another `@decide` directive above already names `band`.",
         "",
@@ -233,13 +233,13 @@ def test_a_rejection_without_a_message_still_says_why():
 def test_only_lines_after_a_head_are_checked_as_continuations(monkeypatch):
     """Indented comments elsewhere never reach the (possibly slow) lexer check."""
     asked: list[list[int]] = []
-    real = decision_module.directive_lines
+    real = directives_module.directive_lines
 
     def recording(text, candidates):
         asked.append(list(candidates))
         return real(text, candidates)
 
-    monkeypatch.setattr(decision_module, "directive_lines", recording)
+    monkeypatch.setattr(directives_module, "directive_lines", recording)
     text = f"--   note\n{MORE}\n{HEAD}\n{MORE}\n{MORE}\ndef y := 1\n{MORE}\n"
     [entry] = _found(text)
     assert asked == [[2, 3, 4]]

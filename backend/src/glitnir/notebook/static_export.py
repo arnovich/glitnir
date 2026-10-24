@@ -32,10 +32,10 @@ from types import TracebackType
 from typing import Any
 
 from glitnir.lean.fingerprint import direct_imports, header_imports
+from glitnir.notebook.directives import view_keys
 from glitnir.notebook.source_preview import (
     SourcePreviewService,
     _provider_imports,
-    _view_keys,
     _view_provider_sha256,
 )
 
@@ -240,7 +240,7 @@ class SavedNotebook:
             return None
         return service._saved_drawing(
             text,
-            _view_keys(text, views)[line],
+            view_keys(text, views)[line],
             line,
             "",
             provider_sha256,
