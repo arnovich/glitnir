@@ -36,11 +36,13 @@ over the closure's modules in load order) and R(X) for `rebuild X`.
   same data in the same order now gives that X again, Y; and R(Y) was found
   equal to a kernel-checked environment. Here, BASE must name modules of this
   closure, closed under their imports, and every constant of Y must be in X
-  unchanged under its name. Then K = `replay (X \ Y)` over R(Y), with the
-  kernel checking every constant of the other modules on top of a base whose
-  every constant was checked before. Anything else replays as `imports-only`.
-  The module order matters only through `mergeModules`: a different order is a
-  different Y, which the check against X refuses.
+  unchanged under its name, alike node by node (`sameConstantData`): a later
+  module may restate a base theorem or axiom, and X then holds its copy. Then
+  K = `replay (X \ Y)` over R(Y), with the kernel checking every constant of the
+  other modules on top of a base whose every constant was checked before.
+  Anything else replays as `imports-only`. The module order matters only
+  through `mergeModules`: a different order is a different Y, which the check
+  against X refuses.
 - `imports-cached` is passed only when this exact program has reported
   `imports_replayed` for byte-identical module files in this load order. It
   builds R(X) again (the same deterministic function of those files) and
@@ -58,21 +60,24 @@ exactly when they include a quotient constant. It runs no kernel check, walks no
 dependencies and changes no other field. The import modes accept R(X) only when
 it equals K (`sameKernel`): the same names, each with a constant equal field by
 field, and the same `quotInit`, where the kernel itself checked every constant of
-K and its own `init_quot` set `quotInit`. Definitions, theorems, axioms and
-opaque constants in R(X) are X's own values, the ones K's replay handed to the
-kernel (an incremental K's base, R(Y), holds Y's, found equal to an earlier K
-in the same way). Inductive types, constructors, recursors and the quotient
-are what the kernel generates itself in K, so R(X) holds imported copies, and
-`sameKernel` also compares their expressions node by node, binder names and
-annotations included, with the data Lean caches in each node and the kernel
-trusts without recomputing (`sameExprData`); `==` on expressions ignores
-binder names and annotations, and of that data compares only the hash. A
-forged constant under a name K lacks changes the count, and a forged quotient
-constant differs from what `init_quot` created, so neither is recorded.
-`Kernel.Environment`'s constructor is private: `rebuild` writes its
-fields through `KernelFields`, a mirror of Lean 4.35.0's layout, and builds
-nothing on another Lean or unless the mirror reads the same fields as the public
-accessors, both of the empty environment and of the one it built.
+K and its own `init_quot` set `quotInit`. Every constant is compared field by
+field and every expression in it node by node, binder names and annotations
+included, with the data Lean caches in each node and the kernel trusts without
+recomputing (`sameConstantData`, `sameExprData`); `==` on expressions ignores
+binder names and annotations, and of that data compares only the hash. So
+every constant of R(X) is one the kernel cannot tell from K's. Most are the
+very objects in K, where the comparison stops at once: K's replay hands X's
+own definitions, theorems, axioms and opaque constants to the kernel, which
+keeps them. Those compared in full are the inductive types, constructors,
+recursors and quotient, which the kernel generates itself in K while R(X)
+holds the imported copies, and, in `imports-incremental`, a base constant a
+later module restates, whose copy in R(X) no kernel checked. A forged constant
+under a name K lacks changes the count, and a forged quotient constant differs
+from what `init_quot` created, so neither is recorded. `Kernel.Environment`'s
+constructor is private: `rebuild` writes its fields through `KernelFields`, a
+mirror of Lean 4.35.0's layout, and builds nothing on another Lean or unless the
+mirror reads the same fields as the public accessors, both of the empty
+environment and of the one it built.
 
 Every kernel check here runs in Lean's own `Kernel.Environment.replay`, which
 passes `maxRecDepth` 0 to `addDeclCore`, as `leanchecker` does: from Lean 4.35
@@ -189,6 +194,7 @@ unsafe def sameExprData (a b : Expr) : StateM (Std.HashSet (USize × USize)) Boo
       pure (n == m && i == j) <&&> sameExprData t s <&&> sameExprData e f
     | .letE n t v e d, .letE m s w f c =>
       pure (n == m && d == c) <&&> sameExprData t s <&&> sameExprData v w <&&> sameExprData e f
+    | .lit (.strVal l), .lit (.strVal k) => pure (l == k && l.length == k.length)
     | .lit l, .lit k => pure (l == k)
     | .mdata d e, .mdata c f => pure (d == c) <&&> sameExprData e f
     | .proj s i e, .proj t j f => pure (s == t && i == j) <&&> sameExprData e f
@@ -196,35 +202,31 @@ unsafe def sameExprData (a b : Expr) : StateM (Std.HashSet (USize × USize)) Boo
   if same then modify (·.insert key)
   return same
 
-/-- The expressions of a constant the kernel generates itself, when it adds an
-inductive declaration or the quotient; none for any other constant. -/
-def generatedExprs : ConstantInfo → Option (List Expr)
-  | .inductInfo v => some [v.type]
-  | .ctorInfo v => some [v.type]
-  | .recInfo v => some (v.type :: v.rules.map (·.rhs))
-  | .quotInfo v => some [v.type]
-  | _ => none
+/-- Every expression of a constant: its type, the value of a definition, theorem
+or opaque constant, and the right-hand side of each recursor rule. -/
+def constantExprs : ConstantInfo → List Expr
+  | .defnInfo v => [v.type, v.value]
+  | .thmInfo v => [v.type, v.value]
+  | .opaqueInfo v => [v.type, v.value]
+  | .recInfo v => v.type :: v.rules.map (·.rhs)
+  | info => [info.type]
 
-/-- Whether two kernel environments hold equal constants and the same `quotInit`:
-the same names, each with constants equal field by field (`sameConstant`) and,
-for those the kernel generates itself (`generatedExprs`), with expressions alike
-node by node (`sameExprData`). -/
+/-- Whether two constants are the same to the kernel: equal field by field
+(`sameConstant`), and every expression alike node by node (`sameExprData`).
+Nodes compared are remembered only within one constant. -/
+unsafe def sameConstantData (a b : ConstantInfo) : Bool :=
+  sameConstant a b && (constantExprs a).length == (constantExprs b).length &&
+    (((constantExprs a).zip (constantExprs b)).allM fun (x, y) => sameExprData x y).run' {}
+
+/-- Whether two kernel environments hold the same constants and `quotInit`: the
+same names, each with constants the same to the kernel (`sameConstantData`). -/
 unsafe def sameKernel (a b : Kernel.Environment) : Bool :=
   a.quotInit == b.quotInit &&
     a.constants.fold (fun n _ _ => n + 1) 0 == b.constants.fold (fun n _ _ => n + 1) 0 &&
-    (a.constants.fold (init := (true, ({} : Std.HashSet (USize × USize))))
-      fun (same, seen) name info =>
-        if !same then (false, seen) else
-        match b.constants.find? name with
-        | none => (false, seen)
-        | some other =>
-          if !sameConstant info other then (false, seen) else
-          match generatedExprs info, generatedExprs other with
-          | some xs, some ys =>
-            if xs.length != ys.length then (false, seen) else
-            (xs.zip ys).foldl (init := (true, seen)) fun (same, seen) (x, y) =>
-              if same then (sameExprData x y).run seen else (false, seen)
-          | _, _ => (true, seen)).1
+    a.constants.fold (init := true) fun same name info =>
+      same && match b.constants.find? name with
+        | some other => sameConstantData info other
+        | none => false
 
 /-- Whether two constant maps hold the same names with equal constants. -/
 def sameConstants (a b : Std.HashMap Name ConstantInfo) : Bool :=
@@ -298,7 +300,8 @@ def kernelQuotient (env : Environment) : IO Bool := do
 
 /-- The fields of Lean 4.35.0's `Kernel.Environment`, in order. Its constructor
 is private; `rebuild` writes an environment through this mirror. The two private
-extension arrays are only carried along. -/
+extension arrays are only carried along: `mkEmptyEnvironment` sets both to the
+same object, so their relative order cannot be checked, nor does it matter. -/
 structure KernelFields where
   constants : ConstMap
   quotInit : Bool
@@ -424,10 +427,11 @@ unsafe def incremental (env : Environment) (imported : Std.HashMap Name Constant
     for i in module.imports do
       unless members.contains i.module do return none
   let some baseConstants := mergeModules data | return none
-  -- The closure's import holds exactly the base's constants under their names.
+  -- The closure's import holds exactly the base's constants under their names:
+  -- a later module's copy of a base constant must be alike node by node.
   for (name, info) in baseConstants.toList do
     match imported[name]? with
-    | some other => unless sameConstant info other do return none
+    | some other => unless sameConstantData info other do return none
     | none => return none
   let rest := imported.filter fun name _ => !baseConstants.contains name
   let baseKernel ← rebuild baseConstants
@@ -619,11 +623,8 @@ unsafe def differences (a b : Kernel.Environment) : IO Unit := do
       if !sameConstant info other then
         unlike := note unlike (kindOf info) name
       else
-        match generatedExprs info, generatedExprs other with
-        | some xs, some ys =>
-          let same := (xs.zip ys).all fun (x, y) => ((sameExprData x y).run' {})
-          unless same do dataUnlike := note dataUnlike (kindOf info) name
-        | _, _ => pure ()
+        unless sameConstantData info other do
+          dataUnlike := note dataUnlike (kindOf info) name
   IO.eprintln s!"glitnir-probe quot_init {a.quotInit} {b.quotInit}"
   for (label, m) in [("missing", missing), ("unlike", unlike), ("data_unlike", dataUnlike)] do
     for (kind, (n, names)) in m.toList do
