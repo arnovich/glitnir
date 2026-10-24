@@ -2427,16 +2427,6 @@ def test_the_earliest_of_several_example_failures_wins(stray_first):
         assert "attributes or modifiers" in str(raised.value)
 
 
-def test_line_start_moves_a_cut_back_to_its_line():
-    """A cut inside a line moves to the line's start; one at a start stays."""
-    from glitnir.lean.project_checking import line_start
-
-    data = "ab\ncd\n\nef".encode()
-    starts = [line_start(data, offset) for offset in range(len(data) + 1)]
-    assert starts == [0, 0, 0, 3, 3, 3, 6, 7, 7, 7]
-    assert line_start("α\nβγ".encode(), 5) == 3  # inside a character
-
-
 @pytest.mark.parametrize(
     ("cut", "kept", "line"),
     [

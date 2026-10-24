@@ -12,7 +12,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from glitnir.notebook.evidence_cards import checked_evidence
+from glitnir.providers.outcomes import checked_evidence
 
 NOTEBOOK = """import Gimle.Asgard.Compile.RationalInterchange
 import Gimle.Asgard.Model.Continuous

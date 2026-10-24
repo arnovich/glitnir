@@ -14,13 +14,13 @@ from glitnir.notebook.check_records import (
 from glitnir.notebook.evidence_cards import (
     BAD_TARGET,
     INCOMPLETE,
-    checked_evidence,
     evidence_cards,
     evidence_directives,
     evidence_key,
 )
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
+from glitnir.providers.outcomes import checked_evidence
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64
@@ -393,9 +393,9 @@ def test_checked_evidence_bounds_samples_and_series():
 def test_checked_evidence_bounds_the_serialized_size(monkeypatch):
     # The sample and series bounds keep real bodies under the limit; this is
     # the backstop should either bound be raised.
-    from glitnir.notebook import evidence_cards
+    from glitnir.providers import outcomes
 
-    monkeypatch.setattr(evidence_cards, "MAX_BYTES", 100)
+    monkeypatch.setattr(outcomes, "MAX_BYTES", 100)
     _rejected(_evidence(), "bytes")
 
 

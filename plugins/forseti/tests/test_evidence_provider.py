@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 from glitnir.notebook.check_records import load_records, saved_evidence_failures
-from glitnir.notebook.evidence_cards import checked_evidence
 from glitnir.providers import EvidenceProvider, Providers, load_providers
+from glitnir.providers.outcomes import checked_evidence
 
 from glitnir_forseti import evidence_provider as forseti
 from glitnir_forseti import providers
@@ -397,11 +397,11 @@ def test_the_series_and_text_bounds_are_glitnirs() -> None:
     import ast
     import inspect
 
-    from glitnir.notebook import evidence_cards
+    from glitnir.providers import outcomes
 
     assert (forseti.MAX_SERIES, forseti.MAX_TEXT) == (
-        evidence_cards.MAX_SERIES,
-        evidence_cards.MAX_TEXT,
+        outcomes.MAX_SERIES,
+        outcomes.MAX_TEXT,
     )
     assigned = {
         target.id

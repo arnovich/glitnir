@@ -46,8 +46,7 @@ from pathlib import Path
 
 import pytest
 from glitnir.lean.project_checking import check_candidate
-from glitnir.notebook.decision_cards import checked_decision
-from glitnir.notebook.evidence_cards import checked_evidence
+from glitnir.providers.outcomes import checked_decision, checked_evidence
 
 from glitnir_forseti import evidence_provider
 from glitnir_forseti.claims.text import render_goal

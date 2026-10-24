@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from glitnir.lean.lexing import code_tokens, keyword_offsets, only_comments, scan
+from glitnir.lean.lexing import code_tokens, only_comments, scan
 
 
 def test_the_lexer_places_the_line_inside_the_literal() -> None:
@@ -130,28 +130,6 @@ def test_code_tokens_split_symbols_and_keep_identifiers_whole() -> None:
         "f",
     ]
     assert code_tokens('s!"{x}"') is None
-
-
-@pytest.mark.parametrize(
-    ("text", "found"),
-    [
-        ("example : True := trivial", [0]),
-        ("-- example\nexample : True := trivial", [11]),
-        ("/- example -/ /-- example -/\nexample:True := trivial", [29]),
-        ('def s := "example"\nexample : True := trivial', [19]),
-        ("def «example» := 1\nexample : True := trivial", [19]),
-        ("def c := 'e'\nexample : True := trivial", [13]),
-        ("theorem examples : True := trivial", []),
-        ("theorem example' : True := trivial", []),
-        ("def x := Foo.example\nexample₁", []),
-        ("example\nexample", [0, 8]),
-        ('def s := s!"{1}"\nexample : True := trivial', None),
-        ("/- open example", None),
-    ],
-)
-def test_keyword_offsets_find_code_tokens_only(text, found) -> None:
-    """Only whole code tokens count; an unsettled scan finds nothing certain."""
-    assert keyword_offsets(text, "example") == found
 
 
 @pytest.mark.parametrize(
@@ -317,9 +295,9 @@ def test_only_comments_allows_one_docstring(text, result) -> None:
 )
 def test_a_command_ends_only_before_a_command_start(text, line, ends):
     """Only a column-0 command start, or the end, follows a command's end."""
-    from glitnir.lean.lexing import command_ends_at
+    from glitnir.lean.lexing import command_boundaries
 
-    assert command_ends_at(text, line) is ends
+    assert command_boundaries(text).ends_at(line) is ends
 
 
 def test_command_boundaries_find_the_command_around_a_line():

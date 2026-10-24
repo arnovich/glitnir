@@ -12,8 +12,8 @@ import time
 from pathlib import Path
 
 import pytest
-from glitnir.notebook.decision_cards import checked_decision
 from glitnir.providers import DecisionProvider, DecisionRequest, load_providers
+from glitnir.providers.outcomes import checked_decision
 
 from glitnir_forseti import decision_provider as forseti
 from glitnir_forseti import providers

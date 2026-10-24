@@ -13,7 +13,7 @@ from pathlib import Path
 from glitnir.lean.fingerprint import environment_fingerprint
 from glitnir.notebook.check_records import (
     decision_prefix_sha256, load_records, save_records, with_decision)
-from glitnir.notebook.decision_cards import checked_decision
+from glitnir.providers.outcomes import checked_decision
 path, key, end, block = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4]
 text = path.read_text()
 outcome = checked_decision({"status": "proven", "block": block, "theorem": "four"})

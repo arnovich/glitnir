@@ -20,7 +20,7 @@ from fractions import Fraction
 from pathlib import Path
 
 import pytest
-from glitnir.notebook.evidence_cards import (
+from glitnir.providers.outcomes import (
     MAX_PAIRS,
     MAX_SAMPLES,
     MAX_SERIES,

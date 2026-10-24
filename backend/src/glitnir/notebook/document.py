@@ -13,12 +13,8 @@ no status rests on them until Lean, reading the whole file, confirms them.
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 
 from glitnir.lean.lexing import LEAN_WHITESPACE, scan
-
-#: A header line importing one module; the only kind a notebook header holds.
-IMPORT_LINE = re.compile(r"^import\s+(\S+)\s*$")
 
 
 class NotebookError(ValueError):
@@ -36,24 +32,6 @@ def split_lines(text: str) -> list[str]:
     if lines[-1] == "":
         lines.pop()
     return lines
-
-
-def _lines_with_ends(text: str) -> list[str]:
-    r"""Split like `split_lines`, keeping each line's ``\n``."""
-    parts = text.split("\n")
-    lines = [part + "\n" for part in parts[:-1]]
-    if parts[-1]:
-        lines.append(parts[-1])
-    return lines
-
-
-def read_notebook(path: Path) -> str:
-    r"""Return a notebook file's text exactly, with ``\r\n`` read as ``\n``.
-
-    ``Path.read_text`` also turns a lone ``\r`` into a line end, which Lean
-    does not; only the Windows line ending is normalised, as it always was.
-    """
-    return path.read_bytes().decode("utf-8").replace("\r\n", "\n")
 
 
 class CellKind(str, Enum):
@@ -77,8 +55,8 @@ class Claim:
         docstring: The ``/-- … -/`` comment before the header, if any.
         modifiers: Attributes and modifiers before the keyword, such as
             ``@[simp] private``.
-        as_written: Whether `script` renders the tactic block exactly as the
-            file writes it. When it does not, the claim is not checked.
+        as_written: Whether the proof text renders the tactic block exactly as
+            the file writes it. When it does not, the claim is not checked.
     """
 
     name: str
@@ -95,75 +73,6 @@ class Claim:
         match = _UNIVERSE_SUFFIX.fullmatch(self.name)
         return "" if match is None else match.group(1)
 
-    @property
-    def base_name(self) -> str:
-        """The name without its universe list: ``L`` for ``L.{v, u}``.
-
-        For run ids, paths and anything else that is not Lean; the claim's
-        identity (records, uses, lookups) stays `name`.
-        """
-        return self.name.removesuffix(self.universes)
-
-    @property
-    def signature(self) -> str:
-        """The statement, preceded by the universe list if there is one.
-
-        This is what any other name the claim is declared under takes, so
-        that each has exactly the claim's universe parameters, in its order
-        and under its names.
-        """
-        if not self.universes:
-            return self.statement
-        return f"{self.universes} {self.statement}"
-
-    @property
-    def is_open(self) -> bool:
-        """Whether the proof is still just ``sorry``."""
-        return self.proof.strip(LEAN_WHITESPACE) == "sorry"
-
-    @property
-    def script(self) -> tuple[str, ...]:
-        """The proof's tactic lines, each rendered after two spaces.
-
-        An ordinary proof gives its non-blank lines, keeping relative
-        indentation. A proof read as written (see `proof_text`) gives each
-        tactic line followed by the literal and blank lines after it, which
-        `render_unit` puts back exactly as the file has them.
-        """
-        lines = split_lines(self.proof)
-        heads = _tactic_lines(lines)
-        if heads is None:
-            return tuple(line for line in lines if not _blank(line))
-        entries: list[str] = []
-        for index, line in enumerate(lines):
-            if index in heads:
-                entries.append(line)
-            elif entries:
-                entries[-1] += "\n" + line
-        return tuple(entries)
-
-    @property
-    def block(self) -> str:
-        """The tactic block as the file writes it after ``:= by``.
-
-        The reading `proof_text` took is undone: an ordinary proof goes back
-        at two spaces with its blank lines empty, and a proof read as written
-        gets back the two spaces its tactic lines lost, its literal and blank
-        lines byte for byte. For display only; nothing is hashed from it.
-        """
-        return "\n".join(_indent_block(split_lines(self.proof)))
-
-    def declaration(self, keyword: str | None = None) -> str:
-        """Render the statement as a declaration header without a proof.
-
-        Args:
-            keyword: Replace the claim's own keyword, e.g. with ``axiom``.
-
-        Returns:
-            ``keyword name statement``.
-        """
-        return f"{keyword or self.keyword} {self.name} {self.statement}"
-
 
 @dataclass(frozen=True)
 class Cell:
@@ -175,10 +84,6 @@ class Cell:
         end_line: Last line of the block, inclusive.
         text: The block's source exactly as it appears in the file.
         claim: The parsed claim, for claim cells only.
-        name_at: For a claim, the 1-based line and 0-based column where its
-            name starts, as the splitter read it.
-        assign_at: For a claim, the line and column of the ``:=`` of the
-            ``:= by`` that ends its statement.
     """
 
     kind: CellKind
@@ -186,8 +91,6 @@ class Cell:
     end_line: int
     text: str
     claim: Claim | None = None
-    name_at: tuple[int, int] = (0, 0)
-    assign_at: tuple[int, int] = (0, 0)
 
 
 @dataclass(frozen=True)
@@ -218,40 +121,6 @@ class Notebook:
             if claim.name == name:
                 return claim
         raise KeyError(name)
-
-    def cell_of(self, name: str) -> Cell:
-        """Return the cell holding the named claim.
-
-        Raises:
-            KeyError: If the notebook has no such claim.
-        """
-        for cell in self.cells:
-            if cell.claim is not None and cell.claim.name == name:
-                return cell
-        raise KeyError(name)
-
-    def header_imports(self) -> tuple[str, ...]:
-        """Return the modules the notebook's header imports.
-
-        Only the leading ``import`` lines of a first Lean cell count, since
-        Lean reads no other.
-        """
-        return tuple(module for _, module in self._header())
-
-    def _header(self) -> tuple[tuple[int, str], ...]:
-        """Return each header import as its line offset in the first cell."""
-        if not self.cells or self.cells[0].kind is not CellKind.LEAN:
-            return ()
-        found = []
-        for offset, line in enumerate(self.cells[0].text.split("\n")):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("--"):
-                continue
-            match = IMPORT_LINE.match(stripped)
-            if match is None:
-                break
-            found.append((offset, match.group(1)))
-        return tuple(found)
 
 
 # Lean's whitespace within a line, never Python's ``\s`` (see LEAN_WHITESPACE).
@@ -402,15 +271,12 @@ def _claim_cell(
         modifiers.strip(LEAN_WHITESPACE),
         as_written,
     )
-    assign = len(lines[last].rstrip(LEAN_WHITESPACE)) - len(":= by")
     cell = Cell(
         CellKind.CLAIM,
         start + 1,
         body_end + 1,
         "\n".join(lines[start : body_end + 1]),
         claim,
-        (header + 1, match.start(3)),
-        (last + 1, assign),
     )
     return cell, body_end + 1
 
@@ -554,16 +420,3 @@ def _tactic_lines(lines: list[str]) -> frozenset[int] | None:
         for index, line in enumerate(lines)
         if not _blank(line) and index not in literal
     )
-
-
-def _indent_block(lines: list[str]) -> list[str]:
-    """Return a tactic block's lines the way `proof_text` reads them back.
-
-    An ordinary block goes at two spaces with its blank lines emptied; one read
-    as written has only its tactic lines moved, and its literal and blank lines
-    exactly as given.
-    """
-    heads = _tactic_lines(lines)
-    if heads is None:
-        return ["" if _blank(line) else f"  {line}" for line in lines]
-    return [f"  {line}" if index in heads else line for index, line in enumerate(lines)]

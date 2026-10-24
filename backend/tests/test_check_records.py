@@ -34,8 +34,9 @@ from glitnir.notebook.check_records import (
     with_view,
     without_decision,
 )
-from glitnir.notebook.decision_cards import checked_decision, decision_key
+from glitnir.notebook.decision_cards import decision_key
 from glitnir.notebook.evidence_cards import evidence_key
+from glitnir.providers.outcomes import checked_decision
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64

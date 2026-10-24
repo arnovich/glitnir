@@ -18,7 +18,7 @@ variables (such as `GLITNIR_ELABORATION_TIMEOUT_MS` and `GLITNIR_MEMORY_LIMIT_MB
 the `X-Glitnir` header and shared renderer hooks (`glitnirHost`, `glitnirCircuits`,
 `glitnirCards`, `glitnirExport`, `glitnir-reveal-cell`), `POST /api/evidence/run`,
 the `glitnir.evidence/v1` format, the `EvidenceProvider`/`EvidenceRequest` and
-`DecisionProvider`/`DecisionRequest` interfaces in `glitnir/providers.py`,
+`DecisionProvider`/`DecisionRequest` interfaces in `glitnir/providers/__init__.py`,
 `POST /api/decide/run`, `/api/decide/stop` and `/api/decide/discard`,
 `GET /api/decide/candidate`, the webview-to-extension `acceptDecision` message and
 the `evidence`, `decisions`, `views` and `evidence_failures` sections of `<Notebook>.glitnir.json` are interfaces: change them only deliberately, never as renaming or branding.

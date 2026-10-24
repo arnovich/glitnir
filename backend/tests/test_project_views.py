@@ -64,10 +64,36 @@ def _lake(tmp_path, monkeypatch, import_arts, asked=None):
     return source, toolchain
 
 
+def _render_one(
+    source,
+    *,
+    expected_sha256,
+    line,
+    provider,
+    kind,
+    name,
+    using,
+    cancel,
+    progress=None,
+    environment_sha256=None,
+):
+    """Draw one view with `render_project_views`: its drawing or the failure."""
+    from glitnir.lean.project_views import render_project_views
+
+    result = render_project_views(
+        source,
+        expected_sha256=expected_sha256,
+        provider=provider,
+        views=[(line, kind, name, using)],
+        cancel=cancel,
+        progress=progress,
+        environment_sha256=environment_sha256,
+    )
+    return result["views"][0] if "views" in result else result
+
+
 def _render(source, provider=None, **overrides):
     import threading
-
-    from glitnir.lean.project_views import render_project_view
 
     arguments = {
         "expected_sha256": _sha(NOTEBOOK),
@@ -79,7 +105,7 @@ def _render(source, provider=None, **overrides):
         "cancel": threading.Event(),
         **overrides,
     }
-    return render_project_view(source, **arguments)
+    return _render_one(source, **arguments)
 
 
 def _reporting(monkeypatch, report, calls=None, proofs_skipped=False):
@@ -394,7 +420,6 @@ def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
     import threading
 
     from glitnir.lean.project_inspection import _toolchain
-    from glitnir.lean.project_views import render_project_view
 
     root = prepared_lean_project
     toolchain = _toolchain()
@@ -424,7 +449,7 @@ def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
         marker="demoView:",
         command=lambda kind, name, using: f"#demo_view {name}",
     )
-    result = render_project_view(
+    result = _render_one(
         source,
         expected_sha256=_sha(text),
         line=5,
@@ -451,7 +476,6 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
     import threading
 
     from glitnir.lean.project_inspection import _toolchain
-    from glitnir.lean.project_views import render_project_view
 
     root = prepared_lean_project
     toolchain = _toolchain()
@@ -491,7 +515,7 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
         )
 
     def draw(imports):
-        return render_project_view(
+        return _render_one(
             source,
             expected_sha256=_sha(text),
             line=line,
@@ -528,8 +552,6 @@ def test_live_view_preamble_is_elaborated_outside_the_notebooks_scope(
     """
     import threading
 
-    from glitnir.lean.project_views import render_project_view
-
     root = prepared_lean_project
     source = root / "src/Example.lean"
     text = (
@@ -562,7 +584,7 @@ def test_live_view_preamble_is_elaborated_outside_the_notebooks_scope(
         marker="demoView:",
         command=lambda kind, name, using: f"#demo_view {name}",
     )
-    result = render_project_view(
+    result = _render_one(
         source,
         expected_sha256=_sha(text),
         line=text.count("\n"),
@@ -1023,7 +1045,7 @@ def test_live_three_views_in_one_run(prepared_lean_project, monkeypatch):
     import threading
 
     from glitnir.lean import provider_lean
-    from glitnir.lean.project_views import render_project_view, render_project_views
+    from glitnir.lean.project_views import render_project_views
 
     root = prepared_lean_project
     source = root / "src/Example.lean"
@@ -1069,7 +1091,7 @@ def test_live_three_views_in_one_run(prepared_lean_project, monkeypatch):
     )
     assert len(runs) == 1, together
     alone = [
-        render_project_view(
+        _render_one(
             source,
             expected_sha256=_sha(text),
             line=line,

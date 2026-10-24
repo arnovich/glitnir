@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean.provider_lean import run_provider_batch
-from glitnir.notebook.drawings import checked_drawing
 from glitnir.providers import ViewProvider
+from glitnir.providers.outcomes import checked_drawing
 
 
 def view_provider_sha256(
@@ -114,36 +114,3 @@ def render_project_views(
         drawn = iter(result["views"])
         results = [_drawing(next(drawn)) if r is None else r for r in results]
     return {"views": results}
-
-
-def render_project_view(
-    source: Path,
-    *,
-    expected_sha256: str,
-    line: int,
-    provider: ViewProvider,
-    kind: str,
-    name: str,
-    using: tuple[str, ...],
-    cancel: threading.Event,
-    progress: Callable[[str], None] | None = None,
-    environment_sha256: str | None = None,
-) -> dict[str, Any]:
-    """Elaborate the notebook prefix and a provider command in the sandbox.
-
-    The one view's drawing or failure from `render_project_views`, which a
-    failure of the whole run also is.
-    """
-    result = render_project_views(
-        source,
-        expected_sha256=expected_sha256,
-        provider=provider,
-        views=[(line, kind, name, using)],
-        cancel=cancel,
-        progress=progress,
-        environment_sha256=environment_sha256,
-    )
-    if "views" not in result:
-        return result
-    drawing: dict[str, Any] = result["views"][0]
-    return drawing
