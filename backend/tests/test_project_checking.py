@@ -812,6 +812,240 @@ def test_live_axioms_are_collected_after_replay_into_an_empty_environment(
         assert all(a["module"].startswith("Init") for a in axioms), axioms
 
 
+def test_live_full_and_cached_replays_decide_alike_through_imported_inductives(
+    prepared_lean_project, monkeypatch, recorded_replay_cache
+):
+    """A full replay and one over the rebuilt imports decide every claim alike.
+
+    The rebuilt imports hold the imported inductive types, constructors,
+    recursors and quotient as their files store them, where a full replay holds
+    the kernel's own. These proofs reduce through them: recursors (`List`,
+    `Option`), structure eta, `Quot.lift` and a nested inductive (`Syntax`).
+    """
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    recorded_replay_cache()
+    source = prepared_lean_project / "src/Example.lean"
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem result : helper = 1 := rfl\n"
+        "theorem lengths : [1, 2, 3].length = 3 := rfl\n"
+        "theorem eta (p : Nat × Nat) : (p.1, p.2) = p := rfl\n"
+        "theorem lifted (r : Nat → Nat → Prop) (f : Nat → Nat)\n"
+        "    (h : ∀ a b, r a b → f a = f b) (a : Nat) :\n"
+        "    Quot.lift f h (Quot.mk r a) = f a := rfl\n"
+        "theorem mapped : (some 2).map (· + 1) = some 3 := rfl\n"
+        "theorem nested :\n"
+        "    (Lean.Syntax.node .none `k #[.missing, .missing]).getNumArgs = 2 := rfl\n"
+        "theorem decided : 10 < 20 := by decide\n"
+        "theorem classical (p : Prop) : p ∨ ¬p := Classical.em p\n"
+    )
+    replays = _replays(monkeypatch)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    with monkeypatch.context() as uncached:
+        uncached.setattr(checking, "_replay_identity", lambda *args: None)
+        full = checking.check_project(source, expected_sha256=digest)
+    cached = checking.check_project(source, expected_sha256=digest)
+    assert [mode for mode, _ in replays] == ["full", "imports-cached"]
+    for result in (full, cached):
+        assert result["status"] == "checked_snapshot", result
+    assert (full["replay"], cached["replay"]) == ("full", "imports cached")
+    decided = [(t["name"], t["status"], t["axioms"]) for t in full["theorems"]]
+    assert decided == [
+        (t["name"], t["status"], t["axioms"]) for t in cached["theorems"]
+    ]
+    assert {name: status for name, status, _ in decided} == dict.fromkeys(
+        (
+            "result",
+            "lengths",
+            "eta",
+            "lifted",
+            "mapped",
+            "nested",
+            "decided",
+            "classical",
+        ),
+        "checked",
+    )
+
+
+def _forge_constant(olean, mode, name, module):
+    """Rewrite a built `.olean` in place with `ForgeConstant.lean` (see there)."""
+    import os
+    import subprocess
+
+    from glitnir.lean.project_inspection import _toolchain
+
+    forged = olean.with_name("Forged.olean")
+    fixture = Path(__file__).parent / "fixtures/project_checking/ForgeConstant.lean"
+    subprocess.run(
+        [str(_toolchain() / "bin/lean"), "--run", str(fixture), mode, name, module]
+        + [str(olean), str(forged)],
+        env={**os.environ, "LEAN_SYSROOT": str(_toolchain()), "LEAN_PATH": ""},
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    forged.replace(olean)
+
+
+def _records(cache):
+    """The replay cache's entries, by file name."""
+    return sorted(p.name for p in cache.iterdir()) if cache.exists() else []
+
+
+@pytest.mark.parametrize("forgery", ["identity", "binder", "data"])
+def test_live_an_imported_recursor_unlike_the_kernels_is_never_recorded(
+    prepared_lean_project, monkeypatch, fresh_replay_cache, forgery
+):
+    """An imported recursor is recorded only if it is exactly the kernel's own.
+
+    `Example.Helper`'s file is rewritten so that `Two.rec`'s type is `==` to the
+    kernel's recursor but not alike: its motive is renamed (`binder`) or its
+    root node's cached level-parameter flag is cleared (`data`, which would let
+    the kernel skip instantiating the motive's universe). A full replay holds
+    the kernel's own recursor and accepts the file; the rebuilt imports would
+    hold the file's copy, so the import replay records nothing and the check
+    replays in full. `identity` rewrites the file unchanged and is recorded.
+    The notebook reduces through `Two.rec` by way of `Two.casesOn`, whose own
+    type is unchanged: naming `Two.rec` would make the elaborator, which trusts
+    the file, read the forged type, and the theorem would not compile.
+    """
+    root = prepared_lean_project
+    (root / "src/Example/Helper.lean").write_text(
+        "def helper : Nat := 1\ninductive Two where\n  | one\n  | two\n"
+    )
+    source = root / "src/Example.lean"
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem result :\n"
+        "    Two.casesOn (motive := fun _ => Nat) Two.two 1 2 = 2 := rfl\n"
+    )
+    _build(root)
+    olean = root / ".lake/build/lib/lean/Example/Helper.olean"
+    _forge_constant(olean, forgery, "Two.rec", "Example.Helper")
+    result, modes = _check_recording_modes(source, monkeypatch)
+    assert result["status"] == "checked_snapshot", result
+    assert result["replay"] == "full", result
+    assert [(t["name"], t["status"]) for t in result["theorems"]] == [
+        ("result", "checked")
+    ]
+    if forgery == "identity":
+        assert modes == ["imports-only", "imports-cached"]
+        assert _records(fresh_replay_cache)
+    else:
+        assert modes == ["imports-only", "full"]
+        assert not _records(fresh_replay_cache)
+
+
+#: A base whose theorem `two` `Example.Extra` restates.
+TWO_HELPER = "def helper : Nat := 1\ntheorem two : (1 : Nat) + 1 = 2 := rfl\n"
+
+
+@pytest.mark.parametrize("forgery", ["identity", "data"])
+def test_live_a_theorem_restated_over_a_base_must_be_alike_to_extend_it(
+    prepared_lean_project, monkeypatch, recorded_replay_cache, forgery
+):
+    """A base theorem restated by a later module extends the base only if alike.
+
+    `Example.Extra` declares `two` as `Example.Helper` does, without importing
+    it, and the notebook imports both: Lean keeps the later copy, Extra's, so
+    the rebuilt imports would hold that copy, which the replay of the base
+    never checked. An identical copy extends the recorded base. A copy `==` to
+    the base's but with a cached flag changed (`data`) does not: the imports
+    are replayed from scratch, so the kernel checks that copy itself, and only
+    then recorded.
+    """
+    import hashlib
+    import json
+
+    from glitnir.lean import project_checking as checking
+
+    root = prepared_lean_project
+    source = root / "src/Example.lean"
+    recorded_replay_cache(TWO_HELPER)
+    _grow_closure(
+        root,
+        "theorem two : (1 : Nat) + 1 = 2 := rfl\n",
+        "import Example.Helper\nimport Example.Extra\n"
+        "theorem result : (1 : Nat) + 1 = 2 := two\n",
+        helper=TWO_HELPER,
+    )
+    olean = root / ".lake/build/lib/lean/Example/Extra.olean"
+    _forge_constant(olean, forgery, "two", "Example.Extra")
+    original = checking.run_observer
+    replays = []
+
+    def observed(lean, arguments, **options):
+        output = original(lean, arguments, **options)
+        if "--run" in arguments and arguments[3].endswith("ProjectReplay.lean"):
+            replays.append(json.loads(output)["replay"])
+        return output
+
+    monkeypatch.setattr(checking, "run_observer", observed)
+    result = checking.check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert [(t["name"], t["status"]) for t in result["theorems"]] == [
+        ("result", "checked")
+    ]
+    if forgery == "identity":
+        assert replays == ["imports incremental", "imports cached"]
+        assert result["replay"] == "imports cached (+1 module)", result
+    else:
+        assert replays == ["imports only", "imports cached"]
+        assert result["replay"] == "full", result
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        # A field missing: the objects after it are read from the wrong slots.
+        ("  irBaseExts : NonScalar\n", ""),
+        # A flag before `quotInit`: the objects match, the flag's byte does not.
+        ("  quotInit : Bool\n", "  padding : Bool\n  quotInit : Bool\n"),
+    ],
+    ids=["missing_field", "moved_flag"],
+)
+def test_live_a_kernel_environment_mirror_that_reads_other_fields_fails_closed(
+    prepared_lean_project, monkeypatch, fresh_replay_cache, edit
+):
+    """`rebuild` builds nothing through a mirror unlike Lean's own layout.
+
+    `KernelFields` is changed as after a Lean whose layout moved: the import
+    replay stops before replaying anything, nothing is recorded and no claim
+    gets a status.
+    """
+    import hashlib
+
+    from glitnir.lean import project_checking as checking
+
+    programs = checking._programs
+    old, new = edit
+
+    def misread(destination):
+        reader, reporter, replay = programs(destination)
+        text = replay.read_text()
+        start = text.index("structure KernelFields where")
+        assert text.count(old, start, start + 400) == 1
+        replay.write_text(text[:start] + text[start:].replace(old, new, 1))
+        return reader, reporter, replay
+
+    monkeypatch.setattr(checking, "_programs", misread)
+    source = prepared_lean_project / "src/Example.lean"
+    result = checking.check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "unavailable", result
+    assert result["theorems"] == []
+    assert "Independent kernel replay failed" in result["message"], result
+    assert "unexpected kernel environment layout" in result["message"], result
+    assert not _records(fresh_replay_cache)
+
+
 def test_live_native_decide_reports_assumptions_never_standard_axioms(
     prepared_lean_project, monkeypatch, fresh_replay_cache
 ):
