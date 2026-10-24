@@ -32,6 +32,10 @@ The repository has four parts:
   Mathlib. Packaging pins the backend wheel in `backend/dist` (asset name, size,
   SHA-256 and release tag) as `glitnirBackend` in the packaged `package.json`;
   **Set Up Environment** downloads and verifies exactly that wheel.
+- **Layers.** The backend has six packages: `glitnir.providers`, `glitnir.lean`,
+  `glitnir.compute`, `glitnir.notebook`, `glitnir.preview` and `glitnir.service`.
+  A module imports only from its own layer or below, and
+  `backend/tests/test_layering.py` enforces it.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by
