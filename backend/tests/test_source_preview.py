@@ -1698,7 +1698,7 @@ def test_an_evidence_run_saves_a_current_snapshot(tmp_path, monkeypatch):
     import json
 
     from glitnir.notebook.check_records import records_path
-    from glitnir.notebook.evidence_cards import checked_evidence
+    from glitnir.providers.outcomes import checked_evidence
 
     service, calls = _evidence_service(tmp_path, monkeypatch)
     try:

@@ -34,7 +34,8 @@ The repository has four parts:
   **Set Up Environment** downloads and verifies exactly that wheel.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
-  `backend/src/glitnir/providers.py`. The core backend has no runtime
+  `backend/src/glitnir/providers/__init__.py`, with their output validated by
+  `glitnir/providers/outcomes.py`. The core backend has no runtime
   dependencies; Forseti-specific code lives in `plugins/forseti`.
 - **Proof authority.** Only the backend's sandboxed project check, with its
   independent kernel replay, decides a status. The user guide's

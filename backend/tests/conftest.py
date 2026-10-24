@@ -158,9 +158,9 @@ def draw_each_alone(monkeypatch):
     """Fake the preview's view runs with a fake of one view's drawing.
 
     `draw_each_alone(render)` replaces `source_preview.render_project_views`
-    with a run that draws each of its views with `render`, called as
-    `render_project_view` is: the notebook, then `line`, `kind`, `name`,
-    `using` and the run's other options.
+    with a run that draws each of its views with `render`, called with
+    the notebook, then `line`, `kind`, `name`, `using` and the run's other
+    options.
     """
 
     def install(render):

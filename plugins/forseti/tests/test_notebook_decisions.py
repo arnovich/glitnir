@@ -9,8 +9,8 @@ import dataclasses
 from fractions import Fraction
 
 import pytest
-from glitnir.notebook.decision_cards import checked_decision
 from glitnir.notebook.document import parse_notebook
+from glitnir.providers.outcomes import checked_decision
 
 from glitnir_forseti.claims.decide import Decision, LeanApplication
 from glitnir_forseti.claims.text import parse_goal
@@ -81,6 +81,11 @@ def _valid(proposed: Block, status: str) -> Block:
     return proposed
 
 
+def _script(claim) -> tuple[str, ...]:
+    """The claim's non-blank proof lines, dedented, as the block writes them."""
+    return tuple(line for line in claim.proof.split("\n") if line.strip())
+
+
 def test_a_proven_goal_becomes_a_readable_theorem_proved_from_the_root() -> None:
     decision = _decision(GOALS["energy-band"], "PROVEN")
     proposed = _valid(block("energy_band", decision), "proven")
@@ -95,7 +100,7 @@ def test_a_proven_goal_becomes_a_readable_theorem_proved_from_the_root() -> None
     assert "forsetiRoot" not in claim.statement
     assert "have V := y t 3; V ≥ 0 ∧ V ≤ 6" in claim.statement
     # Its proof proves the root with the decider's own script, then bridges.
-    assert claim.script == (
+    assert _script(claim) == (
         "have root : forsetiRoot := by",
         *("  " + line for line in decision.lean.script),
         *stated.from_root,
@@ -116,18 +121,18 @@ def test_a_refuted_goal_becomes_the_theorem_of_its_negation() -> None:
     assert stated is not None
     assert proposed.theorem == "energy_below_five_refuted"
     (claim,) = parse_notebook(proposed.source).claims
-    assert claim.name == "energy_below_five_refuted" and not claim.is_open
+    assert claim.name == "energy_below_five_refuted" and claim.proof.strip() != "sorry"
     negated = stated.statement.removeprefix(":").strip()
     assert claim.statement == f": ¬ ({negated})"
     assert "have V := y t 3; V ≤ 5" in claim.statement
     lines = len(decision.lean.script)
-    assert claim.script[0] == (
+    assert _script(claim)[0] == (
         "have refuted : forsetiIdentities ∧ ¬ forsetiContract := by"
     )
-    assert claim.script[1 : lines + 1] == tuple(
+    assert _script(claim)[1 : lines + 1] == tuple(
         "  " + line for line in decision.lean.script
     )
-    assert claim.script[lines + 1 :] == ("intro claim", *stated.to_root)
+    assert _script(claim)[lines + 1 :] == ("intro claim", *stated.to_root)
     assert "The trajectory decider refuted it." in claim.docstring
     # The false claim itself is not declared, so nothing is left `sorry`.
     assert "theorem energy_below_five " not in proposed.source
@@ -151,7 +156,7 @@ def test_an_entailment_claim_is_stated_over_the_reals() -> None:
     assert proposed.imports == ("Gimle.Forseti.Syntax.AlgebraicWitness",)
     (claim,) = parse_notebook(proposed.source).claims
     assert claim.statement == ": ¬ (∀ x : ℝ, x * x = 2 → x < 0)"
-    assert claim.script[:3] == (
+    assert _script(claim)[:3] == (
         "have refuted : ¬ Gimle.Forseti.Syntax.FormulaEntailment forsetiAntecedent"
         " forsetiConsequent := by",
         "  exact proof",
@@ -160,7 +165,7 @@ def test_an_entailment_claim_is_stated_over_the_reals() -> None:
     assert (
         "refine (fun (bridge : _ ↔ Gimle.Forseti.Syntax.FormulaEntailment"
         " forsetiAntecedent forsetiConsequent) => refuted (bridge.mp claim)) ?_"
-        in claim.script
+        in _script(claim)
     )
 
 
@@ -186,12 +191,12 @@ def test_a_refuted_coefficient_claim_is_readable_and_bridged() -> None:
     assert claim.statement.startswith(": ¬ (")
     assert "forsetiRoot" not in claim.statement
     assert "have c0 : ℝ := y 1" in claim.statement
-    assert claim.script[0] == (
+    assert _script(claim)[0] == (
         "have refuted : forsetiIdentities ∧ ¬ forsetiContract := by"
     )
     assert (
         "refine (fun (bridge : _ ↔ forsetiContract) => refuted.2 (bridge.mp claim))"
-        " ?_" in claim.script
+        " ?_" in _script(claim)
     )
 
 
@@ -204,7 +209,7 @@ def test_a_goal_without_a_readable_form_keeps_the_root(monkeypatch) -> None:
     (claim,) = parse_notebook(proposed.source).claims
     assert claim.name == "coefficient_refuted"
     assert claim.statement == ": ¬ (forsetiRoot)"
-    assert claim.script[-1].startswith("exact fun root => refuted.2")
+    assert _script(claim)[-1].startswith("exact fun root => refuted.2")
     assert "Stated as the decider states it." in claim.docstring
 
 

@@ -29,7 +29,7 @@ from fractions import Fraction
 from statistics import NormalDist
 from typing import Any
 
-from glitnir.notebook.evidence_cards import MAX_SAMPLES
+from glitnir.providers.outcomes import MAX_SAMPLES
 
 from glitnir_forseti.notebook import evidence
 from glitnir_forseti.notebook.evidence import (

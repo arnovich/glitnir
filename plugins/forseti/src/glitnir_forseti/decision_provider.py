@@ -33,7 +33,7 @@ NEEDS_Z3 = "Install glitnir-forseti[z3] to decide goals."
 #: Every name a block's templates define starts with this, so a decision
 #: named with it could collide with them in the block's namespace.
 RESERVED_PREFIX = "forseti"
-#: Bounds of Glitnir's decision outcome (`glitnir.notebook.decision_cards`).
+#: Bounds of Glitnir's decision outcome (`glitnir.providers.outcomes`).
 _MAX_REASON = 200
 _MAX_STAGES = 32
 _MAX_STAGE_TEXT = 500

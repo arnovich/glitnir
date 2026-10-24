@@ -62,7 +62,7 @@ from typing import Any
 
 # Points kept per state in a snapshot, as Glitnir accepts them; runs are
 # downsampled to this.
-from glitnir.notebook.evidence_cards import MAX_SAMPLES, MAX_SERIES
+from glitnir.providers.outcomes import MAX_SAMPLES, MAX_SERIES
 
 from glitnir_forseti.stepped.models import MODELS, SteppedEntry
 from glitnir_forseti.stepped.numbers import three_point

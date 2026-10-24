@@ -134,24 +134,6 @@ def code_tokens(text: str) -> list[tuple[int, int]] | None:
     return tokens
 
 
-def keyword_offsets(text: str, keyword: str) -> list[int] | None:
-    """Return where Lean reads the identifier-like ``keyword`` as a code token.
-
-    These are the character offsets of every whole identifier token equal to
-    ``keyword`` outside comments, doc comments, strings, character literals
-    and ``«…»`` names, not continuing a dotted name (``Foo.example``). None
-    when the scan is not settled: then nobody can say where they are.
-    """
-    tokens = code_tokens(text)
-    if tokens is None:
-        return None
-    return [
-        start
-        for start, end in tokens
-        if text[start:end] == keyword and text[start - 1 : start] != "."
-    ]
-
-
 def only_comments(text: str, docstrings: int = 1) -> bool:
     """Whether ``text`` is nothing but whitespace and comments.
 
@@ -548,11 +530,6 @@ def command_boundaries(text: str) -> CommandBoundaries:
     Few are kept: a text may be 16 MiB.
     """
     return CommandBoundaries(text)
-
-
-def command_ends_at(text: str, line: int) -> bool:
-    """Whether a command of ``text`` can end with its one-based ``line``."""
-    return command_boundaries(text).ends_at(line)
 
 
 def _comment_end(text: str, index: int) -> int:

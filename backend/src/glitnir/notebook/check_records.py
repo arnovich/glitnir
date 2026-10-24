@@ -2,8 +2,8 @@
 
 A claim's saved result is current while the environment fingerprint and the
 exact source text up to the end of the claim are unchanged, and the claim's
-command still ends at its last line (`command_ends_at`). Any edit above a
-claim, prose and blank lines included, marks it out of date, because Lean code
+command still ends at its last line (`CommandBoundaries.ends_at`). Any edit
+above a claim, prose and blank lines included, marks it out of date, because Lean code
 can read module-doc prose and line positions. Edits below a claim leave it
 current, unless they continue its command (a proof step, `where`,
 `termination_by`): then it is out of date, and shown through the continuation.
@@ -102,9 +102,11 @@ from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
-from glitnir.notebook.decision_cards import checked_decision
-from glitnir.notebook.drawings import checked_drawing
-from glitnir.notebook.evidence_cards import checked_evidence
+from glitnir.providers.outcomes import (
+    checked_decision,
+    checked_drawing,
+    checked_evidence,
+)
 
 FORMAT = "glitnir.project-checks/v2"
 #: The earlier format, read and upgraded to `FORMAT` on loading.
