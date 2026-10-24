@@ -4,13 +4,11 @@ import hashlib
 import json
 import logging
 import os
-import re
 import secrets
 import stat
 import tempfile
 import threading
 import time
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,13 +31,12 @@ from glitnir.lean.project_snapshot import (
     SLOT_WAIT_TIMED_OUT,
     SnapshotError,
 )
-from glitnir.lean.project_views import render_project_views, view_provider_sha256
+from glitnir.lean.project_views import render_project_views
 from glitnir.lean.provider_lean import (
     INTERRUPTED,
     provider_imports_error,
     run_provider_lean,
 )
-from glitnir.notebook import assets
 from glitnir.notebook.check_records import (
     MAX_MESSAGE,
     MAX_TYPE,
@@ -47,15 +44,12 @@ from glitnir.notebook.check_records import (
     decision_prefix_sha256,
     decision_status,
     evidence_prefix_sha256,
-    evidence_status,
     failure_message,
     load_records,
     non_claim_views,
     records_from_check,
     save_records,
     saved_decisions,
-    saved_evidence,
-    saved_evidence_failures,
     saved_views,
     view_status,
     with_decision,
@@ -64,7 +58,6 @@ from glitnir.notebook.check_records import (
     with_view,
     without_decision,
 )
-from glitnir.notebook.decision_cards import decision_cards, decision_request
 from glitnir.notebook.directives import (
     decision_directives,
     evidence_directives,
@@ -78,13 +71,32 @@ from glitnir.notebook.document import (
     parse_notebook,
     split_lines,
 )
-from glitnir.notebook.evidence_cards import (
+from glitnir.notebook.proof_steps import ProofSteps
+from glitnir.preview import assets
+from glitnir.preview.cards import (
+    Fingerprint,
+    decision_cards,
+    decision_request,
+    environment_digest,
     evidence_cards,
     evidence_request,
     provider_failure,
-    provider_unavailable,
+    provider_imports,
+    unavailable_words,
+    view_cards,
+    view_provider_hash,
+    with_runs,
+    with_saved_decisions,
+    with_saved_evidence,
 )
-from glitnir.notebook.proof_steps import ProofSteps
+from glitnir.preview.linked import (
+    LEAN_NAME,
+    MAX_SOURCE_BYTES,
+    project_root,
+    read_linked_notebook,
+    sibling_references,
+    unbuilt_sibling_imports,
+)
 from glitnir.providers import (
     DecisionProvider,
     DecisionRequest,
@@ -134,10 +146,6 @@ NOT_ACCEPTABLE = {
 }
 # How long closing waits for every worker together before giving up on them.
 CLOSE_SECONDS = 55
-#: The largest saved notebook the preview reads, the main file or another.
-MAX_SOURCE_BYTES = 16 * 1024 * 1024
-#: The longest link to another notebook the preview resolves.
-MAX_LINK_CHARACTERS = 1024
 INSPECTING = "Inspecting the saved project setup"
 BUSY = "Project inspection or checking is already running."
 # Views are drawn in a worker, one Lean run at a time, each run drawing every
@@ -150,54 +158,6 @@ UNKNOWN_JOB = "This drawing is no longer known; draw it again."
 NOTHING_INSPECTING = "No inspection is running."
 NOTHING_CHECKING = "No check is running."
 INSPECTION_CANCELLED = "Project inspection cancelled."
-#: A fingerprint for a function of the modules loaded besides the notebook's.
-Fingerprint = Callable[..., str]
-
-
-def _view_provider_sha256(providers: Providers, view: dict[str, Any]) -> str | None:
-    """Hash what the listed `view`'s provider adds to draw it, or None."""
-    return view_provider_sha256(
-        providers.views[view["kind"]], view["kind"], view["name"], tuple(view["using"])
-    )
-
-
-def _with_providers(
-    views: list[dict[str, Any]], providers: Providers
-) -> list[dict[str, Any]]:
-    """Report the view kinds no installed provider draws."""
-    notes = "".join(
-        f" (Provider {name} failed to load: {reason})"
-        for name, reason in providers.errors.items()
-    )
-    return [
-        (
-            view
-            if view["error"] or view["kind"] in providers.views
-            else {
-                **view,
-                "error": f"No installed provider draws `{view['kind']}` views." + notes,
-            }
-        )
-        for view in views
-    ]
-
-
-_MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
-def _plain_file(path: Path) -> bool:
-    return path.is_file() and not path.is_symlink()
-
-
-def unbuilt_sibling_imports(path: Path, imports: dict[str, str | None]) -> list[str]:
-    """Name directly imported sibling notebooks that have no Lake build yet."""
-    return [
-        module
-        for module, trace in imports.items()
-        if trace is None
-        and _MODULE_NAME.fullmatch(module)
-        and _plain_file(path.parent / f"{module}.lean")
-    ]
 
 
 def _source_cell(start: int, end: int, lines: list[str]) -> dict[str, Any]:
@@ -272,190 +232,6 @@ def _withheld(records: dict[str, Any] | None, sha256: str) -> dict[str, Any] | N
     return withheld
 
 
-def _environment(fingerprint: Fingerprint, imports: tuple[str, ...] = ()) -> str:
-    """Return the fingerprint, or '' (which matches nothing) when it fails."""
-    try:
-        return fingerprint(imports) if imports else fingerprint()
-    except Exception:  # noqa: BLE001 - saved results must not break preview
-        return ""  # every saved result then reads as stale
-
-
-def _provider_imports(provider: Any) -> tuple[str, ...]:
-    """Return the modules a provider loads besides the notebook's, or ()."""
-    try:  # provider code must never break the preview
-        imports = provider.imports
-        if isinstance(imports, tuple) and all(isinstance(m, str) for m in imports):
-            return imports
-    except Exception:  # noqa: BLE001
-        pass
-    return ()
-
-
-def _with_saved_evidence(
-    cards: list[dict[str, Any]],
-    records: dict[str, Any] | None,
-    text: str,
-    fingerprint: Fingerprint,
-    providers: Providers | None = None,
-    compare_environment: bool = True,
-) -> list[dict[str, Any]]:
-    """Show each card's saved snapshot and failure; nothing is recomputed.
-
-    A run's environment includes its provider's modules, so each card is
-    compared with the fingerprint taken with them. Without
-    `compare_environment` no fingerprint is taken: cards are shown as recorded.
-    A saved failure is shown as `_shown_failure` says.
-    """
-    saved = saved_evidence(records)
-    failures = saved_evidence_failures(records)
-    found = [card for card in cards if card["key"] in saved or card["key"] in failures]
-    if not found:
-        return cards  # nothing saved, no fingerprint
-    for card in found:
-        environment = ""
-        if compare_environment:
-            provider = providers.evidence.get(card["verb"]) if providers else None
-            imports = _provider_imports(provider) if provider is not None else ()
-            environment = _environment(fingerprint, imports)
-        entry = saved.get(card["key"])
-        if entry is not None:
-            card["status"] = evidence_status(
-                entry,
-                text,
-                card["line"],
-                environment,
-                compare_environment=compare_environment,
-            )
-            card["snapshot"] = checked_evidence(entry["snapshot"])
-        failure = failures.get(card["key"])
-        if failure is not None:
-            card["failure"] = _shown_failure(
-                card, failure, text, environment, compare_environment
-            )
-    return cards
-
-
-def _shown_failure(
-    card: dict[str, Any],
-    failure: dict[str, Any],
-    text: str,
-    environment: str,
-    compare_environment: bool,
-) -> dict[str, Any] | None:
-    """Return a card's saved failure as shown, or None when it is hidden.
-
-    A failure follows the evidence currency rule. One that is out of date is
-    hidden behind a current snapshot, and, as recorded, always: a static page
-    shows only what was recorded for its source. Without a snapshot the card
-    reads failed, or out of date for a failure that is.
-    """
-    status = evidence_status(
-        failure,
-        text,
-        card["line"],
-        environment,
-        compare_environment=compare_environment,
-    )
-    if status == "stale" and (not compare_environment or card["status"] == "current"):
-        return None
-    if card["snapshot"] is None:
-        card["status"] = "failed" if status == "current" else "stale"
-    return {
-        "kind": failure["kind"],
-        "message": failure["message"],
-        "created": failure["created"],
-        "status": status,
-    }
-
-
-def _with_saved_decisions(
-    cards: list[dict[str, Any]],
-    records: dict[str, Any] | None,
-    text: str,
-    fingerprint: Fingerprint,
-    compare_environment: bool = True,
-) -> list[dict[str, Any]]:
-    """Show each card's saved outcome and its status; nothing is decided.
-
-    Without `compare_environment` no fingerprint is taken, as for evidence.
-    """
-    saved = saved_decisions(records)
-    found = [card for card in cards if card["key"] in saved]
-    if not found:
-        return cards  # no saved decisions, no fingerprint
-    environment = _environment(fingerprint) if compare_environment else ""
-    for card in found:
-        entry = saved[card["key"]]
-        card["status"] = decision_status(
-            entry,
-            text,
-            card["end_line"],
-            environment,
-            compare_environment=compare_environment,
-        )
-        card["outcome"] = checked_decision(entry["outcome"])
-        verification = entry["verification"]
-        card["verification"] = (
-            None
-            if verification is None
-            else {**verification, "axioms": list(verification["axioms"])}
-        )
-    return cards
-
-
-def _unavailable_words(providers: Providers | None, section: str) -> dict[str, str]:
-    """Map each evidence verb or decision kind that cannot run to the reason."""
-    if providers is None:
-        return {}
-    table: dict[str, EvidenceProvider] | dict[str, DecisionProvider] = (
-        providers.evidence if section == "evidence" else providers.decisions
-    )
-    reasons: dict[str, str] = {}
-    for word in sorted(table):
-        missing, error = provider_unavailable(table[word])
-        if missing or error:
-            reasons[word] = missing or error
-    return reasons
-
-
-def _with_runs(
-    cards: list[dict[str, Any]],
-    running: str | None,
-    run_errors: dict[str, str],
-    saved: frozenset[str] = frozenset(),
-) -> list[dict[str, Any]]:
-    """Mark the card being run and show each card's last run error.
-
-    A run error that this session also saved as the card's failure (its key
-    in ``saved``) takes the failure's place, so no failure is shown twice.
-    Any other run error says nothing about the directive (a busy slot, a
-    setup failure), so a saved failure stays shown, marked ``earlier``.
-    """
-    for card in cards:
-        if card["key"] == running:
-            card["status"] = "running"
-        card["run_error"] = run_errors.get(card["key"])
-        failure = card.get("failure")
-        if card["run_error"] is not None and failure is not None:
-            card["failure"] = (
-                None if card["key"] in saved else {**failure, "earlier": True}
-            )
-    return cards
-
-
-def sibling_references(path: Path) -> list[dict[str, str]]:
-    """List sibling notebooks that prose links may open, never following links."""
-    siblings = sorted(
-        candidate
-        for candidate in path.parent.glob("*.lean")
-        if _MODULE_NAME.fullmatch(candidate.stem) and _plain_file(candidate)
-    )
-    return [{"module": item.stem, "file": item.name} for item in siblings]
-
-
-_LEAN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_']*")
-
-
 def _module_link(directory: Path, module: str) -> str | None:
     """Return a module's `.lean` file relative to ``directory``, if it is there.
 
@@ -463,7 +239,7 @@ def _module_link(directory: Path, module: str) -> str | None:
     checked again when it is read (`read_linked_notebook`).
     """
     parts = module.split(".")
-    if not all(_LEAN_NAME.fullmatch(part) for part in parts):
+    if not all(LEAN_NAME.fullmatch(part) for part in parts):
         return None
     relative = [*parts[:-1], parts[-1] + ".lean"]
     current = directory
@@ -495,135 +271,6 @@ def _with_use_links(claims: list[dict[str, Any]], notebook: Path) -> None:
             link = links[use["module"]]
             if link is not None:
                 use["path"] = link
-
-
-class NotebookLinkError(NotebookError):
-    """A link to another notebook that the preview refuses to read.
-
-    Attributes:
-        status: The HTTP status that describes the refusal: 400 for a link
-            that is not a plain relative ``.lean`` path, 404 for a file that
-            is missing, a symbolic link, not regular or outside the project,
-            and 413 for a file above the preview's size limit.
-    """
-
-    def __init__(self, message: str, status: int) -> None:
-        """Keep the refusal's message and HTTP status."""
-        super().__init__(message)
-        self.status = status
-
-
-def _link_parts(link: str) -> list[str]:
-    """Split a relative ``.lean`` link; refuse anything that could leave it."""
-    parts = link.split("/")
-    if (
-        not link
-        or len(link) > MAX_LINK_CHARACTERS
-        or link.startswith("/")
-        or any(character in link for character in "\\\0")
-        or any(part in ("", ".", "..") for part in parts)
-        or not link.endswith(".lean")
-        or parts[-1] == ".lean"
-    ):
-        raise NotebookLinkError(
-            "Send a .lean path relative to this notebook, without '.' or '..'.", 400
-        )
-    return parts
-
-
-def _named_exactly(descriptor: int, part: str) -> bool:
-    """Whether the directory open at `descriptor` has an entry spelled `part`.
-
-    A case-insensitive file system opens ``MAIN.lean`` as ``Main.lean``; the
-    link must use the entry's own case. Unicode normalization is not case,
-    so both sides are compared in NFC.
-    """
-    wanted = unicodedata.normalize("NFC", part)
-    return any(
-        unicodedata.normalize("NFC", entry) == wanted
-        for entry in os.listdir(descriptor)
-    )
-
-
-def _read_below(directory: Path, parts: list[str], notebook: os.stat_result) -> bytes:
-    """Read ``directory/parts`` without following any link below `directory`.
-
-    Each directory and the file are opened relative to the one before with
-    ``O_NOFOLLOW``, so a link swapped in after a check is refused too. Each
-    part must match its directory entry exactly, and the file must not be
-    `notebook`, the previewed notebook itself.
-    """
-    flags = os.O_RDONLY | os.O_NOFOLLOW
-    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for depth, part in enumerate(parts):
-            if not _named_exactly(descriptor, part):
-                raise FileNotFoundError("no entry with exactly this name")
-            if depth == len(parts) - 1:
-                break
-            child = os.open(part, flags | os.O_DIRECTORY, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
-        file = os.open(parts[-1], flags | os.O_NONBLOCK, dir_fd=descriptor)
-    finally:
-        os.close(descriptor)
-    with os.fdopen(file, "rb") as stream:
-        found = os.fstat(stream.fileno())
-        if not stat.S_ISREG(found.st_mode):
-            raise IsADirectoryError("not a regular file")
-        if (found.st_dev, found.st_ino) == (notebook.st_dev, notebook.st_ino):
-            raise NotebookLinkError("That link names this notebook itself.", 404)
-        data = stream.read(MAX_SOURCE_BYTES + 1)
-    if len(data) > MAX_SOURCE_BYTES:
-        raise NotebookLinkError(
-            "That notebook is larger than the 16 MiB preview limit.", 413
-        )
-    return data
-
-
-def read_linked_notebook(notebook: Path, link: str) -> tuple[Path, str]:
-    """Resolve and read another notebook that `notebook`'s prose links to.
-
-    The link is relative to `notebook`'s directory. It must name a regular
-    ``.lean`` file reached through no symbolic link and lying under the
-    notebook's resolved project root: its Lake root, a loose file's
-    toolchain directory, or else its own directory.
-
-    Returns:
-        The linked file's path and its saved text with LF line endings.
-
-    Raises:
-        NotebookLinkError: When the link or the file is refused.
-    """
-    parts = _link_parts(link)
-    directory = notebook.absolute().parent
-    root = Path(describe_project(notebook)["root"] or directory).resolve()
-    target = directory.joinpath(*parts)
-    try:
-        # A symbolic link loop raises RuntimeError here; never report a path.
-        inside = target.resolve().is_relative_to(root)
-    except (OSError, RuntimeError):
-        inside = False
-    if not inside:
-        raise NotebookLinkError("That notebook is outside this project.", 404)
-    try:
-        data = _read_below(directory, parts, os.stat(notebook))
-        text = data.decode("utf-8")
-    except FileNotFoundError:
-        raise NotebookLinkError("There is no such notebook.", 404) from None
-    except (OSError, UnicodeDecodeError):
-        raise NotebookLinkError(
-            "That notebook is not a readable regular file; links are not followed.",
-            404,
-        ) from None
-    return target, text.replace("\r\n", "\n")
-
-
-def _project_root(notebook: Path) -> tuple[str, str | None]:
-    """Name the project a notebook belongs to: its kind and resolved root."""
-    project = describe_project(notebook)
-    root = project["root"]
-    return project["kind"], str(Path(root).resolve()) if root else None
 
 
 def _uncompared(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -1383,7 +1030,9 @@ class SourcePreviewService:
             try:
                 # A failed fingerprint is '', which matches nothing: the saved
                 # results are then shown, all out of date.
-                environment = _environment(fingerprint) if compare_environment else ""
+                environment = (
+                    environment_digest(fingerprint) if compare_environment else ""
+                )
                 project_claims = claim_views(
                     text,
                     records,
@@ -1434,12 +1083,12 @@ class SourcePreviewService:
             "checking": [],
             "check_errors": {},
             "reading": False,
-            "views": [] if providers is None else _with_providers(views, providers),
+            "views": [] if providers is None else view_cards(views, providers),
             "evidence": (
                 []
                 if providers is None
-                else _with_runs(
-                    _with_saved_evidence(
+                else with_runs(
+                    with_saved_evidence(
                         evidence_cards(evidence, providers),
                         records,
                         text,
@@ -1455,8 +1104,8 @@ class SourcePreviewService:
             "decisions": (
                 []
                 if providers is None
-                else _with_runs(
-                    _with_saved_decisions(
+                else with_runs(
+                    with_saved_decisions(
                         decision_cards(decisions, providers),
                         records,
                         text,
@@ -1473,8 +1122,8 @@ class SourcePreviewService:
             },
             # Of those, the words that cannot run yet, with what is missing.
             "directive_unavailable": {
-                "evidence": _unavailable_words(providers, "evidence"),
-                "decide": _unavailable_words(providers, "decide"),
+                "evidence": unavailable_words(providers, "evidence"),
+                "decide": unavailable_words(providers, "decide"),
             },
             "links": [],
             "references": sibling_references(self.path),
@@ -1498,7 +1147,7 @@ class SourcePreviewService:
         # notebook's own project. A nested project would be fingerprinted
         # from its own manifest, running git outside this project on every
         # poll, so its results are shown as saved, not compared.
-        compared = _project_root(target) == _project_root(self.path)
+        compared = project_root(target) == project_root(self.path)
         if compared:
             snapshot = other._snapshot(text, other._fingerprint(text))
         else:
@@ -1562,7 +1211,7 @@ class SourcePreviewService:
             return {"error": entry["error"]}
         providers = self._providers()
         provider = providers.views[entry["kind"]]
-        imports = _provider_imports(provider)
+        imports = provider_imports(provider)
         environment = fingerprint.environment(imports)
         stable = str(environment.get("stable_sha256", environment["sha256"]))
         uncertain = bool(environment.get("unknown", False))
@@ -1579,7 +1228,7 @@ class SourcePreviewService:
         def job_for(view: dict[str, Any]) -> _ViewJob | dict[str, Any]:
             """Return a new job drawing `view`, or its current saved drawing."""
             at = view["line"]
-            provider_sha256 = _view_provider_sha256(providers, view)
+            provider_sha256 = view_provider_hash(providers, view)
             record = None
             if digest is not None and provider_sha256 is not None:
                 drawing = self._saved_drawing(
@@ -2312,7 +1961,7 @@ class SourcePreviewService:
             raise SnapshotError(NOT_DECIDED)
         end_line = directive["end_line"]
         status = decision_status(
-            entry, text, end_line, _environment(self._fingerprint(text))
+            entry, text, end_line, environment_digest(self._fingerprint(text))
         )
         verification = entry["verification"]
         if status != "candidate" or verification["status"] != "checked":

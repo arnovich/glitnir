@@ -23,7 +23,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "notebooks"
 FIELD = (FIXTURES / "dissipative-field.json").read_text(encoding="utf-8").strip()
 #: The same field as the compiled circuit, in the wire form `iterate` uses.
 CIRCUIT = (FIXTURES / "dissipative-circuit.json").read_text(encoding="utf-8").strip()
-#: How Glitnir's core splits a directive line (`glitnir.notebook.evidence_cards`).
+#: How Glitnir's core splits a directive line (`glitnir.notebook.directives`).
 _DIRECTIVE = re.compile(r"--\s*@evidence\s+(\w+)\s+(\S+)(?:\s+(.*?))?\s*")
 MODEL = "-- @evidence simulate dissipative (h := 1/100) (steps := 400)"
 

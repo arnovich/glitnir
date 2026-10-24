@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from glitnir.notebook import directives as directives_module
-from glitnir.notebook.decision_cards import decision_cards
 from glitnir.notebook.directives import (
     BAD_NAME,
     INCOMPLETE_DECISION,
@@ -14,6 +13,7 @@ from glitnir.notebook.directives import (
     decision_key,
 )
 from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview.cards import decision_cards
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
 from glitnir.providers.outcomes import checked_decision
 

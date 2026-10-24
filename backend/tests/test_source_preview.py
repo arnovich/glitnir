@@ -961,7 +961,7 @@ def test_no_hint_when_check_was_cut_short(tmp_path, monkeypatch):
 
 
 def test_built_or_library_imports_get_no_hint(tmp_path):
-    from glitnir.notebook.source_preview import unbuilt_sibling_imports
+    from glitnir.preview.linked import unbuilt_sibling_imports
 
     folder = Path("/nonexistent-folder")
     assert (
@@ -973,7 +973,7 @@ def test_built_or_library_imports_get_no_hint(tmp_path):
 
 
 def test_hint_names_only_plain_sibling_notebooks(tmp_path):
-    from glitnir.notebook.source_preview import unbuilt_sibling_imports
+    from glitnir.preview.linked import unbuilt_sibling_imports
 
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "Foo.lean").write_text("def x := 1\n")

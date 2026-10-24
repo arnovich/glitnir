@@ -17,8 +17,8 @@ from glitnir.notebook.directives import (
     evidence_directives,
     evidence_key,
 )
-from glitnir.notebook.evidence_cards import evidence_cards
 from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview.cards import evidence_cards
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.providers.outcomes import checked_evidence
 
