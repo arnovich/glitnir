@@ -241,5 +241,10 @@
   },
   "dependencies": {
     "yauzl": "3.4.0"
+  },
+  "overrides": {
+    "@azure/identity": {
+      "@azure/msal-node": "7.1.1"
+    }
   }
 }
