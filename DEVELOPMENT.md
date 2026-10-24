@@ -68,7 +68,7 @@ With Python 3.12+, uv and Node 22+, run from the repository root:
 uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
-  'backend/dist/glitnir-0.1.6-py3-none-any.whl[dev]'
+  'backend/dist/glitnir-0.1.7-py3-none-any.whl[dev]'
 (cd backend && ../.venv/bin/python -m pytest \
   && ../.venv/bin/black --check src tests scripts \
   && ../.venv/bin/isort --check-only src tests scripts \
@@ -79,7 +79,7 @@ uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
 uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
 uv pip install --python .venv/bin/python --no-deps \
-  plugins/forseti/dist/glitnir_forseti-0.1.6-py3-none-any.whl
+  plugins/forseti/dist/glitnir_forseti-0.1.7-py3-none-any.whl
 (cd plugins/forseti && ../../.venv/bin/python -m pytest -q && ../../.venv/bin/black --check src tests tools \
   && ../../.venv/bin/isort --check-only src tests tools && ../../.venv/bin/flake8 src tests tools \
   && ../../.venv/bin/mypy src)
