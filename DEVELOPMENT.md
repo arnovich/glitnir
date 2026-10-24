@@ -20,9 +20,9 @@ The repository has four parts:
 
 ## Architecture
 
-- **One renderer.** The backend's `glitnir/notebook/app` is the canonical
+- **One renderer.** The backend's `glitnir/preview/app` is the canonical
   renderer. `npm run compile` exports it from the Python in
-  `GLITNIR_BUILD_PYTHON` (`python -m glitnir.notebook.editor --export`) into
+  `GLITNIR_BUILD_PYTHON` (`python -m glitnir.preview.editor --export`) into
   `dist/media`, with `dist/editor-runtime.json` recording its identity. At
   runtime the extension's probe refuses a backend whose renderer differs ("The
   installed Glitnir runtime is incompatible with this Glitnir build"), so build
@@ -337,7 +337,7 @@ results are matched to the saved source result by result, so a gallery that
 must publish only complete results should also compare the results file's
 `source_sha256` with the snapshot's `sha256`.
 
-Render the snapshot with the packaged renderer (`glitnir/notebook/app`), and
+Render the snapshot with the packaged renderer (`glitnir/preview/app`), and
 export it with its **Export HTML**, through the same `window.glitnirHost`
 interface the editor uses (`fetch`, `asset` and `saveHTML`). Answer `fetch` from
 the prepared data and refuse anything else:

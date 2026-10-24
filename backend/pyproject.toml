@@ -4,7 +4,7 @@ version = "0.1.7"
 description = "Glitnir notebook backend, rendering and Lean checking services"
 readme = "README.md"
 license = "MIT AND OFL-1.1"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "src/glitnir/notebook/app/katex/LICENSE", "src/glitnir/notebook/app/katex/OFL.txt"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "src/glitnir/preview/app/katex/LICENSE", "src/glitnir/preview/app/katex/OFL.txt"]
 requires-python = ">=3.12"
 dependencies = []
 

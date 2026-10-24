@@ -13,7 +13,7 @@ def main() -> None:
         if len(sys.argv) > 1:
             raise ValueError("The environment probe takes no arguments")
         from glitnir.notebook import server
-        from glitnir.notebook.editor import runtime_info
+        from glitnir.preview.editor import runtime_info
 
         expected = json.loads(
             Path(__file__).with_name("editor-runtime.json").read_text()

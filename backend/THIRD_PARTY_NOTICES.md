@@ -5,8 +5,8 @@ the licences of third-party code, assets or separately installed dependencies.
 
 The renderer bundles KaTeX 0.16.47, with MIT-licensed code and styles, from
 https://github.com/KaTeX/KaTeX. Its MIT licence and copyright notice are retained
-in `glitnir/notebook/app/katex/LICENSE` in the installed package
-(`src/glitnir/notebook/app/katex/LICENSE` in the source tree).
+in `glitnir/preview/app/katex/LICENSE` in the installed package
+(`src/glitnir/preview/app/katex/LICENSE` in the source tree).
 
 The bundled KaTeX fonts use the SIL Open Font License 1.1. Their copyright,
 reserved font names and full licence are in `katex/OFL.txt` alongside the

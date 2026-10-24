@@ -19,7 +19,7 @@ from glitnir.notebook.check_records import (
     with_evidence_failure,
     with_view,
 )
-from glitnir.notebook.evidence_cards import evidence_key
+from glitnir.notebook.directives import evidence_key
 from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.notebook.static_export import RECORDED_NOTICE, SavedNotebook
 from glitnir.providers import (

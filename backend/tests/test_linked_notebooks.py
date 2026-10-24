@@ -23,10 +23,10 @@ from glitnir.notebook.check_records import (
     save_records,
 )
 from glitnir.notebook.server import make_server
-from glitnir.notebook.source_preview import (
+from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview.linked import (
     MAX_SOURCE_BYTES,
     NotebookLinkError,
-    SourcePreviewService,
     read_linked_notebook,
 )
 

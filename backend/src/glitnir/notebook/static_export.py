@@ -32,14 +32,10 @@ from types import TracebackType
 from typing import Any
 
 from glitnir.lean.fingerprint import direct_imports, header_imports
-from glitnir.notebook.source_preview import (
-    SourcePreviewService,
-    _provider_imports,
-    _view_keys,
-    _view_provider_sha256,
-)
-
-_APP = Path(__file__).parent / "app"
+from glitnir.notebook.directives import view_keys
+from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview.cards import provider_imports, view_provider_hash
+from glitnir.preview.editor import _APP
 
 #: The words a snapshot from saved results carries as its `preview.notice`.
 RECORDED_NOTICE = (
@@ -151,7 +147,7 @@ class SavedNotebook:
             The image's bytes and media type.
 
         Raises:
-            glitnir.notebook.assets.AssetError: The image is not listed, has
+            glitnir.preview.assets.AssetError: The image is not listed, has
                 another hash or cannot be read.
         """
         return self._service.asset(reference, sha256)
@@ -174,7 +170,7 @@ class SavedNotebook:
         modules = set(direct_imports(text) if header is None else header)
         providers = self._service._providers()
         for view in views:
-            modules.update(_provider_imports(providers.views[view["kind"]]))
+            modules.update(provider_imports(providers.views[view["kind"]]))
         return sorted(modules)
 
     def draw_view(self, cell: int, line: int) -> dict[str, Any]:
@@ -235,12 +231,12 @@ class SavedNotebook:
         view = next((v for v in views if v["cell"] == cell and v["line"] == line), None)
         if view is None or view["error"]:
             return None  # `view` reports it
-        provider_sha256 = _view_provider_sha256(service._providers(), view)
+        provider_sha256 = view_provider_hash(service._providers(), view)
         if provider_sha256 is None:
             return None
         return service._saved_drawing(
             text,
-            _view_keys(text, views)[line],
+            view_keys(text, views)[line],
             line,
             "",
             provider_sha256,
