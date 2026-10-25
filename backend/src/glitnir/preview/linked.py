@@ -10,11 +10,10 @@ import stat
 import unicodedata
 from pathlib import Path
 
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.project import describe_project
 from glitnir.notebook.document import NotebookError
 
-#: The largest saved notebook the preview reads, the main file or another.
-MAX_SOURCE_BYTES = 16 * 1024 * 1024
 #: The longest link to another notebook the preview resolves.
 MAX_LINK_CHARACTERS = 1024
 

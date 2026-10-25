@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.compute.client import remote_identity
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.fingerprint import environment_fingerprint
 from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
@@ -45,11 +46,7 @@ from glitnir.preview.cards import (
     with_saved_decisions,
     with_saved_evidence,
 )
-from glitnir.preview.linked import (
-    LEAN_NAME,
-    MAX_SOURCE_BYTES,
-    sibling_references,
-)
+from glitnir.preview.linked import LEAN_NAME, sibling_references
 from glitnir.providers import Providers
 
 NOTICE = (

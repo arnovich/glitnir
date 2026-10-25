@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from glitnir.compute.client import check_remote, from_environment, remote_identity
 from glitnir.lean.awake import awake
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
@@ -616,7 +617,7 @@ class SourcePreviewService:
                     self._check = {**self._check, "message": message}
 
         try:
-            text = read_regular(self.path, 16 * 1024 * 1024).decode()
+            text = read_regular(self.path, MAX_SOURCE_BYTES).decode()
             progress("Reading dependency state")
             environment = environment_fingerprint(
                 self.path, text, remote=remote_identity(self.path)
