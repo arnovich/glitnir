@@ -36,7 +36,13 @@ one input and one parameter, `x+ = a*x + u`, `y+ = y + x`:
 -- @evidence iterate driven (state := 1, 0) (inputs := 1; -1) (parameter := 1/2) (steps := 40) (names := x, y, u, a)
 ```
 
-Naming only `x, y` is refused ("Names must name all 4 ports, state first.").
+Naming only `x, y` is refused ("Names must name all 4 ports, state first."), and
+so are a name given twice and one longer than 200 characters, on the card before
+anything runs. Whether the counts match the circuit (here 2 states, then 2 more
+ports for inputs and parameters) is known only from what Lean prints, so the first
+run reports a mismatch at its end ("The circuit maps 1 port to 1, not 2 (state,
+inputs, parameters) to 2."). Running again after correcting only the options
+reuses that output and answers in seconds.
 Numbers are plain decimals or fractions (at most 40 digits per part). `simulate` needs
 nothing beyond this package. `iterate` needs Python Asgard (`gimle-asgard`),
 which is not on PyPI: install it into the backend's environment from its own
