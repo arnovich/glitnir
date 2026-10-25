@@ -922,7 +922,8 @@
     const [tone, label] = staticPage && running ? ['amber', 'Running at export'] : recorded() && entry.status === 'failed' ? ['red', 'Failed, as recorded'] : Object.hasOwn(DECISION_STATUS, entry.status) ? DECISION_STATUS[entry.status] : ['muted', entry.status];
     // A saved failed run. This session's run error takes its place, unless the
     // server marks the saved failure as earlier than that unsaved error.
-    const failure = (entry.run_error && !entry.failure?.earlier) || (running && !staticPage) ? null : entry.failure;
+    // An accepted block is the project check's to judge: no failure note.
+    const failure = (entry.run_error && !entry.failure?.earlier) || (running && !staticPage) || entry.status === 'accepted' ? null : entry.failure;
     const what = `<code>${esc(entry.name || '?')}</code>${entry.kind ? ` · ${esc(entry.kind)}` : ''}${entry.provider ? ` · ${esc(entry.provider)}` : ''}`;
     // A directive in error has no status of its own until it is fixed.
     const pill = entry.error && !outcome ? '<span class="pill" data-tone="muted">Error</span>' : `<span class="pill" data-tone="${tone}">${esc(label)}</span>`;

@@ -925,6 +925,16 @@ test('a decision failure after a candidate notes it above the outcome and keeps 
   } finally { window.close(); }
 });
 
+test('an accepted decision shows no saved failure note', async () => {
+  const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'accepted', outcome: decisionOutcome(), verification: checkedVerification(), failure: decisionFailure()})]));
+  try {
+    const card = window.document.querySelector('#doc .decision');
+    assert.equal(card.querySelector('.box-head .pill').textContent, 'Accepted');
+    assert.doesNotMatch(card.textContent, /failed/);
+    assert.deepEqual(decisionButtons(card), ['Discard']);
+  } finally { window.close(); }
+});
+
 test('an out-of-date decision failure without an outcome says an earlier run failed', async () => {
   const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'stale', failure: decisionFailure({status: 'stale'})})]));
   try {

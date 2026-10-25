@@ -1515,3 +1515,36 @@ def test_an_unsaved_failure_keeps_the_saved_one_readable_as_earlier(
     assert (after_busy["status"], after_busy["run_error"]) == ("failed", busy)
     assert after_busy["failure"]["message"] == _REFUSAL
     assert after_busy["failure"]["earlier"] is True
+
+
+def test_an_accepted_decision_hides_a_failure_saved_after_its_candidate(
+    tmp_path, monkeypatch
+):
+    """Review I1: candidate, a failing rerun, then Accept: no failure note."""
+    from glitnir.service.static_export import SavedNotebook
+
+    answers = iter(["decide", "refuse"])
+
+    def decide(request, cancel):
+        if next(answers) == "refuse":
+            raise ValueError(_REFUSAL)
+        return _outcome()
+
+    service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        key = _run(service)
+        _run(service)
+        assert _card(service)["status"] == "candidate"
+        served = service.decision_candidate(key)
+        lines = TEXT.split("\n")
+        accepted = "\n".join([*lines[:END_LINE], served["block"], *lines[END_LINE:]])
+        service.path.write_text(accepted)
+        live = _card(service)
+    finally:
+        service.close()
+    reopened = _reopened(service)
+    with SavedNotebook(service.path) as notebook:
+        [recorded] = notebook.snapshot()["decisions"]
+    assert set(_saved_failures(service.path)) == {key}, "the failure stays saved"
+    for card in (live, reopened, recorded):
+        assert (card["status"], card["failure"]) == ("accepted", None)

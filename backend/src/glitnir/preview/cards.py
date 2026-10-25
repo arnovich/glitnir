@@ -314,7 +314,7 @@ def with_saved_decisions(
 
     Without `compare_environment` no fingerprint is taken, as for evidence. A
     saved failure is shown as `_shown_failure` says, behind any decision that
-    is not out of date.
+    is not out of date, and never on an accepted decision.
     """
     saved = saved_decisions(records)
     failures = saved_decision_failures(records)
@@ -340,7 +340,9 @@ def with_saved_decisions(
                 else {**verification, "axioms": list(verification["axioms"])}
             )
         failure = failures.get(card["key"])
-        if failure is not None:
+        # An accepted block is part of the notebook, judged by the project
+        # check: no later run's failure is news about it.
+        if failure is not None and card["status"] != "accepted":
             status = decision_failure_status(
                 failure,
                 text,
