@@ -124,6 +124,11 @@ def test_parse_keeps_exact_options_as_json(fake_asgard) -> None:
         ("iterate", "(steps := 3)", "Iterate needs an initial (state := …)."),
         ("iterate", "(state := 1) (steps := 0)", "Steps must be 1–100000."),
         (
+            "iterate",
+            "(state := 1, 0) (names := y, y)",
+            "State names must be distinct; 'y' is given twice.",
+        ),
+        (
             "plot",
             "",
             "Unknown evidence 'plot'; use simulate, iterate or sample.",
