@@ -1799,7 +1799,9 @@ def test_provider_failures_become_the_card_run_error(
 def _asking_lean_every_time(monkeypatch):
     """Run Lean for every run, as separate previews would, keeping no output.
 
-    For tests whose stand-in Lean answers the same input differently.
+    For tests whose stand-in Lean answers the same input differently: they
+    stand for runs in previews opened one after another, or for a project
+    rebuilt between runs, where Lean's output is not kept from one to the next.
     """
     monkeypatch.setattr(source_preview, "_emission_key", lambda *args: None)
 
@@ -3838,3 +3840,126 @@ def test_remembered_output_is_bounded_by_count_and_size():
     )
     kept.keep(("e",), "12345678901")  # larger than the whole bound: not kept
     assert kept.get(("e",)) is None and kept.get(("d",)) == "123456789"
+
+
+def test_output_is_not_kept_when_the_environment_changed_during_the_run(
+    tmp_path, monkeypatch, patch_fingerprint
+):
+    """Lean may have loaded the other build: its output describes neither for sure.
+
+    The run's own result is handled as before; only the next run asks Lean again.
+    """
+    current = {"sha256": FP, "packages": []}
+
+    def run(source, **options):
+        lean.append(options)
+        current["sha256"] = "e" * 64  # rebuilt while Lean ran
+        return {"payload": '{"x": 1}'}
+
+    lean: list = []
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    patch_fingerprint(lambda *args: dict(current))
+    try:
+        first = _rerun(service, EVIDENCE_TEXT)
+        current["sha256"] = FP  # and back
+        _rerun(service, EVIDENCE_TEXT)
+    finally:
+        service.close()
+    assert first["run_error"] is None
+    assert len(lean) == 2
+
+
+def test_output_kept_before_an_environment_change_is_used_after_it_is_undone(
+    tmp_path, monkeypatch, patch_fingerprint
+):
+    current = {"sha256": FP, "packages": []}
+    service, lean = _evidence_service(tmp_path, monkeypatch)
+    patch_fingerprint(lambda *args: dict(current))
+    try:
+        _rerun(service, EVIDENCE_TEXT)
+        current["sha256"] = "e" * 64
+        _rerun(service, EVIDENCE_TEXT)
+        current["sha256"] = FP
+        card = _rerun(service, EVIDENCE_TEXT)
+    finally:
+        service.close()
+    assert len(_lean_calls(lean)) == 2
+    assert card["status"] == "current"
+
+
+def _key_parts(**changes):
+    """The arguments of `_emission_key` for a demo job, with `changes`."""
+    from glitnir.service.preview import _EvidenceJob
+
+    parts = {
+        "text": EVIDENCE_TEXT,
+        "line": 4,
+        "imports": ("Demo.Evidence",),
+        "preamble": "open Demo",
+        "marker": "demoEvidence:",
+        "command": "#demo_evidence M",
+        "environment": {"sha256": FP},
+        **changes,
+    }
+    job = _EvidenceJob(
+        text=parts["text"],
+        sha256=hashlib.sha256(parts["text"].encode()).hexdigest(),
+        line=parts["line"],
+        key="k",
+        keep=frozenset({"k"}),
+        provider=_evidence_provider(),
+        request=None,
+    )
+    return (
+        job,
+        parts["imports"],
+        parts["preamble"],
+        parts["marker"],
+        parts["command"],
+        parts["environment"],
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"imports": ("Demo.Evidence", "Demo.More")},
+        {"preamble": "open Demo Other"},
+        {"marker": "otherEvidence:"},
+        {"command": "#demo_evidence N"},
+        {"line": 5},
+        {"text": EVIDENCE_TEXT.replace("def M := 1", "def M := 2")},
+        {"text": "module\n" + EVIDENCE_TEXT, "line": 5},
+        {"environment": {"sha256": "e" * 64}},
+    ],
+)
+def test_everything_lean_is_given_is_part_of_the_key(changes):
+    from glitnir.service.preview import _emission_key
+
+    assert _emission_key(*_key_parts(**changes)) != _emission_key(*_key_parts())
+
+
+def test_the_header_below_a_directive_is_part_of_the_key():
+    """Lake's setup reads the whole header, even lines after the directive."""
+    from glitnir.service.preview import _emission_key
+
+    text = "-- @evidence simulate M (h := 1/100)\nimport Demo.Evidence\n"
+    other = "-- @evidence simulate M (h := 1/100)\nmodule\nimport Demo.Evidence\n"
+    first = _emission_key(*_key_parts(text=text, line=1))
+    assert first is not None
+    assert first != _emission_key(*_key_parts(text=other, line=1))
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {"sha256": FP, "unknown": True},
+        {"sha256": ""},
+        {"sha256": "not a digest"},
+        {},
+    ],
+)
+def test_no_key_for_an_unknown_or_malformed_environment(environment):
+    from glitnir.service.preview import _emission_key
+
+    assert _emission_key(*_key_parts(environment=environment)) is None

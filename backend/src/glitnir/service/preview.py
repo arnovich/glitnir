@@ -16,7 +16,11 @@ from typing import Any, Callable
 from glitnir.compute.client import check_remote, from_environment
 from glitnir.lean.awake import awake
 from glitnir.lean.digest import fingerprint_ok
-from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
+from glitnir.lean.fingerprint import (
+    environment_fingerprint,
+    header_words,
+    unknown_git_note,
+)
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -231,9 +235,13 @@ class _Emissions:
     without running Lean again, and a mistake only `compute` can see, such as
     a port count that does not match the circuit, is reported in seconds.
 
-    In memory only, at most `entries` outputs and `size` characters together,
-    the oldest dropped first; one larger than `size` is not kept. Not
-    thread-safe: the service holds `_state_lock` around it.
+    Output is kept only when the environment was the same before and after
+    the run, and whatever Lean printed is kept, even text that is not JSON: it
+    would print the same again, and the rerun reports it the same way.
+
+    In memory only, at most `entries` outputs and `size` characters together
+    (not bytes), the oldest dropped first; one larger than `size` is not kept.
+    Not thread-safe: the service holds `_state_lock` around it.
     """
 
     def __init__(
@@ -274,7 +282,8 @@ def _emission_key(
 
     None when the environment is unknown (its digest is random) or the
     provider gave something other than text, which the run itself reports.
-    Lines below the directive are not part of it: Lean never sees them.
+    Lines below the directive are not part of it: Lean never sees them. The
+    header's words are, wherever the header is: Lake's setup reads them.
     """
     fingerprint = environment.get("sha256")
     if environment.get("unknown") or not fingerprint_ok(fingerprint):
@@ -289,6 +298,7 @@ def _emission_key(
         command,
         str(job.line),
         evidence_prefix_sha256(job.text, job.line - 1),
+        json.dumps(header_words(job.text)),
         str(fingerprint),
     )
 
@@ -1457,8 +1467,7 @@ class SourcePreviewService:
                 environment_sha256=None if environment.get("unknown") else fingerprint,
             )
             if key is not None and isinstance(result.get("payload"), str):
-                with self._state_lock:
-                    self._emissions.keep(key, result["payload"])
+                self._keep_emission(key, result["payload"], job, imports, environment)
         if "payload" not in result:
             if result.get("timed_out") is True:
                 limit = f"{check_seconds():g}"
@@ -1514,6 +1523,27 @@ class SourcePreviewService:
                 return f"Evidence could not be saved: {failure}.", None
         # Saved, but under a fingerprint that matches nothing: say why.
         return unknown_git_note(environment), None
+
+    def _keep_emission(
+        self,
+        key: tuple[str, ...],
+        payload: str,
+        job: _EvidenceJob,
+        imports: tuple[str, ...],
+        environment: dict[str, Any],
+    ) -> None:
+        """Keep Lean's output if the environment did not change during the run.
+
+        A build changed while Lean ran may have been loaded by it, so its
+        output would describe neither environment for sure.
+        """
+        after = environment_fingerprint(
+            self.path, job.text, imports, environment.get("packages")
+        )
+        if after.get("unknown") or after.get("sha256") != environment["sha256"]:
+            return
+        with self._state_lock:
+            self._emissions.keep(key, payload)
 
     def _save_failure(
         self, job: _EvidenceJob, environment: dict[str, Any], kind: str, message: str
