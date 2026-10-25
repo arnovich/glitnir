@@ -2278,3 +2278,33 @@ def test_records_with_decision_failures_keep_what_older_readers_need(tmp_path):
     ]
     assert set(saved["decision_failures"]) == {DECISION_KEY, OTHER_DECISION_KEY}
     assert "decision_failures" in check_records._RESULT_SECTIONS
+
+
+def test_a_decision_failure_save_never_drops_the_evidence_failures(monkeypatch):
+    """Review I2: it would fit once the evidence failures were dropped: refused.
+
+    `_fitted` drops `evidence_failures` before `decision_failures`, so only the
+    guard against losing the other section stops this save.
+    """
+    keys = [evidence_key(f"-- @evidence simulate N{i}", 0) for i in range(20)]
+    previous = None
+    for key in keys:
+        previous = with_evidence_failure(
+            previous, key, _failure(message="x" * 1900), keys
+        )
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 50)
+    with pytest.raises(ValueError) as raised:
+        with_decision_failure(
+            previous, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+        )
+    assert str(raised.value) == (
+        "Saved decision failures would make the records file too large; "
+        "the failure is shown but not saved."
+    )
+    # A short one that fits beside them is saved, and keeps them.
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 1000)
+    records = with_decision_failure(
+        previous, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+    )
+    assert set(saved_evidence_failures(records)) == set(keys)
+    assert set(saved_decision_failures(records)) == {DECISION_KEY}
