@@ -12,10 +12,11 @@ from glitnir.notebook.directives import (
     decision_directives,
     decision_key,
 )
-from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import decision_cards
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
 from glitnir.providers.outcomes import checked_decision
+from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64
@@ -314,7 +315,7 @@ def test_snapshot_lists_decisions_without_processes_or_deciding(
 ):
     import subprocess
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("snapshot executed a process")
@@ -344,7 +345,7 @@ def test_snapshot_lists_decisions_without_processes_or_deciding(
 
 
 def test_a_decision_directive_alone_loads_providers(tmp_path: Path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     loads: list[int] = []
     monkeypatch.setattr(
@@ -554,7 +555,7 @@ def _saved_decision(path: Path, verification=None, **changes):
 
 
 def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def fingerprint(*args):
         if fingerprints is not None:
@@ -562,7 +563,8 @@ def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
         return {"sha256": FP}
 
     monkeypatch.setattr(source_preview, "load_providers", lambda: _loaded(_provider()))
-    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(module, "environment_fingerprint", fingerprint)
     path = tmp_path / "A.lean"
     path.write_text(DECIDING)
     return path, SourcePreviewService(path)
@@ -627,8 +629,9 @@ def test_accepting_and_editing_around_a_decision(tmp_path, monkeypatch):
     assert _status(service) == "stale"
 
 
-def test_a_failing_fingerprint_shows_saved_decisions_as_stale(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+def test_a_failing_fingerprint_shows_saved_decisions_as_stale(
+    tmp_path, monkeypatch, patch_fingerprint
+):
 
     path, service = _decision_snapshot(tmp_path, monkeypatch)
     _saved_decision(path)
@@ -636,7 +639,7 @@ def test_a_failing_fingerprint_shows_saved_decisions_as_stale(tmp_path, monkeypa
     def boom(*args):
         raise RuntimeError("git exploded")
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", boom)
+    patch_fingerprint(boom)
     assert _status(service) == "stale"
 
 

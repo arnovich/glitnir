@@ -3,9 +3,7 @@
 import hashlib
 import json
 import logging
-import os
 import secrets
-import stat
 import tempfile
 import threading
 import time
@@ -17,7 +15,6 @@ from typing import Any, Callable
 from glitnir.compute.client import check_remote, from_environment
 from glitnir.lean.awake import awake
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
-from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -27,7 +24,6 @@ from glitnir.lean.project_checking import (
 )
 from glitnir.lean.project_inspection import inspect_project, lean_support
 from glitnir.lean.project_snapshot import (
-    SLOT_BUSY,
     SLOT_WAIT_TIMED_OUT,
     SnapshotError,
 )
@@ -40,13 +36,11 @@ from glitnir.lean.provider_lean import (
 from glitnir.notebook.check_records import (
     MAX_MESSAGE,
     MAX_TYPE,
-    claim_views,
     decision_prefix_sha256,
     decision_status,
     evidence_prefix_sha256,
     failure_message,
     load_records,
-    non_claim_views,
     records_from_check,
     save_records,
     saved_decisions,
@@ -62,19 +56,13 @@ from glitnir.notebook.directives import (
     decision_directives,
     evidence_directives,
     starts_command,
-    view_directives,
     view_keys,
 )
 from glitnir.notebook.document import (
-    CellKind,
     NotebookError,
-    parse_notebook,
-    split_lines,
 )
-from glitnir.notebook.proof_steps import ProofSteps
 from glitnir.preview import assets
 from glitnir.preview.cards import (
-    Fingerprint,
     decision_cards,
     decision_request,
     environment_digest,
@@ -82,20 +70,25 @@ from glitnir.preview.cards import (
     evidence_request,
     provider_failure,
     provider_imports,
-    unavailable_words,
-    view_cards,
     view_provider_hash,
-    with_runs,
-    with_saved_decisions,
-    with_saved_evidence,
 )
 from glitnir.preview.linked import (
-    LEAN_NAME,
-    MAX_SOURCE_BYTES,
     project_root,
     read_linked_notebook,
-    sibling_references,
     unbuilt_sibling_imports,
+)
+from glitnir.preview.snapshot import (
+    Fingerprint,
+    Fingerprints,
+    PreviewState,
+    build_snapshot,
+    cells,
+    cut_short,
+    expected_theorem,
+    indexed_cells,
+    prose,
+    read_source,
+    uncompared,
 )
 from glitnir.providers import (
     DecisionProvider,
@@ -111,14 +104,9 @@ from glitnir.providers.outcomes import (
     checked_drawing,
     checked_evidence,
 )
+from glitnir.service.proof_steps import ProofSteps
 
 _LOG = logging.getLogger(__name__)
-
-NOTICE = (
-    "Saved-source preview. Check this file explicitly "
-    "to observe its compiled propositions."
-)
-
 
 MAX_CACHED_VIEWS = 64
 RUN_BUSY = "A provider run is already in progress."
@@ -160,47 +148,6 @@ NOTHING_CHECKING = "No check is running."
 INSPECTION_CANCELLED = "Project inspection cancelled."
 
 
-def _source_cell(start: int, end: int, lines: list[str]) -> dict[str, Any]:
-    return {
-        "kind": "source",
-        "start": start,
-        "end": end,
-        "text": "".join(lines[start - 1 : end]),
-    }
-
-
-def _split_at_claims(
-    cells: list[dict[str, Any]], claims: list[dict[str, Any]], lines: list[str]
-) -> list[dict[str, Any]]:
-    """Give each claim's lines their own source cell, keeping all text."""
-    result: list[dict[str, Any]] = []
-    for cell in cells:
-        if cell["kind"] != "source":
-            result.append(cell)
-            continue
-        cursor = cell["start"]
-        for claim in claims:
-            first, last = claim["start_line"], claim["end_line"]
-            if first < cursor or last > cell["end"]:
-                continue
-            if first > cursor:
-                result.append(_source_cell(cursor, first - 1, lines))
-            result.append({**_source_cell(first, last, lines), "claim": claim["name"]})
-            cursor = last + 1
-        if cursor <= cell["end"]:
-            result.append(_source_cell(cursor, cell["end"], lines))
-    return result
-
-
-def _cut_short(message: str) -> bool:
-    """Whether a check stopped before Lean said anything about the notebook."""
-    return (
-        message.rstrip().endswith("cancelled.")
-        or message.startswith(SLOT_BUSY)
-        or message.startswith(SLOT_WAIT_TIMED_OUT)
-    )
-
-
 def _timed_out(failure: dict[str, Any]) -> bool:
     """Whether a view run failed by reaching its time limit.
 
@@ -211,176 +158,6 @@ def _timed_out(failure: dict[str, Any]) -> bool:
     return message.endswith("timed out.") and not message.startswith(
         SLOT_WAIT_TIMED_OUT
     )
-
-
-def _failed_fresh_check(observation: dict[str, Any] | None, sha256: str) -> bool:
-    """Whether the latest check of this exact text was unavailable, not cut short."""
-    if observation is None or observation.get("status") != "unavailable":
-        return False
-    if observation.get("source_sha256") != sha256:
-        return False
-    return not _cut_short(str(observation.get("message") or ""))
-
-
-def _withheld(records: dict[str, Any] | None, sha256: str) -> dict[str, Any] | None:
-    """Return where the saved check stopped, flagged stale for other text."""
-    withheld = records.get("withheld") if records else None
-    if not isinstance(withheld, dict):
-        return None
-    if records is not None and records.get("source_sha256") != sha256:
-        return {**withheld, "stale": True}
-    return withheld
-
-
-def _module_link(directory: Path, module: str) -> str | None:
-    """Return a module's `.lean` file relative to ``directory``, if it is there.
-
-    Only a regular file reached through no symbolic link counts; the link is
-    checked again when it is read (`read_linked_notebook`).
-    """
-    parts = module.split(".")
-    if not all(LEAN_NAME.fullmatch(part) for part in parts):
-        return None
-    relative = [*parts[:-1], parts[-1] + ".lean"]
-    current = directory
-    try:
-        for index, part in enumerate(relative):
-            current = current / part
-            mode = os.lstat(current).st_mode
-            last = index == len(relative) - 1
-            if not (stat.S_ISREG(mode) if last else stat.S_ISDIR(mode)):
-                return None
-    except OSError:
-        return None
-    return "/".join(relative)
-
-
-def _with_use_links(claims: list[dict[str, Any]], notebook: Path) -> None:
-    """Link each use of another notebook's claim to that notebook, if readable.
-
-    The link is relative to ``notebook``, as `/api/linked` reads it; a use
-    without one is shown as text.
-    """
-    links: dict[str, str | None] = {}
-    for claim in claims:
-        for use in claim.get("uses", []):
-            if use["in_notebook"]:
-                continue
-            if use["module"] not in links:
-                links[use["module"]] = _module_link(notebook.parent, use["module"])
-            link = links[use["module"]]
-            if link is not None:
-                use["path"] = link
-
-
-def _uncompared(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Mark saved results that were not compared with any environment.
-
-    Their status is the saved one; whether it is still current is unknown,
-    so claims have no currency and saved evidence, failures and decisions read
-    as uncompared rather than out of date.
-    """
-    for claim in snapshot["project_claims"]:
-        claim["current"] = None
-    for card in [*snapshot["evidence"], *snapshot["decisions"]]:
-        failure = card.get("failure")
-        if failure is not None:
-            failure["status"] = "uncompared"
-        if (
-            card.get("snapshot") is not None
-            or card.get("outcome") is not None
-            or failure is not None
-        ):
-            if card["status"] != "running":
-                card["status"] = "uncompared"
-    return snapshot
-
-
-def _lines(text: str) -> list[str]:
-    """Split `text` at LF only, keeping each line's ending."""
-    parts = text.split("\n")
-    lines = [line + "\n" for line in parts[:-1]]
-    if parts[-1]:
-        lines.append(parts[-1])
-    return lines
-
-
-def _confirmed_prose(lines: list[str], start: int, end: int) -> bool:
-    """Whether Lean reads ``lines[start:end]`` as one comment, as the parser does.
-
-    The source before the block must end outside any literal or comment, and
-    the block must hold no code: nothing before it opens a string the block
-    sits in, and the block's comment closes at its end. An unsettled scan
-    confirms nothing.
-    """
-    if not scan("".join(lines[:start])).settled:
-        return False
-    return code_tokens("".join(lines[start:end])) == []
-
-
-def _cells(text: str, lines: list[str]) -> list[dict[str, Any]]:
-    """Split saved text into prose and source cells, keeping all of it."""
-    cells: list[dict[str, Any]] = []
-    try:
-        notebook = parse_notebook(text)
-        cursor = 0
-        for cell in notebook.cells:
-            start, end = cell.start_line - 1, cell.end_line
-            # The line parser does not read strings. Keep the entire file raw
-            # unless Lean's own tokenizer reads each prose block as one.
-            if cell.kind is CellKind.PROSE and not _confirmed_prose(lines, start, end):
-                raise NotebookError("unconfirmed lexical boundary")
-            if start > cursor:
-                cells.append(
-                    {
-                        "kind": "source",
-                        "start": cursor + 1,
-                        "end": start,
-                        "text": "".join(lines[cursor:start]),
-                    }
-                )
-            prose = cell.kind is CellKind.PROSE
-            cells.append(
-                {
-                    "kind": "prose" if prose else "source",
-                    "start": start + 1,
-                    "end": end,
-                    "text": "".join(lines[start:end]),
-                    "markdown": (
-                        cell.text.strip().removeprefix("/-!").removesuffix("-/").strip()
-                        if prose
-                        else ""
-                    ),
-                }
-            )
-            cursor = end
-        if cursor < len(lines):
-            cells.append(
-                {
-                    "kind": "source",
-                    "start": cursor + 1,
-                    "end": len(lines),
-                    "text": "".join(lines[cursor:]),
-                }
-            )
-    except NotebookError:
-        cells = []
-    if not cells and text:
-        cells = [
-            {
-                "id": "cell-0",
-                "index": 0,
-                "kind": "source",
-                "start": 1,
-                "end": len(split_lines(text)),
-                "text": text,
-            }
-        ]
-    return cells
-
-
-def _prose(cells: list[dict[str, Any]]) -> list[str]:
-    return [cell["markdown"] for cell in cells if cell["kind"] == "prose"]
 
 
 def _sha256(text: str) -> str:
@@ -461,19 +238,6 @@ class _DecisionJob:
     keep: frozenset[str]
     provider: DecisionProvider
     request: DecisionRequest
-
-
-def _indexed_cells(text: str) -> list[dict[str, Any]]:
-    """Split `text` into cells numbered as the snapshot numbers them."""
-    cells = _cells(text, _lines(text))
-    for index, entry in enumerate(cells):
-        entry.update(id=f"cell-{index}", index=index)
-    return cells
-
-
-def _expected_theorem(name: str, status: str) -> str:
-    """Name the theorem a proven or refuted decision of `name` must declare."""
-    return name if status == "proven" else f"{name}_refuted"
 
 
 @dataclass(frozen=True)
@@ -573,46 +337,6 @@ def _inspection_summary(result: dict[str, Any], sha256: str) -> dict[str, Any]:
             "packages": resolution.get("packages", []),
         }
     return summary
-
-
-class _Fingerprints:
-    """The environment fingerprints of one saved text, each computed at most once.
-
-    Called with the modules loaded besides the notebook's (a provider's),
-    none by default, it returns the digest; `environment` returns the whole
-    fingerprint. A failure is remembered too, so every later call raises it
-    again without recomputing.
-    """
-
-    def __init__(self, path: Path, text: str) -> None:
-        """Keep the notebook and its saved text; nothing is computed yet."""
-        self._path, self._text = path, text
-        self._found: dict[tuple[str, ...], dict[str, Any]] = {}
-        self._failed: dict[tuple[str, ...], Exception] = {}
-
-    def environment(self, imports: tuple[str, ...] = ()) -> dict[str, Any]:
-        """Return the fingerprint taken with `imports`."""
-        if imports in self._failed:
-            raise self._failed[imports]
-        if imports not in self._found:
-            try:
-                if imports:
-                    # The dependencies' git states are the notebook's own.
-                    packages = self.environment().get("packages")
-                    found = environment_fingerprint(
-                        self._path, self._text, imports, packages
-                    )
-                else:
-                    found = environment_fingerprint(self._path, self._text)
-                self._found[imports] = found
-            except Exception as error:
-                self._failed[imports] = error
-                raise
-        return self._found[imports]
-
-    def __call__(self, imports: tuple[str, ...] = ()) -> str:
-        """Return the digest of the fingerprint taken with `imports`."""
-        return str(self.environment(imports)["sha256"])
 
 
 class SourcePreviewService:
@@ -860,7 +584,7 @@ class SourcePreviewService:
         message = str(result.get("message", ""))
         if (
             self._cancel.is_set()
-            or _cut_short(message)
+            or cut_short(message)
             or "Saved source changed" in message
         ):
             return result
@@ -994,12 +718,11 @@ class SourcePreviewService:
             self._inspection_lock.release()
 
     def _text(self) -> str:
-        text = read_regular(self.path, MAX_SOURCE_BYTES).decode("utf-8")
-        return text.replace("\r\n", "\n")
+        return read_source(self.path)
 
-    def _fingerprint(self, text: str) -> "_Fingerprints":
+    def _fingerprint(self, text: str) -> Fingerprints:
         """Compute each environment fingerprint of `text` at most once."""
-        return _Fingerprints(self.path, text)
+        return Fingerprints(self.path, text)
 
     def snapshot(self) -> dict[str, Any]:
         """Preserve all source, using prose cells only when parsing is lossless."""
@@ -1009,127 +732,23 @@ class SourcePreviewService:
     def _snapshot(
         self, text: str, fingerprint: Fingerprint, *, compare_environment: bool = True
     ) -> dict[str, Any]:
-        """Build the snapshot of `text`; `fingerprint` is called only if needed.
-
-        Without `compare_environment` (only `static_export.SavedNotebook`),
-        `fingerprint` is never called: saved results are compared with their
-        saved source only, as recorded.
-        """
-        lines = _lines(text)
-        cells = _cells(text, lines)
-        sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        """Build the snapshot of `text` from this service's current state."""
         with self._state_lock:
-            observation = self._check
-            inspection = self._inspection
-            running, run_errors = self._running, dict(self._run_errors)
-            saved_failures = frozenset(self._saved_failures)
-        records = load_records(self.path)
-        project_claims: list[dict[str, Any]] = []
-        project_non_claims: list[dict[str, int]] = []
-        if records is not None:
-            try:
-                # A failed fingerprint is '', which matches nothing: the saved
-                # results are then shown, all out of date.
-                environment = (
-                    environment_digest(fingerprint) if compare_environment else ""
-                )
-                project_claims = claim_views(
-                    text,
-                    records,
-                    environment,
-                    compare_environment=compare_environment,
-                )
-                project_non_claims = non_claim_views(
-                    text,
-                    records,
-                    environment,
-                    compare_environment=compare_environment,
-                )
-            except Exception:  # noqa: BLE001 - saved results must not break preview
-                project_claims, project_non_claims = [], []
-        _with_use_links(project_claims, self.path)
-        if _failed_fresh_check(observation, sha256):
-            # A fresh check of this exact file could not run, so no saved
-            # result for it can be what a fresh check would report.
-            for claim in project_claims:
-                claim["current"] = False
-            project_non_claims = []
-        if project_claims:
-            cells = _split_at_claims(cells, project_claims, lines)
-        for index, entry in enumerate(cells):
-            entry.update(id=f"cell-{index}", index=index)
-        views = view_directives(cells, text)
-        evidence = evidence_directives(cells, text)
-        decisions = decision_directives(cells, text)
-        # Providers load only when a directive needs them.
-        providers = self._providers() if views or evidence or decisions else None
-        project = describe_project(self.path)
-        return {
-            "file": self.path.name,
-            "sha256": sha256,
-            "preview": {
-                "mode": "project",
-                "notice": NOTICE,
-                "check": observation,
-                "inspection": inspection,
-                "project": project,
-                "lean": lean_support(project),
-            },
-            "cells": cells,
-            "claims": [],
-            "project_claims": project_claims,
-            "project_non_claims": project_non_claims,
-            "project_withheld": _withheld(records, sha256),
-            "checking": [],
-            "check_errors": {},
-            "reading": False,
-            "views": [] if providers is None else view_cards(views, providers),
-            "evidence": (
-                []
-                if providers is None
-                else with_runs(
-                    with_saved_evidence(
-                        evidence_cards(evidence, providers),
-                        records,
-                        text,
-                        fingerprint,
-                        providers,
-                        compare_environment,
-                    ),
-                    running,
-                    run_errors,
-                    saved_failures,
-                )
-            ),
-            "decisions": (
-                []
-                if providers is None
-                else with_runs(
-                    with_saved_decisions(
-                        decision_cards(decisions, providers),
-                        records,
-                        text,
-                        fingerprint,
-                        compare_environment,
-                    ),
-                    running,
-                    run_errors,
-                )
-            ),
-            "directive_providers": {
-                "evidence": [] if providers is None else sorted(providers.evidence),
-                "decide": [] if providers is None else sorted(providers.decisions),
-            },
-            # Of those, the words that cannot run yet, with what is missing.
-            "directive_unavailable": {
-                "evidence": unavailable_words(providers, "evidence"),
-                "decide": unavailable_words(providers, "decide"),
-            },
-            "links": [],
-            "references": sibling_references(self.path),
-            "revisions": [],
-            "assets": assets.statuses(self.path, assets.references(_prose(cells))),
-        }
+            state = PreviewState(
+                check=self._check,
+                inspection=self._inspection,
+                running=self._running,
+                run_errors=dict(self._run_errors),
+                saved_failures=frozenset(self._saved_failures),
+            )
+        return build_snapshot(
+            self.path,
+            text,
+            fingerprint,
+            state,
+            self._providers,
+            compare_environment=compare_environment,
+        )
 
     def linked(self, link: str) -> dict[str, Any]:
         """Return a read-only snapshot of another notebook of this project.
@@ -1142,16 +761,19 @@ class SourcePreviewService:
             NotebookLinkError: See `read_linked_notebook`.
         """
         target, text = read_linked_notebook(self.path, link)
-        other = SourcePreviewService(target, providers=self._providers)
         # Saved results are compared with the environment only inside this
         # notebook's own project. A nested project would be fingerprinted
         # from its own manifest, running git outside this project on every
         # poll, so its results are shown as saved, not compared.
         compared = project_root(target) == project_root(self.path)
-        if compared:
-            snapshot = other._snapshot(text, other._fingerprint(text))
-        else:
-            snapshot = _uncompared(other._snapshot(text, lambda *_: ""))
+        other_fingerprint: Fingerprint = (
+            Fingerprints(target, text) if compared else (lambda *_: "")
+        )
+        snapshot = build_snapshot(
+            target, text, other_fingerprint, PreviewState(), self._providers
+        )
+        if not compared:
+            snapshot = uncompared(snapshot)
         snapshot["preview"]["linked"] = {
             "path": link,
             "file": target.name,
@@ -1165,8 +787,7 @@ class SourcePreviewService:
         Raises:
             assets.AssetError: See `assets.read`.
         """
-        text = self._text()
-        found = assets.references(_prose(_cells(text, _lines(text))))
+        found = assets.references(prose(cells(self._text())))
         return assets.read(self.path, found, reference, sha256)
 
     def view(self, cell: int, line: int) -> dict[str, Any]:
@@ -1632,7 +1253,7 @@ class SourcePreviewService:
         text = self._text()
         if _sha256(text) != sha256:
             raise SnapshotError(SOURCE_CHANGED)
-        directives = evidence_directives(_indexed_cells(text), text)
+        directives = evidence_directives(indexed_cells(text), text)
         directive = next((d for d in directives if d["line"] == line), None)
         if directive is None:
             raise SnapshotError(f"No evidence directive at line {line}.")
@@ -1947,7 +1568,7 @@ class SourcePreviewService:
                 saved outcome is not a current candidate.
         """
         text = self._text()
-        directives = decision_directives(_indexed_cells(text), text)
+        directives = decision_directives(indexed_cells(text), text)
         directive = next((d for d in directives if d["key"] == key), None)
         if directive is None:
             raise SnapshotError(NO_DECISION)
@@ -1979,7 +1600,7 @@ class SourcePreviewService:
         text = self._text()
         if _sha256(text) != sha256:
             raise SnapshotError(SOURCE_CHANGED)
-        directives = decision_directives(_indexed_cells(text), text)
+        directives = decision_directives(indexed_cells(text), text)
         directive = next((d for d in directives if d["line"] == line), None)
         if directive is None:
             raise SnapshotError(f"No decision directive at line {line}.")
@@ -2066,7 +1687,7 @@ class SourcePreviewService:
             return f"Provider {provider.name} returned an invalid decision: {failure}"
         verification: dict[str, Any] | None = None
         if outcome["status"] != "unknown":
-            expected = _expected_theorem(job.name, outcome["status"])
+            expected = expected_theorem(job.name, outcome["status"])
             if outcome["theorem"].split(".")[-1] != expected:
                 return (
                     f"The provider proposed `{outcome['theorem']}`, "

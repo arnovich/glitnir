@@ -3,6 +3,8 @@
 The Python backend for [Glitnir](https://github.com/arnovich/glitnir), a notebook
 format and VS Code extension for Lean. It renders notebooks and runs Lean checks
 for the extension. The package is `glitnir`, imported as `glitnir`.
+Its packages are layered from `glitnir.providers` and `glitnir.lean` up to
+`glitnir.service`; see DEVELOPMENT.md.
 
 Install it through the extension's **Glitnir: Set Up Environment** command, into a
 dedicated environment. The core wheel has no runtime dependencies. Views come

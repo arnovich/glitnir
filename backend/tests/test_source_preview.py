@@ -10,8 +10,10 @@ import pytest
 
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import TOOLCHAIN, supported_version
-from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import Providers
+from glitnir.service import preview as source_preview
+from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
 FP = "f" * 64
@@ -172,8 +174,8 @@ def test_inspection_is_explicit_serialized_and_cancelled(tmp_path, monkeypatch):
     """Polling never launches inspection; close and concurrent requests are safe."""
     import threading
 
-    from glitnir.notebook import source_preview
     from glitnir.notebook.document import NotebookError
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("example : True := True.intro\n")
@@ -226,7 +228,7 @@ def test_inspection_is_explicit_serialized_and_cancelled(tmp_path, monkeypatch):
 
 
 def test_a_failing_inspection_always_ends(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("example : True := True.intro\n")
@@ -250,8 +252,8 @@ def test_project_check_is_explicit_historical_and_cancelled(tmp_path, monkeypatc
     """Checks run once on request, retain source binding, and stop on disposal."""
     import threading
 
-    from glitnir.notebook import source_preview
     from glitnir.notebook.document import NotebookError
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
@@ -294,24 +296,24 @@ def test_project_check_is_explicit_historical_and_cancelled(tmp_path, monkeypatc
         service.check(after["sha256"])
 
 
-def test_a_check_saves_the_environment_it_compiled_in(tmp_path, monkeypatch):
+def test_a_check_saves_the_environment_it_compiled_in(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """The fingerprint is retaken once the check holds the Lean slot.
 
     The environment is A when the check is asked for, B while it compiles
     (it changed during the wait), then A again. Saved under A, the result
     would read as current although it was compiled in B.
     """
-    from glitnir.notebook import source_preview
     from glitnir.notebook.check_records import load_records
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("/-! # Title -/\ntheorem result : True := by\n  trivial\n")
     service = SourcePreviewService(path)
     first, second = "a" * 64, "b" * 64  # environments A and B
     environment = {"sha256": first}
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: dict(environment)
-    )
+    patch_fingerprint(lambda *a: dict(environment))
 
     def check(source, *, expected_sha256, cancel, progress, through_line, acquired):
         environment["sha256"] = second  # changed while the check waited
@@ -331,16 +333,15 @@ def test_a_check_saves_the_environment_it_compiled_in(tmp_path, monkeypatch):
     service.close()
 
 
-def test_stop_cancels_a_check_waiting_for_the_slot(tmp_path, monkeypatch):
+def test_stop_cancels_a_check_waiting_for_the_slot(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """A check waiting for another Lean run is stopped by Stop, not only close."""
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError, snapshot_slot
-    from glitnir.notebook import source_preview
 
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
-    )
+    patch_fingerprint(lambda *a: {"sha256": FP})
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
     service = SourcePreviewService(path)
@@ -379,7 +380,7 @@ def test_project_cli_reports_json_without_metadata(tmp_path, monkeypatch, capsys
     """Agents can check ordinary files through the same snapshot service."""
     import json
 
-    from glitnir.notebook import __main__ as cli
+    from glitnir.service import cli
 
     source = tmp_path / "A.lean"
     source.write_text("theorem t : True := True.intro\n")
@@ -403,7 +404,7 @@ def test_project_cli_reports_json_without_metadata(tmp_path, monkeypatch, capsys
 
 def test_project_cli_flags_withheld_results(tmp_path, monkeypatch, capsys):
     """A partial check is not a complete success."""
-    from glitnir.notebook import __main__ as cli
+    from glitnir.service import cli
 
     path = tmp_path / "A.lean"
     path.write_text("theorem a : True := True.intro\n")
@@ -421,7 +422,7 @@ def test_project_cli_flags_withheld_results(tmp_path, monkeypatch, capsys):
 
 def test_project_cli_has_no_write_flag(tmp_path):
     """Checking never writes, so there is no flag to ask it not to."""
-    from glitnir.notebook import __main__ as cli
+    from glitnir.service import cli
 
     with pytest.raises(SystemExit) as raised:
         cli.main(["check", str(tmp_path / "A.lean"), "--no-write"])
@@ -431,7 +432,7 @@ def test_project_cli_has_no_write_flag(tmp_path):
 @pytest.mark.parametrize("failure", ["startup", "worker"])
 def test_failed_project_worker_has_terminal_state(tmp_path, monkeypatch, failure):
     """Unexpected worker errors must not leave all controls disabled forever."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
@@ -459,7 +460,7 @@ def test_close_waits_for_worker_start(tmp_path, monkeypatch):
     """Closing a preview cannot join a worker before its start has completed."""
     import threading
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     real_thread = threading.Thread
     starting, release, closing, closed = (threading.Event() for _ in range(4))
@@ -535,7 +536,7 @@ def test_check_saves_records_and_shows_claim_cells(tmp_path, monkeypatch):
     """After a check, the claim's lines become a claim cell with a current result."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text(
@@ -566,7 +567,7 @@ def test_checked_examples_show_their_statement_and_non_claims(tmp_path, monkeypa
     """An example claim carries its checked statement; others are marked."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("example : True = True := rfl\nexample : Nat := 3\n")
@@ -603,7 +604,7 @@ def test_checked_examples_show_their_statement_and_non_claims(tmp_path, monkeypa
 
 def test_preview_survives_a_corrupt_sidecar(tmp_path):
     """A broken .glitnir.json shows no claims and does not fail the preview."""
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
@@ -621,7 +622,7 @@ def test_edit_after_check_marks_the_claim_stale(tmp_path, monkeypatch):
     """Changing Lean above a saved claim keeps its card but marks it out of date."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -639,14 +640,16 @@ def test_edit_after_check_marks_the_claim_stale(tmp_path, monkeypatch):
     assert claim["current"] is False
 
 
-def test_snapshot_skips_the_fingerprint_without_a_sidecar(tmp_path, monkeypatch):
+def test_snapshot_skips_the_fingerprint_without_a_sidecar(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """Previews of unchecked files never pay for environment fingerprinting."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def boom(*args, **kwargs):
         raise AssertionError("fingerprint computed without records")
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", boom)
+    patch_fingerprint(boom)
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
     service = source_preview.SourcePreviewService(path)
@@ -657,11 +660,13 @@ def test_snapshot_skips_the_fingerprint_without_a_sidecar(tmp_path, monkeypatch)
     assert snapshot["project_claims"] == []
 
 
-def test_snapshot_survives_a_fingerprint_failure(tmp_path, monkeypatch):
+def test_snapshot_survives_a_fingerprint_failure(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """A failed fingerprint matches nothing: saved claims show, out of date."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -676,7 +681,7 @@ def test_snapshot_survives_a_fingerprint_failure(tmp_path, monkeypatch):
         def boom(*args, **kwargs):
             raise RuntimeError("git exploded")
 
-        monkeypatch.setattr(source_preview, "environment_fingerprint", boom)
+        patch_fingerprint(boom)
         snapshot = service.snapshot()
     finally:
         service.close()
@@ -688,7 +693,7 @@ def test_failed_save_keeps_the_check_result(tmp_path, monkeypatch):
     """A read-only directory must not turn a successful check into unavailable."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -717,7 +722,7 @@ def test_a_check_too_large_to_save_with_saved_evidence_keeps_everything(
     """The records file is left as it was, and the check says why."""
     import hashlib
 
-    from glitnir.notebook import check_records, source_preview
+    from glitnir.notebook import check_records
     from glitnir.notebook.check_records import (
         RESULTS_TOO_LARGE,
         _serialised,
@@ -726,6 +731,7 @@ def test_a_check_too_large_to_save_with_saved_evidence_keeps_everything(
         save_records,
         with_evidence,
     )
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -766,7 +772,7 @@ def test_a_check_too_large_to_save_with_saved_evidence_keeps_everything(
 
 def test_changed_file_after_check_saves_nothing(tmp_path, monkeypatch):
     """Records are written only when the file still matches the requested hash."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -786,7 +792,7 @@ def _saved_then(tmp_path, monkeypatch, later):
     """Save a checked claim, then run a second check returning ``later``."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -860,7 +866,7 @@ def test_withheld_from_an_older_file_is_marked_stale(tmp_path, monkeypatch):
     """A stop line recorded for other text still shows, flagged as from then."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("def x : Nat := 1\ntheorem result : True := by\n  trivial\n")
@@ -884,7 +890,7 @@ def test_project_snapshot_lists_sibling_notebooks(tmp_path):
     """Prose links open sibling notebooks; odd names and links are skipped."""
     import os
 
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     path = tmp_path / "Main.lean"
     path.write_text("theorem t : True := True.intro\n")
@@ -920,7 +926,7 @@ def test_unbuilt_sibling_import_is_explained(tmp_path, monkeypatch):
 
 
 def _unavailable_message(tmp_path, path, monkeypatch, text):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
     monkeypatch.setattr(
@@ -1016,7 +1022,7 @@ def _drawn(service, cell: int, line: int) -> dict:
 
 
 def _view_service(tmp_path: Path, monkeypatch, text=VIEW_TEXT, errors=None):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     monkeypatch.setattr(
         source_preview,
@@ -1053,7 +1059,7 @@ def test_view_directives_are_listed_without_processes(
 
 
 def test_no_directives_load_no_providers(tmp_path: Path, monkeypatch) -> None:
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def forbidden():
         pytest.fail("providers were loaded")
@@ -1114,17 +1120,15 @@ def test_view_cache_key_includes_the_environment_fingerprint(
     tmp_path: Path,
     monkeypatch,
     draw_each_alone,
+    patch_fingerprint,
 ) -> None:
-    from glitnir.notebook import source_preview
 
     calls = []
     draw_each_alone(lambda path, **options: calls.append(options) or {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     fingerprint = {"sha256": "one"}
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a, **k: fingerprint
-    )
+    patch_fingerprint(lambda *a, **k: fingerprint)
     _drawn(service, cell, 4)
     _drawn(service, cell, 4)
     assert len(calls) == 1
@@ -1139,7 +1143,7 @@ def test_a_view_request_never_waits_for_lean(
     """Drawing runs in a worker; its job is polled until it ends."""
     import threading
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     started, finish = threading.Event(), threading.Event()
     calls = []
@@ -1189,11 +1193,9 @@ def test_a_view_request_never_waits_for_lean(
 
 
 def test_polling_a_job_reads_no_notebook(
-    tmp_path: Path, monkeypatch, draw_each_alone
+    tmp_path: Path, monkeypatch, draw_each_alone, patch_fingerprint
 ) -> None:
     """A poll is cheap: no saved file, snapshot or fingerprint."""
-    from glitnir.notebook import source_preview
-
     draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
@@ -1204,7 +1206,7 @@ def test_polling_a_job_reads_no_notebook(
         pytest.fail("a poll read the notebook")
 
     monkeypatch.setattr(service, "_text", forbidden)
-    monkeypatch.setattr(source_preview, "environment_fingerprint", forbidden)
+    patch_fingerprint(forbidden)
     assert service.view_job(job) == {"svg": "<svg/>"}
 
 
@@ -1212,23 +1214,23 @@ def test_an_unknown_environment_draws_once_and_says_so(
     tmp_path: Path,
     monkeypatch,
     draw_each_alone,
+    patch_fingerprint,
 ) -> None:
     """A random unknown-state value must not make every poll a new drawing."""
     import secrets
 
-    from glitnir.notebook import source_preview
-
     renders = []
     draw_each_alone(lambda path, **o: renders.append(1) or {"svg": "<svg/>"})
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *a: {
-            "sha256": secrets.token_hex(32),  # matches nothing, ever
-            "stable_sha256": "stable",
-            "unknown": True,
-        },
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module,
+            "environment_fingerprint",
+            lambda *a: {
+                "sha256": secrets.token_hex(32),  # matches nothing, ever
+                "stable_sha256": "stable",
+                "unknown": True,
+            },
+        )
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     answers = [service.view(cell, 4)]
@@ -1249,11 +1251,11 @@ def test_a_known_environment_needs_no_label(
 
 
 def test_a_view_is_keyed_by_the_providers_modules(
-    tmp_path: Path, monkeypatch, draw_each_alone
+    tmp_path: Path, monkeypatch, draw_each_alone, patch_fingerprint
 ) -> None:
     """The provider's modules are part of the drawing's environment."""
-    from glitnir.notebook import source_preview
     from glitnir.providers import ViewProvider
+    from glitnir.service import preview as source_preview
 
     provider = ViewProvider(
         "demo", frozenset({"circuit"}), ("Demo.View",), "", "m:", lambda *a: ""
@@ -1269,7 +1271,7 @@ def test_a_view_is_keyed_by_the_providers_modules(
         asked.append(imports)
         return {"sha256": f"env-{len(imports)}", "packages": []}
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    patch_fingerprint(fingerprint)
     keys = []
     draw_each_alone(
         lambda path, **o: keys.extend(j.key for j in service._view_run.jobs.values())
@@ -1290,7 +1292,7 @@ def test_stop_cancels_only_that_cards_view(
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     started = threading.Event()
     calls = []
@@ -1354,7 +1356,7 @@ def test_close_stops_a_view_being_drawn(
 ) -> None:
     import threading
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     started = threading.Event()
 
@@ -1454,7 +1456,7 @@ def test_view_names_must_be_lean_identifiers(tmp_path: Path, monkeypatch) -> Non
 def test_providers_load_once_per_service(
     tmp_path: Path, monkeypatch, draw_each_alone
 ) -> None:
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     loads = []
     path = tmp_path / "A.lean"
@@ -1475,28 +1477,22 @@ def test_providers_load_once_per_service(
 
 
 def test_view_reads_and_fingerprints_the_file_once(
-    tmp_path: Path, monkeypatch, draw_each_alone
+    tmp_path: Path, monkeypatch, draw_each_alone, patch_fingerprint
 ) -> None:
-    from glitnir.notebook import source_preview
-
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     reads, fingerprints = [], []
-    read = source_preview.read_regular
+    read = preview_snapshot.read_regular
 
     def counted_read(path, limit):
         if path == service.path:
             reads.append(path)
         return read(path, limit)
 
-    monkeypatch.setattr(source_preview, "read_regular", counted_read)
-    monkeypatch.setattr(source_preview, "load_records", lambda path: {"x": 1})
-    monkeypatch.setattr(source_preview, "claim_views", lambda *a: [])
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *a: fingerprints.append(1) or {"sha256": "e"},
-    )
+    monkeypatch.setattr(preview_snapshot, "read_regular", counted_read)
+    monkeypatch.setattr(preview_snapshot, "load_records", lambda path: {"x": 1})
+    monkeypatch.setattr(preview_snapshot, "claim_views", lambda *a: [])
+    patch_fingerprint(lambda *a: fingerprints.append(1) or {"sha256": "e"})
     draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service.view(cell, 4)  # starts the drawing
     service._view_worker.join(timeout=10)
@@ -1611,7 +1607,7 @@ def _evidence_provider(calls=None, **changes):
 
 def _evidence_service(tmp_path, monkeypatch, provider=None, runner=None):
     """A notebook with two evidence directives and a stand-in Lean runner."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     calls: list = []
     provider = provider or _evidence_provider(calls)
@@ -1625,9 +1621,10 @@ def _evidence_service(tmp_path, monkeypatch, provider=None, runner=None):
         "load_providers",
         lambda: Providers({}, {"simulate": provider}, {}, {}),
     )
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module, "environment_fingerprint", lambda *a: {"sha256": FP}
+        )
     monkeypatch.setattr(source_preview, "run_provider_lean", runner or run)
     path = tmp_path / "A.lean"
     path.write_text(EVIDENCE_TEXT)
@@ -1666,14 +1663,12 @@ def _reopened(service, line=4):
 
 
 def test_an_evidence_run_waits_for_the_slot_and_counts_its_modules(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, patch_fingerprint
 ):
     """The run counts its provider's modules and waits for a busy slot.
 
     A card saved under that environment reads as current.
     """
-    from glitnir.notebook import source_preview
-
     service, calls = _evidence_service(tmp_path, monkeypatch)
     imports = service._providers().evidence["simulate"].imports
     assert imports, "the demo provider loads modules of its own"
@@ -1684,7 +1679,7 @@ def test_an_evidence_run_waits_for_the_slot_and_counts_its_modules(
         named = f"env-{'+'.join(extra)}".encode()
         return {"sha256": hashlib.sha256(named).hexdigest(), "packages": []}
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    patch_fingerprint(fingerprint)
     _run_evidence(service)
     [(_, options)] = [call for call in calls if call[0] == "lean"]
     assert options["wait"] is True
@@ -1878,7 +1873,7 @@ def test_one_run_at_a_time_shown_as_running(tmp_path, monkeypatch):
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError
-    from glitnir.notebook.source_preview import RUN_BUSY
+    from glitnir.service.preview import RUN_BUSY
 
     started, release = threading.Event(), threading.Event()
     outcomes = iter([{"error": "first failed"}, {"payload": "{}"}])
@@ -1913,7 +1908,7 @@ def test_one_run_at_a_time_shown_as_running(tmp_path, monkeypatch):
 
 def test_source_saved_during_the_run_is_not_saved(tmp_path, monkeypatch):
     from glitnir.notebook.check_records import records_path
-    from glitnir.notebook.source_preview import CHANGED_DURING_RUN
+    from glitnir.service.preview import CHANGED_DURING_RUN
 
     path = tmp_path / "A.lean"
 
@@ -1977,7 +1972,7 @@ def test_evidence_saves_wait_for_other_records_writes(tmp_path, monkeypatch):
 
 
 def test_a_check_keeps_evidence_saved_before_it(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     sha = _evidence_sha()
@@ -1995,7 +1990,7 @@ def test_a_check_keeps_evidence_saved_before_it(tmp_path, monkeypatch):
 def test_missing_provider_import_is_a_run_error_without_lean(tmp_path, monkeypatch):
     """Review Focus 4: the real runner refuses before the sandbox starts."""
     from glitnir.lean import provider_lean
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -2068,11 +2063,13 @@ _UNKNOWN_NOTE = (
 )
 
 
-def test_check_says_when_dependency_git_state_is_unknown(tmp_path, monkeypatch):
+def test_check_says_when_dependency_git_state_is_unknown(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """Results saved under an unknown git state say why they read out of date."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     path.write_text("theorem result : True := by\n  trivial\n")
@@ -2084,7 +2081,7 @@ def test_check_says_when_dependency_git_state_is_unknown(tmp_path, monkeypatch):
         phases.append(service._check["message"])
         return _UNKNOWN_GIT
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", fingerprint)
+    patch_fingerprint(fingerprint)
     monkeypatch.setattr(
         source_preview, "check_project", lambda *a, **k: _fake_result(sha)
     )
@@ -2098,15 +2095,14 @@ def test_check_says_when_dependency_git_state_is_unknown(tmp_path, monkeypatch):
     assert (tmp_path / "A.glitnir.json").is_file()
 
 
-def test_evidence_saved_under_unknown_git_state_explains_it(tmp_path, monkeypatch):
+def test_evidence_saved_under_unknown_git_state_explains_it(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """The evidence is saved; the card's run error says why it is out of date."""
-    from glitnir.notebook import source_preview
     from glitnir.notebook.check_records import load_records
 
     service, _ = _evidence_service(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: _UNKNOWN_GIT
-    )
+    patch_fingerprint(lambda *a: _UNKNOWN_GIT)
     try:
         key = _run_evidence(service)
         card = _card(service)
@@ -2122,7 +2118,7 @@ def test_a_check_through_a_claim_shows_later_claims_not_rechecked(
     """The preview asks for lines 1..N; later saved results stay, marked."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     text = "theorem a : True := trivial\ntheorem b : True := trivial\n"
@@ -2182,7 +2178,7 @@ def test_a_check_through_the_last_line_is_a_check_of_the_whole_file(
     """Nothing after the line: the request is dropped, not shown as partial."""
     import hashlib
 
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     path = tmp_path / "A.lean"
     text = "theorem a : True := trivial\ntheorem b : True := trivial\n"
@@ -2211,7 +2207,7 @@ def test_a_check_through_the_last_line_is_a_check_of_the_whole_file(
 def test_a_claim_cell_takes_in_a_continuation_of_its_command(tmp_path):
     """C1: a line continuing a saved claim's command joins its cell."""
     from glitnir.notebook.check_records import records_from_check, save_records
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     path = tmp_path / "A.lean"
     text = "def h : 1 = 1 := rfl\ntheorem foo : 1 = 1 := h\n"
@@ -2249,7 +2245,7 @@ def test_a_claim_cell_takes_in_a_continuation_of_its_command(tmp_path):
 def test_indented_claims_keep_their_own_cells(tmp_path):
     """N1: claims indented in a namespace are cells of their own, current."""
     from glitnir.notebook.check_records import records_from_check, save_records
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     path = tmp_path / "A.lean"
     text = (
@@ -2296,27 +2292,27 @@ def test_a_view_passes_its_environment_digest_to_the_renderer(
     unknown,
     expected,
     draw_each_alone,
+    patch_fingerprint,
 ) -> None:
-    from glitnir.notebook import source_preview
 
     calls = []
     draw_each_alone(lambda path, **options: calls.append(options) or {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *a, **k: {"sha256": "d" * 64, "unknown": unknown},
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module,
+            "environment_fingerprint",
+            lambda *a, **k: {"sha256": "d" * 64, "unknown": unknown},
+        )
     _drawn(service, cell, 4)
     assert calls[0]["environment_sha256"] == expected
 
 
 @pytest.mark.parametrize("unknown, expected", [(False, FP), (True, None)])
 def test_an_evidence_run_passes_its_environment_digest(
-    tmp_path, monkeypatch, unknown, expected
+    tmp_path, monkeypatch, unknown, expected, patch_fingerprint
 ):
-    from glitnir.notebook import source_preview
 
     seen = []
 
@@ -2325,11 +2321,7 @@ def test_an_evidence_run_passes_its_environment_digest(
         return {"payload": '{"x": 1}'}
 
     service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *a: {"sha256": FP, "unknown": unknown},
-    )
+    patch_fingerprint(lambda *a: {"sha256": FP, "unknown": unknown})
     _run_evidence(service)
     assert seen == [expected]
 
@@ -2346,21 +2338,20 @@ def _saving_view_service(
     text=VIEW_TEXT,
 ):
     """A view service with a fixed fingerprint and a counted, faked renderer."""
-    from glitnir.notebook import source_preview
-
     renders: list[dict] = []
     answer = {"svg": "<svg/>"} if drawing is None else drawing
     draw_each_alone(lambda path, **options: renders.append(options) or dict(answer))
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *a, **k: {
-            "sha256": FP,
-            "stable_sha256": FP,
-            "unknown": unknown,
-            "packages": [],
-        },
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module,
+            "environment_fingerprint",
+            lambda *a, **k: {
+                "sha256": FP,
+                "stable_sha256": FP,
+                "unknown": unknown,
+                "packages": [],
+            },
+        )
     return _view_service(tmp_path, monkeypatch, text), renders
 
 
@@ -2635,14 +2626,15 @@ class _HeldRuns:
 
 def _run_service(tmp_path, monkeypatch, runs, text=THREE_VIEWS, **options):
     """A view service drawing with `runs`, in a known environment."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     monkeypatch.setattr(source_preview, "render_project_views", runs)
-    monkeypatch.setattr(
-        source_preview,
-        "environment_fingerprint",
-        lambda *a, **k: {"sha256": FP, "stable_sha256": FP, "packages": []},
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module,
+            "environment_fingerprint",
+            lambda *a, **k: {"sha256": FP, "stable_sha256": FP, "packages": []},
+        )
     _view_service(tmp_path, monkeypatch, text)
     return SourcePreviewService(tmp_path / "A.lean", **options)
 
@@ -2761,7 +2753,7 @@ def test_directive_inside_a_command_is_drawn_alone(tmp_path, monkeypatch):
 
 def test_stop_drops_only_that_view(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SnapshotError
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     runs = _HeldRuns()
     service = _run_service(tmp_path, monkeypatch, runs)
@@ -2792,7 +2784,7 @@ def test_stop_drops_only_that_view(tmp_path, monkeypatch):
 
 
 def test_stopping_every_view_stops_the_run(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     runs = _HeldRuns()
     service = _run_service(tmp_path, monkeypatch, runs)
@@ -2897,8 +2889,8 @@ def test_a_failed_run_of_one_view_is_not_retried(tmp_path, monkeypatch):
 
 
 def test_views_of_another_provider_wait(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
     from glitnir.providers import ViewProvider
+    from glitnir.service import preview as source_preview
 
     graph = ViewProvider("graph", frozenset({"graph"}), (), "", "g:", lambda *a: "")
     runs = _HeldRuns()
@@ -2925,7 +2917,7 @@ def test_views_of_another_provider_wait(tmp_path, monkeypatch):
 
 
 def test_close_ends_every_view_of_the_run(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     runs = _HeldRuns()
     service = _run_service(tmp_path, monkeypatch, runs)
@@ -2963,7 +2955,7 @@ def test_a_failing_run_ends_every_view(tmp_path, monkeypatch):
 
 def test_a_run_draws_no_more_views_than_are_kept(tmp_path, monkeypatch):
     """Every answer of a run must outlast it, so a run is at most the cache size."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     monkeypatch.setattr(source_preview, "MAX_CACHED_VIEWS", 2)
     runs = _HeldRuns()
@@ -2991,13 +2983,14 @@ def _unsupported_service(tmp_path: Path, monkeypatch, toolchain: str | None):
     """A Lake notebook with every directive; each Lean runner fails the test."""
     import threading
 
-    from glitnir.notebook import proof_steps, source_preview
     from glitnir.providers import (
         DecisionProvider,
         DecisionRequest,
         EvidenceProvider,
         EvidenceRequest,
     )
+    from glitnir.service import preview as source_preview
+    from glitnir.service import proof_steps
 
     def forbidden(*args, **kwargs):
         pytest.fail("a refused request reached Lean, Lake or a provider")
@@ -3028,9 +3021,10 @@ def _unsupported_service(tmp_path: Path, monkeypatch, toolchain: str | None):
         {},
     )
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module, "environment_fingerprint", lambda *a: {"sha256": FP}
+        )
     for name in (
         "check_project",
         "check_candidate",
@@ -3250,8 +3244,8 @@ def test_failures_that_say_nothing_about_the_directive_are_not_saved(
 def test_a_setup_error_naming_a_local_path_is_never_saved(tmp_path, monkeypatch):
     """Lake's "build these modules" advice names the project root: not saved."""
     from glitnir.lean import provider_lean
-    from glitnir.notebook import source_preview
     from glitnir.notebook.check_records import records_path
+    from glitnir.service import preview as source_preview
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -3322,16 +3316,13 @@ def test_a_failure_naming_a_local_path_is_shown_but_never_saved(
     ],
 )
 def test_a_failure_in_an_unknown_environment_is_not_saved(
-    tmp_path, monkeypatch, environment
+    tmp_path, monkeypatch, environment, patch_fingerprint
 ):
-    from glitnir.notebook import source_preview
 
     service, _calls = _evidence_service(
         tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
     )
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: environment
-    )
+    patch_fingerprint(lambda *a: environment)
     try:
         _run_evidence(service)
         card = _card(service)
@@ -3357,7 +3348,7 @@ def test_a_failure_while_the_preview_closes_is_not_saved(tmp_path, monkeypatch):
 def test_a_refused_start_saves_nothing(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SnapshotError
     from glitnir.notebook.check_records import records_path
-    from glitnir.notebook.source_preview import RUN_BUSY
+    from glitnir.service.preview import RUN_BUSY
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     try:
@@ -3408,9 +3399,8 @@ def test_a_failure_that_cannot_be_saved_still_shows_its_own_error(
 
 
 def test_a_saved_failure_goes_out_of_date_with_the_text_above_or_the_environment(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, patch_fingerprint
 ):
-    from glitnir.notebook import source_preview
 
     service, _calls = _evidence_service(
         tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
@@ -3426,9 +3416,7 @@ def test_a_saved_failure_goes_out_of_date_with_the_text_above_or_the_environment
     card = _reopened(service)
     assert (card["status"], card["failure"]["status"]) == ("stale", "stale")
     service.path.write_text(EVIDENCE_TEXT)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "9" * 64}
-    )
+    patch_fingerprint(lambda *a: {"sha256": "9" * 64})
     card = _reopened(service)
     assert (card["status"], card["failure"]["status"]) == ("stale", "stale")
 
@@ -3459,9 +3447,8 @@ def test_a_failure_after_a_success_keeps_the_snapshot_and_a_success_clears_it(
 
 
 def test_an_out_of_date_failure_is_hidden_behind_a_current_snapshot(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, patch_fingerprint
 ):
-    from glitnir.notebook import source_preview
 
     outcomes = iter([{"payload": "{}"}, dict(_LEAN_ERROR)])
     service, _calls = _evidence_service(
@@ -3470,12 +3457,10 @@ def test_an_out_of_date_failure_is_hidden_behind_a_current_snapshot(
     other = {"sha256": "9" * 64}
     try:
         _run_evidence(service)  # current in FP
-        monkeypatch.setattr(source_preview, "environment_fingerprint", lambda *a: other)
+        patch_fingerprint(lambda *a: other)
         _run_evidence(service)  # fails in another environment
         in_other = _reopened(service)
-        monkeypatch.setattr(
-            source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
-        )
+        patch_fingerprint(lambda *a: {"sha256": FP})
         in_first = _reopened(service)
     finally:
         service.close()
@@ -3484,7 +3469,7 @@ def test_an_out_of_date_failure_is_hidden_behind_a_current_snapshot(
 
 
 def test_uncompared_results_mark_saved_failures_uncompared():
-    from glitnir.notebook.source_preview import _uncompared
+    from glitnir.preview.snapshot import uncompared as _uncompared
 
     failure = {"kind": "lean", "message": "m", "created": "c", "status": "stale"}
     card = {"status": "stale", "snapshot": None, "failure": dict(failure)}
@@ -3567,7 +3552,7 @@ def test_an_unsaved_failure_is_logged_without_its_message(
     secret = str(tmp_path / "private.csv")
     provider = _evidence_provider(compute=_raises(ValueError(f"Cannot read {secret}")))
     service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
-    caplog.set_level(logging.DEBUG, logger="glitnir.notebook.source_preview")
+    caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
     try:
         _run_evidence(service)
     finally:
@@ -3589,7 +3574,7 @@ def test_a_failure_that_cannot_be_written_is_logged_by_its_error_type(
         tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
     )
     records_path(service.path).write_text("not json")
-    caplog.set_level(logging.DEBUG, logger="glitnir.notebook.source_preview")
+    caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
     try:
         _run_evidence(service)
     finally:

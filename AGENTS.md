@@ -80,6 +80,7 @@ proposes a Lean block: the project kernel check is the proof authority, and the
 backend never writes the `.lean` file. The editor-applied **Accept**
 (`acceptDecision`, a `WorkspaceEdit` plus save, refused for a dirty or changed
 document) is the only path that writes Lean source.
+The backend is layered: `glitnir.providers` (interfaces and `outcomes`), `glitnir.lean` (the checker), `glitnir.compute` (remote execution), `glitnir.notebook` (document, directives, saved records), `glitnir.preview` (the renderer's view-model and assets; it serves and builds what the renderer shows and starts no thread or server, but the editor's `--export` writes the renderer bundle and snapshot fingerprints may run git) and `glitnir.service` (server, workers, CLI, gallery export). A module imports only from its own layer or below; `backend/tests/test_layering.py` enforces it, with `fingerprint.py`'s function-local `compute` import as the documented exception. `glitnir/notebook/__main__.py` is a shim onto `glitnir.service.cli` so `python -m glitnir.notebook` keeps working.
 
 Live Lean tests skip locally unless `GLITNIR_REQUIRE_PROJECT_INSPECTION=1` and
 `GLITNIR_TEST_PROOF_TRACE=1` are set with Lean 4.35.0 and a working sandbox; CI
@@ -120,7 +121,10 @@ To validate and publish a candidate:
    plugin wheel. Verify `SHA256SUMS` and the source, tag, version, backend and
    plugin bindings in `glitnir-candidate.json`. The plugin is released at the
    package version (bump `plugins/forseti/pyproject.toml` with `package.json`),
-   and its `glitnir` requirement must admit the released backend.
+   and its `glitnir` requirement must admit the released backend. The first
+   release after the package layering of 2026-10-23 must raise that floor to its
+   own version: the plugin imports `glitnir.providers.outcomes`, which earlier
+   backends lack.
 3. Install those exact assets with a fresh profile on macOS and Linux. Exercise
    uv setup, environment reuse and failure/cancellation recovery.
 4. Review release notes and obtain the owner's publication approval. Publish the

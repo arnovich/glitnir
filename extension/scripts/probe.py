@@ -4,6 +4,11 @@ import json
 import sys
 from pathlib import Path
 
+_INCOMPATIBLE = (
+    "The installed Glitnir runtime is incompatible with this Glitnir build. "
+    "Install its matching runtime or rebuild Glitnir against this runtime."
+)
+
 
 def main() -> None:
     """Return a small environment description or an actionable error."""
@@ -12,18 +17,25 @@ def main() -> None:
             raise ValueError("Glitnir requires Python 3.12 or newer")
         if len(sys.argv) > 1:
             raise ValueError("The environment probe takes no arguments")
-        from glitnir.notebook import server
-        from glitnir.preview.editor import runtime_info
+        try:
+            from glitnir.service import server
+            from glitnir.preview.editor import runtime_info
+        except ModuleNotFoundError as error:
+            # A backend from before the package layering has no such modules.
+            if error.name not in (
+                "glitnir.service",
+                "glitnir.preview",
+                "glitnir.preview.editor",
+            ):
+                raise
+            raise ValueError(_INCOMPATIBLE) from error
 
         expected = json.loads(
             Path(__file__).with_name("editor-runtime.json").read_text()
         )
         editor = runtime_info()
         if editor != expected:
-            raise ValueError(
-                "The installed Glitnir runtime is incompatible with this Glitnir build. "
-                "Install its matching runtime or rebuild Glitnir against this runtime."
-            )
+            raise ValueError(_INCOMPATIBLE)
 
         source = Path(server.__file__).resolve()
         source_root = next(

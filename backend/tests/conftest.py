@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from glitnir.preview import snapshot as preview_snapshot
+from glitnir.service import preview as source_preview
+
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
 
@@ -118,8 +121,8 @@ def record_check_stages(request, monkeypatch):
 @pytest.fixture(autouse=True)
 def no_startup_sweep(monkeypatch):
     """Keep startup sweeps out of the developer's real temp directory."""
-    monkeypatch.setattr("glitnir.notebook.__main__.sweep_stale_scratch", lambda: None)
-    monkeypatch.setattr("glitnir.notebook.server.sweep_stale_scratch", lambda: None)
+    monkeypatch.setattr("glitnir.service.cli.sweep_stale_scratch", lambda: None)
+    monkeypatch.setattr("glitnir.service.server.sweep_stale_scratch", lambda: None)
 
 
 @pytest.fixture(autouse=True)
@@ -174,7 +177,7 @@ def draw_each_alone(monkeypatch):
                 ]
             }
 
-        monkeypatch.setattr("glitnir.notebook.source_preview.render_project_views", run)
+        monkeypatch.setattr("glitnir.service.preview.render_project_views", run)
 
     return install
 
@@ -702,3 +705,18 @@ def registered_git_dependency(tmp_path, project_toolchain):
         ),
         run,
     )
+
+
+@pytest.fixture
+def patch_fingerprint(monkeypatch):
+    """Return a function replacing `environment_fingerprint` where it is used.
+
+    The service's runs call it through `glitnir.service.preview`; the snapshot's
+    `Fingerprints` calls it through `glitnir.preview.snapshot`.
+    """
+
+    def patch(fake):
+        monkeypatch.setattr(source_preview, "environment_fingerprint", fake)
+        monkeypatch.setattr(preview_snapshot, "environment_fingerprint", fake)
+
+    return patch

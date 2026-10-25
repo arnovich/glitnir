@@ -32,6 +32,13 @@ The repository has four parts:
   Mathlib. Packaging pins the backend wheel in `backend/dist` (asset name, size,
   SHA-256 and release tag) as `glitnirBackend` in the packaged `package.json`;
   **Set Up Environment** downloads and verifies exactly that wheel.
+- **Layers.** The backend has six packages: `glitnir.providers`, `glitnir.lean`,
+  `glitnir.compute`, `glitnir.notebook`, `glitnir.preview` and `glitnir.service`.
+  A module imports only from its own layer or below, and
+  `backend/tests/test_layering.py` enforces it. `glitnir.preview` holds the
+  renderer's view-model and assets and starts no thread or server, but it is
+  not side-effect free: the editor's `--export` command writes the renderer
+  bundle, and snapshot fingerprints may run git.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by
@@ -301,7 +308,7 @@ and `extension/media/setup.md`, to a uv release at least two weeks old.
 ## Static export (galleries)
 
 A gallery can publish notebooks from their committed `<Notebook>.glitnir.json`
-without running any checks. `glitnir.notebook.static_export.SavedNotebook`
+without running any checks. `glitnir.service.static_export.SavedNotebook`
 reads a saved notebook and its saved results for the canonical renderer:
 
 - `snapshot(run_prompts=False)` returns the snapshot the renderer reads from
@@ -337,7 +344,9 @@ results are matched to the saved source result by result, so a gallery that
 must publish only complete results should also compare the results file's
 `source_sha256` with the snapshot's `sha256`.
 
-Render the snapshot with the packaged renderer (`glitnir/preview/app`), and
+Render the snapshot with the packaged renderer (`glitnir/preview/app`; a gallery
+finds its assets with `glitnir.preview.editor.renderer_directory()`, never the
+private `_APP`), and
 export it with its **Export HTML**, through the same `window.glitnirHost`
 interface the editor uses (`fetch`, `asset` and `saveHTML`). Answer `fetch` from
 the prepared data and refuse anything else:
@@ -346,7 +355,7 @@ the prepared data and refuse anything else:
 import json
 from pathlib import Path
 
-from glitnir.notebook.static_export import SavedNotebook, export_styles
+from glitnir.service.static_export import SavedNotebook, export_styles
 
 with SavedNotebook(Path("examples/Decay.lean")) as notebook:
     snapshot = notebook.snapshot()  # GET /api/notebook

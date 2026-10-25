@@ -12,7 +12,15 @@ from glitnir.lean import project_checking
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.notebook.check_records import load_records, records_path
-from glitnir.notebook.source_preview import (
+from glitnir.preview import snapshot as preview_snapshot
+from glitnir.providers import (
+    DecisionProvider,
+    DecisionRequest,
+    EvidenceProvider,
+    EvidenceRequest,
+    Providers,
+)
+from glitnir.service.preview import (
     BYTE_ORDER_MARK,
     CHANGED_DURING_RUN,
     DECISION_CANCELLED,
@@ -24,13 +32,6 @@ from glitnir.notebook.source_preview import (
     RUN_BUSY,
     SOURCE_CHANGED,
     SourcePreviewService,
-)
-from glitnir.providers import (
-    DecisionProvider,
-    DecisionRequest,
-    EvidenceProvider,
-    EvidenceRequest,
-    Providers,
 )
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
@@ -101,7 +102,7 @@ def _evidence_provider() -> EvidenceProvider:
 
 def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
     """A notebook with a decision directive; Lean and the checker are stand-ins."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     calls: list = []
 
@@ -120,9 +121,10 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
         {},
     )
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": FP}
-    )
+    for module in (source_preview, preview_snapshot):
+        monkeypatch.setattr(
+            module, "environment_fingerprint", lambda *a: {"sha256": FP}
+        )
     monkeypatch.setattr(source_preview, "check_candidate", check or checked)
     monkeypatch.setattr(source_preview, "provider_imports_error", imports_ok)
     monkeypatch.setattr(
@@ -493,7 +495,7 @@ def test_a_provider_that_raises_on_cancel_reads_as_cancelled(
 def test_stop_after_the_run_commits_to_saving_finds_nothing_to_stop(
     tmp_path, monkeypatch
 ):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     saving, release = threading.Event(), threading.Event()
     save = source_preview.save_records
@@ -623,7 +625,7 @@ def _rejecting(name, kind, goal):
 def test_unavailable_or_rejected_directives_are_refused(
     tmp_path, monkeypatch, changes, message
 ):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     provider = _decision_provider(**changes)
     service, _calls = _service(tmp_path, monkeypatch, provider)
@@ -660,7 +662,7 @@ def test_source_saved_during_the_run_is_not_saved(tmp_path, monkeypatch):
 def test_a_provider_without_imports_decides_without_a_setup_step(tmp_path, monkeypatch):
     """The real import check prepares nothing when there is nothing to import."""
     from glitnir.lean import provider_lean
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("the setup was prepared")
@@ -683,7 +685,7 @@ def test_a_provider_without_imports_decides_without_a_setup_step(tmp_path, monke
 def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch):
     """The real setup step refuses; neither the provider nor Lean runs."""
     from glitnir.lean import provider_lean
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("the decision went ahead")
@@ -812,7 +814,7 @@ def test_close_cancels_the_decision_and_refuses_new_runs(tmp_path, monkeypatch):
 
 
 def test_close_waits_for_all_workers_within_one_deadline(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     class Slow:
         def __init__(self) -> None:
@@ -832,8 +834,9 @@ def test_close_waits_for_all_workers_within_one_deadline(tmp_path, monkeypatch):
     assert [w.timeouts for w in workers] == [[15.0], [0.0], [0.0]]
 
 
-def test_a_failing_fingerprint_is_computed_once_per_snapshot(tmp_path, monkeypatch):
-    from glitnir.notebook import source_preview
+def test_a_failing_fingerprint_is_computed_once_per_snapshot(
+    tmp_path, monkeypatch, patch_fingerprint
+):
 
     service, _calls = _service(tmp_path, monkeypatch)
     try:
@@ -844,7 +847,7 @@ def test_a_failing_fingerprint_is_computed_once_per_snapshot(tmp_path, monkeypat
             calls.append(1)
             raise RuntimeError("git exploded")
 
-        monkeypatch.setattr(source_preview, "environment_fingerprint", failing)
+        patch_fingerprint(failing)
         card = _card(service)
     finally:
         service.close()
@@ -968,7 +971,7 @@ def test_live_decision_run_saves_a_checked_candidate(
     import subprocess
 
     from glitnir.lean.project_inspection import _toolchain
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     root = prepared_lean_project
     toolchain = _toolchain()
@@ -1029,14 +1032,12 @@ _UNKNOWN_NOTE = (
 )
 
 
-def test_decision_saved_under_unknown_git_state_explains_it(tmp_path, monkeypatch):
+def test_decision_saved_under_unknown_git_state_explains_it(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """The decision is saved; the card's run error says why it is out of date."""
-    from glitnir.notebook import source_preview
-
     service, _ = _service(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: _UNKNOWN_GIT
-    )
+    patch_fingerprint(lambda *a: _UNKNOWN_GIT)
     try:
         key = _run(service)
         card = _card(service)
@@ -1050,7 +1051,7 @@ def test_a_decision_run_is_kept_awake_while_deciding_and_checking(
     tmp_path, monkeypatch, awake_depth
 ):
     """Deciding can take minutes before the candidate check: one held run."""
-    from glitnir.notebook import source_preview
+    from glitnir.service import preview as source_preview
 
     depth = awake_depth(source_preview)
     held: list[tuple[str, int]] = []

@@ -1150,7 +1150,7 @@ def test_live_fingerprint_is_portable_across_checkouts(
     of the fingerprint, which hashed whole traces, never matched there.
     """
     from glitnir.notebook.check_records import load_records, records_path
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     first = prepared_lean_project
     source = first / "src/Example.lean"

@@ -8,15 +8,17 @@ import hashlib
 import http.client
 import json
 import re
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
 import pytest
 
-from glitnir.notebook.__main__ import main
 from glitnir.notebook.check_records import records_path
-from glitnir.notebook.server import make_server
-from glitnir.notebook.source_preview import SourcePreviewService
+from glitnir.service.cli import main
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.server import make_server
 
 NOTEBOOK = """import Mathlib
 
@@ -137,7 +139,7 @@ def test_requests_that_start_work_must_be_bounded_json(server, service) -> None:
 def test_the_serve_command_starts_the_server(monkeypatch, notebook) -> None:
     seen = []
     monkeypatch.setattr(
-        "glitnir.notebook.__main__.serve",
+        "glitnir.service.cli.serve",
         lambda path, port: seen.append((path, port)),
     )
     assert main(["serve", str(notebook), "--port", "9000"]) == 0
@@ -248,7 +250,7 @@ def test_browser_mutation_routes_are_absent(server, service, route) -> None:
 
 def test_project_inspection_http_is_explicit_and_bound(tmp_path, monkeypatch):
     """Only the explicit authenticated POST can invoke project inspection."""
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     source = tmp_path / "A.lean"
     source.write_text("example : True := True.intro\n")
@@ -292,7 +294,7 @@ def test_project_inspection_http_is_explicit_and_bound(tmp_path, monkeypatch):
 
 def test_check_cancel_http_needs_a_running_check(tmp_path, monkeypatch):
     """`/api/project/check/cancel` takes an empty object and stops the check."""
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     source = tmp_path / "A.lean"
     source.write_text("example : True := True.intro\n")
@@ -319,8 +321,8 @@ def test_check_cancel_http_needs_a_running_check(tmp_path, monkeypatch):
 
 def test_inspection_cancel_http_stops_the_inspection(tmp_path, monkeypatch):
     """`/api/project/inspect/cancel` takes an empty object and stops Lake."""
-    from glitnir.notebook import source_preview
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service import preview as source_preview
+    from glitnir.service.preview import SourcePreviewService
 
     started = threading.Event()
 
@@ -362,7 +364,7 @@ def test_inspection_cancel_http_stops_the_inspection(tmp_path, monkeypatch):
 
 def test_project_check_http_requires_saved_digest(tmp_path, monkeypatch):
     """Project checks have an authenticated, bounded, asynchronous request path."""
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     path = tmp_path / "A.lean"
     path.write_text("theorem t : True := True.intro\n")
@@ -459,7 +461,7 @@ def test_serve_consumes_capability_before_constructing_workers(tmp_path, monkeyp
     """Workers must not inherit the client's process capability."""
     import os
 
-    from glitnir.notebook import server as module
+    from glitnir.service import server as module
 
     monkeypatch.setenv("GLITNIR_SERVER_TOKEN", "a" * 64)
 
@@ -474,13 +476,13 @@ def test_serve_consumes_capability_before_constructing_workers(tmp_path, monkeyp
 
 def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch, draw_each_alone):
     """`/api/view/cancel` takes an empty JSON object and stops the drawing."""
-    from glitnir.notebook import source_preview
-    from glitnir.notebook.source_preview import (
+    from glitnir.providers import Providers, ViewProvider
+    from glitnir.service import preview as source_preview
+    from glitnir.service.preview import (
         NOTHING_DRAWING,
         VIEW_CANCELLED,
         SourcePreviewService,
     )
-    from glitnir.providers import Providers, ViewProvider
 
     provider = ViewProvider("demo", frozenset({"circuit"}), (), "", "m:", lambda *a: "")
     monkeypatch.setattr(
@@ -533,9 +535,9 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch, draw_each_alo
 
 def test_project_view_http_draws_directives(tmp_path, monkeypatch, draw_each_alone):
     """Project mode answers /api/view for listed directives only."""
-    from glitnir.notebook import source_preview
-    from glitnir.notebook.source_preview import SourcePreviewService
     from glitnir.providers import Providers, ViewProvider
+    from glitnir.service import preview as source_preview
+    from glitnir.service.preview import SourcePreviewService
 
     provider = ViewProvider("demo", frozenset({"circuit"}), (), "", "m:", lambda *a: "")
     monkeypatch.setattr(
@@ -575,9 +577,9 @@ def test_project_view_http_draws_directives(tmp_path, monkeypatch, draw_each_alo
 
 def test_evidence_run_http_starts_listed_directives_only(tmp_path, monkeypatch):
     """Runs need the saved digest and a listed line; refusals are conflicts."""
-    from glitnir.notebook import source_preview
-    from glitnir.notebook.source_preview import SourcePreviewService
     from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
+    from glitnir.service import preview as source_preview
+    from glitnir.service.preview import SourcePreviewService
 
     provider = EvidenceProvider(
         name="demo",
@@ -648,10 +650,12 @@ def test_evidence_run_http_starts_listed_directives_only(tmp_path, monkeypatch):
         httpd.server_close()
 
 
-def test_decision_http_runs_stops_and_discards_listed_directives(tmp_path, monkeypatch):
+def test_decision_http_runs_stops_and_discards_listed_directives(
+    tmp_path, monkeypatch, patch_fingerprint
+):
     """Decisions name the saved digest and a listed line; refusals are conflicts."""
-    from glitnir.notebook import source_preview
     from glitnir.providers import DecisionProvider, DecisionRequest, Providers
+    from glitnir.service import preview as source_preview
 
     started, release = threading.Event(), threading.Event()
 
@@ -674,9 +678,7 @@ def test_decision_http_runs_stops_and_discards_listed_directives(tmp_path, monke
         "load_providers",
         lambda: Providers({}, {}, {"sum": provider}, {}),
     )
-    monkeypatch.setattr(
-        source_preview, "environment_fingerprint", lambda *a: {"sha256": "f" * 64}
-    )
+    patch_fingerprint(lambda *a: {"sha256": "f" * 64})
     monkeypatch.setattr(
         source_preview, "provider_imports_error", lambda source, **options: None
     )
@@ -930,3 +932,15 @@ def test_lean_requests_on_another_version_answer_the_refusal(tmp_path) -> None:
         httpd.shutdown()
         httpd.server_close()
         service.close()
+
+
+def test_python_m_glitnir_notebook_still_names_itself() -> None:
+    done = subprocess.run(
+        [sys.executable, "-I", "-m", "glitnir.notebook", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0
+    assert "python -m glitnir.notebook" in done.stdout
+    assert "{check,serve}" in done.stdout

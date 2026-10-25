@@ -22,13 +22,13 @@ from glitnir.notebook.check_records import (
     records_path,
     save_records,
 )
-from glitnir.notebook.server import make_server
-from glitnir.notebook.source_preview import SourcePreviewService
 from glitnir.preview.linked import (
     MAX_SOURCE_BYTES,
     NotebookLinkError,
     read_linked_notebook,
 )
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.server import make_server
 
 MAIN = "/-! # Scalar decay\n\nSee [the states](ThreeState.lean). -/\n"
 LINKED = (
@@ -243,7 +243,7 @@ def test_a_link_must_spell_the_file_as_its_directory_does(server, project) -> No
 
 
 def test_a_nested_project_is_shown_as_saved_and_never_fingerprinted(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, patch_fingerprint
 ) -> None:
     root = tmp_path / "proj"
     nested = root / "nested"
@@ -254,12 +254,11 @@ def test_a_nested_project_is_shown_as_saved_and_never_fingerprinted(
     linked = nested / "ThreeState.lean"
     linked.write_text(LINKED, encoding="utf-8")
     save_records(linked, records_from_check(LINKED, RESULT, "5" * 64))
-    from glitnir.notebook import source_preview
 
     def refuse(*args, **kwargs):
         raise AssertionError("a nested project must not be fingerprinted")
 
-    monkeypatch.setattr(source_preview, "environment_fingerprint", refuse)
+    patch_fingerprint(refuse)
     service = SourcePreviewService(root / "Main.lean")
     snapshot = service.linked("nested/ThreeState.lean")
     assert snapshot["preview"]["linked"]["compared"] is False

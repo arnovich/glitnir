@@ -5,12 +5,12 @@ import threading
 
 import pytest
 
-from glitnir.notebook.proof_steps import ProofSteps
+from glitnir.service.proof_steps import ProofSteps
 
 
 def test_trace_worker_stays_idle_until_requested_and_cancels(tmp_path, monkeypatch):
     """Cancellation clears observations and blocks overlapping workers."""
-    from glitnir.notebook import proof_steps
+    from glitnir.service import proof_steps
 
     source = tmp_path / "A.lean"
     source.write_text("theorem t : True := by trivial\n")
@@ -51,7 +51,7 @@ def test_trace_worker_stays_idle_until_requested_and_cancels(tmp_path, monkeypat
 
 def test_failed_trace_unblocks_refresh(tmp_path, monkeypatch):
     """Unexpected worker failures reach the user instead of staying busy."""
-    from glitnir.notebook import proof_steps
+    from glitnir.service import proof_steps
 
     def fail(*args, **kwargs):
         raise RuntimeError("fixture failure")
@@ -72,9 +72,9 @@ def test_editor_trace_routes_are_explicit_and_do_not_write_metadata(
     import http.client
     import json
 
-    from glitnir.notebook import proof_steps
-    from glitnir.notebook.server import make_server
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service import proof_steps
+    from glitnir.service.preview import SourcePreviewService
+    from glitnir.service.server import make_server
 
     source = tmp_path / "A.lean"
     source.write_text("theorem t : True := by\n  trivial\n")

@@ -659,7 +659,7 @@ def test_the_command_line_check_refuses_another_version_up_front(
     tmp_path, monkeypatch, capsys
 ):
     """`python -m glitnir.notebook check` says the one message, not "install"."""
-    from glitnir.notebook.__main__ import main
+    from glitnir.service.cli import main
 
     project = tmp_path / "p"
     project.mkdir()

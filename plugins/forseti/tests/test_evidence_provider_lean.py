@@ -73,7 +73,7 @@ def notebook(scratch_notebook) -> Path:
 
 def _run(path: Path, line: int) -> dict:
     """Run the directive at `line` through the preview service; return its card."""
-    from glitnir.notebook.source_preview import SourcePreviewService
+    from glitnir.service.preview import SourcePreviewService
 
     sha = hashlib.sha256(NOTEBOOK.encode()).hexdigest()
     service = SourcePreviewService(path)
