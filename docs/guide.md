@@ -112,8 +112,8 @@ It becomes a card, and nothing runs until you click **Run** (one provider run at
 a time, evidence included). The provider proposes a Lean block; Glitnir checks
 the saved text up to the directive plus that block with its own sandboxed
 kernel check, which is the only proof authority. The card shows its status
-(Never run, Running, Unknown, Rejected, Candidate, Accepted or Out of date), the
-stages, the statement in Lean's kernel form (for example
+(Never run, Running, Unknown, Rejected, Candidate, Accepted, Failed or Out of
+date), the stages, the statement in Lean's kernel form (for example
 `Eq (instHAdd.hAdd 2 2) 4`), the axioms and the full block. A proven block
 declares `theorem <name>`; a refutation declares `theorem <name>_refuted : ¬ (…)`.
 The provider is trusted only for matching the theorem to your goal: the kernel
@@ -126,13 +126,21 @@ guarantees the theorem, so read the statement before accepting.
   run keep the candidate acceptable; an edit above it (or an environment change)
   makes it Out of date, and it must be run again. Accept is the only path that
   writes Lean source; the backend never does.
-- **Discard** removes the saved result (refused while that decision runs).
+- **Discard** removes the saved result and any saved failure (refused while
+  that decision runs).
 - **Stop** cancels the run, also with unsaved edits. A provider whose `decide`
   ignores Stop blocks other provider runs until the preview closes.
 
 Results are saved in `<Notebook>.glitnir.json` under `decisions`, with the same
-16 MiB and unreadable-file rules as evidence. Without a provider the line shows
-why.
+16 MiB and unreadable-file rules as evidence. A block the kernel check rejects
+is such a result (Rejected), and so is Unknown. A run that fails before there
+is a result is saved too, as for evidence, when the provider crashed or refused
+the goal, returned an outcome that is not a decision of the directive, or the
+candidate check reached its time limit: the card then reads Failed, or keeps
+its saved result with a note that the last run failed. A provider crash is
+saved as its exception type only; setup failures (a missing import, Lake, the
+sandbox, a missing Python dependency such as Z3), a busy checker and Stop are
+shown but not saved. Without a provider the line shows why.
 
 ## Using the preview
 

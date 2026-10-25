@@ -94,10 +94,16 @@ class DecisionProvider:
 
     `parse(name, kind, goal)` raises `ValueError` on bad input. `decide(request,
     cancel)` returns an outcome, which the core validates before using it; it
-    should stop soon after `cancel` is set. `imports` are the modules the Lean
-    block it proposes needs. `unavailable()` names a missing optional
-    dependency, or returns None. `parse` and `unavailable` run on every preview
-    refresh, so they must be cheap and free of side effects.
+    should stop soon after `cancel` is set. A `ValueError` it raises is shown on
+    the card as its message alone, and saved as the run's failure in the
+    notebook's committed `<Notebook>.glitnir.json`, so, as for
+    `EvidenceProvider.compute`, it must name no local path or secret. Any other
+    exception is shown with its text but saved as its type alone, and an
+    `ImportError` (a missing or broken dependency) is shown but never saved.
+    `imports` are the modules the Lean block it proposes needs.
+    `unavailable()` names a missing optional dependency, or returns None.
+    `parse` and `unavailable` run on every preview refresh, so they must be
+    cheap and free of side effects.
     """
 
     name: str
