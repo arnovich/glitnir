@@ -71,7 +71,7 @@ unavailable and cannot run.
 
 `simulate` takes `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`; it needs no
 extra package. `iterate` takes `state`, `inputs`, `parameter`, `steps` and `names`
-(distinct, one per port: state, then inputs, then parameters) and needs Python
+(one per port: state, then inputs, then parameters; the state names distinct) and needs Python
 Asgard (`gimle-asgard`, installed separately into the backend).
 `sample` takes `law` (`gaussian`, `twopoint` or `threepoint`), `variance` and
 `observe`, plus `paths` (at most 100000), `steps`, `seed`, `barrier` and `show`,

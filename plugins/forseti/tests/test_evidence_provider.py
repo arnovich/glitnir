@@ -126,7 +126,7 @@ def test_parse_keeps_exact_options_as_json(fake_asgard) -> None:
         (
             "iterate",
             "(state := 1, 0) (names := y, y)",
-            "Names must be distinct; 'y' is given twice.",
+            "State names must be distinct; 'y' is given twice.",
         ),
         (
             "plot",
