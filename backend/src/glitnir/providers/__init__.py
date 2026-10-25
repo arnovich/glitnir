@@ -52,10 +52,11 @@ class EvidenceProvider:
     it raises is shown on the card as its message alone. That message is also
     saved as the run's failure in the notebook's committed
     `<Notebook>.glitnir.json`, so it must name no local path or secret (one
-    naming a local directory Glitnir knows is not saved, but nothing else is
-    filtered). Any other exception from `command` or `compute` is shown with
-    its text but saved as its type alone, and an `ImportError` (a missing or
-    broken dependency) is shown but never saved. `preamble` and the
+    that looks like it names an absolute path, or names a local directory
+    Glitnir knows, is not saved; secrets are not filtered). Any other
+    exception from `command` or `compute` is shown with its text but saved as
+    its type alone, and an `ImportError` (a missing or broken dependency) is
+    shown but never saved. `preamble` and the
     command are elaborated in the scopes `ViewProvider` describes.
     `unavailable()` names a missing optional dependency, or returns None.
     `parse` and `unavailable` run on every preview refresh, so they must be

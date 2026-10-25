@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import re
 import secrets
 import tempfile
 import threading
@@ -201,12 +202,24 @@ def _not_saved(run: str, kind: str, reason: str) -> bool:
     return False
 
 
-def _names_local_path(message: str, notebook: Path) -> bool:
-    """Whether ``message`` names a directory of this machine it may mention.
+# What looks like an absolute path on any machine: a POSIX path of at least two
+# segments ("/opt/x"), a Windows drive path ("C:\x" or "C:/x"), a path under
+# the home directory ("~/x") or a file URL. A fraction such as "1/2/3", a
+# relative path and a web URL's path do not match.
+_ABSOLUTE_PATH = re.compile(
+    r"(?<![\w.:/~])/[^\s/]+/|(?<!\w)[A-Za-z]:[\\/]|(?<![\w/])~/|(?i:file):/"
+)
 
-    The notebook's directory and project, the home directory and the
-    temporary directory are looked for, as given and resolved.
+
+def _names_local_path(message: str, notebook: Path) -> bool:
+    """Whether ``message`` names a path, so that it may not be saved.
+
+    Anything that looks like an absolute path (`_ABSOLUTE_PATH`) counts, and
+    so do the notebook's directory and project, the home directory and the
+    temporary directory, as given and resolved.
     """
+    if _ABSOLUTE_PATH.search(message):
+        return True
     places = [notebook.parent, Path.home(), Path(tempfile.gettempdir())]
     try:
         root = describe_project(notebook)["root"]

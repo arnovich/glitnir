@@ -3320,6 +3320,30 @@ def test_a_failure_naming_a_local_path_is_shown_but_never_saved(
 
 
 @pytest.mark.parametrize(
+    "message, saved",
+    [
+        ("Cannot read /srv/data/x.csv.", False),
+        ("Cannot read C:\\data\\x.csv.", False),
+        ("Cannot read ~/data/x.csv.", False),
+        ("The step 1/100 is too large for 3/4 of the run.", True),
+    ],
+)
+def test_an_evidence_refusal_is_saved_only_without_an_absolute_path(
+    tmp_path, monkeypatch, message, saved
+):
+    provider = _evidence_provider(compute=_raises(ValueError(message)))
+    service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
+    try:
+        _run_evidence(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == message
+    failures = _saved_failures(service)
+    assert [f["message"] for f in failures.values()] == ([message] if saved else [])
+
+
+@pytest.mark.parametrize(
     "environment",
     [
         {"sha256": FP, "unknown": True, "packages": []},

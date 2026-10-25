@@ -1548,3 +1548,49 @@ def test_an_accepted_decision_hides_a_failure_saved_after_its_candidate(
     assert set(_saved_failures(service.path)) == {key}, "the failure stays saved"
     for card in (live, reopened, recorded):
         assert (card["status"], card["failure"]) == ("accepted", None)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Cannot load /opt/homebrew/lib/libz3.dylib.",
+        "Cannot read '/usr/local/share/goal.txt'.",
+        "Cannot read C:\\Users\\me\\goal.txt.",
+        "Cannot read D:/data/goal.txt.",
+        "Cannot read ~/goals/goal.txt.",
+        "Cannot read file:///srv/goals/goal.txt.",
+    ],
+)
+def test_a_refusal_naming_any_absolute_path_is_shown_but_never_saved(
+    tmp_path, monkeypatch, message
+):
+    """Not only the directories Glitnir knows: no path reaches committed records."""
+    provider = _decision_provider(decide=_raises(ValueError(message)))
+    service, _calls = _service(tmp_path, monkeypatch, provider)
+    try:
+        _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == message
+    assert not records_path(service.path).exists()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Bounds are 1/2 and 3/4, not 1/2/3.",
+        "x / y / z is not linear.",
+        "See https://example.test/docs/decide for the goal syntax.",
+        "Write (a/b)/c as a/(b*c).",
+    ],
+)
+def test_a_refusal_without_a_path_is_saved_unchanged(tmp_path, monkeypatch, message):
+    provider = _decision_provider(decide=_raises(ValueError(message)))
+    service, _calls = _service(tmp_path, monkeypatch, provider)
+    try:
+        _run(service)
+    finally:
+        service.close()
+    [saved] = _saved_failures(service.path).values()
+    assert (saved["kind"], saved["message"]) == ("refused", message)
