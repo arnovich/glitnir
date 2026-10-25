@@ -15,7 +15,11 @@ from typing import Any, Callable
 from glitnir.compute.client import check_remote, from_environment, remote_identity
 from glitnir.lean.awake import awake
 from glitnir.lean.environment import MAX_SOURCE_BYTES
-from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
+from glitnir.lean.fingerprint import (
+    Fingerprint,
+    environment_fingerprint,
+    unknown_git_note,
+)
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -79,7 +83,6 @@ from glitnir.preview.linked import (
     unbuilt_sibling_imports,
 )
 from glitnir.preview.snapshot import (
-    Fingerprint,
     Fingerprints,
     PreviewState,
     build_snapshot,

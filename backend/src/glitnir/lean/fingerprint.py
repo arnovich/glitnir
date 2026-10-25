@@ -22,7 +22,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Callable, NoReturn
 
 from glitnir.lean import (
     axiom_report,
@@ -40,6 +40,9 @@ _IN_BLOCK = re.compile(r"/-|-/")
 _MAX_FILE = 4 * 1024 * 1024
 _MAX_SOURCES = 20000
 _COMPONENT = re.compile(r"[A-Za-z_][A-Za-z0-9_'!?]*|«[^/\\\x00]+»")
+#: A fingerprint for a function of the modules loaded besides the notebook's.
+Fingerprint = Callable[..., str]
+
 #: Seconds all git commands of one fingerprint may take together.
 FINGERPRINT_SECONDS = 90
 #: Seconds one ``git status`` may take; it is retried once after a timeout.
