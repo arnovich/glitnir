@@ -1796,11 +1796,20 @@ def test_provider_failures_become_the_card_run_error(
     assert (saved_key, saved["kind"], saved["message"]) == (key, kind, message)
 
 
+def _asking_lean_every_time(monkeypatch):
+    """Run Lean for every run, as separate previews would, keeping no output.
+
+    For tests whose stand-in Lean answers the same input differently.
+    """
+    monkeypatch.setattr(source_preview, "_emission_key", lambda *args: None)
+
+
 def test_unreadable_payloads_and_runner_errors_become_run_errors(tmp_path, monkeypatch):
     results = iter([{"payload": "{not json"}, {"error": "Line 2: unknown constant"}])
     service, _calls = _evidence_service(
         tmp_path, monkeypatch, runner=lambda source, **options: next(results)
     )
+    _asking_lean_every_time(monkeypatch)
     try:
         _run_evidence(service)
         first = _card(service)["run_error"]
@@ -3430,6 +3439,7 @@ def test_a_failure_after_a_success_keeps_the_snapshot_and_a_success_clears_it(
     service, _calls = _evidence_service(
         tmp_path, monkeypatch, runner=lambda source, **options: next(outcomes)
     )
+    _asking_lean_every_time(monkeypatch)
     try:
         key = _run_evidence(service)
         _run_evidence(service)
@@ -3618,3 +3628,213 @@ def test_an_unsaved_failure_keeps_the_saved_one_readable_as_earlier(
         assert _card(reopened)["failure"]["earlier"] is True
     finally:
         reopened.close()
+
+
+# ----- Lean output remembered for a rerun --------------------------------------
+
+
+def _refusing_bad_options(calls):
+    """A demo provider whose `compute` refuses options that name `bad`."""
+
+    def compute(request, payload):
+        calls.append(("compute", request, payload))
+        if "bad" in request.options["options"]:
+            raise ValueError("The circuit maps 1 port to 1, not 2.")
+        return _evidence_body()
+
+    return _evidence_provider(compute=compute)
+
+
+def _rerun(service, text, line=4):
+    """Save `text` as the notebook, run the directive at `line`; return its card."""
+    service.path.write_text(text)
+    service.run_evidence(hashlib.sha256(text.encode()).hexdigest(), line)
+    service._evidence_worker.join(timeout=10)
+    assert not service._evidence_worker.is_alive()
+    return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
+
+
+def _lean_calls(calls):
+    return [call for call in calls if call[0] == "lean"]
+
+
+def _saved_snapshots(service):
+    from glitnir.notebook.check_records import load_records
+
+    return load_records(service.path)["evidence"]
+
+
+BAD_TEXT = EVIDENCE_TEXT.replace("(h := 1/100)", "(h := bad)")
+
+
+def test_a_first_run_still_runs_lean_and_saves_the_late_refusal(tmp_path, monkeypatch):
+    """Nothing was remembered: Lean runs, and `compute`'s refusal is saved."""
+    calls: list = []
+    service, lean = _evidence_service(
+        tmp_path, monkeypatch, _refusing_bad_options(calls)
+    )
+    try:
+        card = _rerun(service, BAD_TEXT)
+    finally:
+        service.close()
+    assert len(_lean_calls(lean)) == 1
+    assert (card["status"], card["run_error"]) == (
+        "failed",
+        "The circuit maps 1 port to 1, not 2.",
+    )
+    [saved] = _saved_failures(service).values()
+    assert (saved["kind"], saved["message"]) == (
+        "refused",
+        "The circuit maps 1 port to 1, not 2.",
+    )
+
+
+def test_a_rerun_after_an_options_edit_is_refused_without_lean(tmp_path, monkeypatch):
+    """Lean's output for the unchanged text above is remembered and reused.
+
+    The refusal is the same late check, on the same payload, saved as
+    `refused` like any other.
+    """
+    calls: list = []
+    service, lean = _evidence_service(
+        tmp_path, monkeypatch, _refusing_bad_options(calls)
+    )
+    try:
+        first = _rerun(service, EVIDENCE_TEXT)
+        second = _rerun(service, BAD_TEXT)
+        third = _rerun(service, EVIDENCE_TEXT.replace("1/100", "1/50"))
+    finally:
+        service.close()
+    assert first["status"] == "current"
+    assert len(_lean_calls(lean)) == 1
+    assert [call[2] for call in calls] == [{"x": 1}] * 3
+    assert (second["status"], second["run_error"]) == (
+        "failed",
+        "The circuit maps 1 port to 1, not 2.",
+    )
+    assert third["status"] == "current" and third["run_error"] is None
+    [saved] = _saved_snapshots(service).values()
+    assert saved["fingerprint"] == FP
+
+
+def test_lines_below_the_directive_do_not_need_lean_again(tmp_path, monkeypatch):
+    service, lean = _evidence_service(tmp_path, monkeypatch)
+    try:
+        _rerun(service, EVIDENCE_TEXT)
+        card = _rerun(service, EVIDENCE_TEXT + "\ndef Later := 2\n")
+    finally:
+        service.close()
+    assert card["status"] == "current"
+    assert len(_lean_calls(lean)) == 1
+
+
+@pytest.mark.parametrize(
+    "edited",
+    [
+        EVIDENCE_TEXT.replace("def M := 1", "def M := 2"),  # the text above
+        "\n" + EVIDENCE_TEXT,  # a line inserted above
+    ],
+)
+def test_an_edit_above_the_directive_runs_lean_again(tmp_path, monkeypatch, edited):
+    service, lean = _evidence_service(tmp_path, monkeypatch)
+    line = edited.split("\n").index("-- @evidence simulate M (h := 1/100)") + 1
+    try:
+        _rerun(service, EVIDENCE_TEXT)
+        _rerun(service, edited, line)
+    finally:
+        service.close()
+    assert len(_lean_calls(lean)) == 2
+
+
+def test_another_command_runs_lean_again(tmp_path, monkeypatch):
+    """The command is part of what Lean saw: another target is another run."""
+    service, lean = _evidence_service(tmp_path, monkeypatch)
+    try:
+        _rerun(service, EVIDENCE_TEXT)
+        _rerun(service, EVIDENCE_TEXT.replace("simulate M", "simulate N"))
+    finally:
+        service.close()
+    assert [call[1]["command"] for call in _lean_calls(lean)] == [
+        "#demo_evidence M",
+        "#demo_evidence N",
+    ]
+
+
+@pytest.mark.parametrize(
+    "environments",
+    [
+        # The environment changed between the runs.
+        [{"sha256": FP, "packages": []}, {"sha256": "e" * 64, "packages": []}],
+        # An unknown environment's output is never remembered or reused.
+        [{"sha256": FP, "unknown": True, "packages": []}] * 2,
+    ],
+)
+def test_another_or_an_unknown_environment_runs_lean_again(
+    tmp_path, monkeypatch, patch_fingerprint, environments
+):
+    service, lean = _evidence_service(tmp_path, monkeypatch)
+    given = iter(environments)
+    current: dict = {}
+
+    def fingerprint(*args, **kwargs):
+        return current
+
+    patch_fingerprint(fingerprint)
+    try:
+        for environment in given:
+            current.clear()
+            current.update(environment)
+            _rerun(service, EVIDENCE_TEXT)
+    finally:
+        service.close()
+    assert len(_lean_calls(lean)) == 2
+
+
+@pytest.mark.parametrize(
+    "failed",
+    [
+        {"error": "Line 2: unknown constant 'x'", "lean": True},
+        {"error": "timed out.", "timed_out": True},
+        {"error": "Lake failed."},
+    ],
+)
+def test_only_printed_output_is_remembered(tmp_path, monkeypatch, failed):
+    """A Lean error, time-out or setup failure is tried again on the next run."""
+    results = iter([dict(failed), {"payload": '{"x": 1}'}, {"payload": "{}"}])
+    asked: list = []
+
+    def run(source, **options):
+        asked.append(options)
+        return next(results)
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    try:
+        _rerun(service, EVIDENCE_TEXT)
+        _rerun(service, EVIDENCE_TEXT)
+        card = _rerun(service, EVIDENCE_TEXT)
+    finally:
+        service.close()
+    assert len(asked) == 2
+    assert card["status"] == "current"
+
+
+def test_remembered_output_is_bounded_by_count_and_size():
+    from glitnir.service.preview import _Emissions
+
+    kept = _Emissions(entries=2, size=10)
+    kept.keep(("a",), "1234")
+    kept.keep(("b",), "5678")
+    kept.keep(("c",), "90")
+    assert (kept.get(("a",)), kept.get(("b",)), kept.get(("c",))) == (
+        None,
+        "5678",
+        "90",
+    )
+    kept.keep(("d",), "123456789")  # over the size with "90": the oldest go first
+    assert (kept.get(("b",)), kept.get(("c",)), kept.get(("d",))) == (
+        None,
+        None,
+        "123456789",
+    )
+    kept.keep(("e",), "12345678901")  # larger than the whole bound: not kept
+    assert kept.get(("e",)) is None and kept.get(("d",)) == "123456789"
