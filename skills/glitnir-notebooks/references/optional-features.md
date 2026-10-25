@@ -96,7 +96,7 @@ live tests against Forseti Lean v0.4.0 on Lean 4.35.0, the pinned release (Linux
 CI, 2026-10-22); `stream` decisions have not been checked through Glitnir yet,
 so do not present them as working. `stepped` decisions and `sample` need a
 Forseti Lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`, as Forseti Lean v0.4.0 does. The first check of a Forseti
+`Gimle.Forseti.Examples.HedgedSpreadStepped`, as Forseti Lean v0.4.1, the pinned release, does. The first check of a Forseti
 project takes about 18 minutes (a one-time import replay); later checks take a
 few minutes.
 

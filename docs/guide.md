@@ -481,7 +481,7 @@ the goal uses imported in the notebook; a missing one shows as the check's
 unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
 Forseti Lean build that contains `Gimle.Forseti.Stepped` and
 `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the pinned release, Forseti Lean
-v0.4.0, does; an older build reports the missing module.
+v0.4.1, does; an older build reports the missing module.
 
 `entailment`, `trajectory` and `stepped` decisions and `simulate` and `sample`
 evidence pass Glitnir's check in the plugin's live tests against Forseti Lean
