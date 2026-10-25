@@ -62,7 +62,7 @@ from typing import Any
 
 # Points kept per state in a snapshot, as Glitnir accepts them; runs are
 # downsampled to this.
-from glitnir.providers.outcomes import MAX_SAMPLES, MAX_SERIES
+from glitnir.providers.outcomes import MAX_SAMPLES, MAX_SERIES, MAX_TEXT
 
 from glitnir_forseti.stepped.models import MODELS, SteppedEntry
 from glitnir_forseti.stepped.numbers import three_point
@@ -492,7 +492,7 @@ class Simulation:
         state: For ``iterate``, the initial state.
         inputs: For ``iterate``, the input vectors taken in turn, one per tick.
         parameter: For ``iterate``, the fixed parameters.
-        names: For ``iterate``, a name for every port, state first.
+        names: For ``iterate``, a distinct name for every port, state first.
         plane: For ``simulate``, two state names drawn against each other
             beside the time series.
         sample: For ``sample``, its run; ``step`` and ``steps`` are unused.
@@ -597,6 +597,13 @@ def _iteration(base: Simulation, options: dict[str, str]) -> Simulation:
     ports = len(state) + len(inputs[0]) + len(parameter)
     if names and len(names) != ports:
         return _with_error(base, f"names must name all {ports} ports, state first")
+    # Checked here, before Lean runs: the card would otherwise number the
+    # series instead of naming them, and only after the whole run.
+    for index, name in enumerate(names):
+        if name in names[:index]:
+            return _with_error(base, f"names must be distinct; {name!r} is given twice")
+        if len(name) > MAX_TEXT:
+            return _with_error(base, f"each name is at most {MAX_TEXT} characters")
     return Simulation(
         base.model,
         steps=steps,

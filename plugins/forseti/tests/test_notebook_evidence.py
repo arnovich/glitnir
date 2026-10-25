@@ -175,6 +175,18 @@ def test_an_iterate_directive_is_read_with_its_ports() -> None:
         ("-- @evidence iterate u (state := 1) (steps := 0)", "steps must be"),
         ("-- @evidence iterate u (state := 1) (h := 1/2)", "unknown option 'h'"),
         ("-- @evidence iterate u (state := 1) (inputs := 2) (names := a)", "all 2"),
+        (
+            "-- @evidence iterate u (state := 1, 2) (names := x, x)",
+            "names must be distinct; 'x' is given twice",
+        ),
+        (
+            "-- @evidence iterate u (state := 1) (parameter := 2) (names := a, a)",
+            "names must be distinct; 'a' is given twice",
+        ),
+        (
+            f"-- @evidence iterate u (state := 1) (names := {'n' * 201})",
+            "each name is at most 200 characters",
+        ),
         ("-- @evidence fly u (state := 1)", "use simulate, iterate or sample"),
     ],
 )
