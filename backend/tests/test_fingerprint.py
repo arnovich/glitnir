@@ -1,5 +1,6 @@
 """The fast environment fingerprint changes exactly when checking inputs change."""
 
+import ast
 import hashlib
 import json
 import os
@@ -1241,3 +1242,20 @@ def test_remote_fingerprint_value_is_pinned(tmp_path, monkeypatch):
     found = environment_fingerprint(source, source.read_text(), remote=remote)
     assert found["sha256"] == _REMOTE_PIN
     assert found["execution"] == remote["execution"]
+
+
+def test_every_backend_fingerprint_call_passes_the_remote_identity():
+    """A call without `remote=` would fingerprint a remote check as local."""
+    import glitnir
+
+    root = Path(glitnir.__file__).parent
+    missing = []
+    for path in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "environment_fingerprint"
+                and not any(k.arg == "remote" for k in node.keywords)
+            ):
+                missing.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert missing == []
