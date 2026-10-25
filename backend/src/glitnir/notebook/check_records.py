@@ -86,6 +86,22 @@ they read these records with their claims and evidence. A check by one of them
 drops the section, and a success saved by one of them leaves an older failure
 in place, which is then ignored. When saving would make the records too large,
 the failures are dropped after the drawings, before anything is refused.
+
+Saved failed decision runs (the optional `"decision_failures"` section) are
+kept the same way, keyed like decisions: each entry has the same fields, with
+`prefix_sha256` and `fingerprint` as for the decision the run would have saved
+and `kind` one of `DECISION_FAILURE_KINDS`. A block the kernel check rejects
+is not a failure but a saved decision (`rejected`), and so is an `unknown`
+outcome. A failure is current while its fingerprint and the source through the
+directive's last line match (`decision_failure_status`). Saving a decision, or
+discarding it, removes the failure saved for its directive; a failure saved
+after a decision keeps both. It is read as leniently as `evidence_failures`,
+and a failure saved before the decision of its directive is ignored. Glitnir
+0.1.2 to 0.1.8 ignore the section: a check by one of them drops it, and a
+decision saved or discarded by one of them leaves an older failure in place.
+When saving would make the records too large, it is dropped after the evidence
+failures, before anything is refused; saving a failure never drops either
+failure section, it is refused instead.
 """
 
 import copy
@@ -128,7 +144,13 @@ RESULTS_TOO_LARGE = (
     "the results file would exceed 16 MiB; nothing saved before was dropped"
 )
 # Saved results that a check carries over but neither makes nor judges.
-_RESULT_SECTIONS = ("evidence", "decisions", "views", "evidence_failures")
+_RESULT_SECTIONS = (
+    "evidence",
+    "decisions",
+    "views",
+    "evidence_failures",
+    "decision_failures",
+)
 _NON_CLAIM_KEYS: dict[str, type] = {
     "start_line": int,
     "end_line": int,
@@ -138,6 +160,8 @@ _NON_CLAIM_KEYS: dict[str, type] = {
 _EVIDENCE_KEYS = ("prefix_sha256", "fingerprint", "provider", "created")
 _VIEW_KEYS = (*_EVIDENCE_KEYS, "provider_sha256")
 _FAILURES = "evidence_failures"
+_DECISION_FAILURES = "decision_failures"
+_FAILURE_SECTIONS = (_FAILURES, _DECISION_FAILURES)
 _FAILURE_KEYS = (*_EVIDENCE_KEYS, "kind", "message")
 #: What made a saved evidence run fail: Lean's own error for the directive, a
 #: provider crash, the provider's refusal, output that is not evidence, or the
@@ -145,6 +169,11 @@ _FAILURE_KEYS = (*_EVIDENCE_KEYS, "kind", "message")
 EVIDENCE_FAILURE_KINDS = frozenset(
     {"lean", "provider", "refused", "invalid", "timeout"}
 )
+#: What made a saved decision run fail: a provider crash, the provider's
+#: refusal, an outcome that is not a decision of the directive, or the
+#: candidate check's own time limit. A block the kernel check rejects is a
+#: saved decision, never a failure.
+DECISION_FAILURE_KINDS = frozenset({"provider", "refused", "invalid", "timeout"})
 #: The largest the saved drawings may be together, serialised as saved.
 MAX_VIEWS_BYTES = 4 * 1024 * 1024
 _VERIFICATION_KEYS = frozenset({"status", "message", "axioms", "type"})
@@ -209,15 +238,16 @@ def _evidence_entry_ok(entry: Any) -> bool:
     return True
 
 
-def _failure_entry_ok(entry: Any) -> bool:
-    """Whether `entry` holds the saved fields of a failed evidence run."""
+def _failure_entry_ok(entry: Any, section: str = _FAILURES) -> bool:
+    """Whether `entry` holds the saved fields of a failed run in `section`."""
     if not isinstance(entry, dict) or set(entry) != set(_FAILURE_KEYS):
         return False
     if not all(isinstance(entry[key], str) for key in _FAILURE_KEYS):
         return False
+    kinds = EVIDENCE_FAILURE_KINDS if section == _FAILURES else DECISION_FAILURE_KINDS
     return (
         _created_ok(entry["created"])
-        and entry["kind"] in EVIDENCE_FAILURE_KINDS
+        and entry["kind"] in kinds
         and len(entry["message"]) <= MAX_MESSAGE
     )
 
@@ -227,24 +257,32 @@ def _before(created: str, other: str) -> bool:
     return datetime.fromisoformat(created) < datetime.fromisoformat(other)
 
 
-def _lenient_failures(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+def _lenient_failures(
+    records: dict[str, Any] | None, section: str = _FAILURES
+) -> dict[str, dict[str, Any]]:
     """Return the saved failures still worth showing; malformed ones are dropped.
 
-    A section that is not an object reads as empty. A failure saved before the
-    evidence saved for its directive is out of date and dropped too.
+    `section` is `evidence_failures` or `decision_failures`. A section that is
+    not an object reads as empty. A failure saved before the evidence or
+    decision saved for its directive is out of date and dropped too.
     """
     if records is None:
         return {}
-    failures = records.get(_FAILURES, {})
+    failures = records.get(section, {})
     if not isinstance(failures, dict):
         return {}
-    evidence = records.get("evidence", {})
+    succeeded, success_ok = (
+        ("evidence", _evidence_entry_ok)
+        if section == _FAILURES
+        else ("decisions", _decision_entry_ok)
+    )
+    successes = records.get(succeeded, {})
     kept = {}
     for key, entry in failures.items():
-        if not _failure_entry_ok(entry):
+        if not _failure_entry_ok(entry, section):
             continue
-        saved = evidence.get(key) if isinstance(evidence, dict) else None
-        if isinstance(saved, dict) and _evidence_entry_ok(saved):
+        saved = successes.get(key) if isinstance(successes, dict) else None
+        if isinstance(saved, dict) and success_ok(saved):
             if _before(entry["created"], saved["created"]):
                 continue
         kept[key] = dict(entry)
@@ -253,13 +291,29 @@ def _lenient_failures(records: dict[str, Any] | None) -> dict[str, dict[str, Any
 
 def _with_lenient_failures(records: dict[str, Any]) -> dict[str, Any]:
     """Return ``records`` with only the failures `_lenient_failures` keeps."""
-    if _FAILURES not in records:
+    for section in _FAILURE_SECTIONS:
+        if section in records:
+            failures = _lenient_failures(records, section)
+            records = {k: v for k, v in records.items() if k != section}
+            if failures:
+                records[section] = failures
+    return records
+
+
+def _without_failure(
+    records: dict[str, Any] | None, section: str, key: str, keep: Iterable[str]
+) -> dict[str, Any] | None:
+    """Drop the failure saved under ``key`` in ``section``, and gone directives'."""
+    if records is None or section not in records:
         return records
-    failures = _lenient_failures(records)
-    result = {k: v for k, v in records.items() if k != _FAILURES}
+    wanted = set(keep) - {key}
+    failures = {
+        k: v for k, v in _lenient_failures(records, section).items() if k in wanted
+    }
+    records = {k: v for k, v in records.items() if k != section}
     if failures:
-        result[_FAILURES] = failures
-    return result
+        records[section] = failures
+    return records
 
 
 def _view_entry_ok(entry: Any) -> bool:
@@ -504,9 +558,10 @@ def _fitted(records: dict[str, Any]) -> dict[str, Any]:
 
     Drawings are a cache, drawn again when asked for, so they never stop what
     a check, evidence or a decision found from being saved. Saved failures
-    only say that a run failed, so they go next.
+    only say that a run failed, so they go next: evidence failures, then
+    decision failures.
     """
-    for section in ("views", _FAILURES):
+    for section in ("views", *_FAILURE_SECTIONS):
         if section in records and _too_large(records):
             records = {k: v for k, v in records.items() if k != section}
     return records
@@ -537,8 +592,8 @@ def records_from_check(
 ) -> dict[str, Any]:
     """Build records from a completed check of ``text``.
 
-    Saved evidence, decisions, drawings and failed evidence runs in the
-    ``previous`` records are carried over unchanged: a check neither makes nor
+    Saved evidence, decisions, drawings and failed evidence and decision runs
+    in the ``previous`` records are carried over unchanged: a check neither makes nor
     judges them. The saved drawings, then the saved failures, are dropped
     instead when they would make the records too large.
     Raises:
@@ -624,8 +679,8 @@ def records_from_check(
     kept = dict(records)
     for section in _RESULT_SECTIONS:
         saved = (
-            _lenient_failures(previous)
-            if section == _FAILURES
+            _lenient_failures(previous, section)
+            if section in _FAILURE_SECTIONS
             else _saved(previous, section)
         )
         if saved:
@@ -796,6 +851,17 @@ def saved_evidence_failures(
     return _lenient_failures(records)
 
 
+def saved_decision_failures(
+    records: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """Return the saved failed decision runs by directive key, read leniently.
+
+    As for `saved_evidence_failures`, with failures saved before their
+    directive's decision left out.
+    """
+    return _lenient_failures(records, _DECISION_FAILURES)
+
+
 def _refuse_unreadable(
     records: dict[str, Any] | None, notebook: Path | None, action: str
 ) -> None:
@@ -877,14 +943,8 @@ def with_evidence(
     if not fingerprint_ok(entry["fingerprint"]):
         raise ValueError(f"The evidence cannot be saved: {UNKNOWN_FINGERPRINT}.")
     keep = tuple(keep)
-    if records is not None and _FAILURES in records:
-        # This success replaces the directive's failure; gone directives
-        # lose theirs.
-        wanted = set(keep) - {key}
-        failures = {k: v for k, v in _lenient_failures(records).items() if k in wanted}
-        records = {k: v for k, v in records.items() if k != _FAILURES}
-        if failures:
-            records[_FAILURES] = failures
+    # This success replaces the directive's failure; gone directives lose theirs.
+    records = _without_failure(records, _FAILURES, key, keep)
     return _with_entry(
         records,
         "evidence",
@@ -914,25 +974,63 @@ def with_evidence_failure(
         ValueError: ``entry`` is not a well-formed saved failure (its message
             within `MAX_MESSAGE`, see `failure_message`), its fingerprint is
             not an environment digest, an unreadable records file would be
-            overwritten, or the failure does not fit in the records even
-            without the saved drawings: it is then not saved.
+            overwritten, or the failure fits in the records only without
+            saved failures, or not even without the saved drawings: it is
+            then not saved.
     """
-    if not _failure_entry_ok(entry):
-        raise ValueError("The evidence failure entry is malformed.")
+    return _with_failure(records, _FAILURES, key, entry, keep, notebook)
+
+
+def with_decision_failure(
+    records: dict[str, Any] | None,
+    key: str,
+    entry: dict[str, Any],
+    keep: Iterable[str],
+    notebook: Path | None = None,
+) -> dict[str, Any]:
+    """Return ``records`` with the failed decision run ``entry`` saved under ``key``.
+
+    Like ``with_evidence_failure``, for the decision directive ``key``: the
+    decision saved for it, if any, is kept.
+
+    Raises:
+        ValueError: as for ``with_evidence_failure``, with the kind one of
+            `DECISION_FAILURE_KINDS`.
+    """
+    return _with_failure(records, _DECISION_FAILURES, key, entry, keep, notebook)
+
+
+def _with_failure(
+    records: dict[str, Any] | None,
+    section: str,
+    key: str,
+    entry: dict[str, Any],
+    keep: Iterable[str],
+    notebook: Path | None,
+) -> dict[str, Any]:
+    """Save a failed run in ``section``, refused if it would drop saved failures.
+
+    Making room by dropping either failure section would lose failures saved
+    for other directives, so the failure is refused instead.
+    """
+    what = "evidence" if section == _FAILURES else "decision"
+    if not _failure_entry_ok(entry, section):
+        raise ValueError(f"The {what} failure entry is malformed.")
     if not fingerprint_ok(entry["fingerprint"]):
         raise ValueError(f"The failure cannot be saved: {UNKNOWN_FINGERPRINT}.")
+    kept = {s for s in _FAILURE_SECTIONS if _lenient_failures(records, s)} | {section}
     result = _with_entry(
         records,
-        _FAILURES,
+        section,
         key,
         entry,
         keep,
         notebook,
         "the failure is shown but not saved",
     )
-    if _FAILURES not in result:
+    if not kept <= set(result):
         raise ValueError(
-            "Saved evidence failures would make the records file too large; "
+            f"Saved {what} failures would make the records file too large; "
             "the failure is shown but not saved."
         )
     return result
@@ -949,6 +1047,7 @@ def with_decision(
 
     Like ``with_evidence``: decisions for keys that are neither ``key`` nor in
     ``keep`` are dropped, and an unreadable records file is never replaced.
+    The failure saved for ``key`` is removed, and those of gone directives.
 
     Raises:
         ValueError: ``entry`` is not a well-formed saved decision (its outcome
@@ -960,6 +1059,8 @@ def with_decision(
         raise ValueError("The decision entry is malformed.")
     if not fingerprint_ok(entry["fingerprint"]):
         raise ValueError(f"The decision cannot be saved: {UNKNOWN_FINGERPRINT}.")
+    keep = tuple(keep)
+    records = _without_failure(records, _DECISION_FAILURES, key, keep)
     return _with_entry(
         records,
         "decisions",
@@ -1018,6 +1119,8 @@ def without_decision(
 ) -> dict[str, Any]:
     """Return ``records`` without the decision saved under ``key``.
 
+    The failure saved for ``key``, if any, goes too: Discard clears the card.
+
     Raises:
         ValueError: an unreadable records file would be overwritten, or no
             decision is saved under ``key``.
@@ -1030,6 +1133,11 @@ def without_decision(
     result = {k: v for k, v in records.items() if k != "decisions"}
     if decisions:
         result["decisions"] = decisions
+    failures = saved_decision_failures(result)
+    failures.pop(key, None)
+    result.pop(_DECISION_FAILURES, None)
+    if failures:
+        result[_DECISION_FAILURES] = failures
     return result
 
 
@@ -1060,6 +1168,25 @@ def evidence_status(
     ] == evidence_prefix_sha256(text, line):
         return "current"
     return "stale"
+
+
+def decision_failure_status(
+    entry: dict[str, Any],
+    text: str,
+    end_line: int,
+    fingerprint: str,
+    *,
+    compare_environment: bool = True,
+) -> Literal["current", "stale"]:
+    """Say whether a saved failed decision run still describes its directive.
+
+    It is current while its environment and the source through the
+    directive's last line, ``end_line``, match; unlike a decision, it is never
+    accepted. ``compare_environment`` is as in `claim_views`.
+    """
+    return evidence_status(
+        entry, text, end_line, fingerprint, compare_environment=compare_environment
+    )
 
 
 def view_status(
