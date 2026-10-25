@@ -84,14 +84,18 @@ def test_dependency_overrides_are_refused(compute_project):
 
 def test_remote_fingerprint_binds_dependency_bytes(compute_project, monkeypatch):
     """Dirty-to-dirty edits change remote freshness even without a Git revision."""
+    from glitnir.compute.client import remote_identity
     from glitnir.lean.fingerprint import environment_fingerprint
 
     monkeypatch.setenv("GLITNIR_EXECUTION_BACKEND", "taskvalet")
     source = compute_project / "Example.lean"
-    before = environment_fingerprint(source, source.read_text())
+    remote = remote_identity(source)
+    before = environment_fingerprint(source, source.read_text(), remote=remote)
     assert before["compute_context"] == context_digest(source)
     (compute_project / "Helper.lean").write_text("def helper := 37\n")
-    after = environment_fingerprint(source, source.read_text())
+    after = environment_fingerprint(
+        source, source.read_text(), remote=remote_identity(source)
+    )
     assert after["compute_context"] != before["compute_context"]
     assert after["stable_sha256"] != before["stable_sha256"]
 

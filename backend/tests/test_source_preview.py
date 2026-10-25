@@ -1225,7 +1225,7 @@ def test_an_unknown_environment_draws_once_and_says_so(
         monkeypatch.setattr(
             module,
             "environment_fingerprint",
-            lambda *a: {
+            lambda *a, **k: {
                 "sha256": secrets.token_hex(32),  # matches nothing, ever
                 "stable_sha256": "stable",
                 "unknown": True,
@@ -1623,7 +1623,7 @@ def _evidence_service(tmp_path, monkeypatch, provider=None, runner=None):
     )
     for module in (source_preview, preview_snapshot):
         monkeypatch.setattr(
-            module, "environment_fingerprint", lambda *a: {"sha256": FP}
+            module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
         )
     monkeypatch.setattr(source_preview, "run_provider_lean", runner or run)
     path = tmp_path / "A.lean"
@@ -3023,7 +3023,7 @@ def _unsupported_service(tmp_path: Path, monkeypatch, toolchain: str | None):
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
     for module in (source_preview, preview_snapshot):
         monkeypatch.setattr(
-            module, "environment_fingerprint", lambda *a: {"sha256": FP}
+            module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
         )
     for name in (
         "check_project",

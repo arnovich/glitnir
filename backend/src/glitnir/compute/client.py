@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from glitnir.compute.protocol import context_digest, make_request
+from glitnir.compute.protocol import checker_digest, context_digest, make_request
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 
 MAX_RESPONSE = 2_500_000
@@ -92,6 +92,22 @@ def execution_identity() -> dict[str, str] | None:
             "GLITNIR_TASKVALET_PROJECT",
             "GLITNIR_TASKVALET_ENVIRONMENT",
         )
+    }
+
+
+def remote_identity(source: Path) -> dict[str, Any] | None:
+    """Return the fields a fingerprint of `source` adds under remote execution.
+
+    None for local execution. They go to `environment_fingerprint` as its
+    `remote` argument, which `glitnir.lean` cannot compute itself.
+    """
+    execution = execution_identity()
+    if execution is None:
+        return None
+    return {
+        "execution": execution,
+        "compute_context": context_digest(source),
+        "compute_checker": checker_digest(),
     }
 
 

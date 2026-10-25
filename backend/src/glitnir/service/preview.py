@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from glitnir.compute.client import check_remote, from_environment
+from glitnir.compute.client import check_remote, from_environment, remote_identity
 from glitnir.lean.awake import awake
 from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
 from glitnir.lean.project import describe_project, read_regular
@@ -618,7 +618,9 @@ class SourcePreviewService:
         try:
             text = read_regular(self.path, 16 * 1024 * 1024).decode()
             progress("Reading dependency state")
-            environment = environment_fingerprint(self.path, text)
+            environment = environment_fingerprint(
+                self.path, text, remote=remote_identity(self.path)
+            )
             compiled: list[dict[str, Any]] = []
 
             def acquired() -> None:
@@ -628,7 +630,11 @@ class SourcePreviewService:
                 # change after this leaves them out of date.
                 if not compiled:
                     progress("Reading dependency state")
-                    compiled.append(environment_fingerprint(self.path, text))
+                    compiled.append(
+                        environment_fingerprint(
+                            self.path, text, remote=remote_identity(self.path)
+                        )
+                    )
 
             if from_environment() is not None:
 
@@ -1325,7 +1331,9 @@ class SourcePreviewService:
         # Taken before the run so an environment change during it leaves the
         # saved evidence out of date, and before the provider's command so a
         # failure in it can be saved.
-        environment = environment_fingerprint(self.path, job.text, imports)
+        environment = environment_fingerprint(
+            self.path, job.text, imports, remote=remote_identity(self.path)
+        )
         message, to_save = self._evidence_attempt(job, imports, environment)
         if message is None or to_save is None:
             return message, False
@@ -1656,7 +1664,9 @@ class SourcePreviewService:
             return provider_failure(provider, failure)
         # Taken before the run so an environment change during it leaves the
         # saved decision out of date.
-        environment = environment_fingerprint(self.path, job.text)
+        environment = environment_fingerprint(
+            self.path, job.text, remote=remote_identity(self.path)
+        )
         fingerprint = environment["sha256"]
         # The block is inserted into the notebook, so the notebook must already
         # import what it needs.

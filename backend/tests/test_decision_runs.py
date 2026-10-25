@@ -123,7 +123,7 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
     for module in (source_preview, preview_snapshot):
         monkeypatch.setattr(
-            module, "environment_fingerprint", lambda *a: {"sha256": FP}
+            module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
         )
     monkeypatch.setattr(source_preview, "check_candidate", check or checked)
     monkeypatch.setattr(source_preview, "provider_imports_error", imports_ok)

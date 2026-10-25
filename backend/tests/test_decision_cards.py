@@ -557,7 +557,7 @@ def _saved_decision(path: Path, verification=None, **changes):
 def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
     from glitnir.service import preview as source_preview
 
-    def fingerprint(*args):
+    def fingerprint(*args, **kwargs):
         if fingerprints is not None:
             fingerprints.append(1)
         return {"sha256": FP}

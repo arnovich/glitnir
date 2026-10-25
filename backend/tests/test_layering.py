@@ -2,7 +2,6 @@
 
 import ast
 import textwrap
-from collections.abc import Iterator
 from pathlib import Path
 
 import glitnir
@@ -30,32 +29,17 @@ def _resolve(node: ast.ImportFrom, module: str, is_package: bool) -> str:
     return ".".join(base + ([node.module] if node.module else []))
 
 
-def _module_level_statements(body: list[ast.stmt]) -> Iterator[ast.stmt]:
-    """Yield the statements that run at import time.
+def _imports(path: Path, module: str) -> list[str]:
+    """Return the absolute `glitnir.*` modules `path` imports anywhere.
 
-    Descends into `if`, `try`, `with` and loop blocks but not into function or
-    class bodies, which run later.
-    """
-    for node in body:
-        yield node
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        for field in ("body", "orelse", "finalbody"):
-            yield from _module_level_statements(getattr(node, field, []))
-        for handler in getattr(node, "handlers", []):
-            yield from _module_level_statements(handler.body)
-
-
-def _module_level_imports(path: Path, module: str) -> list[str]:
-    """Return the absolute `glitnir.*` modules imported at module level.
-
-    For `from package import name`, `name` may itself be a submodule, so
-    `package.name` is reported as well.
+    Every import counts, including those under `if`, `try`, `TYPE_CHECKING`,
+    and inside function and class bodies: a deferred import is still a
+    dependency of the layer.
     """
     tree = ast.parse(path.read_text())
     is_package = path.name == "__init__.py"
     found = []
-    for node in _module_level_statements(tree.body):
+    for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             target = _resolve(node, module, is_package)
             if target.startswith("glitnir"):
@@ -69,12 +53,7 @@ def _module_level_imports(path: Path, module: str) -> list[str]:
 
 
 def test_modules_import_only_downward() -> None:
-    """`__main__` modules are entry points and may import anything.
-
-    `lean/fingerprint.py` imports `glitnir.compute` inside a function to record
-    the remote execution identity; that is the one known upward edge, and it is
-    not module level, so this test does not see it.
-    """
+    """`__main__` modules are entry points and may import anything."""
     upward = []
     for path in ROOT.rglob("*.py"):
         if path.name == "__main__.py":
@@ -83,7 +62,7 @@ def test_modules_import_only_downward() -> None:
         if parts[-1] == "__init__":
             parts = parts[:-1]
         module = ".".join(["glitnir", *parts])
-        for imported in _module_level_imports(path, module):
+        for imported in _imports(path, module):
             if _layer(imported) > _layer(module):
                 upward.append(f"{module} -> {imported}")
     assert upward == [], "\n".join(upward)
@@ -92,7 +71,7 @@ def test_modules_import_only_downward() -> None:
 def _imports_of(tmp_path: Path, source: str, module: str) -> list[str]:
     path = tmp_path / "sample.py"
     path.write_text(textwrap.dedent(source))
-    return _module_level_imports(path, module)
+    return _imports(path, module)
 
 
 def test_relative_imports_are_resolved(tmp_path: Path) -> None:
@@ -123,8 +102,8 @@ def test_imported_names_may_be_submodules(tmp_path: Path) -> None:
         assert _layer("glitnir.service") > _layer(module)
 
 
-def test_nested_module_level_blocks_are_walked(tmp_path: Path) -> None:
-    """Imports under `if`, `try` and `TYPE_CHECKING` count; function bodies do not."""
+def test_nested_blocks_and_function_bodies_are_walked(tmp_path: Path) -> None:
+    """Imports under `if`, `try`, `TYPE_CHECKING`, functions and classes count."""
     source = """\
         from typing import TYPE_CHECKING
         if TYPE_CHECKING:
@@ -152,7 +131,7 @@ def test_nested_module_level_blocks_are_walked(tmp_path: Path) -> None:
         "glitnir.notebook",
         "glitnir.lean",
         "glitnir.providers",
+        "glitnir.service.hidden",
+        "glitnir.service.hidden_too",
     ):
         assert name in imported, name
-    assert "glitnir.service.hidden" not in imported
-    assert "glitnir.service.hidden_too" not in imported

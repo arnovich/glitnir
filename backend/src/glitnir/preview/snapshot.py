@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from glitnir.compute.client import remote_identity
 from glitnir.lean.fingerprint import environment_fingerprint
 from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
@@ -326,10 +327,16 @@ class Fingerprints:
                     # The dependencies' git states are the notebook's own.
                     packages = self.environment().get("packages")
                     found = environment_fingerprint(
-                        self._path, self._text, imports, packages
+                        self._path,
+                        self._text,
+                        imports,
+                        packages,
+                        remote=remote_identity(self._path),
                     )
                 else:
-                    found = environment_fingerprint(self._path, self._text)
+                    found = environment_fingerprint(
+                        self._path, self._text, remote=remote_identity(self._path)
+                    )
                 self._found[imports] = found
             except Exception as error:
                 self._failed[imports] = error
