@@ -175,6 +175,18 @@ def test_an_iterate_directive_is_read_with_its_ports() -> None:
         ("-- @evidence iterate u (state := 1) (steps := 0)", "steps must be"),
         ("-- @evidence iterate u (state := 1) (h := 1/2)", "unknown option 'h'"),
         ("-- @evidence iterate u (state := 1) (inputs := 2) (names := a)", "all 2"),
+        (
+            "-- @evidence iterate u (state := 1, 2) (names := x, x)",
+            "state names must be distinct; 'x' is given twice",
+        ),
+        (
+            "-- @evidence iterate u (state := 1, 2) (names := it's, it's)",
+            "state names must be distinct; 'it's' is given twice",
+        ),
+        (
+            f"-- @evidence iterate u (state := 1, 2) (names := x, {'n' * 201})",
+            "the name of state 2 ('nnnnnnnnnnnnnnnnnnnn…') is longer than 200",
+        ),
         ("-- @evidence fly u (state := 1)", "use simulate, iterate or sample"),
     ],
 )
@@ -182,6 +194,25 @@ def test_malformed_iterate_directives_carry_an_error(directive, error) -> None:
     simulation = _read(directive)
     assert error in simulation.error
     assert simulation.verb == ("simulate" if " fly " in directive else "iterate")
+
+
+@pytest.mark.parametrize(
+    "directive",
+    [
+        "-- @evidence iterate u (state := 1) (parameter := 2) (names := a, a)",
+        "-- @evidence iterate u (state := 1) (inputs := 1, 2) (names := x, u, u)",
+        f"-- @evidence iterate u (state := 1) (inputs := 2) (names := x, {'u' * 201})",
+    ],
+)
+def test_input_and_parameter_names_are_not_checked_beyond_their_count(
+    directive,
+) -> None:
+    """Only the state names name series, so only they must be distinct and short.
+
+    The rest are only counted, so a directive that ran before still runs.
+    """
+    simulation = _read(directive)
+    assert simulation.error == ""
 
 
 def test_the_update_is_iterated_with_inputs_taken_in_turn() -> None:

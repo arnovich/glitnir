@@ -53,6 +53,9 @@ replaces it. A provider crash is saved as its exception type only. Setup failure
 (an unbuilt module, Lake, the sandbox or a missing Python dependency) are only shown.
 If the file would exceed 16 MiB or the existing file cannot be read, the run still
 happens but its result is not saved; the card shows why. Never hand-edit it.
+While the preview stays open, a rerun after editing only the directive's options
+reuses Lean's earlier output (same source above, same environment) and takes
+seconds; the first run of a directive always runs Lean.
 
 `glitnir-forseti` provides three verbs: `simulate`, `iterate` and `sample`. They
 load `Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
@@ -68,7 +71,8 @@ unavailable and cannot run.
 
 `simulate` takes `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`; it needs no
 extra package. `iterate` takes `state`, `inputs`, `parameter`, `steps` and `names`
-and needs Python Asgard (`gimle-asgard`, installed separately into the backend).
+(one per port: state, then inputs, then parameters; the state names distinct) and needs Python
+Asgard (`gimle-asgard`, installed separately into the backend).
 `sample` takes `law` (`gaussian`, `twopoint` or `threepoint`), `variance` and
 `observe`, plus `paths` (at most 100000), `steps`, `seed`, `barrier` and `show`,
 and needs no extra package. Numbers are plain decimals or

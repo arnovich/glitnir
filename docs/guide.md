@@ -75,7 +75,13 @@ run is saved too when it failed in Lean, in the provider, with output that is
 not evidence, or at its time limit: the card then reads Failed, or keeps its
 last chart with a note that the last run failed. A provider crash is saved as
 its exception type only. Failures of the setup, such as an unbuilt module or a
-missing Python dependency, are shown but not saved. Evidence is never proof: it changes no claim's status
+missing Python dependency, are shown but not saved. While the preview is open,
+running a directive again after editing only its options (or the lines below it)
+reuses what Lean printed for it before, as long as the source above it and the
+environment are unchanged: the run takes seconds, so a corrected option, or one
+the provider still refuses, such as a state count that does not match the
+circuit, is reported at once. Lean's first run of a directive cannot be skipped:
+only it shows the target's shape. Evidence is never proof: it changes no claim's status
 and not the check exit code. Without a
 provider the line shows why, and saved results stay viewable.
 

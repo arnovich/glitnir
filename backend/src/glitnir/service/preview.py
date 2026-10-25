@@ -7,6 +7,7 @@ import secrets
 import tempfile
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +15,12 @@ from typing import Any, Callable
 
 from glitnir.compute.client import check_remote, from_environment
 from glitnir.lean.awake import awake
-from glitnir.lean.fingerprint import environment_fingerprint, unknown_git_note
+from glitnir.lean.digest import fingerprint_ok
+from glitnir.lean.fingerprint import (
+    environment_fingerprint,
+    header_words,
+    unknown_git_note,
+)
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
     check_candidate,
@@ -114,6 +120,10 @@ CLOSED = "This preview is closed."
 SOURCE_CHANGED = "Saved source changed; refresh and retry."
 CHANGED_DURING_RUN = "Saved source changed during the run; run again."
 MAX_RUN_ERRORS = 64
+#: How many of Lean's evidence outputs a preview remembers, and how many
+#: characters they may hold together (`_Emissions`).
+MAX_EMISSIONS = 16
+MAX_EMISSION_CHARACTERS = 32 * 1024**2
 NOTHING_TO_STOP = "No decision is running."
 DECISION_CANCELLED = "Decision run cancelled."
 DECISION_RUNNING = "This decision is running; stop it first."
@@ -211,6 +221,86 @@ def _names_local_path(message: str, notebook: Path) -> bool:
             except (OSError, RuntimeError):
                 pass
     return any(name != "/" and name in message for name in names)
+
+
+class _Emissions:
+    """What Lean printed for evidence runs, by everything that Lean was given.
+
+    An evidence run's Lean output is fixed by the notebook text before the
+    directive's line, that line's number, the provider's name, imports,
+    preamble, marker and command, and the environment the fingerprint
+    identifies. The directive's options never reach Lean; only the provider's
+    `compute` reads them. So a run whose key matches a kept one, typically the
+    same directive with corrected options, is computed on the kept output
+    without running Lean again, and a mistake only `compute` can see, such as
+    a port count that does not match the circuit, is reported in seconds.
+
+    Output is kept only when the environment was the same before and after
+    the run, and whatever Lean printed is kept, even text that is not JSON: it
+    would print the same again, and the rerun reports it the same way.
+
+    In memory only, at most `entries` outputs and `size` characters together
+    (not bytes), the oldest dropped first; one larger than `size` is not kept.
+    Not thread-safe: the service holds `_state_lock` around it.
+    """
+
+    def __init__(
+        self, entries: int = MAX_EMISSIONS, size: int = MAX_EMISSION_CHARACTERS
+    ) -> None:
+        self._entries = entries
+        self._size = size
+        self._kept: OrderedDict[tuple[str, ...], str] = OrderedDict()
+        self._total = 0
+
+    def get(self, key: tuple[str, ...]) -> str | None:
+        """Return the output kept for `key`, or None."""
+        return self._kept.get(key)
+
+    def keep(self, key: tuple[str, ...], payload: str) -> None:
+        """Keep `payload` for `key`, dropping the oldest beyond the bounds."""
+        if len(payload) > self._size:
+            return
+        earlier = self._kept.pop(key, None)
+        if earlier is not None:
+            self._total -= len(earlier)
+        self._kept[key] = payload
+        self._total += len(payload)
+        while len(self._kept) > self._entries or self._total > self._size:
+            _key, dropped = self._kept.popitem(last=False)
+            self._total -= len(dropped)
+
+
+def _emission_key(
+    job: "_EvidenceJob",
+    imports: tuple[str, ...],
+    preamble: Any,
+    marker: Any,
+    command: Any,
+    environment: dict[str, Any],
+) -> tuple[str, ...] | None:
+    """Name everything an evidence run's Lean is given, or None if it cannot be.
+
+    None when the environment is unknown (its digest is random) or the
+    provider gave something other than text, which the run itself reports.
+    Lines below the directive are not part of it: Lean never sees them. The
+    header's words are, wherever the header is: Lake's setup reads them.
+    """
+    fingerprint = environment.get("sha256")
+    if environment.get("unknown") or not fingerprint_ok(fingerprint):
+        return None
+    if not all(isinstance(part, str) for part in (preamble, marker, command)):
+        return None
+    return (
+        str(job.provider.name),
+        json.dumps(list(imports)),
+        preamble,
+        marker,
+        command,
+        str(job.line),
+        evidence_prefix_sha256(job.text, job.line - 1),
+        json.dumps(header_words(job.text)),
+        str(fingerprint),
+    )
 
 
 @dataclass(frozen=True)
@@ -392,6 +482,9 @@ class SourcePreviewService:
         self._decision_cancel: threading.Event | None = None
         self._running: str | None = None
         self._run_errors: dict[str, str] = {}
+        # Lean's output of earlier evidence runs, for reruns. Under
+        # `_state_lock`.
+        self._emissions = _Emissions()
         # Keys whose last run error was also saved as the card's failure.
         self._saved_failures: set[str] = set()
         # Every read-modify-write of the records file, so none drops another's.
@@ -1341,7 +1434,9 @@ class SourcePreviewService:
         the message to save, or None for an error that is not saved: anything
         but the directive's own Lean error, the provider's crash or refusal,
         output that is not evidence, or the run's own time limit. A crash is
-        saved as its exception type alone (`_crash`).
+        saved as its exception type alone (`_crash`). Lean's output kept from
+        an earlier run with the same input is used without running Lean
+        (`_Emissions`).
         """
         provider, request = job.provider, job.request
         fingerprint = environment["sha256"]
@@ -1351,20 +1446,28 @@ class SourcePreviewService:
             command = provider.command(request)
         except BaseException as failure:
             return _crash(provider, failure)
-        result = run_provider_lean(
-            self.path,
-            expected_sha256=job.sha256,
-            line=job.line,
-            provider_name=provider.name,
-            imports=imports,
-            preamble=preamble,
-            command=command,
-            marker=marker,
-            needs="evidence",
-            cancel=self._cancel,
-            wait=True,
-            environment_sha256=None if environment.get("unknown") else fingerprint,
-        )
+        key = _emission_key(job, imports, preamble, marker, command, environment)
+        with self._state_lock:
+            kept = None if key is None else self._emissions.get(key)
+        if kept is not None:
+            result: dict[str, Any] = {"payload": kept}
+        else:
+            result = run_provider_lean(
+                self.path,
+                expected_sha256=job.sha256,
+                line=job.line,
+                provider_name=provider.name,
+                imports=imports,
+                preamble=preamble,
+                command=command,
+                marker=marker,
+                needs="evidence",
+                cancel=self._cancel,
+                wait=True,
+                environment_sha256=None if environment.get("unknown") else fingerprint,
+            )
+            if key is not None and isinstance(result.get("payload"), str):
+                self._keep_emission(key, result["payload"], job, imports, environment)
         if "payload" not in result:
             if result.get("timed_out") is True:
                 limit = f"{check_seconds():g}"
@@ -1420,6 +1523,27 @@ class SourcePreviewService:
                 return f"Evidence could not be saved: {failure}.", None
         # Saved, but under a fingerprint that matches nothing: say why.
         return unknown_git_note(environment), None
+
+    def _keep_emission(
+        self,
+        key: tuple[str, ...],
+        payload: str,
+        job: _EvidenceJob,
+        imports: tuple[str, ...],
+        environment: dict[str, Any],
+    ) -> None:
+        """Keep Lean's output if the environment did not change during the run.
+
+        A build changed while Lean ran may have been loaded by it, so its
+        output would describe neither environment for sure.
+        """
+        after = environment_fingerprint(
+            self.path, job.text, imports, environment.get("packages")
+        )
+        if after.get("unknown") or after.get("sha256") != environment["sha256"]:
+            return
+        with self._state_lock:
+            self._emissions.keep(key, payload)
 
     def _save_failure(
         self, job: _EvidenceJob, environment: dict[str, Any], kind: str, message: str
