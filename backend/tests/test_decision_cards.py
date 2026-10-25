@@ -217,6 +217,7 @@ def test_cards_pass_the_name_kind_and_goal_to_the_provider():
         "run_error": None,
         "outcome": None,
         "verification": None,
+        "failure": None,
     }
 
 

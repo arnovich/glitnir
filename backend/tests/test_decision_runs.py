@@ -11,7 +11,12 @@ import pytest
 from glitnir.lean import project_checking
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_snapshot import SnapshotError
-from glitnir.notebook.check_records import load_records, records_path
+from glitnir.notebook.check_records import (
+    decision_prefix_sha256,
+    load_records,
+    records_path,
+    saved_decision_failures,
+)
 from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import (
     DecisionProvider,
@@ -151,6 +156,20 @@ def _card(service) -> dict:
 
 def _saved(path: Path) -> dict:
     return (load_records(path) or {}).get("decisions", {})
+
+
+def _saved_failures(path: Path) -> dict:
+    """The failed runs saved beside the notebook, as a reader reads them."""
+    return saved_decision_failures(load_records(path))
+
+
+def _reopened(service) -> dict:
+    """The card a new preview of the same notebook shows, before any run."""
+    reopened = SourcePreviewService(service.path)
+    try:
+        return _card(reopened)
+    finally:
+        reopened.close()
 
 
 def test_a_proven_decision_is_checked_and_saved_as_a_candidate(tmp_path, monkeypatch):
@@ -342,8 +361,10 @@ def test_a_theorem_named_for_another_goal_is_refused(
         card = _card(service)
     finally:
         service.close()
-    assert (card["status"], card["run_error"]) == ("never", message)
-    assert not records_path(service.path).exists()
+    assert (card["status"], card["run_error"]) == ("failed", message)
+    assert _saved(service.path) == {}
+    [saved] = _saved_failures(service.path).values()
+    assert (saved["kind"], saved["message"]) == ("invalid", message)
 
 
 class _ExpectedError(ValueError):
@@ -358,50 +379,125 @@ def _raises(error):
 
 
 @pytest.mark.parametrize(
-    "decide, message",
+    "decide, message, kind, saved_message",
     [
         (
             lambda request, cancel: 1 / 0,
             "Provider demo failed: ZeroDivisionError: division by zero",
+            "provider",
+            "Provider demo failed: ZeroDivisionError",
         ),
         (
             _raises(ValueError("The goal has no variables.")),
             "The goal has no variables.",
+            "refused",
+            None,
         ),
-        (_raises(_ExpectedError("Bounds are numbers.")), "Bounds are numbers."),
-        (_raises(ValueError()), "Provider demo failed: ValueError: "),
-        (_raises(KeyError("x")), "Provider demo failed: KeyError: 'x'"),
+        (
+            _raises(_ExpectedError("Bounds are numbers.")),
+            "Bounds are numbers.",
+            "refused",
+            None,
+        ),
+        (
+            _raises(ValueError()),
+            "Provider demo failed: ValueError: ",
+            "refused",
+            None,
+        ),
+        (
+            _raises(KeyError("x")),
+            "Provider demo failed: KeyError: 'x'",
+            "provider",
+            "Provider demo failed: KeyError",
+        ),
         (
             lambda request, cancel: {"status": "maybe"},
             "Provider demo returned an invalid decision: "
             "status must be proven, refuted or unknown.",
+            "invalid",
+            None,
         ),
         (
             lambda request, cancel: _outcome(block=f"{BLOCK}\n"),
             "Provider demo returned an invalid decision: "
             "The block may not end with a newline.",
+            "invalid",
+            None,
         ),
     ],
 )
-def test_provider_failures_become_the_card_run_error(
-    tmp_path, monkeypatch, decide, message
+def test_provider_failures_become_the_card_run_error_and_are_saved(
+    tmp_path, monkeypatch, decide, message, kind, saved_message
 ):
+    """Saved beside the notebook; a new preview shows it, not "never"."""
     service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        key = _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    # This session's own error is shown once, as the run error.
+    assert (card["status"], card["run_error"], card["failure"]) == (
+        "failed",
+        message,
+        None,
+    )
+    assert _saved(service.path) == {}
+    [(saved_key, saved)] = _saved_failures(service.path).items()
+    assert saved_key == key
+    assert {k: v for k, v in saved.items() if k != "created"} == {
+        "prefix_sha256": decision_prefix_sha256(TEXT, END_LINE),
+        "fingerprint": FP,
+        "provider": "demo",
+        "kind": kind,
+        "message": saved_message or message,
+    }
+    assert saved["created"].endswith("+00:00")
+    reopened = _reopened(service)
+    assert (reopened["status"], reopened["run_error"], reopened["outcome"]) == (
+        "failed",
+        None,
+        None,
+    )
+    assert reopened["failure"] == {
+        "kind": kind,
+        "message": saved_message or message,
+        "created": saved["created"],
+        "status": "current",
+    }
+
+
+def test_a_candidate_check_reaching_its_time_limit_is_saved(tmp_path, monkeypatch):
+    monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", "90000")
+
+    def timed_out(source, **options):
+        raise SnapshotError(project_checking.TIMED_OUT)
+
+    service, _calls = _service(tmp_path, monkeypatch, check=timed_out)
     try:
         _run(service)
         card = _card(service)
     finally:
         service.close()
-    assert (card["status"], card["run_error"]) == ("never", message)
-    assert not records_path(service.path).exists()
+    message = "The candidate check reached its time limit of 90 s."
+    assert (card["status"], card["run_error"]) == ("failed", message)
+    assert _saved(service.path) == {}
+    [saved] = _saved_failures(service.path).values()
+    assert (saved["kind"], saved["message"]) == ("timeout", message)
+    assert _reopened(service)["status"] == "failed"
 
 
 @pytest.mark.parametrize(
     "message",
     [
         "Another Lean run is in progress; retry when it finishes.",
-        "Project check timed out.",
+        "Waiting for another Lean run timed out.",
+        "Preparing the project snapshot timed out.",
         "Kernel replay failed: unknown constant.",
+        "Project check exceeded its output limit.",
+        "The sandbox is not available on this system.",
+        "Saved source changed; refresh and retry.",
     ],
 )
 def test_checker_failures_are_run_errors_not_verdicts(tmp_path, monkeypatch, message):
@@ -416,6 +512,7 @@ def test_checker_failures_are_run_errors_not_verdicts(tmp_path, monkeypatch, mes
         service.close()
     assert (card["status"], card["run_error"]) == ("never", message)
     assert not records_path(service.path).exists()
+    assert _reopened(service)["status"] == "never"
 
 
 def test_stop_during_decide_saves_nothing(tmp_path, monkeypatch):
@@ -1074,3 +1171,347 @@ def test_a_decision_run_is_kept_awake_while_deciding_and_checking(
         service.close()
     assert held == [("decide", 1), ("check", 1)]
     assert depth == [0]
+
+
+# ----- saved decision failures --------------------------------------------------
+
+_REFUSAL = "The goal has no variables."
+
+
+def _refusing(**changes) -> DecisionProvider:
+    return _decision_provider(decide=_raises(ValueError(_REFUSAL)), **changes)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError("cannot open /opt/x/data.csv"),
+        RuntimeError("GET https://api.example.test/v1/runs?token=s3cr3t failed"),
+    ],
+)
+def test_a_provider_crash_saves_only_its_exception_type(tmp_path, monkeypatch, error):
+    """The crash's text, which may name any path or URL, is never written."""
+    service, _calls = _service(
+        tmp_path, monkeypatch, _decision_provider(decide=_raises(error))
+    )
+    try:
+        _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    name = type(error).__name__
+    assert card["run_error"] == f"Provider demo failed: {name}: {error}"
+    [saved] = _saved_failures(service.path).values()
+    assert (saved["kind"], saved["message"]) == (
+        "provider",
+        f"Provider demo failed: {name}",
+    )
+    written = records_path(service.path).read_text()
+    for secret in ("/opt/x", "s3cr3t", "api.example.test"):
+        assert secret not in written
+
+
+def test_a_missing_or_broken_dependency_is_shown_but_not_saved(tmp_path, monkeypatch):
+    """An ImportError (Z3 gone, say) is a setup failure, not the directive's."""
+    missing = ModuleNotFoundError("No module named 'z3'")
+    service, _calls = _service(
+        tmp_path, monkeypatch, _decision_provider(decide=_raises(missing))
+    )
+    try:
+        _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == (
+        "Provider demo failed: ModuleNotFoundError: No module named 'z3'"
+    )
+    assert (card["status"], _saved_failures(service.path)) == ("never", {})
+
+
+class _Imports:
+    """A provider whose `imports` raises: provider code, before any run."""
+
+    name = "demo"
+    kinds = frozenset({"entailment"})
+    parse = staticmethod(_parse)
+    decide = staticmethod(lambda request, cancel: _outcome())
+    unavailable = staticmethod(lambda: None)
+
+    @property
+    def imports(self):
+        raise RuntimeError("no imports today")
+
+
+def test_setup_failures_before_deciding_are_not_saved(tmp_path, monkeypatch):
+    """A missing provider import, or `imports` raising, is shown only."""
+    from glitnir.service import preview as source_preview
+
+    service, _calls = _service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        source_preview,
+        "provider_imports_error",
+        lambda source, **options: {
+            "error": f"Run `lake build Demo.Decide` in {tmp_path}.",
+            "transient": True,
+        },
+    )
+    try:
+        _run(service)
+        first = _card(service)
+        job = service._decision_job(_sha(), LINE)
+        broken = SimpleNamespace(**{**job.__dict__, "provider": _Imports()})
+        error, saved = service._decision_run(broken, threading.Event())
+    finally:
+        service.close()
+    assert first["run_error"] == f"Run `lake build Demo.Decide` in {tmp_path}."
+    assert (error, saved) == (
+        "Provider demo failed: RuntimeError: no imports today",
+        False,
+    )
+    assert not records_path(service.path).exists()
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        lambda tmp_path: str(tmp_path / "goal.txt"),
+        lambda tmp_path: str(tmp_path.resolve() / "goal.txt"),
+        lambda tmp_path: str(Path.home() / "secret" / "goal.txt"),
+    ],
+)
+def test_a_refusal_naming_a_local_path_is_shown_but_never_saved(
+    tmp_path, monkeypatch, where
+):
+    path = where(tmp_path)
+    provider = _decision_provider(decide=_raises(ValueError(f"Cannot read {path}.")))
+    service, _calls = _service(tmp_path, monkeypatch, provider)
+    try:
+        _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == f"Cannot read {path}."
+    assert not records_path(service.path).exists()
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [{"sha256": FP, "unknown": True}, {"sha256": ""}],
+)
+def test_a_decision_failure_in_an_unknown_environment_is_not_saved(
+    tmp_path, monkeypatch, environment, patch_fingerprint
+):
+    service, _calls = _service(tmp_path, monkeypatch, _refusing())
+    patch_fingerprint(lambda *a: environment)
+    try:
+        _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == _REFUSAL
+    assert not records_path(service.path).exists()
+
+
+def test_a_failure_whose_source_changed_during_the_run_is_not_saved(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "A.lean"
+
+    def decide(request, cancel):
+        path.write_text(TEXT + "-- edited\n")
+        raise ValueError(_REFUSAL)
+
+    service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        _run(service)
+        path.write_text(TEXT)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == _REFUSAL
+    assert not records_path(path).exists()
+
+
+def test_a_failure_that_cannot_be_saved_still_shows_its_own_error(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    service, _calls = _service(tmp_path, monkeypatch, _refusing())
+    sidecar = records_path(service.path)
+    sidecar.write_text("not json")
+    caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
+    try:
+        _run(service)
+        card = _card(service)
+    finally:
+        service.close()
+    assert card["run_error"] == _REFUSAL
+    assert sidecar.read_text() == "not json"
+    [record] = [r for r in caplog.records if "not saved" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    assert "decision" in record.getMessage() and "ValueError" in record.getMessage()
+    assert _REFUSAL not in record.getMessage()
+
+
+def test_a_failure_while_the_preview_closes_is_not_saved(tmp_path, monkeypatch):
+    def decide(request, cancel):
+        service._cancel.set()
+        raise RuntimeError("boom")
+
+    service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        _run(service)
+    finally:
+        service.close()
+    assert not records_path(service.path).exists()
+
+
+def test_stop_before_a_failure_is_saved_saves_nothing(tmp_path, monkeypatch):
+    """Stop either wins or finds nothing to stop, as for a saved decision."""
+    from glitnir.service import preview as source_preview
+
+    shortened = source_preview.failure_message
+
+    def stop_first(message):
+        service.stop_decision()
+        return shortened(message)
+
+    service, _calls = _service(tmp_path, monkeypatch, _refusing())
+    monkeypatch.setattr(source_preview, "failure_message", stop_first)
+    try:
+        _run(service)
+        card = _card(service)
+        with pytest.raises(SnapshotError, match=f"^{NOTHING_TO_STOP}$"):
+            service.stop_decision()
+    finally:
+        service.close()
+    assert (card["status"], card["run_error"]) == ("never", DECISION_CANCELLED)
+    assert not records_path(service.path).exists()
+
+
+def test_a_saved_decision_failure_goes_out_of_date_with_the_text_above_or_environment(
+    tmp_path, monkeypatch, patch_fingerprint
+):
+    service, _calls = _service(tmp_path, monkeypatch, _refusing())
+    try:
+        _run(service)
+    finally:
+        service.close()
+    assert _reopened(service)["status"] == "failed"
+    service.path.write_text(TEXT + "def later := 2\n")
+    assert _reopened(service)["status"] == "failed", "edits below change nothing"
+    service.path.write_text(TEXT.replace("def x := 1", "def x := 2"))
+    card = _reopened(service)
+    assert (card["status"], card["failure"]["status"]) == ("stale", "stale")
+    service.path.write_text(TEXT)
+    patch_fingerprint(lambda *a: {"sha256": "9" * 64})
+    card = _reopened(service)
+    assert (card["status"], card["failure"]["status"]) == ("stale", "stale")
+
+
+def test_a_failure_after_a_decision_keeps_the_candidate_and_a_decision_clears_it(
+    tmp_path, monkeypatch
+):
+    answers = iter(["decide", "refuse", "decide"])
+
+    def decide(request, cancel):
+        if next(answers) == "refuse":
+            raise ValueError(_REFUSAL)
+        return _outcome()
+
+    service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        key = _run(service)
+        _run(service)
+        failed = _reopened(service)
+        # The checked candidate is still the one the editor may insert.
+        served = service.decision_candidate(key)
+        _run(service)
+        cleared = _reopened(service)
+    finally:
+        service.close()
+    assert (failed["status"], failed["outcome"]["block"]) == ("candidate", BLOCK)
+    assert (failed["failure"]["status"], failed["failure"]["message"]) == (
+        "current",
+        _REFUSAL,
+    )
+    assert served["block"] == BLOCK
+    assert (cleared["status"], cleared["failure"]) == ("candidate", None)
+    assert _saved_failures(service.path) == {}
+
+
+def test_an_out_of_date_failure_is_hidden_behind_a_current_decision(
+    tmp_path, monkeypatch, patch_fingerprint
+):
+    answers = iter(["decide", "refuse"])
+
+    def decide(request, cancel):
+        if next(answers) == "refuse":
+            raise ValueError(_REFUSAL)
+        return _outcome()
+
+    service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        _run(service)  # a candidate in FP
+        patch_fingerprint(lambda *a: {"sha256": "9" * 64})
+        _run(service)  # refused in another environment
+        in_other = _reopened(service)
+        patch_fingerprint(lambda *a: {"sha256": FP})
+        in_first = _reopened(service)
+    finally:
+        service.close()
+    assert (in_other["status"], in_other["failure"]["status"]) == ("stale", "current")
+    assert (in_first["status"], in_first["failure"]) == ("candidate", None)
+
+
+def test_discard_clears_the_saved_failure_with_the_decision(tmp_path, monkeypatch):
+    answers = iter(["decide", "refuse"])
+
+    def decide(request, cancel):
+        if next(answers) == "refuse":
+            raise ValueError(_REFUSAL)
+        return _outcome()
+
+    service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
+    try:
+        key = _run(service)
+        _run(service)
+        assert set(_saved_failures(service.path)) == {key}
+        assert service.discard_decision(_sha(), LINE) == key
+        card = _card(service)
+    finally:
+        service.close()
+    assert (card["status"], card["failure"], card["run_error"]) == ("never", None, None)
+    assert _saved_failures(service.path) == {}
+
+
+def test_an_unsaved_failure_keeps_the_saved_one_readable_as_earlier(
+    tmp_path, monkeypatch
+):
+    """A busy checker after a saved failure says nothing new about the directive."""
+    busy = "Another Lean run is in progress; retry when it finishes."
+    answers = iter(["refuse", "busy"])
+
+    def decide(request, cancel):
+        if next(answers) == "refuse":
+            raise ValueError(_REFUSAL)
+        return _outcome()
+
+    def check(source, **options):
+        raise SnapshotError(busy)
+
+    service, _calls = _service(
+        tmp_path, monkeypatch, _decision_provider(decide=decide), check=check
+    )
+    try:
+        _run(service)
+        saved_now = _card(service)
+        _run(service)
+        after_busy = _card(service)
+    finally:
+        service.close()
+    assert (saved_now["run_error"], saved_now["failure"]) == (_REFUSAL, None)
+    assert (after_busy["status"], after_busy["run_error"]) == ("failed", busy)
+    assert after_busy["failure"]["message"] == _REFUSAL
+    assert after_busy["failure"]["earlier"] is True
