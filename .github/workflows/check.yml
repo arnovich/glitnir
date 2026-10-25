@@ -281,9 +281,9 @@ jobs:
       # supported Lean toolchain with it.
       - name: Build the pinned Forseti Lean release
         run: |
-          git clone --quiet --depth 1 --branch v0.4.0 https://github.com/arnovich/forseti-lean.git "$RUNNER_TEMP/forseti-lean"
+          git clone --quiet --depth 1 --branch v0.4.1 https://github.com/arnovich/forseti-lean.git "$RUNNER_TEMP/forseti-lean"
           cd "$RUNNER_TEMP/forseti-lean"
-          test "$(git rev-parse HEAD)" = e7de73c8982fc2d4c57924161c02b3c285253706
+          test "$(git rev-parse HEAD)" = b4116348eafe491c5dbc5bb0de6880f40ca5c1ec
           lake exe cache get
           lake build
           # Views and evidence load their providers' modules from the project's

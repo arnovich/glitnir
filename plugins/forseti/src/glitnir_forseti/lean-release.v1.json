@@ -1,10 +1,10 @@
 {
   "schema": "gimle.forseti.lean-release/v1",
-  "support_version": "gimle.forseti.lean-support/v20",
+  "support_version": "gimle.forseti.lean-support/v21",
   "toolchain": "leanprover/lean4:v4.35.0",
   "support_source_sha256": "60b318b2003ef526f67e63b2e3f8f967c73e0bb9e619194e3f51c1c577a32c6e",
   "checker_sha256": "c133a67c981758d5d1990f54cd66838bbcb78a621b4776395110f569ec5f5d4a",
-  "lockfile_sha256": "6454fc385ee0d3c2c96b6faec1a527a3a182a33a43a2d6c66fd86fba607ad045",
+  "lockfile_sha256": "85e8cfb17079543f9d262e507b687610164c12ccf751d780f313c1efc0aa797b",
   "import": "Gimle.Forseti",
   "axiom_allowlist": [
     "Classical.choice",
@@ -14,7 +14,7 @@
   "dependencies": [
     {
       "name": "asgard",
-      "revision": "2b3ec26c2a463bccde31b8d9a369f5f2d5db72ef"
+      "revision": "692a116da2dc546eb6de26714c2a4fb49115933d"
     },
     {
       "name": "mathlib",
@@ -89,12 +89,12 @@
     {
       "package": "forseti",
       "path": "lakefile.toml",
-      "sha256": "6c2d59db554772ec95c07298ddfe6beadacea2d47b78c70c075e820e0339ef62"
+      "sha256": "869d160e982856dcfff30aedd45bd4e3415ada1637ec2ce017169b93b705b863"
     },
     {
       "package": "asgard",
       "path": "lakefile.toml",
-      "sha256": "5edf48cea1edd2ad1ae25562b4f7c536cc7162fddd7190f205bd53bf6afbb352"
+      "sha256": "546753376fb8eded817a32554c097250a20e993839058147ca6edabe34b4b144"
     },
     {
       "package": "mathlib",
