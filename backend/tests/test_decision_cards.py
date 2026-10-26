@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from conftest import raises
 
 from glitnir.notebook import directives as directives_module
 from glitnir.notebook.directives import (
@@ -228,7 +229,7 @@ def test_a_rejected_goal_shows_the_provider_message():
 
 
 def test_a_rejection_without_a_message_still_says_why():
-    [card] = _cards(f"{HEAD}\n", _loaded(_provider(parse=_raises(ValueError()))))
+    [card] = _cards(f"{HEAD}\n", _loaded(_provider(parse=raises(ValueError()))))
     assert card["error"] == "The provider rejected this directive."
 
 
@@ -276,19 +277,12 @@ def test_a_directive_error_is_kept_and_never_parsed():
     assert [call[0] for call in calls] == ["band"]
 
 
-def _raises(error: BaseException):
-    def call(*_arguments):
-        raise error
-
-    return call
-
-
 @pytest.mark.parametrize(
     "changes, message",
     [
-        ({"parse": _raises(RuntimeError("boom"))}, "RuntimeError: boom"),
-        ({"parse": _raises(SystemExit(3))}, "SystemExit: 3"),
-        ({"unavailable": _raises(KeyError("x"))}, "KeyError: 'x'"),
+        ({"parse": raises(RuntimeError("boom"))}, "RuntimeError: boom"),
+        ({"parse": raises(SystemExit(3))}, "SystemExit: 3"),
+        ({"unavailable": raises(KeyError("x"))}, "KeyError: 'x'"),
     ],
 )
 def test_provider_failures_become_card_errors(changes, message):
@@ -297,7 +291,7 @@ def test_provider_failures_become_card_errors(changes, message):
 
 
 def test_a_keyboard_interrupt_in_a_provider_propagates():
-    provider = _provider(parse=_raises(KeyboardInterrupt()))
+    provider = _provider(parse=raises(KeyboardInterrupt()))
     with pytest.raises(KeyboardInterrupt):
         _cards(f"{HEAD}\n", _loaded(provider))
 

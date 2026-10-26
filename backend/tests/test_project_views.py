@@ -1,15 +1,20 @@
 """Project-mode views elaborate a composed source in the existing sandbox."""
 
-import hashlib
 import json
 import time
+from functools import partial
 from pathlib import Path
 
 import pytest
+from conftest import lake as shared_lake
+from conftest import sha
 
 from glitnir.providers import ViewProvider
 
 NOTEBOOK = "import Demo.View\n\ndef c := 1\n-- @view circuit c\ndef later := 2\n"
+
+#: `shared_lake` for this module's notebook, whose digest each inspection must get.
+lake = partial(shared_lake, required_sha256=sha(NOTEBOOK))
 
 
 def _provider(imports: tuple[str, ...] = ("Demo.View",)) -> ViewProvider:
@@ -23,45 +28,6 @@ def _provider(imports: tuple[str, ...] = ("Demo.View",)) -> ViewProvider:
             ("#demo_view", kind, target, *using)
         ),
     )
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-def _lake(tmp_path, monkeypatch, import_arts, asked=None):
-    """A Lake notebook whose inspected setup provides `import_arts`.
-
-    The modules each inspection was asked to add are appended to `asked`.
-    """
-    from glitnir.lean import provider_lean
-
-    (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
-    source = tmp_path / "Note.lean"
-    source.write_text(NOTEBOOK)
-    toolchain = tmp_path / "toolchain"
-    toolchain.mkdir()
-    monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
-
-    def inspect(path, *, expected_sha256, cancel, imports=()):
-        assert path == source and expected_sha256 == _sha(NOTEBOOK)
-        if asked is not None:
-            asked.append(imports)
-        return {
-            "status": "resolved",
-            "setup": {
-                "name": "Note",
-                "isModule": False,
-                "importArts": import_arts,
-                "plugins": [],
-                "dynlibs": [],
-                "options": {},
-            },
-            "resolution": {"inputs": []},
-        }
-
-    monkeypatch.setattr(provider_lean, "inspect_project", inspect)
-    return source, toolchain
 
 
 def _render_one(
@@ -96,7 +62,7 @@ def _render(source, provider=None, **overrides):
     import threading
 
     arguments = {
-        "expected_sha256": _sha(NOTEBOOK),
+        "expected_sha256": sha(NOTEBOOK),
         "line": 4,
         "provider": provider or _provider(),
         "kind": "circuit",
@@ -135,7 +101,7 @@ def _reporting(monkeypatch, report, calls=None, proofs_skipped=False):
 def test_missing_provider_import_is_reported_without_lean(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {})
+    source, _ = lake(tmp_path, monkeypatch, {})
 
     def run(*_arguments, **_options):
         raise AssertionError("Lean must not run without the provider's imports")
@@ -152,7 +118,7 @@ def test_missing_provider_import_is_reported_without_lean(tmp_path, monkeypatch)
 def test_provider_imports_are_set_up_from_the_project_build(tmp_path, monkeypatch):
     """The notebook need not import the provider's modules; Lake sets them up."""
     asked: list[tuple[str, ...]] = []
-    source, _ = _lake(
+    source, _ = lake(
         tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]}, asked=asked
     )
     calls: list = []
@@ -167,7 +133,7 @@ def _needs_build(tmp_path, monkeypatch, own_resolves):
     """A notebook whose setup with the provider's modules finds one unbuilt."""
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {})
+    source, _ = lake(tmp_path, monkeypatch, {})
     asked: list[tuple[str, ...]] = []
 
     def inspect(path, *, expected_sha256, cancel, imports=()):
@@ -216,7 +182,7 @@ def test_drawing_waits_for_a_busy_slot_and_says_so(tmp_path, monkeypatch):
 
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": ["demoView:{}"], "errors": []})
     waited: list[dict] = []
     messages: list[str] = []
@@ -247,7 +213,7 @@ def _waiting_slot(calls):
 def test_invalid_provider_import_is_rejected_before_composing(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {})
+    source, _ = lake(tmp_path, monkeypatch, {})
 
     def run(*_arguments, **_options):
         raise AssertionError("Lean must not run")
@@ -276,7 +242,7 @@ def test_loose_files_need_a_lake_project(tmp_path, monkeypatch, imports):
 
 
 def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
-    source, toolchain = _lake(
+    source, toolchain = lake(
         tmp_path, monkeypatch, {"Demo.View": [[".lake/build/Demo/View.olean"]]}
     )
     calls: list = []
@@ -329,7 +295,7 @@ def test_marker_message_becomes_a_validated_drawing(tmp_path, monkeypatch):
 
 
 def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     _reporting(
         monkeypatch,
@@ -342,7 +308,7 @@ def test_lean_errors_and_missing_marker_are_errors(tmp_path, monkeypatch):
 
 
 def test_invalid_drawings_and_reports_are_errors(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     _reporting(monkeypatch, {"information": ["demoView:<html/>"], "errors": []})
     assert "error" in _render(source)
@@ -354,13 +320,13 @@ def test_invalid_drawings_and_reports_are_errors(tmp_path, monkeypatch):
 def test_changed_source_never_launches_lean(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise AssertionError("Lean must not run for a stale source")
 
     monkeypatch.setattr(provider_lean, "run_observer", run)
-    result = _render(source, expected_sha256=_sha("something else"))
+    result = _render(source, expected_sha256=sha("something else"))
     assert "changed" in result["error"]
 
 
@@ -368,7 +334,7 @@ def test_unavailable_sandbox_is_an_error(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
     from glitnir.lean.sandbox import SandboxUnavailable
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise SandboxUnavailable("no sandbox here")
@@ -380,7 +346,7 @@ def test_unavailable_sandbox_is_an_error(tmp_path, monkeypatch):
 def test_unresolved_project_is_an_error(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {})
+    source, _ = lake(tmp_path, monkeypatch, {})
     monkeypatch.setattr(
         provider_lean,
         "inspect_project",
@@ -391,14 +357,14 @@ def test_unresolved_project_is_an_error(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("line", [0, 7])
 def test_directive_line_must_be_in_the_notebook(tmp_path, monkeypatch, line):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": ["demoView:<svg/>"], "errors": []})
     assert "error" in _render(source, line=line)
 
 
 @pytest.mark.parametrize("module", ["Lean", "Lean.Elab.Command", "Std", "Init"])
 def test_toolchain_modules_need_no_import_artifacts(tmp_path, monkeypatch, module):
-    source, _ = _lake(tmp_path, monkeypatch, {})
+    source, _ = lake(tmp_path, monkeypatch, {})
     calls: list = []
     _reporting(monkeypatch, {"information": ["demoView:<svg/>"], "errors": []}, calls)
     assert _render(source, provider=_provider(imports=(module,))) == {"svg": "<svg/>"}
@@ -406,7 +372,7 @@ def test_toolchain_modules_need_no_import_artifacts(tmp_path, monkeypatch, modul
 
 
 def test_lookalike_modules_still_need_import_artifacts(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {})
+    source, _ = lake(tmp_path, monkeypatch, {})
     result = _render(source, provider=_provider(imports=("LeanDemo.View",)))
     assert result["error"].startswith(
         "This view needs the module `LeanDemo.View`, which no package"
@@ -451,7 +417,7 @@ def test_live_project_view_draws_a_demo_provider(prepared_lean_project):
     )
     result = _render_one(
         source,
-        expected_sha256=_sha(text),
+        expected_sha256=sha(text),
         line=5,
         provider=provider,
         kind="demo",
@@ -517,7 +483,7 @@ def test_live_view_loads_provider_modules_the_notebook_does_not_import(
     def draw(imports):
         return _render_one(
             source,
-            expected_sha256=_sha(text),
+            expected_sha256=sha(text),
             line=line,
             provider=provider(imports),
             kind="demo",
@@ -586,7 +552,7 @@ def test_live_view_preamble_is_elaborated_outside_the_notebooks_scope(
     )
     result = _render_one(
         source,
-        expected_sha256=_sha(text),
+        expected_sha256=sha(text),
         line=text.count("\n"),
         provider=provider,
         kind="demo",
@@ -605,7 +571,7 @@ def test_a_slot_busy_past_the_time_limit_is_a_transient_error(tmp_path, monkeypa
     from glitnir.lean import provider_lean
     from glitnir.lean.project_snapshot import SLOT_WAIT_TIMED_OUT, SnapshotError
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     @contextlib.contextmanager
     def busy(**options):
@@ -624,7 +590,7 @@ def test_cancelled_or_timed_out_drawing_is_transient(tmp_path, monkeypatch, mess
     from glitnir.lean import provider_lean
     from glitnir.lean.project_snapshot import SnapshotError
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise SnapshotError(message)
@@ -634,7 +600,7 @@ def test_cancelled_or_timed_out_drawing_is_transient(tmp_path, monkeypatch, mess
 
 
 def test_lasting_errors_are_not_transient(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(monkeypatch, {"information": [], "errors": ["unknown c"]})
     assert "transient" not in _render(source)
 
@@ -653,7 +619,7 @@ def test_provider_code_failures_become_errors(tmp_path, monkeypatch, changes):
 
     from glitnir.lean import provider_lean
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise AssertionError("Lean must not run")
@@ -665,7 +631,7 @@ def test_provider_code_failures_become_errors(tmp_path, monkeypatch, changes):
 
 
 def test_a_drawing_drawn_with_proofs_skipped_says_so(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(
         monkeypatch,
         {"information": ["demoView:<svg/>"], "errors": []},
@@ -682,7 +648,7 @@ def test_a_drawing_drawn_with_proofs_skipped_says_so(tmp_path, monkeypatch):
 
 
 def test_a_drawing_wins_over_unrelated_errors(tmp_path, monkeypatch):
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     _reporting(
         monkeypatch,
         {"information": ["demoView:<svg/>"], "errors": [{"line": 3, "text": "x"}]},
@@ -908,7 +874,7 @@ def test_live_view_skips_proofs_and_falls_back(prepared_lean_project):
     )
     result = run_provider_batch(
         source,
-        expected_sha256=_sha(text),
+        expected_sha256=sha(text),
         provider_name="demo",
         imports=("Lean",),
         preamble="",
@@ -934,7 +900,7 @@ def test_provider_lean_uses_the_configured_memory_limit(
     tmp_path, monkeypatch, configured, expected
 ):
     """Provider Lean runs with `GLITNIR_MEMORY_LIMIT_MB`, or 16384 MB by default."""
-    source, _ = _lake(
+    source, _ = lake(
         tmp_path, monkeypatch, {"Demo.View": [[".lake/build/Demo/View.olean"]]}
     )
     calls: list = []
@@ -962,7 +928,7 @@ def test_several_views_are_drawn_in_one_run(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
     from glitnir.lean.project_views import render_project_views
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
     requests = []
 
     def run(runtime, arguments, **options):
@@ -992,7 +958,7 @@ def test_several_views_are_drawn_in_one_run(tmp_path, monkeypatch):
     )
     result = render_project_views(
         source,
-        expected_sha256=_sha(NOTEBOOK),
+        expected_sha256=sha(NOTEBOOK),
         provider=provider,
         views=[
             (3, "circuit", "bad", ()),
@@ -1019,7 +985,7 @@ def test_a_failed_run_of_several_views_is_one_error(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SnapshotError
     from glitnir.lean.project_views import render_project_views
 
-    source, _ = _lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
 
     def run(*_arguments, **_options):
         raise SnapshotError("Project check timed out.")
@@ -1027,7 +993,7 @@ def test_a_failed_run_of_several_views_is_one_error(tmp_path, monkeypatch):
     monkeypatch.setattr(provider_lean, "run_observer", run)
     result = render_project_views(
         source,
-        expected_sha256=_sha(NOTEBOOK),
+        expected_sha256=sha(NOTEBOOK),
         provider=_provider(),
         views=[(4, "circuit", "c", ()), (5, "circuit", "later", ())],
         cancel=threading.Event(),
@@ -1084,7 +1050,7 @@ def test_live_three_views_in_one_run(prepared_lean_project, monkeypatch):
     views = [(4, "demo", "a", ()), (6, "demo", "b", ()), (8, "demo", "t", ())]
     together = render_project_views(
         source,
-        expected_sha256=_sha(text),
+        expected_sha256=sha(text),
         provider=provider,
         views=views,
         cancel=threading.Event(),
@@ -1093,7 +1059,7 @@ def test_live_three_views_in_one_run(prepared_lean_project, monkeypatch):
     alone = [
         _render_one(
             source,
-            expected_sha256=_sha(text),
+            expected_sha256=sha(text),
             line=line,
             provider=provider,
             kind=kind,

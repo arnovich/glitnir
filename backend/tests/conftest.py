@@ -1,16 +1,140 @@
 """Shared fixtures for the project-mode Lean checking tests."""
 
 import contextlib
+import hashlib
+import importlib
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from glitnir.preview import snapshot as preview_snapshot
+from glitnir.providers import EvidenceProvider, EvidenceRequest
 from glitnir.service import preview as source_preview
 
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
+
+#: The notebook `lake` writes.
+LAKE_NOTEBOOK = "import Demo.View\n\ndef c := 1\n-- @view circuit c\ndef later := 2\n"
+
+#: The modules that may bind the names a test patches on the preview service.
+SERVICE_MODULES = (
+    "glitnir.service.preview",
+    "glitnir.service.runs",
+    "glitnir.service.views",
+)
+
+#: The service attributes that hold a worker thread, or None when idle.
+WORKER_ATTRIBUTES = (
+    "_worker",
+    "_inspection_worker",
+    "_evidence_worker",
+    "_decision_worker",
+    "_view_worker",
+)
+
+
+def settle(service: source_preview.SourcePreviewService) -> None:
+    """Wait for every worker thread the service holds to finish."""
+    for attribute in WORKER_ATTRIBUTES:
+        worker = getattr(service, attribute, None)
+        if worker is not None:
+            worker.join(timeout=900)
+    return None
+
+
+def sha(text: str) -> str:
+    """The SHA-256 of `text` encoded as UTF-8, as the notebook hash is."""
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def raises(error: BaseException) -> Callable[..., NoReturn]:
+    """Return a stand-in callable that raises `error` whatever it is given."""
+
+    def call(*_arguments, **_options) -> NoReturn:
+        raise error
+
+    return call
+
+
+def evidence_provider(
+    imports: tuple[str, ...] = (), unavailable: str | None = None
+) -> EvidenceProvider:
+    """A minimal `simulate` evidence provider, unavailable with the given reason."""
+    return EvidenceProvider(
+        name="demo",
+        verbs=frozenset({"simulate"}),
+        imports=imports,
+        preamble="",
+        marker="m:",
+        parse=lambda verb, target, options: EvidenceRequest(verb, target, {}),
+        command=lambda request: "",
+        compute=lambda request, payload: {},
+        unavailable=lambda: unavailable,
+    )
+
+
+def lake(tmp_path, monkeypatch, import_arts, asked=None, required_sha256=None):
+    """A Lake notebook whose inspected setup provides `import_arts`.
+
+    The modules each inspection was asked to add are appended to `asked`; when
+    `required_sha256` is given, each inspection must be of that digest.
+    Returns the notebook path and the toolchain directory.
+    """
+    from glitnir.lean import provider_lean
+
+    (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
+    source = tmp_path / "Note.lean"
+    source.write_text(LAKE_NOTEBOOK)
+    toolchain = tmp_path / "toolchain"
+    toolchain.mkdir()
+    monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
+
+    def inspect(path, *, expected_sha256, cancel, imports=()):
+        assert path == source
+        assert required_sha256 in (None, expected_sha256)
+        if asked is not None:
+            asked.append(imports)
+        return {
+            "status": "resolved",
+            "setup": {
+                "name": "Note",
+                "isModule": False,
+                "importArts": import_arts,
+                "plugins": [],
+                "dynlibs": [],
+                "options": {},
+            },
+            "resolution": {"inputs": []},
+        }
+
+    monkeypatch.setattr(provider_lean, "inspect_project", inspect)
+    return source, toolchain
+
+
+def patch_service_name(monkeypatch, name: str, value) -> None:
+    """Replace `name` on every service module that exists and binds it.
+
+    The preview service's names are bound in several modules, and a test must
+    patch each one that looks the name up. Fail if no listed module binds it, so
+    a name that moved cannot leave a test patching nothing.
+    """
+    patched = False
+    for module_name in SERVICE_MODULES:
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as error:
+            if error.name != module_name:
+                raise
+            continue
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+            patched = True
+    if not patched:
+        pytest.fail(f"no service module binds {name!r}")
 
 
 def _live_gate_set() -> bool:
@@ -720,7 +844,7 @@ def patch_fingerprint(monkeypatch):
         def call(*args, **_remote):
             return fake(*args)
 
-        monkeypatch.setattr(source_preview, "environment_fingerprint", call)
+        patch_service_name(monkeypatch, "environment_fingerprint", call)
         monkeypatch.setattr(preview_snapshot, "environment_fingerprint", call)
 
     return patch

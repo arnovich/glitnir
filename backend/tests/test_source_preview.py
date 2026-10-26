@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import raises, settle
 
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import TOOLCHAIN, supported_version
@@ -213,7 +214,7 @@ def test_inspection_is_explicit_serialized_and_cancelled(tmp_path, monkeypatch):
     with pytest.raises(NotebookError, match="already running"):
         service.check(snapshot["sha256"])
     finish.set()
-    service._inspection_worker.join(timeout=5)
+    settle(service)
     assert calls == [(path, snapshot["sha256"], False)]
     # The setup and the bytes Lake read stay out of every snapshot.
     assert service.snapshot()["preview"]["inspection"] == {
@@ -240,7 +241,7 @@ def test_a_failing_inspection_always_ends(tmp_path, monkeypatch):
     monkeypatch.setattr(source_preview, "inspect_project", broken)
     sha = service.snapshot()["sha256"]
     service.inspect(sha)
-    service._inspection_worker.join(timeout=5)
+    settle(service)
     found = service.snapshot()["preview"]["inspection"]
     assert found["status"] == "unavailable"
     assert found["message"] == "Project inspection failed: boom"
@@ -284,7 +285,7 @@ def test_project_check_is_explicit_historical_and_cancelled(tmp_path, monkeypatc
     with pytest.raises(NotebookError, match="already running"):
         service.check(before["sha256"])
     finish.set()
-    service._worker.join(5)
+    settle(service)
     path.write_text("theorem t : False := sorry\n")
     after = service.snapshot()
     assert after["preview"]["check"]["source_sha256"] == before["sha256"]
@@ -325,7 +326,7 @@ def test_a_check_saves_the_environment_it_compiled_in(
     monkeypatch.setattr(source_preview, "check_project", check)
     sha = service.snapshot()["sha256"]
     service.check(sha)
-    service._worker.join(5)
+    settle(service)
     saved = load_records(path)
     assert saved["environment"]["fingerprint"] == second
     [claim] = service.snapshot()["project_claims"]
@@ -364,7 +365,7 @@ def test_stop_cancels_a_check_waiting_for_the_slot(
             in service.snapshot()["preview"]["check"]["message"]
         )
         service.cancel_check()
-        service._worker.join(5)
+        settle(service)
         assert not service._worker.is_alive(), "stopped while the slot is still held"
     finally:
         held.__exit__(None, None, None)
@@ -447,7 +448,7 @@ def test_failed_project_worker_has_terminal_state(tmp_path, monkeypatch, failure
         monkeypatch.setattr(source_preview, "check_project", fail)
     service.check(service.snapshot()["sha256"])
     if failure == "worker":
-        service._worker.join(5)
+        settle(service)
     result = service.snapshot()["preview"]["check"]
     assert result["status"] == "unavailable"
     assert "worker failed" in result["message"]
@@ -529,7 +530,7 @@ def _fake_result(sha):
 
 def _check_and_wait(service, sha):
     service.check(sha)
-    service._worker.join(timeout=10)
+    settle(service)
 
 
 def test_check_saves_records_and_shows_claim_cells(tmp_path, monkeypatch):
@@ -937,7 +938,7 @@ def _unavailable_message(tmp_path, path, monkeypatch, text):
     service = source_preview.SourcePreviewService(path)
     try:
         service.check(sha)
-        service._worker.join(timeout=10)
+        settle(service)
         return service.snapshot()["preview"]["check"]["message"]
     finally:
         service.close()
@@ -1014,7 +1015,7 @@ def _drawn(service, cell: int, line: int) -> dict:
     answer = service.view(cell, line)
     while answer.get("status") in ("drawing", "queued"):
         mine = answer["status"] == "drawing"
-        service._view_worker.join(timeout=30)
+        settle(service)
         assert not service._view_worker.is_alive()
         # A queued view asks again once the drawing before it has ended.
         answer = service.view_job(answer["job"]) if mine else service.view(cell, line)
@@ -1178,7 +1179,7 @@ def test_a_view_request_never_waits_for_lean(
     other = service.view(cell, 4)
     assert other == {**waiting, "job": other["job"]} and other["job"] != job
     finish.set()
-    service._view_worker.join(timeout=10)
+    settle(service)
     assert service.view_job(job) == {"svg": "<svg>3</svg>"}
     assert service.view_job(job) == {"svg": "<svg>3</svg>"}, "as often as asked"
     assert service.view(cell, 3) == {"svg": "<svg>3</svg>"}
@@ -1200,7 +1201,7 @@ def test_polling_a_job_reads_no_notebook(
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     job = service.view(cell, 4)["job"]
-    service._view_worker.join(timeout=10)
+    settle(service)
 
     def forbidden(*args, **kwargs):
         pytest.fail("a poll read the notebook")
@@ -1234,7 +1235,7 @@ def test_an_unknown_environment_draws_once_and_says_so(
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     answers = [service.view(cell, 4)]
-    service._view_worker.join(timeout=10)
+    settle(service)
     answers += [service.view(cell, 4) for _ in range(4)]
     assert len(renders) == 1
     assert answers[-1] == {"svg": "<svg/>", "uncertain": True}
@@ -1319,7 +1320,7 @@ def test_stop_cancels_only_that_cards_view(
     run = service._view_run
     assert run is not None and not run.jobs[4].cancel.is_set()
     service.cancel_view(sha, 4)
-    service._view_worker.join(timeout=10)
+    settle(service)
     # Not transient: the reader asked for it, so nothing redraws it unasked.
     assert service.view_job(job) == {"error": source_preview.VIEW_CANCELLED}
     assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
@@ -1347,7 +1348,7 @@ def test_a_view_of_a_replaced_source_is_cancelled(
     assert started.wait(10)
     service.path.write_text(VIEW_TEXT + "-- edited\n")
     assert service.view(cell, 4)["status"] == "queued"
-    service._view_worker.join(timeout=10)
+    settle(service)
     assert cancelled == [True]
 
 
@@ -1495,7 +1496,7 @@ def test_view_reads_and_fingerprints_the_file_once(
     patch_fingerprint(lambda *a: fingerprints.append(1) or {"sha256": "e"})
     draw_each_alone(lambda path, **o: {"svg": "<svg/>"})
     service.view(cell, 4)  # starts the drawing
-    service._view_worker.join(timeout=10)
+    settle(service)
     reads.clear()
     fingerprints.clear()
     assert service.view(cell, 4) == {"svg": "<svg/>"}
@@ -1637,7 +1638,7 @@ def _evidence_sha() -> str:
 
 def _run_evidence(service, line=4):
     key = service.run_evidence(_evidence_sha(), line)
-    service._evidence_worker.join(timeout=10)
+    settle(service)
     assert not service._evidence_worker.is_alive()
     return key
 
@@ -1728,13 +1729,6 @@ class _ExpectedError(ValueError):
     """What a provider raises for a request it cannot serve."""
 
 
-def _raises(error):
-    def compute(request, payload):
-        raise error
-
-    return compute
-
-
 @pytest.mark.parametrize(
     "changes, message, kind",
     [
@@ -1744,22 +1738,22 @@ def _raises(error):
             "provider",
         ),
         (
-            {"compute": _raises(ValueError("The model has no states."))},
+            {"compute": raises(ValueError("The model has no states."))},
             "The model has no states.",
             "refused",
         ),
         (
-            {"compute": _raises(_ExpectedError("Option h must be positive."))},
+            {"compute": raises(_ExpectedError("Option h must be positive."))},
             "Option h must be positive.",
             "refused",
         ),
         (
-            {"compute": _raises(ValueError())},
+            {"compute": raises(ValueError())},
             "Provider demo failed: ValueError: ",
             "refused",
         ),
         (
-            {"compute": _raises(KeyError("x"))},
+            {"compute": raises(KeyError("x"))},
             "Provider demo failed: KeyError: 'x'",
             "provider",
         ),
@@ -1907,7 +1901,7 @@ def test_one_run_at_a_time_shown_as_running(tmp_path, monkeypatch):
         with pytest.raises(SnapshotError, match=RUN_BUSY):
             service.run_evidence(_evidence_sha(), 4)
         release.set()
-        service._evidence_worker.join(timeout=10)
+        settle(service)
         finished = _card(service)
     finally:
         release.set()
@@ -1975,7 +1969,7 @@ def test_evidence_saves_wait_for_other_records_writes(tmp_path, monkeypatch):
             service._evidence_worker.join(timeout=0.2)
             assert service._evidence_worker.is_alive()
             assert not records_path(service.path).exists()
-        service._evidence_worker.join(timeout=10)
+        settle(service)
         card = _card(service)
     finally:
         service.close()
@@ -2167,7 +2161,7 @@ def test_a_check_through_a_claim_shows_later_claims_not_rechecked(
         _check_and_wait(service, sha)
         service.check(sha, through_line=1)
         assert service.snapshot()["preview"]["check"]["through_line"] == 1
-        service._worker.join(timeout=10)
+        settle(service)
         snapshot = service.snapshot()
     finally:
         service.close()
@@ -2206,7 +2200,7 @@ def test_a_check_through_the_last_line_is_a_check_of_the_whole_file(
     try:
         for line in (2, 3, 1):
             service.check(sha, through_line=line)
-            service._worker.join(timeout=10)
+            settle(service)
         snapshot = service.snapshot()
     finally:
         service.close()
@@ -2679,7 +2673,7 @@ def test_views_of_one_provider_draw_in_one_run(tmp_path, monkeypatch):
             }
             assert service.view_job(answer["job"]) == answer
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         for line, answer in answers.items():
             drawn = {"svg": f"<svg>{line}</svg>"}
             assert service.view_job(answer["job"]) == drawn
@@ -2714,7 +2708,7 @@ def test_saved_or_cached_views_are_not_redrawn_in_a_run(tmp_path, monkeypatch):
         sha = service.snapshot()["sha256"]
         service.cancel_view(sha, 6)
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         with pytest.raises(SnapshotError, match="not being drawn"):
             service.cancel_view(sha, 6)
         # Line 2's drawing is saved, line 4's is in memory: only 6 is drawn.
@@ -2780,7 +2774,7 @@ def test_stop_drops_only_that_view(tmp_path, monkeypatch):
         with pytest.raises(SnapshotError, match="not being drawn"):
             service.cancel_view(sha, 4)
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         assert service.view_job(answers[2]["job"]) == {"svg": "<svg>2</svg>"}
         assert service.view_job(answers[4]["job"]) == cancelled
         assert service.view_job(answers[6]["job"]) == {"svg": "<svg>6</svg>"}
@@ -2809,7 +2803,7 @@ def test_stopping_every_view_stops_the_run(tmp_path, monkeypatch):
         assert not cancel.is_set()
         service.cancel_view(sha, 4)
         assert cancel.is_set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         for answer in answers.values():
             assert service.view_job(answer["job"]) == {
                 "error": source_preview.VIEW_CANCELLED
@@ -2826,7 +2820,7 @@ def test_failed_run_of_several_views_retries_one_per_run(tmp_path, monkeypatch):
     try:
         answers = {line: _ask(service, line) for line in (2, 4, 6)}
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         for line, answer in answers.items():
             assert service.view_job(answer["job"]) == {"svg": f"<svg>{line}</svg>"}
     finally:
@@ -2848,7 +2842,7 @@ def test_timed_out_run_is_not_retried(tmp_path, monkeypatch, message):
     try:
         answers = {line: _ask(service, line) for line in (2, 4, 6)}
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         for answer in answers.values():
             assert service.view_job(answer["job"]) == failure
     finally:
@@ -2865,7 +2859,7 @@ def test_views_of_a_timed_out_run_are_drawn_alone_when_asked_again(
     try:
         _ask(service, 2)
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
         assert _drawn(service, _view_cell(service, 2), 2) == {"svg": "<svg>2</svg>"}
     finally:
@@ -2880,7 +2874,7 @@ def test_views_of_a_cancelled_run_are_drawn_together_again(tmp_path, monkeypatch
     try:
         _ask(service, 2)
         runs.release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         assert _drawn(service, _view_cell(service, 4), 4) == {"svg": "<svg>4</svg>"}
     finally:
         service.close()
@@ -2954,7 +2948,7 @@ def test_a_failing_run_ends_every_view(tmp_path, monkeypatch):
     try:
         answers = {line: _ask(service, line) for line in (2, 4, 6)}
         release.set()
-        service._view_worker.join(timeout=10)
+        settle(service)
         for answer in answers.values():
             assert service.view_job(answer["job"]) == {
                 "error": "View drawing failed: boom"
@@ -3308,7 +3302,7 @@ def test_a_failure_naming_a_local_path_is_shown_but_never_saved(
 ):
     """A provider's message is saved into committed records, so no path is."""
     path = where(tmp_path)
-    provider = _evidence_provider(compute=_raises(ValueError(f"Cannot read {path}.")))
+    provider = _evidence_provider(compute=raises(ValueError(f"Cannot read {path}.")))
     service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
     try:
         _run_evidence(service)
@@ -3331,7 +3325,7 @@ def test_a_failure_naming_a_local_path_is_shown_but_never_saved(
 def test_an_evidence_refusal_is_saved_only_without_an_absolute_path(
     tmp_path, monkeypatch, message, saved
 ):
-    provider = _evidence_provider(compute=_raises(ValueError(message)))
+    provider = _evidence_provider(compute=raises(ValueError(message)))
     service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
     try:
         _run_evidence(service)
@@ -3586,7 +3580,7 @@ def test_an_unsaved_failure_is_logged_without_its_message(
     from glitnir.notebook.check_records import records_path
 
     secret = str(tmp_path / "private.csv")
-    provider = _evidence_provider(compute=_raises(ValueError(f"Cannot read {secret}")))
+    provider = _evidence_provider(compute=raises(ValueError(f"Cannot read {secret}")))
     service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
     caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
     try:
@@ -3675,7 +3669,7 @@ def _rerun(service, text, line=4):
     """Save `text` as the notebook, run the directive at `line`; return its card."""
     service.path.write_text(text)
     service.run_evidence(hashlib.sha256(text.encode()).hexdigest(), line)
-    service._evidence_worker.join(timeout=10)
+    settle(service)
     assert not service._evidence_worker.is_alive()
     return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
 

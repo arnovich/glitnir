@@ -1,12 +1,12 @@
 """Running, stopping and discarding decisions; only an explicit run decides."""
 
-import hashlib
 import json
 import threading
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import evidence_provider, raises, settle, sha
 
 from glitnir.lean import project_checking
 from glitnir.lean.project_inspection import TOOLCHAIN
@@ -21,8 +21,6 @@ from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import (
     DecisionProvider,
     DecisionRequest,
-    EvidenceProvider,
-    EvidenceRequest,
     Providers,
 )
 from glitnir.service.preview import (
@@ -59,10 +57,6 @@ CHECKED = {
 }
 
 
-def _sha(text: str = TEXT) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
 def _outcome(**changes):
     outcome = {
         "status": "proven",
@@ -91,20 +85,6 @@ def _decision_provider(**changes) -> DecisionProvider:
     return DecisionProvider(**fields)
 
 
-def _evidence_provider() -> EvidenceProvider:
-    return EvidenceProvider(
-        name="demo",
-        verbs=frozenset({"simulate"}),
-        imports=(),
-        preamble="",
-        marker="m:",
-        parse=lambda verb, target, options: EvidenceRequest(verb, target, {}),
-        command=lambda request: "",
-        compute=lambda request, payload: {},
-        unavailable=lambda: None,
-    )
-
-
 def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
     """A notebook with a decision directive; Lean and the checker are stand-ins."""
     from glitnir.service import preview as source_preview
@@ -121,7 +101,7 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
 
     providers = Providers(
         {},
-        {"simulate": _evidence_provider()},
+        {"simulate": evidence_provider()},
         {"entailment": provider or _decision_provider()},
         {},
     )
@@ -143,8 +123,8 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
 
 
 def _run(service, line=LINE) -> str:
-    key = service.run_decision(_sha(), line)
-    service._decision_worker.join(timeout=10)
+    key = service.run_decision(sha(TEXT), line)
+    settle(service)
     assert not service._decision_worker.is_alive()
     return key
 
@@ -196,7 +176,7 @@ def test_a_proven_decision_is_checked_and_saved_as_a_candidate(tmp_path, monkeyp
     assert imports[1]["needs"] == "decision"
     assert imports[1]["cancel"] is cancel
     assert check[1] == {
-        "expected_sha256": _sha(),
+        "expected_sha256": sha(TEXT),
         "insert_after_line": END_LINE,
         "block": BLOCK,
         "theorem": "Decided_band.band",
@@ -371,13 +351,6 @@ class _ExpectedError(ValueError):
     """What a provider raises for a goal it cannot decide."""
 
 
-def _raises(error):
-    def decide(request, cancel):
-        raise error
-
-    return decide
-
-
 @pytest.mark.parametrize(
     "decide, message, kind, saved_message",
     [
@@ -388,25 +361,25 @@ def _raises(error):
             "Provider demo failed: ZeroDivisionError",
         ),
         (
-            _raises(ValueError("The goal has no variables.")),
+            raises(ValueError("The goal has no variables.")),
             "The goal has no variables.",
             "refused",
             None,
         ),
         (
-            _raises(_ExpectedError("Bounds are numbers.")),
+            raises(_ExpectedError("Bounds are numbers.")),
             "Bounds are numbers.",
             "refused",
             None,
         ),
         (
-            _raises(ValueError()),
+            raises(ValueError()),
             "Provider demo failed: ValueError: ",
             "refused",
             None,
         ),
         (
-            _raises(KeyError("x")),
+            raises(KeyError("x")),
             "Provider demo failed: KeyError: 'x'",
             "provider",
             "Provider demo failed: KeyError",
@@ -531,11 +504,11 @@ def test_stop_during_decide_saves_nothing(tmp_path, monkeypatch):
         tmp_path, monkeypatch, _decision_provider(decide=decide), check=forbidden
     )
     try:
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert started.wait(10)
         assert _card(service)["status"] == "running"
         service.stop_decision()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         card = _card(service)
         with pytest.raises(SnapshotError, match=f"^{NOTHING_TO_STOP}$"):
             service.stop_decision()
@@ -555,10 +528,10 @@ def test_stop_during_the_candidate_check_saves_nothing(tmp_path, monkeypatch):
 
     service, _calls = _service(tmp_path, monkeypatch, check=check)
     try:
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert started.wait(10)
         service.stop_decision()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         card = _card(service)
     finally:
         service.close()
@@ -579,10 +552,10 @@ def test_a_provider_that_raises_on_cancel_reads_as_cancelled(
 
     service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
     try:
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert started.wait(10)
         service.stop_decision()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         card = _card(service)
     finally:
         service.close()
@@ -605,12 +578,12 @@ def test_stop_after_the_run_commits_to_saving_finds_nothing_to_stop(
     monkeypatch.setattr(source_preview, "save_records", slow_save)
     service, _calls = _service(tmp_path, monkeypatch)
     try:
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert saving.wait(10)
         with pytest.raises(SnapshotError, match=f"^{NOTHING_TO_STOP}$"):
             service.stop_decision()
         release.set()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         card = _card(service)
     finally:
         release.set()
@@ -628,7 +601,7 @@ def test_stop_never_cancels_an_evidence_run(tmp_path, monkeypatch):
 
     service, _calls = _service(tmp_path, monkeypatch, lean=lean)
     try:
-        service.run_evidence(_sha(), 7)
+        service.run_evidence(sha(TEXT), 7)
         assert started.wait(10)
         with pytest.raises(SnapshotError, match=f"^{NOTHING_TO_STOP}$"):
             service.stop_decision()
@@ -657,22 +630,22 @@ def test_one_provider_run_at_a_time_across_evidence_and_decisions(
         tmp_path, monkeypatch, _decision_provider(decide=decide), lean=lean
     )
     try:
-        service.run_evidence(_sha(), 7)
+        service.run_evidence(sha(TEXT), 7)
         assert started.wait(10)
         with pytest.raises(SnapshotError, match=f"^{RUN_BUSY}$"):
-            service.run_decision(_sha(), LINE)
+            service.run_decision(sha(TEXT), LINE)
         release.set()
-        service._evidence_worker.join(timeout=10)
+        settle(service)
         release.clear()
         started.clear()
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert started.wait(10)
         with pytest.raises(SnapshotError, match=f"^{RUN_BUSY}$"):
-            service.run_evidence(_sha(), 7)
+            service.run_evidence(sha(TEXT), 7)
         with pytest.raises(SnapshotError, match=f"^{RUN_BUSY}$"):
-            service.run_decision(_sha(), LINE)
+            service.run_decision(sha(TEXT), LINE)
         release.set()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         card = _card(service)
     finally:
         release.set()
@@ -681,14 +654,16 @@ def test_one_provider_run_at_a_time_across_evidence_and_decisions(
 
 
 @pytest.mark.parametrize(
-    "sha, line, message",
+    "digest, line, message",
     [
         ("0" * 64, LINE, SOURCE_CHANGED),
         (None, 3, "No decision directive at line 3."),
         (None, END_LINE, "No decision directive at line 5."),
     ],
 )
-def test_runs_are_refused_without_deciding(tmp_path, monkeypatch, sha, line, message):
+def test_runs_are_refused_without_deciding(
+    tmp_path, monkeypatch, digest, line, message
+):
     def forbidden(request, cancel):
         pytest.fail("the provider decided")
 
@@ -697,7 +672,7 @@ def test_runs_are_refused_without_deciding(tmp_path, monkeypatch, sha, line, mes
     )
     try:
         with pytest.raises(SnapshotError) as raised:
-            service.run_decision(sha or _sha(), line)
+            service.run_decision(digest or sha(TEXT), line)
     finally:
         service.close()
     assert str(raised.value) == message
@@ -732,7 +707,7 @@ def test_unavailable_or_rejected_directives_are_refused(
     )
     try:
         with pytest.raises(SnapshotError) as raised:
-            service.run_decision(_sha(), LINE)
+            service.run_decision(sha(TEXT), LINE)
     finally:
         service.close()
     assert str(raised.value) == message
@@ -831,14 +806,14 @@ def test_discard_removes_only_the_saved_decision(tmp_path, monkeypatch):
         with pytest.raises(SnapshotError, match=f"^{SOURCE_CHANGED}$"):
             service.discard_decision("0" * 64, LINE)
         with pytest.raises(SnapshotError, match="^No decision directive at line 6.$"):
-            service.discard_decision(_sha(), 6)
+            service.discard_decision(sha(TEXT), 6)
         assert key in _saved(service.path)
-        assert service.discard_decision(_sha(), LINE) == key
+        assert service.discard_decision(sha(TEXT), LINE) == key
         card = _card(service)
         with pytest.raises(
             SnapshotError, match="^No decision is saved for this directive.$"
         ):
-            service.discard_decision(_sha(), LINE)
+            service.discard_decision(sha(TEXT), LINE)
     finally:
         service.close()
     assert (card["status"], card["outcome"], card["verification"]) == (
@@ -864,15 +839,15 @@ def test_a_running_decision_is_not_discarded(tmp_path, monkeypatch):
     try:
         key = _run(service)
         before = records_path(service.path).read_text()
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert started.wait(10)
         with pytest.raises(SnapshotError, match=f"^{DECISION_RUNNING}$"):
-            service.discard_decision(_sha(), LINE)
+            service.discard_decision(sha(TEXT), LINE)
         assert records_path(service.path).read_text() == before
         service.stop_decision()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         assert records_path(service.path).read_text() == before
-        assert service.discard_decision(_sha(), LINE) == key
+        assert service.discard_decision(sha(TEXT), LINE) == key
     finally:
         service.close()
     assert key not in _saved(service.path)
@@ -884,7 +859,7 @@ def test_discard_never_overwrites_an_unreadable_records_file(tmp_path, monkeypat
     sidecar.write_text("not json")
     try:
         with pytest.raises(SnapshotError, match="cannot be read"):
-            service.discard_decision(_sha(), LINE)
+            service.discard_decision(sha(TEXT), LINE)
     finally:
         service.close()
     assert sidecar.read_text() == "not json"
@@ -899,15 +874,15 @@ def test_close_cancels_the_decision_and_refuses_new_runs(tmp_path, monkeypatch):
         return _outcome()
 
     service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
-    service.run_decision(_sha(), LINE)
+    service.run_decision(sha(TEXT), LINE)
     assert started.wait(10)
     service.close()
     assert not service._decision_worker.is_alive()
     assert not records_path(service.path).exists()
     with pytest.raises(SnapshotError, match="closed"):
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
     with pytest.raises(SnapshotError, match="closed"):
-        service.discard_decision(_sha(), LINE)
+        service.discard_decision(sha(TEXT), LINE)
 
 
 def test_close_waits_for_all_workers_within_one_deadline(tmp_path, monkeypatch):
@@ -969,7 +944,7 @@ def test_only_a_current_checked_candidate_is_served_for_accepting(
         _run(service)
         served = service.decision_candidate(key)
         assert served == {
-            "sha256": _sha(),
+            "sha256": sha(TEXT),
             "insert_after_line": END_LINE,
             "block": BLOCK,
         }
@@ -998,8 +973,8 @@ def test_a_notebook_with_a_byte_order_mark_is_refused_for_accepting(
         marked = "\ufeff" + TEXT
         service.path.write_text(marked)
         key = _card(service)["key"]
-        service.run_decision(_sha(marked), LINE)
-        service._decision_worker.join(timeout=10)
+        service.run_decision(sha(marked), LINE)
+        settle(service)
         assert _card(service)["status"] == "candidate"
         assert _refusal(service, key) == BYTE_ORDER_MARK
     finally:
@@ -1050,11 +1025,11 @@ def test_a_running_decision_is_not_served(tmp_path, monkeypatch):
     service, _calls = _service(tmp_path, monkeypatch, _decision_provider(decide=decide))
     try:
         key = _run(service)
-        service.run_decision(_sha(), LINE)
+        service.run_decision(sha(TEXT), LINE)
         assert started.wait(10)
         assert _refusal(service, key) == DECISION_RUNNING
         service.stop_decision()
-        service._decision_worker.join(timeout=10)
+        settle(service)
         assert service.decision_candidate(key)["block"] == BLOCK
     finally:
         service.close()
@@ -1106,8 +1081,8 @@ def test_live_decision_run_saves_a_checked_candidate(
     )
     service = source_preview.SourcePreviewService(source)
     try:
-        key = service.run_decision(_sha(text), 4)
-        service._decision_worker.join(timeout=300)
+        key = service.run_decision(sha(text), 4)
+        settle(service)
         [card] = service.snapshot()["decisions"]
     finally:
         service.close()
@@ -1179,7 +1154,7 @@ _REFUSAL = "The goal has no variables."
 
 
 def _refusing(**changes) -> DecisionProvider:
-    return _decision_provider(decide=_raises(ValueError(_REFUSAL)), **changes)
+    return _decision_provider(decide=raises(ValueError(_REFUSAL)), **changes)
 
 
 @pytest.mark.parametrize(
@@ -1192,7 +1167,7 @@ def _refusing(**changes) -> DecisionProvider:
 def test_a_provider_crash_saves_only_its_exception_type(tmp_path, monkeypatch, error):
     """The crash's text, which may name any path or URL, is never written."""
     service, _calls = _service(
-        tmp_path, monkeypatch, _decision_provider(decide=_raises(error))
+        tmp_path, monkeypatch, _decision_provider(decide=raises(error))
     )
     try:
         _run(service)
@@ -1215,7 +1190,7 @@ def test_a_missing_or_broken_dependency_is_shown_but_not_saved(tmp_path, monkeyp
     """An ImportError (Z3 gone, say) is a setup failure, not the directive's."""
     missing = ModuleNotFoundError("No module named 'z3'")
     service, _calls = _service(
-        tmp_path, monkeypatch, _decision_provider(decide=_raises(missing))
+        tmp_path, monkeypatch, _decision_provider(decide=raises(missing))
     )
     try:
         _run(service)
@@ -1258,7 +1233,7 @@ def test_setup_failures_before_deciding_are_not_saved(tmp_path, monkeypatch):
     try:
         _run(service)
         first = _card(service)
-        job = service._decision_job(_sha(), LINE)
+        job = service._decision_job(sha(TEXT), LINE)
         broken = SimpleNamespace(**{**job.__dict__, "provider": _Imports()})
         error, saved = service._decision_run(broken, threading.Event())
     finally:
@@ -1283,7 +1258,7 @@ def test_a_refusal_naming_a_local_path_is_shown_but_never_saved(
     tmp_path, monkeypatch, where
 ):
     path = where(tmp_path)
-    provider = _decision_provider(decide=_raises(ValueError(f"Cannot read {path}.")))
+    provider = _decision_provider(decide=raises(ValueError(f"Cannot read {path}.")))
     service, _calls = _service(tmp_path, monkeypatch, provider)
     try:
         _run(service)
@@ -1478,7 +1453,7 @@ def test_discard_clears_the_saved_failure_with_the_decision(tmp_path, monkeypatc
         key = _run(service)
         _run(service)
         assert set(_saved_failures(service.path)) == {key}
-        assert service.discard_decision(_sha(), LINE) == key
+        assert service.discard_decision(sha(TEXT), LINE) == key
         card = _card(service)
     finally:
         service.close()
@@ -1565,7 +1540,7 @@ def test_a_refusal_naming_any_absolute_path_is_shown_but_never_saved(
     tmp_path, monkeypatch, message
 ):
     """Not only the directories Glitnir knows: no path reaches committed records."""
-    provider = _decision_provider(decide=_raises(ValueError(message)))
+    provider = _decision_provider(decide=raises(ValueError(message)))
     service, _calls = _service(tmp_path, monkeypatch, provider)
     try:
         _run(service)
@@ -1586,7 +1561,7 @@ def test_a_refusal_naming_any_absolute_path_is_shown_but_never_saved(
     ],
 )
 def test_a_refusal_without_a_path_is_saved_unchanged(tmp_path, monkeypatch, message):
-    provider = _decision_provider(decide=_raises(ValueError(message)))
+    provider = _decision_provider(decide=raises(ValueError(message)))
     service, _calls = _service(tmp_path, monkeypatch, provider)
     try:
         _run(service)

@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from conftest import raises
 
 from glitnir.notebook.check_records import (
     evidence_prefix_sha256,
@@ -226,19 +227,12 @@ def test_a_directive_error_is_kept_and_never_parsed():
     assert card["error"] == BAD_TARGET and calls == []
 
 
-def _raises(error: BaseException):
-    def call(*_arguments):
-        raise error
-
-    return call
-
-
 @pytest.mark.parametrize(
     "changes, message",
     [
-        ({"parse": _raises(RuntimeError("boom"))}, "RuntimeError: boom"),
-        ({"parse": _raises(SystemExit(3))}, "SystemExit: 3"),
-        ({"unavailable": _raises(KeyError("x"))}, "KeyError: 'x'"),
+        ({"parse": raises(RuntimeError("boom"))}, "RuntimeError: boom"),
+        ({"parse": raises(SystemExit(3))}, "SystemExit: 3"),
+        ({"unavailable": raises(KeyError("x"))}, "KeyError: 'x'"),
     ],
 )
 def test_provider_failures_become_card_errors(changes, message):
