@@ -11,8 +11,10 @@ from typing import NoReturn
 import pytest
 
 from glitnir.preview import snapshot as preview_snapshot
-from glitnir.providers import EvidenceProvider, EvidenceRequest
+from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.service import preview as source_preview
+from glitnir.service import runs as source_runs
+from glitnir.service.preview import SourcePreviewService
 
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
@@ -957,3 +959,195 @@ def patch_fingerprint(monkeypatch):
         monkeypatch.setattr(preview_snapshot, "environment_fingerprint", call)
 
     return patch
+
+
+# Environment fingerprints are SHA-256 digests; any other string matches nothing.
+FP = "f" * 64
+
+
+def fake_result(sha):
+    """A successful project-check result for the notebook whose hash is `sha`."""
+    return {
+        "status": "checked_snapshot",
+        "source_sha256": sha,
+        "environment_sha256": "e",
+        "withheld": None,
+        "message": "ok",
+        "theorems": [
+            {
+                "name": "A.result",
+                "status": "checked",
+                "axioms": [],
+                "start_line": 2,
+                "end_line": 3,
+                "proposition_sha256": "p",
+            },
+        ],
+    }
+
+
+def check_and_wait(service, sha):
+    """Check the notebook with hash `sha` and wait for the check to end."""
+    service.check(sha)
+    settle(service)
+
+
+VIEW_TEXT = (
+    "import Demo.View\n\ndef c := 1\n-- @view circuit c using a, b\ndef d := 2\n"
+)
+
+
+def demo_provider():
+    """A view provider for `circuit` views that draws nothing."""
+    from glitnir.providers import ViewProvider
+
+    return ViewProvider(
+        name="demo",
+        kinds=frozenset({"circuit"}),
+        imports=(),
+        preamble="",
+        marker="m:",
+        command=lambda kind, target, using: "",
+    )
+
+
+def drawn_view(service, cell: int, line: int) -> dict:
+    """Ask for a view until its background drawing has ended; return the answer."""
+    answer = service.view(cell, line)
+    while answer.get("status") in ("drawing", "queued"):
+        mine = answer["status"] == "drawing"
+        settle(service)
+        assert not service._views._view_worker.is_alive()
+        # A queued view asks again once the drawing before it has ended.
+        answer = service.view_job(answer["job"]) if mine else service.view(cell, line)
+    return answer
+
+
+def view_service(tmp_path: Path, monkeypatch, text=VIEW_TEXT, errors=None):
+    """A preview service for a notebook of views with a demo provider."""
+    from glitnir.service import preview as source_preview
+
+    monkeypatch.setattr(
+        source_preview,
+        "load_providers",
+        lambda: Providers({"circuit": demo_provider()}, {}, {}, errors or {}),
+    )
+    path = tmp_path / "A.lean"
+    path.write_text(text)
+    return SourcePreviewService(path)
+
+
+EVIDENCE_TEXT = (
+    "import Demo.Evidence\n\ndef M := 1\n"
+    "-- @evidence simulate M (h := 1/100)\n-- @evidence iterate M\n"
+)
+
+
+def evidence_body(**changes):
+    """A valid evidence body, with `changes` applied over it."""
+    body = {
+        "format": "glitnir.evidence/v1",
+        "series": {"times": [0, 1], "values": [[0], [1]], "names": ["x"]},
+        "provenance": [["solver", "demo"]],
+        "finite": True,
+    }
+    return {**body, **changes}
+
+
+def recording_evidence_provider(calls=None, **changes):
+    """A `simulate` provider that appends its compute calls to `calls`."""
+    from glitnir.providers import EvidenceProvider, EvidenceRequest
+
+    def compute(request, payload):
+        if calls is not None:
+            calls.append(("compute", request, payload))
+        return evidence_body()
+
+    fields = {
+        "name": "demo",
+        "verbs": frozenset({"simulate"}),
+        "imports": ("Demo.Evidence",),
+        "preamble": "open Demo",
+        "marker": "demoEvidence:",
+        "parse": lambda verb, target, options: EvidenceRequest(
+            verb, target, {"options": options}
+        ),
+        "command": lambda request: f"#demo_evidence {request.target}",
+        "compute": compute,
+        "unavailable": lambda: None,
+        **changes,
+    }
+    return EvidenceProvider(**fields)
+
+
+def evidence_service(tmp_path, monkeypatch, provider=None, runner=None):
+    """A notebook with two evidence directives and a stand-in Lean runner."""
+    from glitnir.service import preview as source_preview
+
+    calls: list = []
+    provider = provider or recording_evidence_provider(calls)
+
+    def run(source, **options):
+        calls.append(("lean", options))
+        return {"payload": '{"x": 1}'}
+
+    monkeypatch.setattr(
+        source_preview,
+        "load_providers",
+        lambda: Providers({}, {"simulate": provider}, {}, {}),
+    )
+    for module in (source_preview, source_runs, preview_snapshot):
+        monkeypatch.setattr(
+            module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
+        )
+    monkeypatch.setattr(source_runs, "run_provider_lean", runner or run)
+    path = tmp_path / "A.lean"
+    path.write_text(EVIDENCE_TEXT)
+    return SourcePreviewService(path), calls
+
+
+def evidence_sha() -> str:
+    """The hash of `EVIDENCE_TEXT`, the notebook `evidence_service` writes."""
+    return hashlib.sha256(EVIDENCE_TEXT.encode()).hexdigest()
+
+
+def run_evidence(service, line=4):
+    """Run the evidence at `line` and wait; return the key of the run."""
+    key = service.run_evidence(evidence_sha(), line)
+    settle(service)
+    assert not service._runs._evidence_worker.is_alive()
+    return key
+
+
+def evidence_card(service, line=4):
+    """The evidence card at `line` in the service's snapshot."""
+    return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
+
+
+def saved_failures(service):
+    """The failed runs saved in the service's records, as a reader reads them."""
+    from glitnir.notebook.check_records import load_records, saved_evidence_failures
+
+    return saved_evidence_failures(load_records(service.path))
+
+
+def asking_lean_every_time(monkeypatch):
+    """Run Lean for every run, as separate previews would, keeping no output.
+
+    For tests whose stand-in Lean answers the same input differently: they
+    stand for runs in previews opened one after another, or for a project
+    rebuilt between runs, where Lean's output is not kept from one to the next.
+    """
+    monkeypatch.setattr(source_runs, "_emission_key", lambda *args: None)
+
+
+def view_cell(service, line: int = 4) -> int:
+    """The cell of the view at `line` in the service's snapshot."""
+    return next(v["cell"] for v in service.snapshot()["views"] if v["line"] == line)
+
+
+def saved_drawings(path: Path) -> dict:
+    """The drawings saved in the records beside the notebook at `path`."""
+    from glitnir.notebook.check_records import load_records, saved_views
+
+    return saved_views(load_records(path))
