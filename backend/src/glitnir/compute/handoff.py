@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import os
-import resource
 import shutil
 import stat
 import subprocess
@@ -40,10 +39,9 @@ from glitnir.lean.project_inspection import _toolchain, inspect_project
 from glitnir.lean.sandbox import confine
 
 
-def _child_limits(memory_mb: int, max_bytes: int) -> None:
+def _child_limits(max_bytes: int) -> None:
     """Apply inherited limits; the lock-holding supervisor handles parent death."""
     set_output_file_limit(max_bytes)
-    resource.setrlimit(resource.RLIMIT_AS, (memory_mb * 1024**2, memory_mb * 1024**2))
 
 
 def _files(root: Path) -> Iterator[Path]:
@@ -126,6 +124,7 @@ def build_module(
         "LAKE_HOME": str(toolchain),
         "HOME": "/nonexistent",
         "LANG": "C.UTF-8",
+        "LEAN_NUM_THREADS": "2",
     }
     command_file, command_result = root / "command.json", root / "command-result.json"
     command_result.unlink(missing_ok=True)
@@ -149,7 +148,7 @@ def build_module(
             stdout=out,
             stderr=subprocess.STDOUT,
             start_new_session=True,
-            preexec_fn=partial(_child_limits, memory_mb, max_bytes),
+            preexec_fn=partial(_child_limits, max_bytes),
             pass_fds=(lock_fd,),
         )
         try:

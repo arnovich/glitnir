@@ -42,8 +42,10 @@ must be owned by this operator, mode700, outside the base and without symlink
 ancestors. Its disk budget covers the derived project and a second worker-style
 copy. Copying and build growth are monitored against that budget; use an external
 filesystem quota as well if the host requires a strict instantaneous disk cap.
-The checker adds inherited per-process memory and file-size ceilings to the
-aggregate cgroup limits. Captured logs have a separate bounded size.
+The cgroup bounds actual aggregate memory, including private tmpfs. Preparation
+also caps build threads and individual artifact file sizes; captured logs have a
+separate bounded size. Virtual-address-space limits are deliberately avoided:
+Lean's runtime reserves address space independently of its actual memory use.
 
 Lake runs with required bubblewrap confinement, no network, a clean environment,
 the pinned toolchain/base readable and only the private `.lake` writable. It uses

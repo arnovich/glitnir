@@ -192,14 +192,6 @@ jobs:
           .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
           # The one Lean version Glitnir checks, from project_inspection.TOOLCHAIN.
           elan toolchain install "$(.venv/bin/python -c 'from glitnir.lean.project_inspection import TOOLCHAIN; print(TOOLCHAIN)')"
-      - name: Check the backend against live Lean
-        working-directory: backend
-        env:
-          # Under these, a live test missing Lean or the sandbox fails, and one
-          # that skips for any other reason fails too (tests/conftest.py).
-          GLITNIR_REQUIRE_PROJECT_INSPECTION: '1'
-          GLITNIR_TEST_PROOF_TRACE: '1'
-        run: ../.venv/bin/python -m pytest -m 'live and not handoff_build' -rs --durations=30
       - name: Check handoff builds inside an aggregate resource boundary
         working-directory: backend
         run: |
@@ -209,6 +201,14 @@ jobs:
             /usr/bin/env HOME="$HOME" PATH="$PATH" \
             GLITNIR_REQUIRE_PROJECT_INSPECTION=1 GLITNIR_TEST_PROOF_TRACE=1 \
             "$PWD/../.venv/bin/python" -m pytest -m 'live and handoff_build' -rs --durations=30
+      - name: Check the backend against live Lean
+        working-directory: backend
+        env:
+          # Under these, a live test missing Lean or the sandbox fails, and one
+          # that skips for any other reason fails too (tests/conftest.py).
+          GLITNIR_REQUIRE_PROJECT_INSPECTION: '1'
+          GLITNIR_TEST_PROOF_TRACE: '1'
+        run: ../.venv/bin/python -m pytest -m 'live and not handoff_build' -rs --durations=30
   helpers:
     needs: build
     runs-on: ubuntu-24.04
