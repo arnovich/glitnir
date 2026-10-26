@@ -169,7 +169,7 @@ class _Emissions:
 
     In memory only, at most `entries` outputs and `size` characters together
     (not bytes), the oldest dropped first; one larger than `size` is not kept.
-    Not thread-safe: the service holds `_state_lock` around it.
+    Not thread-safe: its caller holds `context.state_lock` around it.
     """
 
     def __init__(

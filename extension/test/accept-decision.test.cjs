@@ -18,7 +18,7 @@ function apply(text, edit) {
   return text.slice(0, offset) + edit.text + text.slice(offset);
 }
 
-/** The backend's `block_follows`: the block's lines right after the one-based line. */
+/** The backend's `_block_follows`: the block's lines right after the one-based line. */
 function follows(text, after, block) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const wanted = block.split('\n');
