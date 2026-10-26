@@ -358,6 +358,7 @@ def test_checks_see_only_their_own_store_namespaces_read_only(
     tmp_path, monkeypatch, project_snapshot_inputs
 ):
     """Lean reads the toolchain's and its project's stored files, nothing else."""
+    from glitnir.lean import observer
     from glitnir.lean import project_checking as checking
 
     root, toolchain, source, _artifact, setup = project_snapshot_inputs
@@ -383,7 +384,7 @@ def test_checks_see_only_their_own_store_namespaces_read_only(
         seen["readable"], seen["writable"] = list(readable), list(writable)
         raise sandbox.SandboxUnavailable("stop")
 
-    monkeypatch.setattr(checking, "confine", confine)
+    monkeypatch.setattr(observer, "confine", confine)
     cwd = tmp_path / "build"
     cwd.mkdir()
     with pytest.raises(sandbox.SandboxUnavailable):

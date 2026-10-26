@@ -500,22 +500,22 @@ def test_snapshot_cancellation_and_global_limit(tmp_path, monkeypatch):
 
 def test_scratch_budget_counts_total_bytes_and_ignores_links(tmp_path, monkeypatch):
     """Many individually small outputs cannot escape the aggregate scratch cap."""
-    from glitnir.lean import project_checking as checking
+    from glitnir.lean import observer
 
     root = tmp_path / "stage"
     root.mkdir()
     secret = tmp_path / "outside"
     secret.write_bytes(b"x" * 100)
     (root / "link").symlink_to(secret)
-    monkeypatch.setattr(checking, "STAGE_BYTES", 10)
-    checking._check_stage(root)
+    monkeypatch.setattr(observer, "STAGE_BYTES", 10)
+    observer._check_stage(root)
     (root / "one").write_bytes(b"x" * 6)
     (root / "two").write_bytes(b"x" * 6)
     with pytest.raises(SnapshotError, match="scratch byte limit"):
-        checking._check_stage(root)
-    monkeypatch.setattr(checking, "STAGE_ENTRIES", 1)
+        observer._check_stage(root)
+    monkeypatch.setattr(observer, "STAGE_ENTRIES", 1)
     with pytest.raises(SnapshotError, match="scratch file limit"):
-        checking._check_stage(root)
+        observer._check_stage(root)
 
 
 def test_output_limit_checks_size_after_child_seeks(tmp_path, monkeypatch):
@@ -525,6 +525,7 @@ def test_output_limit_checks_size_after_child_seeks(tmp_path, monkeypatch):
     import threading
     import time
 
+    from glitnir.lean import observer
     from glitnir.lean import project_checking as checking
     from glitnir.lean.project_snapshot import ProjectSnapshot
 
@@ -536,10 +537,10 @@ def test_output_limit_checks_size_after_child_seeks(tmp_path, monkeypatch):
         process.wait(timeout=10)
         return process
 
-    monkeypatch.setattr(checking.subprocess, "Popen", completed)
-    monkeypatch.setattr(checking, "OUTPUT_BYTES", 16)
+    monkeypatch.setattr(observer.subprocess, "Popen", completed)
+    monkeypatch.setattr(observer, "OUTPUT_BYTES", 16)
     monkeypatch.setattr(
-        checking,
+        observer,
         "confine",
         lambda *a, **kw: [
             sys.executable,
@@ -1850,6 +1851,7 @@ def test_running_project_stage_is_cancelled_and_reaped(tmp_path, monkeypatch):
     import threading
     import time
 
+    from glitnir.lean import observer
     from glitnir.lean import project_checking as checking
     from glitnir.lean.project_snapshot import ProjectSnapshot
 
@@ -1868,8 +1870,8 @@ def test_running_project_stage_is_cancelled_and_reaped(tmp_path, monkeypatch):
         assert kwargs["required"] is True
         return [sys.executable, "-c", "import time; time.sleep(30)"]
 
-    monkeypatch.setattr(checking.subprocess, "Popen", spawn)
-    monkeypatch.setattr(checking, "confine", command)
+    monkeypatch.setattr(observer.subprocess, "Popen", spawn)
+    monkeypatch.setattr(observer, "confine", command)
     with pytest.raises(SnapshotError, match="cancelled"):
         checking._run(
             snapshot,
@@ -1888,7 +1890,7 @@ def test_running_out_of_memory_names_the_limit_and_the_setting(tmp_path, monkeyp
     import threading
     import time
 
-    from glitnir.lean import project_checking as checking
+    from glitnir.lean import observer
 
     toolchain = tmp_path / "toolchain"
     (toolchain / "bin").mkdir(parents=True)
@@ -1900,9 +1902,9 @@ def test_running_out_of_memory_names_the_limit_and_the_setting(tmp_path, monkeyp
         "exit 1\n"
     )
     lean.chmod(0o755)
-    monkeypatch.setattr(checking, "confine", lambda command, **_options: command)
+    monkeypatch.setattr(observer, "confine", lambda command, **_options: command)
     with pytest.raises(SnapshotError) as raised:
-        checking.run_observer(
+        observer.run_observer(
             toolchain,
             ["lean", "-M6400", "A.lean"],
             cwd=tmp_path,

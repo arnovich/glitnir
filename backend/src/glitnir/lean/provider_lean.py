@@ -12,14 +12,9 @@ from typing import Any, Callable
 from glitnir.lean import fingerprint
 from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.digest import fingerprint_ok
-from glitnir.lean.limits import memory_limit_mb
+from glitnir.lean.limits import check_seconds, memory_limit_mb
+from glitnir.lean.observer import OUTPUT_BYTES, TIMED_OUT, run_observer
 from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_checking import (
-    OUTPUT_BYTES,
-    TIMED_OUT,
-    check_seconds,
-    run_observer,
-)
 from glitnir.lean.project_inspection import MODULE_NAME, _toolchain, inspect_project
 from glitnir.lean.project_snapshot import (
     SLOT_BUSY,

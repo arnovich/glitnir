@@ -531,6 +531,7 @@ def test_the_imports_replay_has_its_own_deadline(tmp_path, monkeypatch):
     import time
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.limits import check_seconds
 
     monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", "600000")
     slow = _replayed()
@@ -545,7 +546,7 @@ def test_the_imports_replay_has_its_own_deadline(tmp_path, monkeypatch):
     assert _check(tmp_path)["status"] == "checked_snapshot"
     finished = time.monotonic()
     deadlines = dict(zip(_modes(calls), _staged_check.deadlines[-2:]))
-    budget = checking.check_seconds()
+    budget = check_seconds()
     assert (
         started + checking.IMPORTS_REPLAY_SECONDS
         <= deadlines["imports-only"]

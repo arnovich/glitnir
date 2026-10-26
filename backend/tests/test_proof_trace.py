@@ -371,7 +371,7 @@ def test_live_trace_keeps_header_and_parse_errors(tmp_path, text, expected):
     import threading
     import time
 
-    from glitnir.lean.project_checking import run_observer
+    from glitnir.lean.observer import run_observer
     from glitnir.lean.project_inspection import _toolchain
     from glitnir.lean.proof_trace import PROGRAM
 

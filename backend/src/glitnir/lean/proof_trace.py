@@ -15,8 +15,8 @@ from glitnir.lean.limits import (
     elaboration_timeout_ms,
     memory_limit_mb,
 )
+from glitnir.lean.observer import OUTPUT_BYTES, run_observer
 from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_checking import OUTPUT_BYTES, run_observer
 from glitnir.lean.project_inspection import (
     TOOLCHAIN,
     _toolchain,
