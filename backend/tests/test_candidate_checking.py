@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 from glitnir.lean import project_checking as checking
+from glitnir.lean.failures import CommandFailure
 from glitnir.lean.project_snapshot import SLOT_BUSY, SnapshotError
+from glitnir.lean.sandbox import SandboxUnavailable
 
 NOTEBOOK = "theorem before : True := True.intro\n-- @decide t : goal\nlater\n"
 BLOCK = "namespace Decided_t\ntheorem t : True := True.intro\nend Decided_t"
@@ -229,7 +231,7 @@ def test_block_failures_are_reported_at_block_lines(tmp_path, monkeypatch):
     source, sha256 = _saved(tmp_path)
     _fake(
         monkeypatch,
-        error=lambda text: checking.CommandFailure(
+        error=lambda text: CommandFailure(
             "lean did not complete successfully (exit 1).\n"
             "/tmp/s/A.lean:4:23: error: The rfl tactic failed\nmore detail",
             offset=text.index("theorem t"),
@@ -243,7 +245,7 @@ def test_block_failures_are_reported_at_block_lines(tmp_path, monkeypatch):
     }
     _fake(
         monkeypatch,
-        error=lambda text: checking.CommandFailure(
+        error=lambda text: CommandFailure(
             "lean did not complete successfully (exit 3).\nunknown identifier 'x'",
             offset=text.index("end Decided_t"),
         ),
@@ -251,7 +253,7 @@ def test_block_failures_are_reported_at_block_lines(tmp_path, monkeypatch):
     assert _check(source, sha256)["message"] == "Block line 3: unknown identifier 'x'"
     _fake(
         monkeypatch,
-        error=checking.CommandFailure(
+        error=CommandFailure(
             "lean did not complete successfully (exit 3).\n", offset=0
         ),
     )
@@ -295,7 +297,7 @@ def test_cancelled_or_changed_saved_file_never_yields_a_verdict(tmp_path, monkey
 
 def test_environment_errors_are_raised_as_snapshot_errors(tmp_path, monkeypatch):
     source, sha256 = _saved(tmp_path)
-    _fake(monkeypatch, error=checking.SandboxUnavailable("no sandbox here"))
+    _fake(monkeypatch, error=SandboxUnavailable("no sandbox here"))
     with pytest.raises(SnapshotError, match="no sandbox here"):
         _check(source, sha256)
 
@@ -314,7 +316,7 @@ def test_stage_times_are_filled_but_never_part_of_the_verdict(
         with stages.stage("read"):
             pass
         if fails:
-            raise checking.CommandFailure("bad", offset=text.index("theorem t"))
+            raise CommandFailure("bad", offset=text.index("theorem t"))
         return {"status": "checked_snapshot", "theorems": [_theorem("t", "checked", 4)]}
 
     monkeypatch.setattr(checking, "_check_text", fake)

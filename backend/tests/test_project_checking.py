@@ -1931,7 +1931,7 @@ def test_check_timeout_uses_bounded_shared_setting(monkeypatch, configured, expe
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_line_range_counts_utf8_bytes(newline):
     """Reader byte offsets map to the same 1-based lines for LF and CRLF files."""
-    from glitnir.lean.project_checking import line_range
+    from glitnir.lean.failures import line_range
 
     raw = newline.join(["-- λ header", "theorem a : True := by", "  trivial", ""])
     text = raw.replace("\r\n", "\n")
@@ -1944,7 +1944,7 @@ def test_line_range_counts_utf8_bytes(newline):
 
 def test_first_error_offset_reads_lean_positions():
     """A positioned Lean error maps to a byte offset; other output does not."""
-    from glitnir.lean.project_checking import first_error_offset
+    from glitnir.lean.failures import first_error_offset
 
     text = "theorem a : True := True.intro\ntheorem \u03bbb : 1 = 2 := rfl\n"
     stderr = (
@@ -1963,6 +1963,7 @@ def test_check_reruns_once_on_the_prefix(tmp_path, monkeypatch):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text("theorem a : True := True.intro\ndef bad : Nat := False\n")
@@ -1971,7 +1972,7 @@ def test_check_reruns_once_on_the_prefix(tmp_path, monkeypatch):
     def fake(source, text, **_):
         texts.append(text)
         if "bad" in text:
-            raise checking.CommandFailure("type mismatch", offset=text.index("def bad"))
+            raise CommandFailure("type mismatch", offset=text.index("def bad"))
         return {"status": "checked_snapshot", "theorems": [{"name": "a"}]}
 
     monkeypatch.setattr(checking, "_check_text", fake)
@@ -1988,12 +1989,13 @@ def test_failure_in_the_prefix_is_unavailable(tmp_path, monkeypatch):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text("def x : Nat := 1\ndef bad : Nat := False\n")
 
     def fake(source, text, **_):
-        raise checking.CommandFailure("still failing", offset=len(text) - 1)
+        raise CommandFailure("still failing", offset=len(text) - 1)
 
     monkeypatch.setattr(checking, "_check_text", fake)
     result = checking.check_project(
@@ -2026,7 +2028,7 @@ def test_failure_in_the_prefix_is_unavailable(tmp_path, monkeypatch):
 )
 def test_failure_message_skips_the_exit_header(error, expected):
     """The displayed message is the Lean diagnostic, not the exit-status header."""
-    from glitnir.lean.project_checking import failure_message
+    from glitnir.lean.failures import failure_message
 
     assert failure_message(error) == expected
     assert len(failure_message("x" * 900)) == 500
@@ -2075,7 +2077,8 @@ def test_reader_accepts_print_axioms_and_no_other_hash_command():
 
 def test_reader_refuses_a_print_axioms_that_adds_a_declaration():
     """The reader compares constants after `#print axioms` and stops with exit 4."""
-    from glitnir.lean.project_checking import PROGRAMS, failure_message
+    from glitnir.lean.failures import failure_message
+    from glitnir.lean.project_checking import PROGRAMS
 
     source = (PROGRAMS / "ProjectRead.lean").read_text()
     guard = source.split("if printAxioms stx.getKind &&")[1].split("state := after")[0]
@@ -2092,7 +2095,8 @@ def test_reader_refuses_a_print_axioms_that_adds_a_declaration():
 
 def test_reader_failure_reads_the_written_offset(tmp_path):
     """A reader failure report yields a CommandFailure; bad reports do not."""
-    from glitnir.lean.project_checking import CommandFailure, _reader_failure
+    from glitnir.lean.failures import CommandFailure
+    from glitnir.lean.project_checking import _reader_failure
     from glitnir.lean.project_snapshot import SnapshotError
 
     report = tmp_path / "source-report.json"
@@ -2116,7 +2120,8 @@ def test_reader_failure_reads_the_written_offset(tmp_path):
 
 def test_candidate_failure_maps_to_the_owning_theorem():
     """A positioned compile error maps to its theorem's start, else is not mapped."""
-    from glitnir.lean.project_checking import CommandFailure, _candidate_failure
+    from glitnir.lean.failures import CommandFailure
+    from glitnir.lean.project_checking import _candidate_failure
     from glitnir.lean.project_snapshot import SnapshotError
 
     text = "theorem a : True := True.intro\ntheorem b : 1 = 2 := rfl\n"
@@ -2306,7 +2311,7 @@ def test_the_reader_must_account_for_every_example():
     An unaccounted keyword withholds from the end of the last reported command
     before it, where the source can still be checked alone.
     """
-    from glitnir.lean.project_checking import CommandFailure
+    from glitnir.lean.failures import CommandFailure
     from glitnir.lean.project_snapshot import SnapshotError
 
     text = "example : True := trivial\nexample : Nat := 3\nexample := 3\n"
@@ -2394,7 +2399,7 @@ def test_attributes_and_modifiers_are_refused_by_the_lexer(text, refused):
     The fake report starts the claim at its keyword, so only the trusted
     lexer sees what precedes it.
     """
-    from glitnir.lean.project_checking import CommandFailure
+    from glitnir.lean.failures import CommandFailure
 
     keyword = text.encode().index(b"example")
     claim = _claim(text, keyword)
@@ -2409,7 +2414,7 @@ def test_attributes_and_modifiers_are_refused_by_the_lexer(text, refused):
 @pytest.mark.parametrize("stray_first", [False, True])
 def test_the_earliest_of_several_example_failures_wins(stray_first):
     """Stopping at the earliest reason leaves no other reason in the prefix."""
-    from glitnir.lean.project_checking import CommandFailure
+    from glitnir.lean.failures import CommandFailure
 
     attribute = "@[simp] example : True := trivial\n"
     stray = "def n : Lean.Name := `example\n"
@@ -2482,7 +2487,7 @@ def test_a_lying_reader_cannot_cut_inside_a_line(
 
 def test_an_example_keyword_outside_a_command_withholds_from_before_it():
     """A quoted `example` the reader cannot account for keeps earlier claims."""
-    from glitnir.lean.project_checking import CommandFailure
+    from glitnir.lean.failures import CommandFailure
 
     text = (
         "theorem a : True := trivial\n"
@@ -2498,7 +2503,8 @@ def test_an_example_keyword_outside_a_command_withholds_from_before_it():
 
 def test_an_unreadable_file_withholds_from_its_first_claimed_example():
     """Where the lexer cannot follow Lean, examples are refused, not guessed."""
-    from glitnir.lean.project_checking import CommandFailure, _example_edits
+    from glitnir.lean.failures import CommandFailure
+    from glitnir.lean.project_checking import _example_edits
 
     text = 'def s : String := s!"{1}"\nexample : True := trivial\n'
     keyword = text.encode().index(b"example")
@@ -2513,7 +2519,7 @@ def test_an_unreadable_file_withholds_from_its_first_claimed_example():
 
 def test_examples_using_decl_name_are_refused():
     """`decl_name%` reads the theorem's name, so such examples are not checked."""
-    from glitnir.lean.project_checking import CommandFailure
+    from glitnir.lean.failures import CommandFailure
 
     text = (
         "theorem a : True := trivial\nexample : decl_name% ≠ `_example := by decide\n"
@@ -2548,9 +2554,9 @@ def test_candidate_failure_in_an_example_maps_through_the_rewrite(message, noted
 
     The section-variable note is added only to an unknown identifier.
     """
+    from glitnir.lean.failures import CommandFailure
     from glitnir.lean.project_checking import (
         EXAMPLE_NOTE,
-        CommandFailure,
         _candidate_failure,
         _rewrite_examples,
     )
@@ -2603,13 +2609,14 @@ def test_withheld_message_carries_the_example_note(tmp_path, monkeypatch):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text("theorem a : True := True.intro\nexample : 1 = 2 := rfl\n")
 
     def fake(source, text, **_):
         if "example" in text:
-            raise checking.CommandFailure(
+            raise CommandFailure(
                 "S.lean:2:19: error: rfl failed",
                 offset=text.index("example"),
                 note=checking.EXAMPLE_NOTE,
@@ -3129,6 +3136,7 @@ def _partial(tmp_path, monkeypatch, text, through_line, fail_at=None):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text(text)
@@ -3137,7 +3145,7 @@ def _partial(tmp_path, monkeypatch, text, through_line, fail_at=None):
     def fake(source, checked, *, rest=None, **_):
         asked.append((checked, rest))
         if fail_at is not None and len(asked) == 1:
-            raise checking.CommandFailure("S.lean:3:0: error: bad", offset=fail_at)
+            raise CommandFailure("S.lean:3:0: error: bad", offset=fail_at)
         return {
             "status": "checked_snapshot",
             "source_sha256": hashlib.sha256(checked.encode()).hexdigest(),
