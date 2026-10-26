@@ -78,8 +78,9 @@ def test_live_stream_decisions_are_accepted_and_project_checked(
                 if row.startswith(f"-- @decide {key} ")
             )
             service.run_decision(_sha(text), line)
-            service._decision_worker.join(timeout=TIMEOUT_S)
-            assert not service._decision_worker.is_alive(), "the run did not finish"
+            worker = service._runs._decision_worker
+            worker.join(timeout=TIMEOUT_S)
+            assert not worker.is_alive(), "the run did not finish"
             card = next(c for c in service.snapshot()["decisions"] if c["line"] == line)
             assert card["run_error"] is None, card["run_error"]
             assert card["outcome"]["status"] == status, card

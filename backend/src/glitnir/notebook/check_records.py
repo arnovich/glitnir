@@ -105,12 +105,9 @@ failure section, it is refused instead.
 """
 
 import copy
-import hashlib
 import json
 import os
-import re
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
@@ -118,28 +115,31 @@ from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
-from glitnir.providers.outcomes import (
-    checked_decision,
-    checked_drawing,
-    checked_evidence,
+from glitnir.notebook.records_schema import DECISION_FAILURE_KINDS  # noqa: F401
+from glitnir.notebook.records_schema import EVIDENCE_FAILURE_KINDS  # noqa: F401
+from glitnir.notebook.records_schema import (
+    _DECISION_FAILURES,
+    _FAILURE_SECTIONS,
+    _FAILURES,
+    FORMAT,
+    FORMAT_V1,
+    MAX_MESSAGE,
+    MAX_TYPE,
+    _decision_entry_ok,
+    _evidence_entry_ok,
+    _failure_entry_ok,
+    _normal,
+    _sha,
+    _shortened,
+    _view_entry_ok,
+    lenient_failures,
+    matches,
+    well_formed,
+    with_lenient_failures,
 )
 
-FORMAT = "glitnir.project-checks/v2"
-#: The earlier format, read and upgraded to `FORMAT` on loading.
-FORMAT_V1 = "glitnir.project-checks/v1"
 SUFFIX = ".glitnir.json"
 _MAX_RECORDS = 16 * 1024 * 1024
-_WITHHELD_KEYS = frozenset({"from_line", "message"})
-_CLAIM_KEYS: dict[str, type | tuple[type, ...]] = {
-    "name": str,
-    "status": str,
-    "axioms": list,
-    "start_line": int,
-    "end_line": int,
-    "declaration_sha256": str,
-    "prefix_sha256": str,
-    "proposition_sha256": str,
-}
 RESULTS_TOO_LARGE = (
     "the results file would exceed 16 MiB; nothing saved before was dropped"
 )
@@ -151,153 +151,12 @@ _RESULT_SECTIONS = (
     "evidence_failures",
     "decision_failures",
 )
-_NON_CLAIM_KEYS: dict[str, type] = {
-    "start_line": int,
-    "end_line": int,
-    "declaration_sha256": str,
-    "prefix_sha256": str,
-}
-_EVIDENCE_KEYS = ("prefix_sha256", "fingerprint", "provider", "created")
-_VIEW_KEYS = (*_EVIDENCE_KEYS, "provider_sha256")
-_FAILURES = "evidence_failures"
-_DECISION_FAILURES = "decision_failures"
-_FAILURE_SECTIONS = (_FAILURES, _DECISION_FAILURES)
-_FAILURE_KEYS = (*_EVIDENCE_KEYS, "kind", "message")
-#: What made a saved evidence run fail: Lean's own error for the directive, a
-#: provider crash, the provider's refusal, output that is not evidence, or the
-#: run's own time limit.
-EVIDENCE_FAILURE_KINDS = frozenset(
-    {"lean", "provider", "refused", "invalid", "timeout"}
-)
-#: What made a saved decision run fail: a provider crash, the provider's
-#: refusal, an outcome that is not a decision of the directive, or the
-#: candidate check's own time limit. A block the kernel check rejects is a
-#: saved decision, never a failure.
-DECISION_FAILURE_KINDS = frozenset({"provider", "refused", "invalid", "timeout"})
 #: The largest the saved drawings may be together, serialised as saved.
 MAX_VIEWS_BYTES = 4 * 1024 * 1024
-_VERIFICATION_KEYS = frozenset({"status", "message", "axioms", "type"})
-_USE_KEYS = frozenset({"module", "name", "in_notebook"})
-# When a run saved its result: UTC to the second, as runs write it ("+00:00")
-# or with the equivalent "Z".
-_CREATED = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+00:00|Z)")
-MAX_MESSAGE = 2000
-# A checked statement's kernel form; a run saves a longer one shortened.
-MAX_TYPE = 20_000
 DecisionStatus = Literal["accepted", "stale", "unknown", "rejected", "candidate"]
 UNKNOWN_FINGERPRINT = (
     "the environment fingerprint is unknown, so no result can be saved for it"
 )
-
-
-def _matches(saved: Any, fingerprint: str, compare_environment: bool) -> bool:
-    """Whether a result saved under `saved` may be current under `fingerprint`.
-
-    A saved fingerprint that is not a digest is never current. Without
-    `compare_environment` the result is compared as recorded: only its source
-    is compared, with the environment it was saved in.
-    """
-    if not fingerprint_ok(saved):
-        return False
-    if not compare_environment:
-        return True
-    return fingerprint_ok(fingerprint) and saved == fingerprint
-
-
-def _normal(text: str) -> str:
-    return text.replace("\r\n", "\n")
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-def _created_ok(created: str) -> bool:
-    """Whether `created` is an ISO-8601 UTC time to the second."""
-    if _CREATED.fullmatch(created) is None:
-        return False
-    try:
-        datetime.fromisoformat(created)
-    except ValueError:
-        return False
-    return True
-
-
-def _evidence_entry_ok(entry: Any) -> bool:
-    """Whether `entry` holds the saved evidence fields and a valid snapshot."""
-    if not isinstance(entry, dict) or set(entry) != {*_EVIDENCE_KEYS, "snapshot"}:
-        return False
-    if not all(isinstance(entry[key], str) for key in _EVIDENCE_KEYS):
-        return False
-    if not _created_ok(entry["created"]):
-        return False
-    try:
-        checked_evidence(entry["snapshot"])
-    except ValueError:
-        return False
-    return True
-
-
-def _failure_entry_ok(entry: Any, section: str = _FAILURES) -> bool:
-    """Whether `entry` holds the saved fields of a failed run in `section`."""
-    if not isinstance(entry, dict) or set(entry) != set(_FAILURE_KEYS):
-        return False
-    if not all(isinstance(entry[key], str) for key in _FAILURE_KEYS):
-        return False
-    kinds = EVIDENCE_FAILURE_KINDS if section == _FAILURES else DECISION_FAILURE_KINDS
-    return (
-        _created_ok(entry["created"])
-        and entry["kind"] in kinds
-        and len(entry["message"]) <= MAX_MESSAGE
-    )
-
-
-def _before(created: str, other: str) -> bool:
-    """Whether the saved time `created` is strictly earlier than `other`."""
-    return datetime.fromisoformat(created) < datetime.fromisoformat(other)
-
-
-def _lenient_failures(
-    records: dict[str, Any] | None, section: str = _FAILURES
-) -> dict[str, dict[str, Any]]:
-    """Return the saved failures still worth showing; malformed ones are dropped.
-
-    `section` is `evidence_failures` or `decision_failures`. A section that is
-    not an object reads as empty. A failure saved before the evidence or
-    decision saved for its directive is out of date and dropped too.
-    """
-    if records is None:
-        return {}
-    failures = records.get(section, {})
-    if not isinstance(failures, dict):
-        return {}
-    succeeded, success_ok = (
-        ("evidence", _evidence_entry_ok)
-        if section == _FAILURES
-        else ("decisions", _decision_entry_ok)
-    )
-    successes = records.get(succeeded, {})
-    kept = {}
-    for key, entry in failures.items():
-        if not _failure_entry_ok(entry, section):
-            continue
-        saved = successes.get(key) if isinstance(successes, dict) else None
-        if isinstance(saved, dict) and success_ok(saved):
-            if _before(entry["created"], saved["created"]):
-                continue
-        kept[key] = dict(entry)
-    return kept
-
-
-def _with_lenient_failures(records: dict[str, Any]) -> dict[str, Any]:
-    """Return ``records`` with only the failures `_lenient_failures` keeps."""
-    for section in _FAILURE_SECTIONS:
-        if section in records:
-            failures = _lenient_failures(records, section)
-            records = {k: v for k, v in records.items() if k != section}
-            if failures:
-                records[section] = failures
-    return records
 
 
 def _without_failure(
@@ -308,7 +167,7 @@ def _without_failure(
         return records
     wanted = set(keep) - {key}
     failures = {
-        k: v for k, v in _lenient_failures(records, section).items() if k in wanted
+        k: v for k, v in lenient_failures(records, section).items() if k in wanted
     }
     records = {k: v for k, v in records.items() if k != section}
     if failures:
@@ -316,174 +175,9 @@ def _without_failure(
     return records
 
 
-def _view_entry_ok(entry: Any) -> bool:
-    """Whether `entry` holds the saved drawing fields and a drawing as checked.
-
-    The drawing must be what `checked_drawing` returns for it, so a drawing
-    with an error, a label or any other field is not a saved drawing.
-    """
-    if not isinstance(entry, dict) or set(entry) != {*_VIEW_KEYS, "drawing"}:
-        return False
-    if not all(isinstance(entry[key], str) for key in _VIEW_KEYS):
-        return False
-    if not _created_ok(entry["created"]):
-        return False
-    drawing = entry["drawing"]
-    if not isinstance(drawing, dict) or "error" in drawing:
-        return False
-    try:
-        return checked_drawing(json.dumps(drawing)) == drawing
-    except (TypeError, ValueError, RecursionError):
-        return False
-
-
-def _verification_ok(verification: Any, outcome: dict[str, Any]) -> bool:
-    """Whether `verification` is a candidate check's result, or None if unknown."""
-    if outcome["status"] == "unknown":
-        return verification is None
-    if not isinstance(verification, dict) or set(verification) != _VERIFICATION_KEYS:
-        return False
-    message, axioms, kind = (
-        verification["message"],
-        verification["axioms"],
-        verification["type"],
-    )
-    return (
-        verification["status"] in ("checked", "rejected")
-        and isinstance(message, str)
-        and len(message) <= MAX_MESSAGE
-        and isinstance(axioms, list)
-        and all(isinstance(axiom, str) for axiom in axioms)
-        and (kind is None or (isinstance(kind, str) and len(kind) <= MAX_TYPE))
-    )
-
-
-def _decision_entry_ok(entry: Any) -> bool:
-    """Whether `entry` holds the saved decision fields in their normal form."""
-    if not isinstance(entry, dict) or set(entry) != {
-        *_EVIDENCE_KEYS,
-        "outcome",
-        "verification",
-    }:
-        return False
-    if not all(isinstance(entry[key], str) for key in _EVIDENCE_KEYS):
-        return False
-    if not _created_ok(entry["created"]):
-        return False
-    try:
-        outcome = checked_decision(entry["outcome"])
-    except ValueError:
-        return False
-    return outcome == entry["outcome"] and _verification_ok(
-        entry["verification"], outcome
-    )
-
-
-def _statement_ok(statement: Any) -> bool:
-    """Whether ``statement`` is a saved checked statement."""
-    return isinstance(statement, str) and len(statement) <= MAX_TYPE
-
-
-def _uses_ok(uses: Any) -> bool:
-    """Whether ``uses`` is a saved list of the claims a claim uses."""
-    return (
-        isinstance(uses, list)
-        and len(uses) <= MAX_USES
-        and all(
-            isinstance(use, dict)
-            and set(use) == _USE_KEYS
-            and isinstance(use["module"], str)
-            and isinstance(use["name"], str)
-            and type(use["in_notebook"]) is bool
-            for use in uses
-        )
-    )
-
-
-def _shortened(statement: str, limit: int = MAX_TYPE) -> str:
-    """Return ``statement`` within the saved length, marked when cut."""
-    if len(statement) <= limit:
-        return statement
-    return statement[: limit - 1] + "…"
-
-
 def failure_message(message: str) -> str:
     """Return a failed run's message within `MAX_MESSAGE`, marked "…" when cut."""
     return _shortened(message, MAX_MESSAGE)
-
-
-def _withheld_ok(withheld: Any) -> bool:
-    """Whether ``withheld`` says where a saved check stopped, or is None."""
-    if withheld is None:
-        return True
-    if not isinstance(withheld, dict) or not (
-        _WITHHELD_KEYS <= set(withheld) <= {*_WITHHELD_KEYS, "through_line"}
-    ):
-        return False
-    from_line = withheld["from_line"]
-    if type(from_line) is not int or from_line < 1:
-        return False
-    if not isinstance(withheld["message"], str):
-        return False
-    if "through_line" not in withheld:
-        return True
-    # A check through line N stops there, or earlier at a failing command.
-    through = withheld["through_line"]
-    return type(through) is int and 1 <= through and from_line <= through + 1
-
-
-def _well_formed(records: dict[str, Any]) -> bool:
-    """Check the shape that ``claim_views`` relies on; anything else is unknown."""
-    environment = records.get("environment")
-    if not isinstance(environment, dict) or not isinstance(
-        environment.get("fingerprint"), str
-    ):
-        return False
-    if not _withheld_ok(records.get("withheld")):
-        return False
-    claims = records.get("claims")
-    if not isinstance(claims, list):
-        return False
-    for claim in claims:
-        if not isinstance(claim, dict):
-            return False
-        for key, kind in _CLAIM_KEYS.items():
-            if key not in claim or not isinstance(claim[key], kind):
-                return False
-        if "example" in claim and claim["example"] is not True:
-            return False
-        for key in ("statement", "kernel_statement"):
-            if key in claim and not _statement_ok(claim[key]):
-                return False
-            if claim.get(f"{key}_shortened", True) is not True:
-                return False
-        if "uses" in claim and not _uses_ok(claim["uses"]):
-            return False
-        if claim.get("uses_truncated", True) is not True or (
-            "uses_truncated" in claim and "uses" not in claim
-        ):
-            return False
-        if "fingerprint" in claim and not isinstance(claim["fingerprint"], str):
-            return False
-    non_claims = records.get("non_claims", [])
-    if not isinstance(non_claims, list) or not all(
-        isinstance(item, dict)
-        and set(item) == set(_NON_CLAIM_KEYS)
-        and all(isinstance(item[key], kind) for key, kind in _NON_CLAIM_KEYS.items())
-        for item in non_claims
-    ):
-        return False
-    for section, entry_ok in (
-        ("evidence", _evidence_entry_ok),
-        ("decisions", _decision_entry_ok),
-        ("views", _view_entry_ok),
-    ):
-        entries = records.get(section, {})
-        if not isinstance(entries, dict):
-            return False
-        if not all(entry_ok(entry) for entry in entries.values()):
-            return False
-    return True
 
 
 def records_path(notebook: Path) -> Path:
@@ -504,9 +198,9 @@ def load_records(notebook: Path) -> dict[str, Any] | None:
         records = _upgraded(loaded)
     if records is None or records.get("format") != FORMAT:
         return None
-    if not _well_formed(records):
+    if not well_formed(records):
         return None
-    return _with_lenient_failures(records)
+    return with_lenient_failures(records)
 
 
 def _upgraded(records: dict[str, Any]) -> dict[str, Any] | None:
@@ -679,7 +373,7 @@ def records_from_check(
     kept = dict(records)
     for section in _RESULT_SECTIONS:
         saved = (
-            _lenient_failures(previous, section)
+            lenient_failures(previous, section)
             if section in _FAILURE_SECTIONS
             else _saved(previous, section)
         )
@@ -760,7 +454,7 @@ def claim_views(
         ends = boundaries.ends_at(last)
         current = (
             ends
-            and _matches(checked_in, fingerprint, compare_environment)
+            and matches(checked_in, fingerprint, compare_environment)
             and _sha("\n".join(lines[:last])) == claim["prefix_sha256"]
         )
         if not ends:
@@ -804,7 +498,7 @@ def non_claim_views(
 
     ``compare_environment`` is as in `claim_views`.
     """
-    if records is None or not _matches(
+    if records is None or not matches(
         records["environment"]["fingerprint"], fingerprint, compare_environment
     ):
         return []
@@ -848,7 +542,7 @@ def saved_evidence_failures(
     Malformed failures, failures of kinds this version does not know and
     failures saved before their directive's evidence are left out.
     """
-    return _lenient_failures(records)
+    return lenient_failures(records)
 
 
 def saved_decision_failures(
@@ -859,7 +553,7 @@ def saved_decision_failures(
     As for `saved_evidence_failures`, with failures saved before their
     directive's decision left out.
     """
-    return _lenient_failures(records, _DECISION_FAILURES)
+    return lenient_failures(records, _DECISION_FAILURES)
 
 
 def _refuse_unreadable(
@@ -888,12 +582,12 @@ def _with_entry(
 
     Saving anything but a drawing drops the saved drawings, then the saved
     failures, when they would make the records too large; saving a drawing
-    never does. Failures that `_lenient_failures` drops are dropped here too.
+    never does. Failures that `lenient_failures` drops are dropped here too.
     """
     _refuse_unreadable(records, notebook, f"saving {section}")
     wanted = {*keep, key}
     if records is not None:
-        records = _with_lenient_failures(records)
+        records = with_lenient_failures(records)
     entries = {k: v for k, v in _saved(records, section).items() if k in wanted}
     # A copy, so later changes to the caller's entry never reach the records.
     entries[key] = copy.deepcopy(entry)
@@ -1018,7 +712,7 @@ def _with_failure(
         raise ValueError(f"The {what} failure entry is malformed.")
     if not fingerprint_ok(entry["fingerprint"]):
         raise ValueError(f"The failure cannot be saved: {UNKNOWN_FINGERPRINT}.")
-    kept = {s for s in _FAILURE_SECTIONS if _lenient_failures(records, s)} | {section}
+    kept = {s for s in _FAILURE_SECTIONS if lenient_failures(records, s)} | {section}
     result = _with_entry(
         records,
         section,
@@ -1163,7 +857,7 @@ def evidence_status(
 
     ``compare_environment`` is as in `claim_views`.
     """
-    if _matches(entry["fingerprint"], fingerprint, compare_environment) and entry[
+    if matches(entry["fingerprint"], fingerprint, compare_environment) and entry[
         "prefix_sha256"
     ] == evidence_prefix_sha256(text, line):
         return "current"
@@ -1245,7 +939,7 @@ def decision_status(
         and block_follows(text, end_line, outcome["block"])
     ):
         return "accepted"
-    if not _matches(entry["fingerprint"], fingerprint, compare_environment) or entry[
+    if not matches(entry["fingerprint"], fingerprint, compare_environment) or entry[
         "prefix_sha256"
     ] != decision_prefix_sha256(text, end_line):
         return "stale"

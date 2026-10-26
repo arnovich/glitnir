@@ -250,7 +250,7 @@ class SavedNotebook:
         provider_sha256 = view_provider_hash(service._providers(), view)
         if provider_sha256 is None:
             return None
-        return service._saved_drawing(
+        return service._views._saved_drawing(
             text,
             view_keys(text, views)[line],
             line,

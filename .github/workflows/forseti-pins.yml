@@ -1,0 +1,305 @@
+name: Regenerate Forseti Lean pins
+# Rebuilds a Forseti Lean release on Linux and regenerates the plugin's Lean
+# pins from it (tools/pin_lean_release.py, then tools/pin_lean_replay.py), so a
+# re-pin never needs a local Lean build. It checks the regenerated pins with the
+# plugin's pin tests and uploads them as a patch (artifact forseti-pins). It
+# never pushes, commits or opens a pull request: a maintainer reviews the patch
+# and applies it on a branch. DEVELOPMENT.md, "Re-pinning Forseti Lean".
+on:
+  workflow_dispatch:
+    inputs:
+      forseti_ref:
+        description: forseti-lean tag to pin (a branch or full commit SHA makes a probe, not a release pin)
+        required: true
+        type: string
+      asgard_ref:
+        description: asgard-lean tag that forseti_ref's lake-manifest.json locks (or a branch or full commit SHA for a probe)
+        required: true
+        type: string
+      bump_support:
+        description: Bump SUPPORT_VERSION when the pinned content changed
+        required: false
+        default: true
+        type: boolean
+permissions:
+  contents: read
+env:
+  FORSETI_REF: ${{ inputs.forseti_ref }}
+  ASGARD_REF: ${{ inputs.asgard_ref }}
+  BUMP_SUPPORT: ${{ inputs.bump_support }}
+  FORSETI_URL: https://github.com/arnovich/forseti-lean.git
+  ASGARD_URL: https://github.com/arnovich/asgard-lean.git
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          enable-cache: false
+      # A tag is fetched as refs/tags/NAME, a 40-hex SHA as itself, anything else
+      # as refs/heads/NAME, so a branch can never stand in for a tag of the same
+      # name. Only a tag makes a release pin.
+      - name: Resolve the Forseti and Asgard Lean revisions
+        id: refs
+        run: |
+          resolve() {
+            local url=$1 ref=$2 dir=$3 kind refspec
+            if ! [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || [[ "$ref" == *..* ]]; then
+              echo "::error::Not a git ref: $ref"
+              return 1
+            fi
+            git init --quiet "$dir"
+            git -C "$dir" remote add origin "$url"
+            if git -C "$dir" ls-remote --exit-code --tags origin "refs/tags/$ref" > /dev/null; then
+              kind=tag refspec="refs/tags/$ref"
+            elif [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+              kind=commit refspec="$ref"
+            else
+              kind=branch refspec="refs/heads/$ref"
+            fi
+            git -C "$dir" fetch --quiet --depth 1 origin "$refspec"
+            git -C "$dir" rev-parse 'FETCH_HEAD^{commit}' > "$dir.commit"
+            echo "$kind" > "$dir.kind"
+          }
+          resolve "$FORSETI_URL" "$FORSETI_REF" "$RUNNER_TEMP/forseti-lean"
+          resolve "$ASGARD_URL" "$ASGARD_REF" "$RUNNER_TEMP/asgard-lean"
+          forseti_commit=$(cat "$RUNNER_TEMP/forseti-lean.commit")
+          asgard_commit=$(cat "$RUNNER_TEMP/asgard-lean.commit")
+          git -C "$RUNNER_TEMP/forseti-lean" checkout --quiet --detach "$forseti_commit"
+          test "$(git -C "$RUNNER_TEMP/forseti-lean" rev-parse HEAD)" = "$forseti_commit"
+          # The release must lock exactly the asgard-lean revision asked for, from
+          # the public asgard-lean repository.
+          locked=$(jq -r '.packages[] | select(.name == "asgard") | "\(.url) \(.rev)"' "$RUNNER_TEMP/forseti-lean/lake-manifest.json")
+          read -r locked_url locked_rev <<< "$locked"
+          if [ -z "$locked_rev" ]; then
+            echo "::error::forseti-lean $FORSETI_REF's lake-manifest.json locks no asgard package"
+            exit 1
+          fi
+          if [ "${locked_url%.git}" != "${ASGARD_URL%.git}" ]; then
+            echo "::error::forseti-lean $FORSETI_REF locks asgard from $locked_url, not $ASGARD_URL"
+            exit 1
+          fi
+          if [ "$locked_rev" != "$asgard_commit" ]; then
+            echo "::error::forseti-lean $FORSETI_REF ($forseti_commit) locks asgard-lean $locked_rev, but $ASGARD_REF is $asgard_commit"
+            exit 1
+          fi
+          rm -rf "$RUNNER_TEMP/asgard-lean"
+          {
+            echo "forseti_commit=$forseti_commit"
+            echo "forseti_kind=$(cat "$RUNNER_TEMP/forseti-lean.kind")"
+            echo "asgard_commit=$asgard_commit"
+            echo "asgard_kind=$(cat "$RUNNER_TEMP/asgard-lean.kind")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and install the backend and plugin as the extension job does
+        run: |
+          uv build backend --wheel --out-dir "$RUNNER_TEMP/wheels"
+          uv build plugins/forseti --wheel --out-dir "$RUNNER_TEMP/wheels"
+          backend=$(echo "$RUNNER_TEMP"/wheels/glitnir-*-py3-none-any.whl)
+          test -f "$backend"
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock "${backend}[dev]"
+          # glitnir is not on an index, so the plugin's own dependencies are named here.
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
+          uv pip install --python .venv/bin/python --no-deps "$RUNNER_TEMP"/wheels/glitnir_forseti-*-py3-none-any.whl
+      - name: Install elan and the sandbox
+        run: |
+          curl -fsSL https://github.com/leanprover/elan/releases/download/v4.2.4/elan-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/elan.tar.gz"
+          echo "42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63  $RUNNER_TEMP/elan.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/elan.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/elan-init" -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq
+          # keyutils: a sandbox probe checks that a proof cannot read the session keyring.
+          sudo apt-get install --yes bubblewrap apparmor apparmor-profiles keyutils
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
+      # As plugin-live builds the pinned release; the build brings the release's
+      # Lean toolchain with it.
+      - name: Build the Forseti Lean release
+        working-directory: ${{ runner.temp }}/forseti-lean
+        run: |
+          lake exe cache get
+          lake build
+          # Views and evidence load their providers' modules from the project's
+          # build; the release's own targets do not include them all.
+          list=$("$GITHUB_WORKSPACE/.venv/bin/python" -c 'from glitnir_forseti import providers; print(" ".join(sorted({m for p in providers() for m in p.imports if m.startswith("Gimle.")})))')
+          read -ra modules <<< "$list"
+          lake build "${modules[@]}"
+      - name: Regenerate the release pin
+        id: release
+        run: |
+          flags=()
+          if [ "$BUMP_SUPPORT" = true ]; then flags+=(--bump-support); fi
+          .venv/bin/python plugins/forseti/tools/pin_lean_release.py "$RUNNER_TEMP/forseti-lean" \
+            --forseti-tag "$FORSETI_REF" --asgard-tag "$ASGARD_REF" "${flags[@]}"
+          .venv/bin/python plugins/forseti/tools/pin_lean_release.py "$RUNNER_TEMP/forseti-lean" \
+            --forseti-tag "$FORSETI_REF" --asgard-tag "$ASGARD_REF" --check
+      # The replay tool and the tests read the pins the installed plugin packages
+      # (RELEASE_SHA256 names the release pin), so each regenerated pin is
+      # rebuilt into the wheel before the next step reads it.
+      - name: Reinstall the plugin with the new release pin
+        run: |
+          rm -f "$RUNNER_TEMP"/wheels/glitnir_forseti-*.whl
+          uv build plugins/forseti --wheel --out-dir "$RUNNER_TEMP/wheels"
+          uv pip install --python .venv/bin/python --no-deps --reinstall "$RUNNER_TEMP"/wheels/glitnir_forseti-*-py3-none-any.whl
+      # Keeps every other platform's toolchain digest while the toolchain is
+      # unchanged (closure.build_pin); for the same release it fails unless
+      # every closure is byte-identical to the committed pin's.
+      - name: Regenerate the replay pin
+        id: replay
+        run: .venv/bin/python plugins/forseti/tools/pin_lean_replay.py "$RUNNER_TEMP/forseti-lean"
+      - name: Reinstall the plugin with the new replay pin
+        run: |
+          rm -f "$RUNNER_TEMP"/wheels/glitnir_forseti-*.whl
+          uv build plugins/forseti --wheel --out-dir "$RUNNER_TEMP/wheels"
+          uv pip install --python .venv/bin/python --no-deps --reinstall "$RUNNER_TEMP"/wheels/glitnir_forseti-*-py3-none-any.whl
+      - name: Point plugin-live at the new release
+        if: steps.refs.outputs.forseti_kind == 'tag'
+        env:
+          FORSETI_COMMIT: ${{ steps.refs.outputs.forseti_commit }}
+        run: |
+          python3 - <<'EOF'
+          import os, re
+          from pathlib import Path
+
+          path = Path(".github/workflows/check.yml")
+          text = path.read_text()
+          rules = (
+              (r"(--branch )\S+( https://github\.com/arnovich/forseti-lean\.git)",
+               r"\g<1>" + os.environ["FORSETI_REF"] + r"\g<2>"),
+              (r'(test "\$\(git rev-parse HEAD\)" = )[0-9a-f]{40}',
+               r"\g<1>" + os.environ["FORSETI_COMMIT"]),
+          )
+          for pattern, replacement in rules:
+              text, count = re.subn(pattern, replacement, text)
+              if count != 1:
+                  raise SystemExit(f"expected one match of {pattern} in {path}, found {count}")
+          path.write_text(text)
+          EOF
+      - name: Check the regenerated pins
+        id: tests
+        working-directory: plugins/forseti
+        env:
+          FORSETI_REQUIRE_LEAN_PROJECT: '1'
+          PROBE: ${{ steps.refs.outputs.forseti_kind != 'tag' || steps.refs.outputs.asgard_kind != 'tag' }}
+        run: |
+          export FORSETI_LEAN_PROJECT="$RUNNER_TEMP/forseti-lean"
+          deselect=()
+          if [ "$PROBE" = true ]; then
+            # A probe's origin record names a branch or commit, which this test
+            # rightly refuses for a release pin.
+            deselect=(--deselect tests/test_lean_release.py::test_release_records_which_checkout_satisfies_it)
+          fi
+          ../../.venv/bin/python -m pytest -v --tb=short -rfE "${deselect[@]}" \
+            tests/test_pin_lean_release.py tests/test_lean_release.py \
+            tests/test_entailment_lean.py::test_the_replay_pin_matches_the_release \
+            tests/test_entailment_lean.py::test_the_replay_pin_is_current
+      - name: Collect the patch
+        if: always() && steps.replay.outcome == 'success'
+        env:
+          FORSETI_COMMIT: ${{ steps.refs.outputs.forseti_commit }}
+          FORSETI_KIND: ${{ steps.refs.outputs.forseti_kind }}
+          ASGARD_COMMIT: ${{ steps.refs.outputs.asgard_commit }}
+          ASGARD_KIND: ${{ steps.refs.outputs.asgard_kind }}
+          TESTS: ${{ steps.tests.outcome }}
+        run: |
+          out="$RUNNER_TEMP/forseti-pins"
+          mkdir -p "$out/files"
+          paths=(
+            plugins/forseti/src/glitnir_forseti/lean-release.v1.json
+            plugins/forseti/src/glitnir_forseti/lean-lockfile.v1.json
+            plugins/forseti/src/glitnir_forseti/lean-replay.v1.json
+            plugins/forseti/tests/fixtures/lean-release-origin.v1.json
+            plugins/forseti/tools/pin_lean_release.py
+            .github/workflows/check.yml
+          )
+          git diff --binary -- "${paths[@]}" > "$out/forseti-pins.patch"
+          git diff --name-only -- "${paths[@]}" > "$out/changed.txt"
+          while read -r path; do
+            mkdir -p "$out/files/$(dirname "$path")"
+            cp "$path" "$out/files/$path"
+          done < "$out/changed.txt"
+          jq -n --arg forseti_ref "$FORSETI_REF" --arg forseti_commit "$FORSETI_COMMIT" \
+            --arg forseti_kind "$FORSETI_KIND" --arg asgard_ref "$ASGARD_REF" \
+            --arg asgard_commit "$ASGARD_COMMIT" --arg asgard_kind "$ASGARD_KIND" \
+            --arg glitnir_commit "$GITHUB_SHA" --arg tests "$TESTS" \
+            '{$forseti_ref, $forseti_commit, $forseti_kind, $asgard_ref, $asgard_commit, $asgard_kind, $glitnir_commit, $tests}' \
+            > "$out/resolved.json"
+      - name: Upload the patch
+        if: always() && steps.replay.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: forseti-pins
+          path: ${{ runner.temp }}/forseti-pins
+          if-no-files-found: error
+          retention-days: 14
+      - name: Summarize
+        if: always()
+        env:
+          FORSETI_COMMIT: ${{ steps.refs.outputs.forseti_commit }}
+          FORSETI_KIND: ${{ steps.refs.outputs.forseti_kind }}
+          ASGARD_COMMIT: ${{ steps.refs.outputs.asgard_commit }}
+          ASGARD_KIND: ${{ steps.refs.outputs.asgard_kind }}
+          OUTCOMES: >-
+            resolve=${{ steps.refs.outcome }} release-pin=${{ steps.release.outcome }}
+            replay-pin=${{ steps.replay.outcome }} tests=${{ steps.tests.outcome }}
+        run: |
+          pin() { git show "HEAD:$1" 2> /dev/null | jq -r "$2"; }
+          now() { jq -r "$2" "$1" 2> /dev/null; }
+          release=plugins/forseti/src/glitnir_forseti/lean-release.v1.json
+          replay=plugins/forseti/src/glitnir_forseti/lean-replay.v1.json
+          {
+            echo "## Forseti Lean pins"
+            echo
+            echo "| | requested | kind | commit |"
+            echo "|---|---|---|---|"
+            echo "| forseti-lean | \`$FORSETI_REF\` | ${FORSETI_KIND:-unresolved} | \`${FORSETI_COMMIT:-}\` |"
+            echo "| asgard-lean | \`$ASGARD_REF\` | ${ASGARD_KIND:-unresolved} | \`${ASGARD_COMMIT:-}\` |"
+            echo
+            echo "Glitnir \`$GITHUB_SHA\` ($GITHUB_REF_NAME). Steps: $OUTCOMES."
+            echo
+            if [ "$FORSETI_KIND" != tag ] || [ "$ASGARD_KIND" != tag ]; then
+              echo "> [!WARNING]"
+              echo "> A ref is not a tag: this is a probe, not a release pin. Its origin record names"
+              echo "> the ref as given, check.yml is left alone, and the origin test was deselected."
+              echo "> Do not apply it as a release pin."
+              echo
+            fi
+            echo "- Support version: $(pin "$release" .support_version) → $(now "$release" .support_version)"
+            echo "- Toolchain: $(pin "$release" .toolchain) → $(now "$release" .toolchain)"
+            before=$(pin "$replay" '.toolchain_binaries | keys | join(", ")')
+            after=$(now "$replay" '.toolchain_binaries | keys | join(", ")')
+            echo "- Toolchain digests for: $before → $after"
+            old=$(git show "HEAD:$replay" 2> /dev/null | jq -c '.toolchain_binaries // {}')
+            new=$(jq -c '.toolchain_binaries // {}' "$replay" 2> /dev/null || echo '{}')
+            echo "- Per platform: $(jq -nr --argjson old "$old" --argjson new "$new" \
+              '[($old + $new | keys[]) as $k | "\($k) \(if $old[$k] == null then "added" elif $new[$k] == null then "dropped" elif $old[$k] == $new[$k] then "unchanged" else "changed" end)"] | join(", ")')"
+            if [ -n "$after" ] && [ "$before" != "$after" ]; then
+              echo
+              echo "> [!WARNING]"
+              echo "> The toolchain changed, so only this platform's toolchain digest is pinned."
+              echo "> Replay on any other platform (macOS) reports the environment unknown until"
+              echo "> \`tools/pin_lean_replay.py\` is run there on this patch."
+            fi
+            echo
+            echo "### Changed files"
+            echo
+            echo '```'
+            git diff --stat
+            echo '```'
+            echo
+            echo "### Apply"
+            echo
+            echo '```sh'
+            echo "gh run download $GITHUB_RUN_ID -R $GITHUB_REPOSITORY -n forseti-pins -D forseti-pins"
+            echo "git apply --index forseti-pins/forseti-pins.patch"
+            echo '```'
+            echo
+            echo "Then update the docs that name the pinned tags (DEVELOPMENT.md, docs/guide.md,"
+            echo "plugins/forseti/README.md, skills/glitnir-notebooks/references/optional-features.md)"
+            echo "and let the pull request's plugin-live job run the whole suite against the release."
+          } >> "$GITHUB_STEP_SUMMARY"

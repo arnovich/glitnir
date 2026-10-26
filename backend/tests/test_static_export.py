@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import evidence_provider, patch_service_name, settle
 
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_views import view_provider_sha256
@@ -25,8 +26,6 @@ from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import (
     DecisionProvider,
     DecisionRequest,
-    EvidenceProvider,
-    EvidenceRequest,
     Providers,
     ViewProvider,
 )
@@ -50,20 +49,6 @@ TEXT = (
     "-- @view circuit c\n"
 )
 RECORDED = "f" * 64
-
-
-def _evidence_provider() -> EvidenceProvider:
-    return EvidenceProvider(
-        name="demo",
-        verbs=frozenset({"simulate"}),
-        imports=("Demo.Evidence",),
-        preamble="",
-        marker="m:",
-        parse=lambda verb, target, options: EvidenceRequest(verb, target, {}),
-        command=lambda request: "",
-        compute=lambda request, payload: {},
-        unavailable=lambda: "Install the demo extra.",
-    )
 
 
 def _view_provider() -> ViewProvider:
@@ -119,7 +104,14 @@ def saved(tmp_path: Path, monkeypatch) -> Path:
         source_preview,
         "load_providers",
         lambda: Providers(
-            {"circuit": _view_provider()}, {"simulate": _evidence_provider()}, {}, {}
+            {"circuit": _view_provider()},
+            {
+                "simulate": evidence_provider(
+                    ("Demo.Evidence",), "Install the demo extra."
+                )
+            },
+            {},
+            {},
         ),
     )
     path = tmp_path / "A.lean"
@@ -155,7 +147,7 @@ def nothing_runs(monkeypatch):
         "render_project_views",
         "save_records",
     ):
-        monkeypatch.setattr(source_preview, name, forbidden)
+        patch_service_name(monkeypatch, name, forbidden)
     monkeypatch.setattr(preview_snapshot, "environment_fingerprint", forbidden)
 
 
@@ -515,7 +507,7 @@ def test_a_check_in_an_unknown_environment_saves_nothing(
     try:
         sha256 = service.snapshot()["sha256"]
         service.check(sha256)
-        service._worker.join(timeout=10)
+        settle(service)
         check = service.snapshot()["preview"]["check"]
     finally:
         service.close()
@@ -606,7 +598,11 @@ def deciding(saved: Path, monkeypatch) -> Path:
         "load_providers",
         lambda: Providers(
             {"circuit": _view_provider()},
-            {"simulate": _evidence_provider()},
+            {
+                "simulate": evidence_provider(
+                    ("Demo.Evidence",), "Install the demo extra."
+                )
+            },
             {"entailment": decider},
             {},
         ),

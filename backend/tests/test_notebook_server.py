@@ -14,8 +14,10 @@ import threading
 from pathlib import Path
 
 import pytest
+from conftest import settle
 
 from glitnir.notebook.check_records import records_path
+from glitnir.service import runs as source_runs
 from glitnir.service.cli import main
 from glitnir.service.preview import SourcePreviewService
 from glitnir.service.server import make_server
@@ -350,7 +352,7 @@ def test_inspection_cancel_http_stops_the_inspection(tmp_path, monkeypatch):
         assert started.wait(30)
         assert _request(httpd, "POST", route, '{"x": 1}', headers)[0].status == 400
         assert _request(httpd, "POST", route, "{}", headers)[0].status == 202
-        service._inspection_worker.join(timeout=30)
+        settle(service)
         found = service.snapshot()["preview"]["inspection"]
         assert found["message"] == "Project inspection cancelled."
         # The gate is open again.
@@ -478,11 +480,8 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch, draw_each_alo
     """`/api/view/cancel` takes an empty JSON object and stops the drawing."""
     from glitnir.providers import Providers, ViewProvider
     from glitnir.service import preview as source_preview
-    from glitnir.service.preview import (
-        NOTHING_DRAWING,
-        VIEW_CANCELLED,
-        SourcePreviewService,
-    )
+    from glitnir.service.preview import SourcePreviewService
+    from glitnir.service.views import NOTHING_DRAWING, VIEW_CANCELLED
 
     provider = ViewProvider("demo", frozenset({"circuit"}), (), "", "m:", lambda *a: "")
     monkeypatch.setattr(
@@ -520,7 +519,7 @@ def test_view_cancel_http_stops_the_drawing(tmp_path, monkeypatch, draw_each_alo
             assert refused[0].status == 400
         response, _ = _request(httpd, "POST", "/api/view/cancel", named, headers)
         assert response.status == 202
-        service._view_worker.join(timeout=30)
+        settle(service)
         _, data = _request(httpd, "GET", f"/api/view/job?id={job}")
         assert json.loads(data) == {"error": VIEW_CANCELLED}
         for query in ("", "?id=x", f"?id={job}&id={job}", f"?id={job}&cell=0"):
@@ -557,7 +556,7 @@ def test_project_view_http_draws_directives(tmp_path, monkeypatch, draw_each_alo
         response, data = _request(httpd, "GET", f"/api/view?cell={cell}&line=3")
         # The first request starts the drawing and answers at once.
         assert response.status == 200 and json.loads(data)["status"] == "drawing"
-        service._view_worker.join(timeout=30)
+        settle(service)
         job = json.loads(data)["job"]
         _, polled = _request(httpd, "GET", f"/api/view/job?id={job}")
         assert json.loads(polled) == {"svg": "<svg/>"}
@@ -603,7 +602,7 @@ def test_evidence_run_http_starts_listed_directives_only(tmp_path, monkeypatch):
         started.set()
         return {"error": "Lean is not here."}
 
-    monkeypatch.setattr(source_preview, "run_provider_lean", run)
+    monkeypatch.setattr(source_runs, "run_provider_lean", run)
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n\n-- @evidence simulate c\n")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -640,7 +639,7 @@ def test_evidence_run_http_starts_listed_directives_only(tmp_path, monkeypatch):
         [card] = service.snapshot()["evidence"]
         assert json.loads(data) == {"running": card["key"]}
         assert started.wait(5)
-        service._evidence_worker.join(timeout=5)
+        settle(service)
         [card] = service.snapshot()["evidence"]
         assert card["run_error"] == "Lean is not here."
         assert not records_path(path).exists()
@@ -680,7 +679,7 @@ def test_decision_http_runs_stops_and_discards_listed_directives(
     )
     patch_fingerprint(lambda *a: {"sha256": "f" * 64})
     monkeypatch.setattr(
-        source_preview, "provider_imports_error", lambda source, **options: None
+        source_runs, "provider_imports_error", lambda source, **options: None
     )
     path = tmp_path / "A.lean"
     path.write_text("def c := 1\n\n-- @decide four : sum\n")
@@ -734,7 +733,7 @@ def test_decision_http_runs_stops_and_discards_listed_directives(
         assert json.loads(data) == {"error": "This decision is running; stop it first."}
         response, data = _post(httpd, "/api/decide/stop", {})
         assert (response.status, json.loads(data)) == (202, {"status": "cancelling"})
-        service._decision_worker.join(timeout=5)
+        settle(service)
         [card] = service.snapshot()["decisions"]
         assert card["run_error"] == "Decision run cancelled."
         assert not records_path(path).exists()
@@ -744,7 +743,7 @@ def test_decision_http_runs_stops_and_discards_listed_directives(
             _post(httpd, "/api/decide/run", {"sha256": digest, "line": 3})[0].status
             == 202
         )
-        service._decision_worker.join(timeout=5)
+        settle(service)
         assert service.snapshot()["decisions"][0]["status"] == "unknown"
         response, data = _post(
             httpd, "/api/decide/discard", {"sha256": digest, "line": 3}

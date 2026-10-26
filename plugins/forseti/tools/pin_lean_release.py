@@ -3,7 +3,7 @@
 Usage, from a built release checkout named by its tag::
 
     uv run python tools/pin_lean_release.py PROJECT --forseti-tag vX.Y.Z
-        --asgard-tag vA.B.C
+        --asgard-tag vA.B.C [--bump-support] [--check]
 
 The pin is by content: `verify_project` accepts only a project whose toolchain,
 dependency lock, core sources and build configurations hash to what the pin
@@ -15,6 +15,13 @@ built and reviewed, and writes the three files that must move together:
 - `tests/fixtures/lean-release-origin.v1.json`, which tags the pin was cut from.
 
 `--check` compares instead of writing, and fails if any file would change.
+
+`--bump-support` applies the rule that `SUPPORT_VERSION` moves whenever the
+pinned content does: when the generated pin differs from the committed one in
+anything but its support version, and the committed pin still carries this
+tool's `SUPPORT_VERSION` (it was not bumped by hand already), the version's
+number goes up by one, in the pin and in this file's constant. A re-pin of the
+same content keeps it. `.github/workflows/forseti-pins.yml` runs this on Linux.
 
 It never downloads anything and trusts nothing it reads: the output is a
 proposal a reviewer compares against the release, exactly as a hand edit would
@@ -32,14 +39,15 @@ from pathlib import Path
 
 from glitnir_forseti.lean_release import package_roots
 
-REPOSITORY = Path(__file__).resolve().parents[1]
+TOOL = Path(__file__).resolve()
+REPOSITORY = TOOL.parents[1]
 PACKAGE = REPOSITORY / "src/glitnir_forseti"
 RELEASE_PIN = PACKAGE / "lean-release.v1.json"
 LOCKFILE_PIN = PACKAGE / "lean-lockfile.v1.json"
 ORIGIN_RECORD = REPOSITORY / "tests/fixtures/lean-release-origin.v1.json"
 
 #: The support contract version. Bump it whenever the pinned content changes.
-SUPPORT_VERSION = "gimle.forseti.lean-support/v21"
+SUPPORT_VERSION = "gimle.forseti.lean-support/v22"
 
 #: Sources whose bytes the Python side depends on, by package and path.
 SUPPORT_SOURCE = ("forseti", "Gimle/Forseti.lean")
@@ -72,11 +80,14 @@ def _build_config(root: Path) -> str:
     raise SystemExit(f"no Lake configuration in {root}")
 
 
-def release_pin(project: Path) -> tuple[bytes, bytes]:
+def release_pin(
+    project: Path, support_version: str = SUPPORT_VERSION
+) -> tuple[bytes, bytes]:
     """Compute the release pin and lockfile bytes for a built checkout.
 
     Args:
         project: A built forseti-lean release checkout.
+        support_version: The support contract version the pin names.
 
     Returns:
         The release pin document and the lockfile, both as file bytes.
@@ -101,7 +112,7 @@ def release_pin(project: Path) -> tuple[bytes, bytes]:
     ]
     document = {
         "schema": "gimle.forseti.lean-release/v1",
-        "support_version": SUPPORT_VERSION,
+        "support_version": support_version,
         "toolchain": (project / "lean-toolchain").read_text().strip(),
         "support_source_sha256": _sha256(roots["forseti"] / SUPPORT_SOURCE[1]),
         "checker_sha256": _sha256(roots["forseti"] / CHECKER_SOURCE[1]),
@@ -116,6 +127,42 @@ def release_pin(project: Path) -> tuple[bytes, bytes]:
         "build_configs": build_configs,
     }
     return (json.dumps(document, indent=2) + "\n").encode(), lockfile
+
+
+def next_support_version(version: str) -> str:
+    """Return the support version after ``version``: ``.../v21`` gives ``.../v22``."""
+    prefix, separator, number = version.rpartition("/v")
+    if not separator or not number.isdigit():
+        raise SystemExit(f"not a numbered support version: {version}")
+    return f"{prefix}/v{int(number) + 1}"
+
+
+def bumped_support_version(generated: bytes, committed: bytes) -> str | None:
+    """Return the next support version when the pinned content moved.
+
+    Args:
+        generated: The pin computed with this tool's `SUPPORT_VERSION`.
+        committed: The pin currently packaged.
+
+    Returns:
+        The bumped version, or None when the content is unchanged or the
+        committed pin no longer carries `SUPPORT_VERSION` (bumped by hand).
+    """
+    new = json.loads(generated)
+    old = json.loads(committed)
+    if old.get("support_version") != SUPPORT_VERSION:
+        return None
+    new.pop("support_version", None)
+    old.pop("support_version", None)
+    return None if new == old else next_support_version(SUPPORT_VERSION)
+
+
+def with_support_version(source: str, old: str, new: str) -> str:
+    """Rewrite this tool's `SUPPORT_VERSION` assignment, and nothing else."""
+    line = f'SUPPORT_VERSION = "{old}"'
+    if source.count(line) != 1:
+        raise SystemExit(f"expected exactly one {line!r} in the tool")
+    return source.replace(line, f'SUPPORT_VERSION = "{new}"')
 
 
 def origin_record(
@@ -152,10 +199,21 @@ def main() -> int:
     parser.add_argument("--asgard-tag", required=True)
     parser.add_argument("--verified-on", default=datetime.date.today().isoformat())
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--bump-support",
+        action="store_true",
+        help="bump SUPPORT_VERSION when the pinned content changed",
+    )
     arguments = parser.parse_args()
 
     project = arguments.project.resolve()
     pin, lockfile = release_pin(project)
+    bumped = None
+    if arguments.bump_support:
+        bumped = bumped_support_version(pin, RELEASE_PIN.read_bytes())
+        if bumped is not None:
+            pin, _ = release_pin(project, bumped)
+            print(f"support version: {SUPPORT_VERSION} -> {bumped}")
     outputs = {
         RELEASE_PIN: pin,
         LOCKFILE_PIN: lockfile,
@@ -166,6 +224,9 @@ def main() -> int:
             arguments.verified_on,
         ),
     }
+    if bumped is not None:
+        source = with_support_version(TOOL.read_text(), SUPPORT_VERSION, bumped)
+        outputs[TOOL] = source.encode()
     stale = [path for path, data in outputs.items() if path.read_bytes() != data]
     if arguments.check:
         for path in stale:
