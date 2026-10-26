@@ -6,6 +6,9 @@ name: Regenerate Forseti Lean pins
 # never pushes, commits or opens a pull request: a maintainer reviews the patch
 # and applies it on a branch. DEVELOPMENT.md, "Re-pinning Forseti Lean".
 on:
+  # TEMPORARY: proves the workflow on this PR; removed before merge.
+  pull_request:
+    paths: [.github/workflows/forseti-pins.yml]
   workflow_dispatch:
     inputs:
       forseti_ref:
@@ -24,9 +27,9 @@ on:
 permissions:
   contents: read
 env:
-  FORSETI_REF: ${{ inputs.forseti_ref }}
-  ASGARD_REF: ${{ inputs.asgard_ref }}
-  BUMP_SUPPORT: ${{ inputs.bump_support }}
+  FORSETI_REF: ${{ inputs.forseti_ref || 'v0.4.1' }}
+  ASGARD_REF: ${{ inputs.asgard_ref || 'v0.3.2' }}
+  BUMP_SUPPORT: ${{ github.event_name == 'pull_request' || inputs.bump_support }}
   FORSETI_URL: https://github.com/arnovich/forseti-lean.git
   ASGARD_URL: https://github.com/arnovich/asgard-lean.git
 jobs:
