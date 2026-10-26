@@ -14,8 +14,10 @@ from typing import Any, Callable
 
 from glitnir.lean.project_views import view_provider_sha256
 from glitnir.notebook.check_records import (
+    decision_failure_status,
     decision_status,
     evidence_status,
+    saved_decision_failures,
     saved_decisions,
     saved_evidence,
     saved_evidence_failures,
@@ -162,6 +164,7 @@ def decision_cards(
                 "run_error": None,
                 "outcome": None,
                 "verification": None,
+                "failure": None,
             }
         )
     return cards
@@ -252,8 +255,20 @@ def with_saved_evidence(
             card["snapshot"] = checked_evidence(entry["snapshot"])
         failure = failures.get(card["key"])
         if failure is not None:
+            status = evidence_status(
+                failure,
+                text,
+                card["line"],
+                environment,
+                compare_environment=compare_environment,
+            )
             card["failure"] = _shown_failure(
-                card, failure, text, environment, compare_environment
+                card,
+                failure,
+                status,
+                compare_environment,
+                shown=card["snapshot"] is not None,
+                current=card["status"] == "current",
             )
     return cards
 
@@ -261,27 +276,24 @@ def with_saved_evidence(
 def _shown_failure(
     card: dict[str, Any],
     failure: dict[str, Any],
-    text: str,
-    environment: str,
+    status: str,
     compare_environment: bool,
+    *,
+    shown: bool,
+    current: bool,
 ) -> dict[str, Any] | None:
     """Return a card's saved failure as shown, or None when it is hidden.
 
-    A failure follows the evidence currency rule. One that is out of date is
-    hidden behind a current snapshot, and, as recorded, always: a static page
-    shows only what was recorded for its source. Without a snapshot the card
-    reads failed, or out of date for a failure that is.
+    `status` is the failure's own currency; `shown` says the card shows a
+    saved result (a snapshot or a decision), and `current` that it is not out
+    of date. A failure that is out of date is hidden behind a current result,
+    and, as recorded, always: a static page shows only what was recorded for
+    its source. Without a saved result the card reads failed, or out of date
+    for a failure that is.
     """
-    status = evidence_status(
-        failure,
-        text,
-        card["line"],
-        environment,
-        compare_environment=compare_environment,
-    )
-    if status == "stale" and (not compare_environment or card["status"] == "current"):
+    if status == "stale" and (not compare_environment or current):
         return None
-    if card["snapshot"] is None:
+    if not shown:
         card["status"] = "failed" if status == "current" else "stale"
     return {
         "kind": failure["kind"],
@@ -298,31 +310,54 @@ def with_saved_decisions(
     fingerprint: Fingerprint,
     compare_environment: bool = True,
 ) -> list[dict[str, Any]]:
-    """Show each card's saved outcome and its status; nothing is decided.
+    """Show each card's saved outcome, failure and status; nothing is decided.
 
-    Without `compare_environment` no fingerprint is taken, as for evidence.
+    Without `compare_environment` no fingerprint is taken, as for evidence. A
+    saved failure is shown as `_shown_failure` says, behind any decision that
+    is not out of date, and never on an accepted decision.
     """
     saved = saved_decisions(records)
-    found = [card for card in cards if card["key"] in saved]
+    failures = saved_decision_failures(records)
+    found = [card for card in cards if card["key"] in saved or card["key"] in failures]
     if not found:
-        return cards  # no saved decisions, no fingerprint
+        return cards  # nothing saved, no fingerprint
     environment = environment_digest(fingerprint) if compare_environment else ""
     for card in found:
-        entry = saved[card["key"]]
-        card["status"] = decision_status(
-            entry,
-            text,
-            card["end_line"],
-            environment,
-            compare_environment=compare_environment,
-        )
-        card["outcome"] = checked_decision(entry["outcome"])
-        verification = entry["verification"]
-        card["verification"] = (
-            None
-            if verification is None
-            else {**verification, "axioms": list(verification["axioms"])}
-        )
+        entry = saved.get(card["key"])
+        if entry is not None:
+            card["status"] = decision_status(
+                entry,
+                text,
+                card["end_line"],
+                environment,
+                compare_environment=compare_environment,
+            )
+            card["outcome"] = checked_decision(entry["outcome"])
+            verification = entry["verification"]
+            card["verification"] = (
+                None
+                if verification is None
+                else {**verification, "axioms": list(verification["axioms"])}
+            )
+        failure = failures.get(card["key"])
+        # An accepted block is part of the notebook, judged by the project
+        # check: no later run's failure is news about it.
+        if failure is not None and card["status"] != "accepted":
+            status = decision_failure_status(
+                failure,
+                text,
+                card["end_line"],
+                environment,
+                compare_environment=compare_environment,
+            )
+            card["failure"] = _shown_failure(
+                card,
+                failure,
+                status,
+                compare_environment,
+                shown=entry is not None,
+                current=entry is not None and card["status"] != "stale",
+            )
     return cards
 
 

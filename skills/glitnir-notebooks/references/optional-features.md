@@ -114,7 +114,7 @@ Nothing runs when the preview opens. **Run** asks the provider (one provider run
 at a time, evidence included); Glitnir then checks the saved text up to the
 directive plus the proposed block with its own sandboxed kernel check, the only
 proof authority. Status is Never run, Running, Unknown, Rejected, Candidate,
-Accepted or Out of date; the card shows the stages, the kernel statement
+Accepted, Failed or Out of date; the card shows the stages, the kernel statement
 (Lean's form, e.g. `Eq (instHAdd.hAdd 2 2) 4`), axioms and the full block. A proof
 declares `theorem <name>`; a refutation `theorem <name>_refuted : ¬ (...)`. The
 provider is trusted only for matching the theorem to the goal, so read the
@@ -125,9 +125,14 @@ after the directive through the editor and saves; the backend never writes the
 `.lean` file. It is refused while the notebook has unsaved edits or the editor's
 text is not the saved file the backend reads. Saved edits below the directive keep
 the candidate acceptable; an edit above it, or an environment change, makes it Out
-of date until it is run again. **Discard** removes the saved result; **Stop**
-cancels a run. Results are saved in `<Notebook>.glitnir.json` under `decisions`;
-never hand-edit it.
+of date until it is run again. **Discard** removes the saved result and any saved
+failure; **Stop** cancels a run. Results are saved in `<Notebook>.glitnir.json`
+under `decisions` (a block the kernel rejects is a saved Rejected result). A run
+that fails before a result, because the provider crashed or refused the goal,
+returned an outcome that is not a decision of the directive, or the candidate
+check reached its time limit, is saved too, under `decision_failures`; a later
+result replaces it. A provider crash is saved as its exception type only. Setup
+failures, a busy checker and Stop are only shown. Never hand-edit the file.
 
 As an agent you may ask the user to Run and Accept, or write the proof directly
 in Lean; either way a decision never replaces checking, so run the project's Lean

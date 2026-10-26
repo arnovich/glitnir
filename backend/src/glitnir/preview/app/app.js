@@ -910,8 +910,8 @@
   // block, checks its theorem. Nothing here writes the notebook: Accept names
   // the decision, and the editor inserts the block the server serves for it.
   const DECISION_STATUS = {never: ['muted', 'Never run'], running: ['blue', 'Running'], unknown: ['amber', 'Unknown'], rejected: ['red', 'Rejected'],
-    candidate: ['blue', 'Candidate'], accepted: ['green', 'Accepted'], stale: ['amber', 'Out of date'], uncompared: ['muted', 'Not compared']};
-  const RUN_AGAIN = new Set(['never', 'unknown', 'rejected', 'stale', 'candidate']);
+    candidate: ['blue', 'Candidate'], accepted: ['green', 'Accepted'], stale: ['amber', 'Out of date'], uncompared: ['muted', 'Not compared'], failed: ['red', 'Failed']};
+  const RUN_AGAIN = new Set(['never', 'unknown', 'rejected', 'stale', 'candidate', 'failed']);
   // A goal kind no installed provider decides gets a note in the source, not
   // a card, unless a saved outcome for it remains to be shown.
   const needsDecider = entry => !entry.provider && !entry.outcome;
@@ -919,7 +919,11 @@
   function decisionHTML(entry, staticPage = false) {
     const {line, end_line: end, outcome} = entry;
     const running = entry.status === 'running';
-    const [tone, label] = staticPage && running ? ['amber', 'Running at export'] : Object.hasOwn(DECISION_STATUS, entry.status) ? DECISION_STATUS[entry.status] : ['muted', entry.status];
+    const [tone, label] = staticPage && running ? ['amber', 'Running at export'] : recorded() && entry.status === 'failed' ? ['red', 'Failed, as recorded'] : Object.hasOwn(DECISION_STATUS, entry.status) ? DECISION_STATUS[entry.status] : ['muted', entry.status];
+    // A saved failed run. This session's run error takes its place, unless the
+    // server marks the saved failure as earlier than that unsaved error.
+    // An accepted block is the project check's to judge: no failure note.
+    const failure = (entry.run_error && !entry.failure?.earlier) || (running && !staticPage) || entry.status === 'accepted' ? null : entry.failure;
     const what = `<code>${esc(entry.name || '?')}</code>${entry.kind ? ` · ${esc(entry.kind)}` : ''}${entry.provider ? ` · ${esc(entry.provider)}` : ''}`;
     // A directive in error has no status of its own until it is fixed.
     const pill = entry.error && !outcome ? '<span class="pill" data-tone="muted">Error</span>' : `<span class="pill" data-tone="${tone}">${esc(label)}</span>`;
@@ -929,11 +933,18 @@
     let body = '';
     if (!entry.error) {
       if (running && !staticPage) body = '<p class="small muted evidence-wait">Running the provider; the project checker then checks what it proposes…</p>';
-      else if (!outcome) body = '<p class="small muted evidence-wait">Not run yet.</p>';
+      else if (!outcome && !failure) body = '<p class="small muted evidence-wait">Not run yet.</p>';
     }
     if (outcome && (!running || staticPage)) body = decisionOutcomeHTML(entry, note);
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any outcome below is the previous saved one; its currency is not established here.</p>' + body;
-    if (entry.status === 'stale') body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : `Out of date: the source through this directive or its environment changed since this run.${leanOff() ? '' : ' Run it again to update it.'}`) + body;
+    if (failure) {
+      const day = /^\d{4}-\d{2}-\d{2}/.test(failure.created || '') ? ` on ${esc(failure.created.slice(0, 10))}` : '';
+      body = (failure.status === 'stale'
+        ? note('amber', `<span class="lean-message">An earlier run, on different source or environment, failed: ${esc(failure.message)}</span>`)
+        : note('red', `<span class="lean-message">${failure.earlier ? 'An earlier run' : 'The last run'} failed${day}: ${esc(failure.message)}</span>`)) + body;
+    }
+    // A saved failure alone that is out of date says so in its own note.
+    if (entry.status === 'stale' && outcome) body = note('amber', recorded() ? 'Out of date: the saved source through this directive changed since this run.' : `Out of date: the source through this directive or its environment changed since this run.${leanOff() ? '' : ' Run it again to update it.'}`) + body;
     if (entry.missing_imports?.length) body = note('amber', `Add ${entry.missing_imports.map(m => `<code>import ${esc(m)}</code>`).join(', ')} to the file's header before accepting.`) + body;
     if (entry.run_error) body = note('red', `The last run failed: ${esc(entry.run_error)}`) + body;
     if (entry.unavailable) body = note('amber', esc(entry.unavailable) + kept) + body;
@@ -976,7 +987,7 @@
     else {
       const acceptable = served && entry.status === 'candidate' && entry.verification?.status === 'checked' && !entry.missing_imports?.length;
       if (acceptable && HOST && !leanOff()) buttons.push(`<button type="button" class="primary" data-act="accept" data-key="${esc(entry.key)}">${icon('check')}Accept</button>`);
-      if (served && !entry.unavailable && !leanOff() && RUN_AGAIN.has(entry.status)) buttons.push(`<button type="button" class="${acceptable || entry.status === 'accepted' ? 'secondary' : 'primary'}" data-act="decision-run" data-line="${line}" data-sha="${sha}">${icon('replay')}${entry.outcome ? 'Run again' : 'Run'}</button>`);
+      if (served && !entry.unavailable && !leanOff() && RUN_AGAIN.has(entry.status)) buttons.push(`<button type="button" class="${acceptable || entry.status === 'accepted' ? 'secondary' : 'primary'}" data-act="decision-run" data-line="${line}" data-sha="${sha}">${icon('replay')}${entry.outcome || entry.failure || entry.status === 'failed' || entry.status === 'stale' ? 'Run again' : 'Run'}</button>`);
       if (entry.outcome) buttons.push(`<button type="button" class="secondary" data-act="decision-discard" data-line="${line}" data-sha="${sha}">Discard</button>`);
       if (acceptable && !HOST && !leanOff()) buttons.push('<span class="small muted">Accept it from the editor\'s preview.</span>');
     }

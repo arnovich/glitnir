@@ -8,12 +8,14 @@ import pytest
 
 from glitnir.notebook import check_records
 from glitnir.notebook.check_records import (
+    DECISION_FAILURE_KINDS,
     EVIDENCE_FAILURE_KINDS,
     MAX_MESSAGE,
     MAX_VIEWS_BYTES,
     RESULTS_TOO_LARGE,
     _serialised,
     claim_views,
+    decision_failure_status,
     decision_prefix_sha256,
     decision_status,
     evidence_prefix_sha256,
@@ -23,12 +25,14 @@ from glitnir.notebook.check_records import (
     records_from_check,
     records_path,
     save_records,
+    saved_decision_failures,
     saved_decisions,
     saved_evidence,
     saved_evidence_failures,
     saved_views,
     view_status,
     with_decision,
+    with_decision_failure,
     with_evidence,
     with_evidence_failure,
     with_view,
@@ -1979,3 +1983,328 @@ def test_records_with_failures_keep_what_older_readers_need(tmp_path):
     ]
     assert set(saved["evidence_failures"]) == {KEY, OTHER_KEY}
     assert "evidence_failures" in check_records._RESULT_SECTIONS
+
+
+# ----- saved decision failures --------------------------------------------------
+
+OTHER_DECIDE = "-- @decide three : entailment |- 3 = 3"
+OTHER_DECISION_KEY = decision_key(OTHER_DECIDE, 0)
+
+
+def _decision_failure(text=DECIDING, end_line=4, fingerprint=FP, **changes):
+    return {
+        "prefix_sha256": decision_prefix_sha256(text, end_line),
+        "fingerprint": fingerprint,
+        "provider": "demo",
+        "created": "2026-10-15T12:00:00Z",
+        "kind": "refused",
+        "message": "The goal has no variables.",
+        **changes,
+    }
+
+
+def test_a_decision_failure_round_trips_and_prunes_directives_that_are_gone(
+    tmp_path: Path,
+):
+    notebook = tmp_path / "N.lean"
+    records = with_decision_failure(None, "gone", _decision_failure(), ["gone"])
+    records = with_decision_failure(
+        records, OTHER_DECISION_KEY, _decision_failure(), ["gone", OTHER_DECISION_KEY]
+    )
+    records = with_decision_failure(
+        records, DECISION_KEY, _decision_failure(), [OTHER_DECISION_KEY], notebook
+    )
+    assert set(saved_decision_failures(records)) == {OTHER_DECISION_KEY, DECISION_KEY}
+    assert records["claims"] == [] and "decisions" not in records
+    save_records(notebook, records)
+    loaded = load_records(notebook)
+    assert loaded == records
+    assert saved_decision_failures(loaded)[DECISION_KEY] == _decision_failure()
+    assert saved_evidence_failures(loaded) == {}
+
+
+@pytest.mark.parametrize("kind", sorted(DECISION_FAILURE_KINDS))
+def test_each_decision_failure_kind_is_saved(kind):
+    records = with_decision_failure(
+        None, DECISION_KEY, _decision_failure(kind=kind), [DECISION_KEY]
+    )
+    assert saved_decision_failures(records)[DECISION_KEY]["kind"] == kind
+
+
+def test_the_decision_failure_kinds_are_those_a_run_saves():
+    """A block the kernel rejects is a saved decision, so there is no `lean`."""
+    assert DECISION_FAILURE_KINDS == {"provider", "refused", "invalid", "timeout"}
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {**_decision_failure(), "extra": 1},
+        {k: v for k, v in _decision_failure().items() if k != "message"},
+        _decision_failure(kind="lean"),
+        _decision_failure(kind="cancelled"),
+        _decision_failure(message=3),
+        _decision_failure(message="x" * (MAX_MESSAGE + 1)),
+        _decision_failure(created="yesterday"),
+        _decision_failure(provider=None),
+    ],
+)
+def test_a_malformed_decision_failure_is_refused(entry):
+    with pytest.raises(ValueError, match="malformed"):
+        with_decision_failure(None, DECISION_KEY, entry, [DECISION_KEY])
+
+
+@pytest.mark.parametrize("fingerprint", ["", "unknown", "F" * 64])
+def test_a_decision_failure_in_an_unknown_environment_is_never_saved(fingerprint):
+    with pytest.raises(ValueError, match="unknown"):
+        with_decision_failure(
+            None,
+            DECISION_KEY,
+            _decision_failure(fingerprint=fingerprint),
+            [DECISION_KEY],
+        )
+
+
+def test_a_decision_removes_its_failure_and_prunes_failures_of_gone_directives():
+    keep = [DECISION_KEY, OTHER_DECISION_KEY]
+    records = with_decision_failure(
+        None, DECISION_KEY, _decision_failure(), [*keep, "gone"]
+    )
+    records = with_decision_failure(
+        records, OTHER_DECISION_KEY, _decision_failure(), keep
+    )
+    records = with_decision_failure(records, "gone", _decision_failure(), keep)
+    records = with_evidence_failure(records, KEY, _failure(), [KEY])
+    records = with_decision(records, DECISION_KEY, _decision(), [OTHER_DECISION_KEY])
+    assert saved_decisions(records) == {DECISION_KEY: _decision()}
+    assert set(saved_decision_failures(records)) == {OTHER_DECISION_KEY}
+    # Evidence failures are another directive's business.
+    assert saved_evidence_failures(records) == {KEY: _failure()}
+    records = with_decision(records, OTHER_DECISION_KEY, _decision(), [DECISION_KEY])
+    assert "decision_failures" not in records
+
+
+def test_a_decision_failure_after_a_decision_keeps_both(tmp_path: Path):
+    notebook = tmp_path / "N.lean"
+    records = with_decision(None, DECISION_KEY, _decision(), [DECISION_KEY])
+    later = _decision_failure(created="2026-10-16T09:30:00+00:00")
+    records = with_decision_failure(
+        records, DECISION_KEY, later, [DECISION_KEY], notebook
+    )
+    save_records(notebook, records)
+    loaded = load_records(notebook)
+    assert saved_decisions(loaded) == {DECISION_KEY: _decision()}
+    assert saved_decision_failures(loaded) == {DECISION_KEY: later}
+    # The candidate is still what it was.
+    assert _decided(DECIDING, saved_decisions(loaded)[DECISION_KEY]) == "candidate"
+
+
+def test_discarding_a_decision_removes_its_failure_too():
+    keep = [DECISION_KEY, OTHER_DECISION_KEY]
+    records = with_decision(None, DECISION_KEY, _decision(), keep)
+    later = _decision_failure(created="2026-10-16T09:30:00+00:00")
+    records = with_decision_failure(records, DECISION_KEY, later, keep)
+    records = with_decision_failure(records, OTHER_DECISION_KEY, later, keep)
+    removed = without_decision(records, DECISION_KEY)
+    assert "decisions" not in removed
+    assert saved_decision_failures(removed) == {OTHER_DECISION_KEY: later}
+    only = with_decision_failure(None, DECISION_KEY, later, [DECISION_KEY])
+    # A failure alone is not a saved decision: Discard's contract is unchanged.
+    with pytest.raises(ValueError, match="No decision is saved"):
+        without_decision(only, DECISION_KEY)
+
+
+def test_a_check_carries_the_saved_decision_failures_over():
+    previous = with_decision_failure(
+        None, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+    )
+    records = records_from_check(TEXT, RESULT, FP, previous)
+    assert saved_decision_failures(records) == {DECISION_KEY: _decision_failure()}
+    assert "decision_failures" not in records_from_check(TEXT, RESULT, FP)
+
+
+@pytest.mark.parametrize(
+    "failures",
+    [
+        [],
+        "broken",
+        {DECISION_KEY: []},
+        {DECISION_KEY: {**_decision_failure(), "extra": 1}},
+        {DECISION_KEY: _decision_failure(kind="from-a-later-version")},
+        {DECISION_KEY: _decision_failure(kind="lean")},
+        {DECISION_KEY: _decision_failure(message="x" * (MAX_MESSAGE + 1))},
+        {DECISION_KEY: _decision_failure(created="2026-10-15")},
+        {DECISION_KEY: _decision_failure(fingerprint=1)},
+    ],
+)
+def test_a_malformed_decision_failure_is_dropped_while_everything_else_loads(
+    tmp_path, failures
+):
+    notebook = tmp_path / "N.lean"
+    records = with_evidence(records_from_check(TEXT, RESULT, FP), KEY, _entry(), [KEY])
+    records = with_decision(records, DECISION_KEY, _decision(), [DECISION_KEY])
+    _write_raw(notebook, {**records, "decision_failures": failures})
+    loaded = load_records(notebook)
+    assert loaded is not None
+    assert [c["name"] for c in loaded["claims"]] == ["A.result", "B.result"]
+    assert saved_evidence(loaded) == {KEY: _entry()}
+    assert saved_decisions(loaded) == {DECISION_KEY: _decision()}
+    assert saved_decision_failures(loaded) == {}
+    assert "decision_failures" not in loaded
+
+
+def test_a_decision_failure_older_than_the_saved_decision_is_ignored_then_dropped(
+    tmp_path,
+):
+    """An older Glitnir saved a decision without removing the failure before it."""
+    notebook = tmp_path / "N.lean"
+    keep = [DECISION_KEY, OTHER_DECISION_KEY]
+    records = with_decision(None, DECISION_KEY, _decision(), keep)  # 12:00 on 14th
+    older = _decision_failure(created="2026-10-14T11:59:59Z")
+    tie = _decision_failure(created="2026-10-14T12:00:00+00:00")
+    _write_raw(
+        notebook,
+        {
+            **records,
+            "decision_failures": {
+                DECISION_KEY: older,
+                OTHER_DECISION_KEY: _decision_failure(),
+            },
+        },
+    )
+    loaded = load_records(notebook)
+    assert saved_decision_failures(loaded) == {OTHER_DECISION_KEY: _decision_failure()}
+    written = records_from_check(TEXT, RESULT, FP, loaded)
+    assert saved_decision_failures(written) == {OTHER_DECISION_KEY: _decision_failure()}
+    _write_raw(notebook, {**records, "decision_failures": {DECISION_KEY: tie}})
+    assert saved_decision_failures(load_records(notebook)) == {DECISION_KEY: tie}
+
+
+def test_saved_decision_failures_follow_the_decision_currency_rule():
+    entry = _decision_failure()
+    assert decision_failure_status(entry, DECIDING, 4, FP) == "current"
+    # Below the directive's last line is not part of it.
+    assert decision_failure_status(entry, DECIDING + "more\n", 4, FP) == "current"
+    edited = DECIDING.replace("def M := 1", "def M := 2")
+    assert decision_failure_status(entry, edited, 4, FP) == "stale"
+    continued = DECIDING.replace(DECIDE_MORE, DECIDE_MORE + " and more")
+    assert decision_failure_status(entry, continued, 4, FP) == "stale"
+    assert decision_failure_status(entry, DECIDING, 4, GP) == "stale"
+    # Even with a checked block below it: only a decision can be accepted.
+    assert decision_failure_status(entry, _accepted(), 4, GP) == "stale"
+    assert (
+        decision_failure_status(entry, DECIDING, 4, "", compare_environment=False)
+        == "current"
+    )
+
+
+def test_saving_drops_drawings_then_each_failure_section_before_refusing(
+    monkeypatch,
+):
+    """Drawings go first, then evidence failures, then decision failures."""
+    keep = [KEY, OTHER_KEY]
+    previous = with_evidence(None, KEY, _entry(), keep)
+    previous = with_evidence_failure(previous, OTHER_KEY, _failure(), keep)
+    previous = with_decision_failure(
+        previous, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+    )
+    previous = with_view(previous, VIEW_KEY, _view(), [VIEW_KEY])
+    no_views = {k: v for k, v in previous.items() if k != "views"}
+    no_evidence_failures = {
+        k: v for k, v in no_views.items() if k != "evidence_failures"
+    }
+    neither = {
+        k: v for k, v in no_evidence_failures.items() if k != "decision_failures"
+    }
+    for fits, gone in (
+        (no_views, {"views"}),
+        (no_evidence_failures, {"views", "evidence_failures"}),
+        (neither, {"views", "evidence_failures", "decision_failures"}),
+    ):
+        monkeypatch.setattr(
+            check_records,
+            "_MAX_RECORDS",
+            _size(records_from_check(TEXT, RESULT, FP, fits)) + 10,
+        )
+        records = records_from_check(TEXT, RESULT, FP, previous)
+        sections = {"views", "evidence_failures", "decision_failures"}
+        assert sections - set(records) == gone
+        assert saved_evidence(records) == {KEY: _entry()}
+
+
+def test_a_failure_save_never_drops_the_other_failure_section(tmp_path, monkeypatch):
+    """Either failure is refused rather than saved by losing the other section."""
+    notebook = tmp_path / "N.lean"
+    previous = with_evidence_failure(None, KEY, _failure(), [KEY])
+    previous = with_decision_failure(
+        previous, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+    )
+    long = "x" * MAX_MESSAGE
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 10)
+    with pytest.raises(ValueError, match="shown but not saved"):
+        with_decision_failure(
+            previous,
+            OTHER_DECISION_KEY,
+            _decision_failure(message=long),
+            [DECISION_KEY, OTHER_DECISION_KEY],
+            notebook,
+        )
+    with pytest.raises(ValueError, match="shown but not saved"):
+        with_evidence_failure(
+            previous, OTHER_KEY, _failure(message=long), [KEY, OTHER_KEY], notebook
+        )
+
+
+def test_records_with_decision_failures_keep_what_older_readers_need(tmp_path):
+    """Glitnir 0.1.2 to 0.1.8 read these records only while this holds.
+
+    They require the exact format, fail the whole file on a decision entry of
+    any other key set, and ignore top-level sections they do not know.
+    """
+    notebook = tmp_path / "N.lean"
+    keep = [DECISION_KEY, OTHER_DECISION_KEY]
+    records = with_decision(
+        records_from_check(TEXT, RESULT, FP), DECISION_KEY, _decision(), keep
+    )
+    later = _decision_failure(created="2026-10-16T09:30:00+00:00")
+    records = with_decision_failure(records, DECISION_KEY, later, keep)
+    records = with_decision_failure(records, OTHER_DECISION_KEY, later, keep)
+    save_records(notebook, records)
+    saved = json.loads(records_path(notebook).read_text())
+    assert saved["format"] == "glitnir.project-checks/v2"
+    assert [set(entry) for entry in saved["decisions"].values()] == [
+        {"prefix_sha256", "fingerprint", "provider", "created"}
+        | {"outcome", "verification"}
+    ]
+    assert set(saved["decision_failures"]) == {DECISION_KEY, OTHER_DECISION_KEY}
+    assert "decision_failures" in check_records._RESULT_SECTIONS
+
+
+def test_a_decision_failure_save_never_drops_the_evidence_failures(monkeypatch):
+    """Review I2: it would fit once the evidence failures were dropped: refused.
+
+    `_fitted` drops `evidence_failures` before `decision_failures`, so only the
+    guard against losing the other section stops this save.
+    """
+    keys = [evidence_key(f"-- @evidence simulate N{i}", 0) for i in range(20)]
+    previous = None
+    for key in keys:
+        previous = with_evidence_failure(
+            previous, key, _failure(message="x" * 1900), keys
+        )
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 50)
+    with pytest.raises(ValueError) as raised:
+        with_decision_failure(
+            previous, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+        )
+    assert str(raised.value) == (
+        "Saved decision failures would make the records file too large; "
+        "the failure is shown but not saved."
+    )
+    # A short one that fits beside them is saved, and keeps them.
+    monkeypatch.setattr(check_records, "_MAX_RECORDS", _size(previous) + 1000)
+    records = with_decision_failure(
+        previous, DECISION_KEY, _decision_failure(), [DECISION_KEY]
+    )
+    assert set(saved_evidence_failures(records)) == set(keys)
+    assert set(saved_decision_failures(records)) == {DECISION_KEY}

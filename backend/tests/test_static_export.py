@@ -9,18 +9,22 @@ import pytest
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_views import view_provider_sha256
 from glitnir.notebook.check_records import (
+    decision_prefix_sha256,
     evidence_prefix_sha256,
     load_records,
     records_from_check,
     records_path,
     save_records,
+    with_decision_failure,
     with_evidence,
     with_evidence_failure,
     with_view,
 )
-from glitnir.notebook.directives import evidence_key
+from glitnir.notebook.directives import decision_key, evidence_key
 from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import (
+    DecisionProvider,
+    DecisionRequest,
     EvidenceProvider,
     EvidenceRequest,
     Providers,
@@ -568,3 +572,70 @@ def test_saved_failures_for_other_source_are_hidden(
         [card] = notebook.snapshot()["evidence"]
     assert card["failure"] is None
     assert card["status"] == ("stale" if keep_evidence else "never")
+
+
+DECIDE = "-- @decide band : entailment |- 1 = 1"
+DECIDING = TEXT + f"{DECIDE}\n"
+DECIDE_LINE = DECIDING.count("\n")
+
+
+def _decision_failure(text: str = DECIDING) -> dict:
+    return {
+        "prefix_sha256": decision_prefix_sha256(text, DECIDE_LINE),
+        "fingerprint": "8" * 64,
+        "provider": "demo",
+        "created": "2026-10-15T12:00:00Z",
+        "kind": "refused",
+        "message": "The goal has no variables.",
+    }
+
+
+@pytest.fixture
+def deciding(saved: Path, monkeypatch) -> Path:
+    """The saved notebook with a decision directive whose run failed."""
+    decider = DecisionProvider(
+        name="demo",
+        kinds=frozenset({"entailment"}),
+        imports=(),
+        parse=lambda name, kind, goal: DecisionRequest(name, kind, goal, {}),
+        decide=lambda request, cancel: {"status": "unknown"},
+        unavailable=lambda: None,
+    )
+    monkeypatch.setattr(
+        source_preview,
+        "load_providers",
+        lambda: Providers(
+            {"circuit": _view_provider()},
+            {"simulate": _evidence_provider()},
+            {"entailment": decider},
+            {},
+        ),
+    )
+    saved.write_text(DECIDING)
+    key = decision_key(DECIDE, 0)
+    records = load_records(saved)
+    save_records(saved, with_decision_failure(records, key, _decision_failure(), [key]))
+    return saved
+
+
+def test_saved_decision_failures_are_shown_as_recorded(
+    deciding: Path, nothing_runs
+) -> None:
+    with SavedNotebook(deciding) as notebook:
+        [card] = notebook.snapshot()["decisions"]
+    assert (card["status"], card["outcome"]) == ("failed", None)
+    assert card["failure"] == {
+        "kind": "refused",
+        "message": "The goal has no variables.",
+        "created": "2026-10-15T12:00:00Z",
+        "status": "current",
+    }
+
+
+def test_saved_decision_failures_for_other_source_are_hidden(
+    deciding: Path, nothing_runs
+) -> None:
+    deciding.write_text(DECIDING.replace("c : Nat := 1", "c : Nat := 2"))
+    with SavedNotebook(deciding) as notebook:
+        [card] = notebook.snapshot()["decisions"]
+    assert (card["status"], card["failure"]) == ("never", None)

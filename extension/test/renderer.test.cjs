@@ -892,6 +892,104 @@ test('decision text from providers and the server is never markup', async () => 
   } finally { window.close(); }
 });
 
+// A saved failed decision run as the server lists it on a card.
+function decisionFailure(fields = {}) {
+  return {kind: 'refused', message: 'The goal has no variables.', created: '2026-10-25T09:00:00+00:00', status: 'current', ...fields};
+}
+
+test('a saved failed decision run reads Failed with its message, never Never run', async () => {
+  const hostile = '<img src=x onerror=alert(1)>';
+  const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'failed', failure: decisionFailure({message: `Cannot decide ${hostile}`})})]));
+  try {
+    const card = window.document.querySelector('#doc .decision');
+    const pill = card.querySelector('.box-head .pill');
+    assert.deepEqual([pill.textContent, pill.dataset.tone], ['Failed', 'red']);
+    const notes = [...card.querySelectorAll('.note-line')].map(n => [n.textContent, n.dataset.tone]);
+    assert.deepEqual(notes, [[`The last run failed on 2026-10-25: Cannot decide ${hostile}`, 'red']]);
+    assert.equal(window.document.querySelectorAll('#doc img').length, 0, 'the saved message is text');
+    assert.doesNotMatch(card.textContent, /Not run yet/);
+    assert.deepEqual(decisionButtons(card), ['Run again'], 'nothing to discard or accept');
+    assert.ok(card.querySelector('[data-act="decision-run"]').classList.contains('primary'));
+  } finally { window.close(); }
+});
+
+test('a decision failure after a candidate notes it above the outcome and keeps Accept', async () => {
+  const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'candidate', outcome: decisionOutcome(), verification: checkedVerification(), failure: decisionFailure()})]));
+  try {
+    const card = window.document.querySelector('#doc .decision');
+    assert.equal(card.querySelector('.box-head .pill').textContent, 'Candidate');
+    const note = card.querySelector('.note-line');
+    assert.deepEqual([note.textContent, note.dataset.tone], ['The last run failed on 2026-10-25: The goal has no variables.', 'red']);
+    assert.ok(note.compareDocumentPosition(card.querySelector('.decision-claim')) & window.Node.DOCUMENT_POSITION_FOLLOWING, 'the note comes before the outcome');
+    assert.deepEqual(decisionButtons(card), ['Accept', 'Run again', 'Discard']);
+  } finally { window.close(); }
+});
+
+test('an accepted decision shows no saved failure note', async () => {
+  const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'accepted', outcome: decisionOutcome(), verification: checkedVerification(), failure: decisionFailure()})]));
+  try {
+    const card = window.document.querySelector('#doc .decision');
+    assert.equal(card.querySelector('.box-head .pill').textContent, 'Accepted');
+    assert.doesNotMatch(card.textContent, /failed/);
+    assert.deepEqual(decisionButtons(card), ['Discard']);
+  } finally { window.close(); }
+});
+
+test('an out-of-date decision failure without an outcome says an earlier run failed', async () => {
+  const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'stale', failure: decisionFailure({status: 'stale'})})]));
+  try {
+    const card = window.document.querySelector('#doc .decision');
+    const pill = card.querySelector('.box-head .pill');
+    assert.deepEqual([pill.textContent, pill.dataset.tone], ['Out of date', 'amber']);
+    const notes = [...card.querySelectorAll('.note-line')].map(n => [n.textContent, n.dataset.tone]);
+    assert.deepEqual(notes, [['An earlier run, on different source or environment, failed: The goal has no variables.', 'amber']]);
+    assert.doesNotMatch(card.textContent, /Not run yet/);
+    assert.deepEqual(decisionButtons(card), ['Run again']);
+    assert.ok(card.querySelector('[data-act="decision-run"]').classList.contains('primary'));
+  } finally { window.close(); }
+});
+
+test('this session\'s decision run error replaces the saved failure, or comes before an earlier one', async () => {
+  const busy = 'Another Lean run is in progress; retry when it finishes.';
+  const window = await renderSnapshot(decisionSnapshot(DECISION_TEXT, [
+    servedDecision({status: 'failed', run_error: 'The goal has no variables.', failure: null}),
+    servedDecision({line: 3, end_line: 3, key: 'e'.repeat(64), status: 'failed', run_error: 'crashed', failure: decisionFailure()}),
+    servedDecision({line: 4, end_line: 4, key: 'f'.repeat(64), status: 'failed', run_error: busy, failure: decisionFailure({earlier: true})}),
+  ]));
+  try {
+    const cards = [...window.document.querySelectorAll('#doc .decision')];
+    const notes = card => [...card.querySelectorAll('.note-line')].map(n => n.textContent);
+    assert.deepEqual(notes(cards[0]), ['The last run failed: The goal has no variables.']);
+    assert.deepEqual(decisionButtons(cards[0]), ['Run again']);
+    assert.deepEqual(notes(cards[1]), ['The last run failed: crashed']);
+    assert.deepEqual(notes(cards[2]), [`The last run failed: ${busy}`, 'An earlier run failed on 2026-10-25: The goal has no variables.']);
+  } finally { window.close(); }
+});
+
+test('saved decision failures shown as recorded say so, on the page and in its export', async () => {
+  const text = 'def M := 1\n-- @decide band : entailment |- 1 = 1\n-- @decide other : entailment |- 2 = 2';
+  const window = await renderSnapshot(decisionSnapshot(text, [
+    servedDecision({line: 2, end_line: 2, status: 'failed', failure: decisionFailure()}),
+    servedDecision({line: 3, end_line: 3, key: 'e'.repeat(64), status: 'uncompared', outcome: decisionOutcome(), verification: checkedVerification(), failure: decisionFailure({message: 'later', status: 'uncompared'})}),
+  ], {preview: {mode: 'project', recorded: true, notice: 'Saved results, shown as recorded.', project: {kind: 'lake', root: '.', toolchain: 't'}}}), {katex: true});
+  const shows = (d, where) => {
+    const cards = [...d.querySelectorAll('.decision')];
+    assert.equal(cards[0].querySelector('.pill').textContent, 'Failed, as recorded', where);
+    assert.equal(cards[0].querySelector('.pill').dataset.tone, 'red', where);
+    assert.match(cards[0].textContent, /The last run failed on 2026-10-25: The goal has no variables\./, where);
+    assert.match(cards[1].textContent, /The last run failed on 2026-10-25: later/, where);
+    assert.equal(d.querySelectorAll('[data-act="decision-run"]').length, 0, where);
+  };
+  try {
+    shows(window.document.getElementById('doc'), 'page');
+    let html;
+    window.glitnirHost.saveHTML = async value => { html = value; };
+    await window.document.getElementById('export-html').onclick();
+    const page = new JSDOM(html);
+    try { shows(page.window.document, 'export'); } finally { page.window.close(); }
+  } finally { window.close(); }
+});
+
 test('a decision without its provider keeps its saved outcome but cannot run or be accepted', async () => {
   const text = 'def M := 1\n-- @decide band : entailment x : x > 0 |- x >= 0\n-- @decide other : entailment x : x > 1 |- x >= 0';
   const reason = 'No installed provider decides `entailment` goals.';
