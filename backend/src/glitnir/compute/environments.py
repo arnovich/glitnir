@@ -133,7 +133,7 @@ def _files(root: Path) -> Iterator[Path]:
                 raise ValueError("Environment contains a non-regular file")
 
 
-def materialize_links(root: Path, monitor: Monitor = lambda: None) -> None:
+def _materialize_links(root: Path, monitor: Monitor = lambda: None) -> None:
     """Copy contained artifact links; source, configuration and directory links fail."""
     for path in _files(root):
         monitor()
@@ -395,7 +395,7 @@ class EnvironmentCache:
             _verify_git(
                 project / ".lake/packages" / dependency["name"], dependency["rev"], run
             )
-        materialize_links(project, monitor)
+        _materialize_links(project, monitor)
         inventory = _inventory(project, monitor)
         (entry / "ready.json").write_text(
             json.dumps({"files": inventory, "max_bytes": recipe.max_bytes})

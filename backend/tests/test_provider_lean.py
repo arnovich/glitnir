@@ -65,9 +65,9 @@ def _run(source, **overrides):
 
 
 def test_source_puts_provider_imports_first_and_ends_at_the_last_view():
-    from glitnir.lean.provider_lean import provider_source
+    from glitnir.lean.provider_lean import _provider_source
 
-    source, offsets = provider_source(NOTEBOOK, [3, 4], ("Demo.View",), needs="view")
+    source, offsets = _provider_source(NOTEBOOK, [3, 4], ("Demo.View",), needs="view")
     assert source == "import Demo.View\nimport Demo.View\n\ndef c := 1\n"
     assert offsets == [len("import Demo.View\nimport Demo.View\n\n"), len(source)]
 
@@ -75,11 +75,11 @@ def test_source_puts_provider_imports_first_and_ends_at_the_last_view():
 @pytest.mark.parametrize("line", [0, 7])
 @pytest.mark.parametrize("needs, word", [("view", "View"), ("evidence", "Evidence")])
 def test_source_rejects_a_line_outside_the_notebook(line, needs, word):
-    from glitnir.lean.provider_lean import provider_source
+    from glitnir.lean.provider_lean import _provider_source
 
     message = f"^{word} directive line {line} is outside the notebook.$"
     with pytest.raises(ValueError, match=message):
-        provider_source(NOTEBOOK, [4, line], (), needs=needs)
+        _provider_source(NOTEBOOK, [4, line], (), needs=needs)
 
 
 def test_marker_payload_is_the_last_marked_message_and_unvalidated():

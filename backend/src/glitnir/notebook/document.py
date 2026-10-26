@@ -67,12 +67,6 @@ class Claim:
     modifiers: str = ""
     as_written: bool = True
 
-    @property
-    def universes(self) -> str:
-        """The explicit universe list ending the name, as written, or ``""``."""
-        match = _UNIVERSE_SUFFIX.fullmatch(self.name)
-        return "" if match is None else match.group(1)
-
 
 @dataclass(frozen=True)
 class Cell:
@@ -133,7 +127,6 @@ _MODIFIERS = rf"((?:{_ATTRIBUTE})*(?:(?:private|protected|nonrec){_SPACE}+)*)"
 #: not. Any other list stays part of the name, with no
 #: universes, and is bound as before.
 _UNIVERSE_LIST = r"\.\{[ \t]*[^\W\d]\w*(?:[ \t]*,[ \t]*[^\W\d]\w*)*[ \t]*\}"
-_UNIVERSE_SUFFIX = re.compile(rf".+?({_UNIVERSE_LIST})")
 #: A claim's name runs to the first whitespace, or through a universe list
 #: ending it, which may hold spaces (``L.{u, v}``).
 _CLAIM_NAME = rf"(?:[^ \t\r]*?{_UNIVERSE_LIST}(?={_SPACE}|$)|[^ \t\r]+)"

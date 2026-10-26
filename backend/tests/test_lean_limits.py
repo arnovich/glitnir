@@ -37,7 +37,7 @@ def test_default_memory_limit_is_16384_on_a_large_machine(monkeypatch) -> None:
     from glitnir.lean import limits
 
     monkeypatch.delenv(limits.MEMORY_LIMIT_VARIABLE, raising=False)
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 65536)
     assert limits.memory_limit_mb() == 16384
     monkeypatch.setenv(limits.MEMORY_LIMIT_VARIABLE, "")
     assert limits.memory_limit_mb() == 16384
@@ -48,7 +48,7 @@ def test_default_memory_limit_leaves_2048_mb_free(monkeypatch) -> None:
     from glitnir.lean import limits
 
     monkeypatch.delenv(limits.MEMORY_LIMIT_VARIABLE, raising=False)
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 12288)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 12288)
     assert limits.memory_limit_mb() == 10240
 
 
@@ -57,7 +57,7 @@ def test_default_memory_limit_never_below_minimum(monkeypatch) -> None:
     from glitnir.lean import limits
 
     monkeypatch.delenv(limits.MEMORY_LIMIT_VARIABLE, raising=False)
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 2048)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 2048)
     assert limits.memory_limit_mb() == 1024
 
 
@@ -66,7 +66,7 @@ def test_default_memory_limit_without_known_memory(monkeypatch) -> None:
     from glitnir.lean import limits
 
     monkeypatch.delenv(limits.MEMORY_LIMIT_VARIABLE, raising=False)
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: None)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: None)
     assert limits.memory_limit_mb() == 16384
 
 
@@ -75,15 +75,15 @@ def test_explicit_memory_limit_is_not_capped_by_memory(monkeypatch) -> None:
     from glitnir.lean import limits
 
     monkeypatch.setenv(limits.MEMORY_LIMIT_VARIABLE, "20000")
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 8192)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 8192)
     assert limits.memory_limit_mb() == 20000
 
 
 def test_physical_memory_is_positive_or_unknown() -> None:
     """The probe reports megabytes, or None where the system cannot say."""
-    from glitnir.lean.limits import physical_memory_mb
+    from glitnir.lean.limits import _physical_memory_mb
 
-    value = physical_memory_mb()
+    value = _physical_memory_mb()
     assert value is None or value > 0
 
 
@@ -126,6 +126,6 @@ def test_an_invalid_memory_limit_falls_back_to_the_default(
     """Anything but a positive decimal integer means the default."""
     from glitnir.lean import limits
 
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 65536)
     monkeypatch.setenv(limits.MEMORY_LIMIT_VARIABLE, configured)
     assert limits.memory_limit_mb() == 16384

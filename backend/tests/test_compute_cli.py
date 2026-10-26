@@ -142,7 +142,7 @@ def test_worker_cli_capacity_covers_default_editor_request(
 
     monkeypatch.setenv("GLITNIR_TASKVALET_TOKEN", "private-token")
     monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
-    monkeypatch.setattr("glitnir.lean.limits.physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr("glitnir.lean.limits._physical_memory_mb", lambda: 65536)
     capacities = []
     monkeypatch.setattr(
         Worker,

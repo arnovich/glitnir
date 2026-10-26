@@ -750,7 +750,7 @@ def test_module_files_require_links_to_the_recorded_stored_files(tmp_path):
     Every snapshot entry must link to the stored file named by its recorded
     digest: a regular file, or a link to another stored file, is unknown.
     """
-    from glitnir.lean.artifact_store import blob_path as stored_path
+    from glitnir.lean.artifact_store import _blob_path as stored_path
     from glitnir.lean.project_checking import _module_files
     from glitnir.lean.project_snapshot import ProjectSnapshot
 

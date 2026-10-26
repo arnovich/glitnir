@@ -74,7 +74,7 @@ MIN_MEMORY_LIMIT_MB = 1024
 MAX_MEMORY_LIMIT_MB = 32768
 
 
-def physical_memory_mb() -> int | None:
+def _physical_memory_mb() -> int | None:
     """Return the machine's physical memory in megabytes, or None if unknown."""
     try:
         return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // 2**20
@@ -83,7 +83,7 @@ def physical_memory_mb() -> int | None:
 
 
 def _default_memory_limit_mb() -> int:
-    physical = physical_memory_mb()
+    physical = _physical_memory_mb()
     if physical is None:
         return DEFAULT_MEMORY_LIMIT_MB
     return max(

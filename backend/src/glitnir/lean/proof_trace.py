@@ -45,7 +45,7 @@ def _texts(value: Any) -> list[str]:
     return value
 
 
-def validate_trace(value: Any, source: str) -> dict[str, Any]:
+def _validate_trace(value: Any, source: str) -> dict[str, Any]:
     """Validate byte ranges and retain each tactic's own before/after context."""
     if not isinstance(value, dict) or not isinstance(value.get("nodes"), list):
         raise ValueError("Malformed proof trace.")
@@ -273,7 +273,7 @@ def trace_file(
                 cancel=cancellation,
                 deadline=time.monotonic() + timeout,
             )
-            result = validate_trace(
+            result = _validate_trace(
                 json.loads(read_regular(report, OUTPUT_BYTES)), saved
             )
             if cancellation.is_set():

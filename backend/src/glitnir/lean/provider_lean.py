@@ -146,7 +146,7 @@ def _project_modules(imports: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(m for m in imports if m.split(".")[0] not in TOOLCHAIN_LIBRARIES)
 
 
-def provider_source(
+def _provider_source(
     text: str, lines: list[int], imports: tuple[str, ...], *, needs: str
 ) -> tuple[str, list[int]]:
     """Return SOURCE and the byte offset in it of each directive line in `lines`.
@@ -426,7 +426,7 @@ def run_provider_batch(
                 isinstance(command, str) for _line, command in views
             ):
                 raise TypeError("the preamble and commands must be text")
-            text, offsets = provider_source(saved, lines, imports, needs=needs)
+            text, offsets = _provider_source(saved, lines, imports, needs=needs)
         except ValueError:
             raise
         except Exception as error:

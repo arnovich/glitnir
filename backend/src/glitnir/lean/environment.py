@@ -16,6 +16,11 @@ import subprocess
 import sys
 from collections.abc import Callable
 
+from glitnir.lean._supervisor import FAILED
+
+#: The exit status of the sandbox supervisor when it, not the command, failed.
+SUPERVISOR_FAILED: int = FAILED
+
 LEAN_AXIOM_ALLOWLIST = ("Classical.choice", "Quot.sound", "propext")
 
 MAX_TIMEOUT_MS = 1_800_000
@@ -71,7 +76,7 @@ def kill_and_reap(process: subprocess.Popen[bytes]) -> None:
     process.wait()
 
 
-def set_output_file_limit(max_output_bytes: int) -> None:
+def _set_output_file_limit(max_output_bytes: int) -> None:
     """Cap the child's writable output in the child itself.
 
     Args:
@@ -103,7 +108,7 @@ def bind_to_parent(parent_pid: int, max_output_bytes: int | None = None) -> None
         OSError: If the kernel refuses the parent-death signal.
     """
     if max_output_bytes is not None:
-        set_output_file_limit(max_output_bytes)
+        _set_output_file_limit(max_output_bytes)
     if _PRCTL is None:
         return
     if _PRCTL(_PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:

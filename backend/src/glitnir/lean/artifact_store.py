@@ -113,7 +113,7 @@ def project_namespace(project: Path) -> str:
     )
 
 
-def blob_path(blobs: Path, namespace: str, digest: str) -> Path:
+def _blob_path(blobs: Path, namespace: str, digest: str) -> Path:
     """Return where the file with SHA-256 ``digest`` lives in ``namespace``."""
     return blobs / namespace / digest[:2] / digest
 
@@ -184,7 +184,7 @@ class ArtifactStore:
 
     def path(self, namespace: str, digest: str) -> Path:
         """Return the stored file's path for ``digest`` in ``namespace``."""
-        return blob_path(self.blobs, namespace, digest)
+        return _blob_path(self.blobs, namespace, digest)
 
     def _name(self, namespace: str, digest: str) -> str:
         """Create or validate the file's directories once per lease."""

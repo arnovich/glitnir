@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from glitnir.lean.proof_trace import validate_trace
+from glitnir.lean.proof_trace import _validate_trace
 
 
 def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges():
@@ -15,7 +15,7 @@ def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges():
     )
     data = source.encode()
     start = data.index(b"constructor")
-    answer = validate_trace(
+    answer = _validate_trace(
         {
             "nodes": [
                 {
@@ -42,7 +42,7 @@ def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges():
 def test_trace_rejects_invalid_byte_spans_and_parent_cycles(start, end, parent):
     """Only UTF-8 boundaries and earlier parent nodes are accepted."""
     with pytest.raises(ValueError):
-        validate_trace(
+        _validate_trace(
             {
                 "nodes": [
                     {
@@ -65,7 +65,7 @@ def test_trace_rejects_invalid_byte_spans_and_parent_cycles(start, end, parent):
 def test_trace_rejects_oversized_or_nontext_goals():
     """Display-only Lean output still crosses a bounded API boundary."""
     with pytest.raises(ValueError):
-        validate_trace(
+        _validate_trace(
             {
                 "nodes": [
                     {
@@ -177,7 +177,7 @@ def test_live_scoped_tactics_errors_and_admissions(tmp_path):
         cancel=threading.Event(),
         deadline=time.monotonic() + 90,
     )
-    result = validate_trace(json.loads(report.read_text()), text)
+    result = _validate_trace(json.loads(report.read_text()), text)
     pair = [n for n in result["nodes"] if n["declaration"] == "pair"]
     assert any(n["text"] == "constructor" and len(n["after"]) == 2 for n in pair)
     assert any(
@@ -207,7 +207,9 @@ def test_trace_bounds_overlapping_expanded_text(monkeypatch):
         "after": [],
     }
     with pytest.raises(ValueError, match="expanded text limit"):
-        validate_trace({"nodes": [node, node], "errors": [], "warnings": []}, "x" * 600)
+        _validate_trace(
+            {"nodes": [node, node], "errors": [], "warnings": []}, "x" * 600
+        )
 
 
 def test_trace_maps_only_saved_source_and_keeps_checking_read_only(
@@ -338,7 +340,7 @@ def test_observation_uses_the_configured_memory_limit(
 
     source = tmp_path / "A.lean"
     source.write_text("theorem t : True := by trivial\n")
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 65536)
     monkeypatch.setenv("GLITNIR_MEMORY_LIMIT_MB", configured)
     monkeypatch.setattr(proof_trace, "_toolchain", lambda: tmp_path)
     seen: list[str] = []
@@ -403,7 +405,7 @@ def test_live_trace_keeps_header_and_parse_errors(tmp_path, text, expected):
         cancel=threading.Event(),
         deadline=time.monotonic() + 90,
     )
-    result = validate_trace(json.loads(report.read_text()), text)
+    result = _validate_trace(json.loads(report.read_text()), text)
     assert any(expected in error for error in result["errors"]), result["errors"]
 
 
@@ -419,7 +421,7 @@ def test_a_trace_is_kept_awake_and_notes_sleep(tmp_path, monkeypatch, awake_dept
             return " (the computer slept for 3 min)"
 
     depth = awake_depth(proof_trace)
-    monkeypatch.setattr(awake_module, "SleepWatch", Slept)
+    monkeypatch.setattr(awake_module, "_SleepWatch", Slept)
     text = "theorem t : True := by trivial\n"
     source = tmp_path / "A.lean"
     source.write_text(text)

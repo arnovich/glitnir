@@ -374,7 +374,7 @@ def _reports(value: Any) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str,
     return constants, theorems
 
 
-def project_modules(setup: dict[str, Any], project_root: Path | None) -> set[str]:
+def _project_modules(setup: dict[str, Any], project_root: Path | None) -> set[str]:
     """Return the imported modules the checked project builds itself.
 
     These are the project's own `.lean` files, the other notebooks a claim may
@@ -400,7 +400,7 @@ def project_modules(setup: dict[str, Any], project_root: Path | None) -> set[str
     return found
 
 
-def claim_uses(
+def _claim_uses(
     reported: list[dict[str, str]],
     module: str,
     claims: set[str],
@@ -776,7 +776,7 @@ def _boundary_before(data: bytes, offset: int, items: list[dict[str, Any]]) -> i
     return end + 1 if data[end : end + 1] == b"\n" else end
 
 
-def example_edits(
+def _example_edits(
     text: str,
     entries: list[dict[str, Any]],
     unclaimed: list[dict[str, Any]],
@@ -882,7 +882,7 @@ def example_edits(
     return edits, unclaimed
 
 
-def rewrite_examples(data: bytes, edits: list[tuple[int, bytes]]) -> bytes:
+def _rewrite_examples(data: bytes, edits: list[tuple[int, bytes]]) -> bytes:
     """Return ``data`` with the `example` keyword at each edit replaced."""
     parts = []
     cursor = 0
@@ -893,7 +893,7 @@ def rewrite_examples(data: bytes, edits: list[tuple[int, bytes]]) -> bytes:
     return b"".join(parts)
 
 
-def check_rewrite(
+def _check_rewrite(
     original: bytes, compiled: bytes, edits: list[tuple[int, bytes]]
 ) -> None:
     """Require ``compiled`` to differ from ``original`` only at the edits.
@@ -920,7 +920,7 @@ def check_rewrite(
         raise SnapshotError("The compiled source differs from the saved source.")
 
 
-def original_offset(offset: int, edits: list[tuple[int, bytes]]) -> int:
+def _original_offset(offset: int, edits: list[tuple[int, bytes]]) -> int:
     """Map a byte offset in the compiled source back to the saved source.
 
     An offset inside a replacement maps to the start of its `example` keyword.
@@ -999,7 +999,7 @@ def _candidate_failure(
     position = first_error_offset(str(error), text if compiled is None else compiled)
     if position is None:
         return None
-    position = original_offset(position, edits or [])
+    position = _original_offset(position, edits or [])
     for entry in entries:
         if entry["start"] <= position <= entry["end"]:
             unknown = "unknown identifier" in failure_message(str(error)).lower()
@@ -1202,7 +1202,7 @@ def _check_text(
         saved_bytes = snapshot.source.read_bytes()
         if saved_bytes != text.encode():
             raise SnapshotError("Saved source changed; refresh and retry.")
-        edits, unclaimed = example_edits(text, entries, unclaimed, tag)
+        edits, unclaimed = _example_edits(text, entries, unclaimed, tag)
         compiled_source = snapshot.source
         compiled_text = None
         if edits:
@@ -1210,10 +1210,10 @@ def _check_text(
             # their keywords change, so every line keeps its number.
             compiled_source = root / "compiled" / snapshot.source.name
             compiled_source.parent.mkdir()
-            compiled_source.write_bytes(rewrite_examples(saved_bytes, edits))
+            compiled_source.write_bytes(_rewrite_examples(saved_bytes, edits))
             compiled_source.chmod(0o400)
             compiled_bytes = compiled_source.read_bytes()
-            check_rewrite(saved_bytes, compiled_bytes, edits)
+            _check_rewrite(saved_bytes, compiled_bytes, edits)
             compiled_text = compiled_bytes.decode()
         try:
             with timed("compile"):
@@ -1276,7 +1276,7 @@ def _check_text(
         text = snapshot.source.read_bytes().decode().replace("\r\n", "\n")
         spans = {e["name"]: (e["start"], e["end"]) for e in entries}
         # The claims each claim uses: display only, like the reporter's axioms.
-        notebooks = project_modules(setup, project_root)
+        notebooks = _project_modules(setup, project_root)
         claim_names = set(spans)
         # How the reader's Lean printed each statement in its own scope: display
         # only, beside the reporter's kernel form (`type`).
@@ -1441,7 +1441,7 @@ def _check_text(
                 else "checked" if standard else "assumptions"
             )
             first, last = line_range(text, *spans[theorem["name"]])
-            uses = claim_uses(theorem.get("uses", []), module, claim_names, notebooks)
+            uses = _claim_uses(theorem.get("uses", []), module, claim_names, notebooks)
             observations.append(
                 {
                     "name": theorem["name"],
@@ -1693,7 +1693,7 @@ def check_project(
         return unavailable
 
 
-def candidate_text(saved: str, insert_after_line: int, block: str) -> str:
+def _candidate_text(saved: str, insert_after_line: int, block: str) -> str:
     """Return the saved lines through `insert_after_line`, then `block` and LF."""
     lines = saved.split("\n")
     if not 1 <= insert_after_line <= len(lines):
@@ -1815,7 +1815,7 @@ def check_candidate(
                 raise SnapshotError("Saved source changed; refresh and retry.")
             return text
 
-        text = candidate_text(saved(), insert_after_line, block)
+        text = _candidate_text(saved(), insert_after_line, block)
         try:
             result = _check_text(
                 source,

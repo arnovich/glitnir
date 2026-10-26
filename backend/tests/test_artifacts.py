@@ -102,7 +102,7 @@ def _setup(import_arts):
 def test_inspection_refuses_the_flat_shape(tmp_path):
     (tmp_path / "B.olean").write_bytes(b"")
     with pytest.raises(ValueError, match="invalid import artifacts"):
-        inspection.validate_setup(
+        inspection._validate_setup(
             _setup({"B": [str(tmp_path / "B.olean")]}), tmp_path, tmp_path
         )
 
@@ -116,13 +116,13 @@ def test_inspection_confines_every_nested_path(tmp_path):
     outside = tmp_path / "B.ir"
     outside.write_bytes(b"")
     good = [[str(root / "B.olean"), str(root / "B.olean.server")]]
-    assert inspection.validate_setup(_setup({"B": good}), root, root)
+    assert inspection._validate_setup(_setup({"B": good}), root, root)
     nested = good + [[str(root / "B.ir.sig"), str(outside)]]
     with pytest.raises(ValueError, match="outside"):
-        inspection.validate_setup(_setup({"B": nested}), root, root)
+        inspection._validate_setup(_setup({"B": nested}), root, root)
     (root / "B.ir.sig").unlink()
     with pytest.raises(ValueError, match="regular"):
-        inspection.validate_setup(
+        inspection._validate_setup(
             _setup({"B": good + [[str(root / "B.ir.sig")]]}), root, root
         )
 

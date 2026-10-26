@@ -102,17 +102,17 @@ def test_toolchain_mismatch_prevents_build(registered_repositories, tmp_path):
 
 
 def test_source_symlinks_are_not_materialized(tmp_path):
-    from glitnir.compute.environments import materialize_links
+    from glitnir.compute.environments import _materialize_links
 
     root = tmp_path / "project"
     root.mkdir()
     (root / "data").write_text("theorem x : True := by trivial")
     (root / "Example.lean").symlink_to("data")
     with pytest.raises(ValueError, match="link"):
-        materialize_links(root)
+        _materialize_links(root)
     (root / "Example.lean").unlink()
     (root / "artifact").symlink_to("data")
-    materialize_links(root)
+    _materialize_links(root)
     assert not (root / "artifact").is_symlink()
     assert (root / "artifact").read_bytes() == (root / "data").read_bytes()
 

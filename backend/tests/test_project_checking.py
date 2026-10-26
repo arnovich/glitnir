@@ -2172,17 +2172,17 @@ def test_example_tag_never_occurs_in_the_source():
 
 
 def _edits(text, entries, unclaimed=(), tag="_glitnir_example_"):
-    """The edits `example_edits` makes of `text` with the reader's report."""
-    from glitnir.lean.project_checking import example_edits
+    """The edits `_example_edits` makes of `text` with the reader's report."""
+    from glitnir.lean.project_checking import _example_edits
 
-    edits, kept = example_edits(text, entries, list(unclaimed), tag)
+    edits, kept = _example_edits(text, entries, list(unclaimed), tag)
     assert kept == list(unclaimed)
     return edits
 
 
 def test_examples_are_rewritten_only_at_their_keywords():
     """The compiled text differs only where `example` became the named theorem."""
-    from glitnir.lean.project_checking import check_rewrite, rewrite_examples
+    from glitnir.lean.project_checking import _check_rewrite, _rewrite_examples
 
     data = _EXAMPLES.encode()
     entries = _example_entries(_EXAMPLES)
@@ -2192,14 +2192,14 @@ def test_examples_are_rewritten_only_at_their_keywords():
         (second, f"private theorem _glitnir_example_{second}".encode()),
         (third, f"private theorem _glitnir_example_{third}".encode()),
     ]
-    compiled = rewrite_examples(data, edits)
+    compiled = _rewrite_examples(data, edits)
     assert compiled.decode() == (
         "theorem a : True := True.intro\n"
         f"private theorem _glitnir_example_{second} : True := trivial\n"
         "/-- doc -/\n"
         f"private theorem _glitnir_example_{third} (p : Prop) (h : p) : p := h\n"
     )
-    check_rewrite(data, compiled, edits)
+    _check_rewrite(data, compiled, edits)
     pairs = zip(_EXAMPLES.split("\n"), compiled.decode().split("\n"), strict=True)
     for saved, built in pairs:
         if saved.startswith("example"):
@@ -2207,8 +2207,8 @@ def test_examples_are_rewritten_only_at_their_keywords():
             assert built.endswith(saved.removeprefix("example"))
         else:
             assert built == saved
-    assert rewrite_examples(data, []) == data
-    check_rewrite(data, data, [])
+    assert _rewrite_examples(data, []) == data
+    _check_rewrite(data, data, [])
 
 
 @pytest.mark.parametrize(
@@ -2223,17 +2223,17 @@ def test_examples_are_rewritten_only_at_their_keywords():
 )
 def test_any_other_difference_in_the_compiled_text_fails(compiled):
     """The checker refuses compiled text that differs anywhere but the keywords."""
-    from glitnir.lean.project_checking import check_rewrite, rewrite_examples
+    from glitnir.lean.project_checking import _check_rewrite, _rewrite_examples
     from glitnir.lean.project_snapshot import SnapshotError
 
     data = _EXAMPLES.encode()
     edits = _edits(_EXAMPLES, _example_entries(_EXAMPLES))
     with pytest.raises(SnapshotError, match="differs from the saved source"):
-        check_rewrite(data, compiled(rewrite_examples(data, edits)), edits)
+        _check_rewrite(data, compiled(_rewrite_examples(data, edits)), edits)
     with pytest.raises(SnapshotError, match="differs from the saved source"):
-        check_rewrite(data, rewrite_examples(data, edits), [(0, b"theorem")])
+        _check_rewrite(data, _rewrite_examples(data, edits), [(0, b"theorem")])
     with pytest.raises(SnapshotError, match="differs from the saved source"):
-        check_rewrite(data, data.replace(b"example", b"exampl\n", 1), [(0, b"x\n")])
+        _check_rewrite(data, data.replace(b"example", b"exampl\n", 1), [(0, b"x\n")])
 
 
 def _malformed(entries):
@@ -2496,7 +2496,7 @@ def test_an_example_keyword_outside_a_command_withholds_from_before_it():
 
 def test_an_unreadable_file_withholds_from_its_first_claimed_example():
     """Where the lexer cannot follow Lean, examples are refused, not guessed."""
-    from glitnir.lean.project_checking import CommandFailure, example_edits
+    from glitnir.lean.project_checking import CommandFailure, _example_edits
 
     text = 'def s : String := s!"{1}"\nexample : True := trivial\n'
     keyword = text.encode().index(b"example")
@@ -2506,7 +2506,7 @@ def test_an_unreadable_file_withholds_from_its_first_claimed_example():
     plain = {"start": keyword, "end": len(text) - 1, "keyword": [keyword, keyword + 7]}
     # Nothing is rewritten, and its non-claims are not recorded either: they
     # were never reconciled with the lexer.
-    assert example_edits(text, [], [plain], "_glitnir_example_") == ([], [])
+    assert _example_edits(text, [], [plain], "_glitnir_example_") == ([], [])
 
 
 def test_examples_using_decl_name_are_refused():
@@ -2524,17 +2524,17 @@ def test_examples_using_decl_name_are_refused():
 
 def test_compiled_positions_map_back_to_the_saved_source():
     """Offsets after a rewritten keyword shift back; inside it, to the keyword."""
-    from glitnir.lean.project_checking import original_offset, rewrite_examples
+    from glitnir.lean.project_checking import _original_offset, _rewrite_examples
 
     data = _EXAMPLES.encode()
     edits = _edits(_EXAMPLES, _example_entries(_EXAMPLES))
-    compiled = rewrite_examples(data, edits)
+    compiled = _rewrite_examples(data, edits)
     for marker in (b"theorem a", b"True := trivial", b"/-- doc", b"(p : Prop)", b"h\n"):
-        assert original_offset(compiled.index(marker), edits) == data.index(marker)
+        assert _original_offset(compiled.index(marker), edits) == data.index(marker)
     second = edits[0][0]
     for inside in range(second, second + len(edits[0][1])):
-        assert original_offset(inside, edits) == second
-    assert original_offset(len(compiled), edits) == len(data)
+        assert _original_offset(inside, edits) == second
+    assert _original_offset(len(compiled), edits) == len(data)
 
 
 @pytest.mark.parametrize(
@@ -2550,7 +2550,7 @@ def test_candidate_failure_in_an_example_maps_through_the_rewrite(message, noted
         EXAMPLE_NOTE,
         CommandFailure,
         _candidate_failure,
-        rewrite_examples,
+        _rewrite_examples,
     )
     from glitnir.lean.project_snapshot import SnapshotError
 
@@ -2558,7 +2558,7 @@ def test_candidate_failure_in_an_example_maps_through_the_rewrite(message, noted
     second = text.index("example : 1")
     entries = [_claim(text, 0), _claim(text, second)]
     edits = _edits(text, entries)
-    compiled = rewrite_examples(text.encode(), edits).decode()
+    compiled = _rewrite_examples(text.encode(), edits).decode()
     # The column is past the end of the saved line, inside the compiled one.
     column = compiled.split("\n")[1].index("rfl")
     assert column > len(text.split("\n")[1])
@@ -2762,7 +2762,7 @@ def test_a_malformed_uses_report_is_refused(tmp_path, monkeypatch, uses):
 
 def test_project_modules_are_the_ones_the_project_builds(tmp_path):
     """Modules compiled in the project are notebooks; packages' are not."""
-    from glitnir.lean.project_checking import project_modules
+    from glitnir.lean.project_checking import _project_modules
 
     root = tmp_path / "project"
     build = root / ".lake/build/lib/lean"
@@ -2782,13 +2782,13 @@ def test_project_modules_are_the_ones_the_project_builds(tmp_path):
             "Init": [[str(outside)]],
         }
     }
-    assert project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}
-    assert project_modules(setup, None) == set()
+    assert _project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}
+    assert _project_modules(setup, None) == set()
 
 
 def test_claim_uses_keep_claims_of_this_and_other_notebooks():
     """Of the theorems named, only claims here and other notebooks' count."""
-    from glitnir.lean.project_checking import claim_uses
+    from glitnir.lean.project_checking import _claim_uses
 
     reported = [
         {"name": "A.one", "module": "A"},
@@ -2798,7 +2798,7 @@ def test_claim_uses_keep_claims_of_this_and_other_notebooks():
         {"name": "Nat.add_zero", "module": "Init.Core"},
         {"name": "Mathlib.thing", "module": "Mathlib"},
     ]
-    assert claim_uses(reported, "A", {"A.one", "A.three"}, {"B"}) == [
+    assert _claim_uses(reported, "A", {"A.one", "A.three"}, {"B"}) == [
         {"module": "A", "name": "A.one", "in_notebook": True},
         {"module": "B", "name": "B.two", "in_notebook": False},
     ]
@@ -3025,7 +3025,7 @@ def test_a_check_is_kept_awake_from_capture_to_its_last_lean_run(
 
     _fake_check_stages(tmp_path, monkeypatch)
     depth = awake_depth(checking)
-    monkeypatch.setattr(awake_module, "SleepWatch", _Slept)
+    monkeypatch.setattr(awake_module, "_SleepWatch", _Slept)
     seen: list[tuple[str, int]] = []
     capture, run = checking.capture, checking.run_observer
 
@@ -3071,7 +3071,7 @@ def test_every_check_stage_uses_the_configured_memory_limit(
 
     source = tmp_path / "A.lean"
     source.write_text("def x : Nat := 1\n")
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 65536)
     if configured is None:
         monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
     else:
@@ -3332,7 +3332,7 @@ def test_uses_beyond_the_cap_are_marked_truncated(tmp_path, monkeypatch):
         {"module": "M", "name": f"x{i}", "in_notebook": True}
         for i in range(checking.MAX_USES + 1)
     ]
-    monkeypatch.setattr(checking, "claim_uses", lambda *a: many)
+    monkeypatch.setattr(checking, "_claim_uses", lambda *a: many)
     result, _, _, _ = _staged_examples(tmp_path, monkeypatch)
     assert all(len(t["uses"]) == checking.MAX_USES for t in result["theorems"])
     assert all(t["uses_truncated"] is True for t in result["theorems"])

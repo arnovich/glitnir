@@ -117,7 +117,7 @@ def test_default_worker_accepts_default_editor_memory(
     from glitnir.lean.limits import memory_limit_mb
 
     monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
-    monkeypatch.setattr("glitnir.lean.limits.physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr("glitnir.lean.limits._physical_memory_mb", lambda: 65536)
     client = Client(Settings("https://tasks.example.test", "lab", "prepared", "secret"))
     worker = Worker(client, compute_project, tmp_path / "journal")
     request = make_request(

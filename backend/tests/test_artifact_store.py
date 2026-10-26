@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from glitnir.lean import artifact_store, project_snapshot, sandbox
-from glitnir.lean.artifact_store import StoreError, blob_path, lease
-from glitnir.lean.project_snapshot import SnapshotError, capture, store_file
+from glitnir.lean.artifact_store import StoreError, _blob_path, lease
+from glitnir.lean.project_snapshot import SnapshotError, _store_file, capture
 
 NS = artifact_store.TOOLCHAIN
 
@@ -46,7 +46,7 @@ def test_a_stored_file_is_private_immutable_and_named_by_its_bytes(tmp_path):
         assert not store.contains(NS, digest, len(data))
         store.add(NS, digest, [b"module ", b"bytes"])
         path = store.path(NS, digest)
-        assert path == blob_path(directory.resolve() / "blobs", NS, digest)
+        assert path == _blob_path(directory.resolve() / "blobs", NS, digest)
         assert path.read_bytes() == data
         assert stat.S_IMODE(path.stat().st_mode) == 0o400
         for folder in (directory, directory / "blobs", path.parent):
@@ -125,7 +125,7 @@ def test_capture_refuses_a_tampered_stored_input(tmp_path, project_snapshot_inpu
     directory = tmp_path / "store"
     with lease(directory) as store:
         namespace = artifact_store.project_namespace(root)
-        digest, _ = store_file(artifact, store, namespace, max_bytes=1024)
+        digest, _ = _store_file(artifact, store, namespace, max_bytes=1024)
         store.path(namespace, digest).chmod(0o600)
         destination = tmp_path / "check"
         destination.mkdir()
@@ -318,7 +318,7 @@ def test_a_large_input_is_read_again_and_must_hash_the_same(tmp_path, monkeypatc
     source = tmp_path / "large.olean"
     source.write_bytes(b"large module bytes")
     with lease(tmp_path / "store") as store:
-        digest, size = store_file(source, store, NS, max_bytes=1024)
+        digest, size = _store_file(source, store, NS, max_bytes=1024)
         assert (digest, size) == (_sha(b"large module bytes"), 18)
         assert store.path(NS, digest).read_bytes() == b"large module bytes"
         changed = tmp_path / "changing.olean"
@@ -334,7 +334,7 @@ def test_a_large_input_is_read_again_and_must_hash_the_same(tmp_path, monkeypatc
 
         monkeypatch.setattr(project_snapshot, "_open_input", rewriting)
         with pytest.raises(StoreError, match="changed"):
-            store_file(changed, store, NS, max_bytes=1024)
+            _store_file(changed, store, NS, max_bytes=1024)
         assert not store.contains(NS, _sha(b"first version of it"), 19)
         assert not store.contains(NS, _sha(b"other version of it"), 19)
 
@@ -366,7 +366,7 @@ def test_checks_see_only_their_own_store_namespaces_read_only(
     other.mkdir()
     (other / "Secret.olean").write_bytes(b"another project's file")
     with lease(directory) as store:
-        store_file(
+        _store_file(
             other / "Secret.olean",
             store,
             artifact_store.project_namespace(other),
