@@ -686,7 +686,7 @@ def test_live_replay_collects_the_axioms_that_decide_statuses(
         env={**os.environ, "LEAN_SYSROOT": str(_toolchain())},
     )
     if not cached:
-        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+        monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     original = checking.run_observer
     replays = []
 
@@ -789,7 +789,7 @@ def test_live_axioms_are_collected_after_replay_into_an_empty_environment(
     )
     _build(root)
     if not cached:
-        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+        monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     replays = _replays(monkeypatch)
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     result = checking.check_project(source, expected_sha256=digest)
@@ -847,7 +847,7 @@ def test_live_full_and_cached_replays_decide_alike_through_imported_inductives(
     replays = _replays(monkeypatch)
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     with monkeypatch.context() as uncached:
-        uncached.setattr(checking, "_replay_identity", lambda *args: None)
+        uncached.setattr(checking, "replay_identity", lambda *args: None)
         full = checking.check_project(source, expected_sha256=digest)
     cached = checking.check_project(source, expected_sha256=digest)
     assert [mode for mode, _ in replays] == ["full", "imports-cached"]
@@ -2769,7 +2769,7 @@ def test_a_malformed_uses_report_is_refused(tmp_path, monkeypatch, uses):
 
 def test_project_modules_are_the_ones_the_project_builds(tmp_path):
     """Modules compiled in the project are notebooks; packages' are not."""
-    from glitnir.lean.project_checking import _project_modules
+    from glitnir.lean.reports import project_modules
 
     root = tmp_path / "project"
     build = root / ".lake/build/lib/lean"
@@ -2789,13 +2789,13 @@ def test_project_modules_are_the_ones_the_project_builds(tmp_path):
             "Init": [[str(outside)]],
         }
     }
-    assert _project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}
-    assert _project_modules(setup, None) == set()
+    assert project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}
+    assert project_modules(setup, None) == set()
 
 
 def test_claim_uses_keep_claims_of_this_and_other_notebooks():
     """Of the theorems named, only claims here and other notebooks' count."""
-    from glitnir.lean.project_checking import _claim_uses
+    from glitnir.lean.reports import claim_uses
 
     reported = [
         {"name": "A.one", "module": "A"},
@@ -2805,7 +2805,7 @@ def test_claim_uses_keep_claims_of_this_and_other_notebooks():
         {"name": "Nat.add_zero", "module": "Init.Core"},
         {"name": "Mathlib.thing", "module": "Mathlib"},
     ]
-    assert _claim_uses(reported, "A", {"A.one", "A.three"}, {"B"}) == [
+    assert claim_uses(reported, "A", {"A.one", "A.three"}, {"B"}) == [
         {"module": "A", "name": "A.one", "in_notebook": True},
         {"module": "B", "name": "B.two", "in_notebook": False},
     ]
@@ -3341,7 +3341,7 @@ def test_uses_beyond_the_cap_are_marked_truncated(tmp_path, monkeypatch):
         {"module": "M", "name": f"x{i}", "in_notebook": True}
         for i in range(checking.MAX_USES + 1)
     ]
-    monkeypatch.setattr(checking, "_claim_uses", lambda *a: many)
+    monkeypatch.setattr(checking, "claim_uses", lambda *a: many)
     result, _, _, _ = _staged_examples(tmp_path, monkeypatch)
     assert all(len(t["uses"]) == checking.MAX_USES for t in result["theorems"])
     assert all(t["uses_truncated"] is True for t in result["theorems"])

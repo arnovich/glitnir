@@ -2,8 +2,6 @@
 
 import hashlib
 import json
-import os
-import stat
 import threading
 import time
 from collections.abc import Iterator
@@ -13,7 +11,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean import replay_cache
-from glitnir.lean.artifacts import olean_path
 from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.environment import LEAN_AXIOM_ALLOWLIST
@@ -50,6 +47,19 @@ from glitnir.lean.project_snapshot import (
     copy_file,
     module_path,
     snapshot_slot,
+)
+from glitnir.lean.replay import (
+    replay_identity,
+    replay_report,
+    replayed_axioms,
+    toolchain_provenance,
+)
+from glitnir.lean.reports import (
+    claim_uses,
+    compare_reports,
+    declarations,
+    import_closure,
+    project_modules,
 )
 from glitnir.lean.sandbox import SandboxUnavailable
 from glitnir.lean.scratch import scratch_directory
@@ -166,345 +176,6 @@ def _isolate(build: Path, destination: Path, module: str) -> None:
         if suffix == ".olean" or source.exists():
             copy_file(
                 source, destination / (str(relative) + suffix), max_bytes=MODULE_BYTES
-            )
-
-
-def _reports(value: Any) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-    """Validate independent constant and theorem reports before comparison."""
-    if not isinstance(value, dict) or not isinstance(value.get("imports"), list):
-        raise SnapshotError("The independent module report is malformed.")
-    constants: dict[str, dict[str, Any]] = {}
-    theorems: dict[str, dict[str, Any]] = {}
-    for field, result in (("constants", constants), ("theorems", theorems)):
-        if not isinstance(value.get(field), list):
-            raise SnapshotError("The independent module report is malformed.")
-        for item in value[field]:
-            if (
-                not isinstance(item, dict)
-                or not isinstance(item.get("name"), str)
-                or item["name"] in result
-            ):
-                raise SnapshotError("The independent declaration report is malformed.")
-            result[item["name"]] = item
-    for item in constants.values():
-        if not all(
-            isinstance(item.get(key), str) for key in ("kind", "meaning")
-        ) or not isinstance(item.get("levels"), list):
-            raise SnapshotError("The independent constant report is malformed.")
-    for item in theorems.values():
-        if not all(
-            isinstance(item.get(key), str) for key in ("canonical", "type")
-        ) or not isinstance(item.get("axioms"), list):
-            raise SnapshotError("The independent theorem report is malformed.")
-        for axiom in item["axioms"]:
-            if (
-                not isinstance(axiom, dict)
-                or not isinstance(axiom.get("name"), str)
-                or not isinstance(axiom.get("module"), (str, type(None)))
-            ):
-                raise SnapshotError("The independent axiom report is malformed.")
-        uses = item.get("uses", [])
-        if not isinstance(uses, list) or not all(
-            isinstance(use, dict)
-            and isinstance(use.get("name"), str)
-            and isinstance(use.get("module"), str)
-            for use in uses
-        ):
-            raise SnapshotError("The independent theorem report is malformed.")
-    return constants, theorems
-
-
-def _project_modules(setup: dict[str, Any], project_root: Path | None) -> set[str]:
-    """Return the imported modules the checked project builds itself.
-
-    These are the project's own `.lean` files, the other notebooks a claim may
-    use, as opposed to its dependencies' and the toolchain's modules: their
-    compiled files lie in the project, outside `.lake/packages`.
-    """
-    if project_root is None:
-        return set()
-    packages = project_root / ".lake" / "packages"
-    found = set()
-    for module, paths in setup["importArts"].items():
-        olean = Path(olean_path(paths))
-        if not olean.is_absolute():
-            olean = project_root / olean
-        try:
-            resolved = olean.resolve()
-        except (OSError, RuntimeError):
-            continue
-        if resolved.is_relative_to(project_root) and not resolved.is_relative_to(
-            packages
-        ):
-            found.add(module)
-    return found
-
-
-def _claim_uses(
-    reported: list[dict[str, str]],
-    module: str,
-    claims: set[str],
-    notebooks: set[str],
-) -> list[dict[str, Any]]:
-    """Return the claims a theorem uses, from the theorems it names directly.
-
-    Display only: what the module report says a theorem's type and value name,
-    kept when it is a claim of this notebook (`claims`, in `module`) or a
-    theorem of another notebook of the project (a module in `notebooks`).
-    """
-    found: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for use in reported:
-        name, owner = use["name"], use["module"]
-        if owner == module:
-            entry = {"module": owner, "name": name, "in_notebook": True}
-            if name not in claims:
-                continue
-        elif owner in notebooks and not name.startswith("_private."):
-            entry = {"module": owner, "name": name, "in_notebook": False}
-        else:
-            continue
-        if (owner, name) not in seen:
-            seen.add((owner, name))
-            found.append(entry)
-    return found
-
-
-def compare_reports(
-    reference: Any, candidate: Any, names: list[str]
-) -> list[dict[str, Any]]:
-    """Bind exact theorem names/propositions and every reference non-proof constant."""
-    expected, expected_theorems = _reports(reference)
-    found, found_theorems = _reports(candidate)
-    if (
-        reference.get("module") != candidate.get("module")
-        or reference["imports"] != candidate["imports"]
-    ):
-        raise SnapshotError("Candidate and reference imports/module differ.")
-    for name, constant in expected.items():
-        other = found.get(name)
-        if (
-            other is None
-            or constant["kind"] != other["kind"]
-            or constant["levels"] != other["levels"]
-        ):
-            raise SnapshotError(f"The candidate changed reference declaration {name}.")
-        if constant["kind"] != "theorem" and constant["meaning"] != other["meaning"]:
-            raise SnapshotError(f"The candidate changed reference definition {name}.")
-    for name, theorem in expected_theorems.items():
-        if (
-            name not in found_theorems
-            or theorem["canonical"] != found_theorems[name]["canonical"]
-        ):
-            raise SnapshotError(
-                f"The candidate changed the reference proposition {name}."
-            )
-    if len(names) != len(set(names)) or any(
-        name not in expected_theorems for name in names
-    ):
-        raise SnapshotError(
-            "Source declaration identities do not match the reference module."
-        )
-    return [found_theorems[name] for name in names]
-
-
-def _closure(report: Any, module: str) -> list[list[str]] | None:
-    """Return the reporter's loaded closure without ``module``, which comes last."""
-    modules = report.get("modules") if isinstance(report, dict) else None
-    if (
-        not isinstance(modules, list)
-        or not modules
-        or not all(
-            isinstance(item, list)
-            and len(item) == 2
-            and all(isinstance(part, str) for part in item)
-            for item in modules
-        )
-        or modules[-1][0] != module
-    ):
-        return None
-    return modules[:-1]
-
-
-def _module_files(
-    snapshot: ProjectSnapshot, isolated: Path, name: str, loaded: str
-) -> dict[str, str] | None:
-    """Return the snapshot digests of the files a loaded module was read from.
-
-    The module must have been read from its own path under the isolated
-    dependency tree (links to snapshot artifacts) or the snapshot toolchain,
-    and each of its files must be exactly the snapshot's entry, or absent from
-    both. Each entry must link to the stored file named by its recorded digest,
-    whose bytes never change. None means some file is unknown.
-    """
-    try:
-        relative = str(module_path(name))
-    except SnapshotError:
-        return None
-    for root, prefix, linked in (
-        (isolated, "artifacts", True),
-        (snapshot.toolchain / "lib/lean", "toolchain/lib/lean", False),
-    ):
-        if Path(loaded) == root / (relative + ".olean"):
-            break
-    else:
-        return None
-    files = {}
-    for suffix in replay_cache.MODULE_SUFFIXES:
-        location = root / (relative + suffix)
-        digest = snapshot.digests.get(f"{prefix}/{relative}{suffix}")
-        try:
-            info = location.lstat()
-        except FileNotFoundError:
-            if digest is not None:
-                return None
-            files[suffix] = "absent"
-            continue
-        except OSError:
-            return None
-        if digest is None:
-            return None
-        if linked:
-            target = snapshot.artifacts / (relative + suffix)
-            if not stat.S_ISLNK(info.st_mode) or os.readlink(location) != str(target):
-                return None
-            location = target
-        stored = snapshot.stored(f"{prefix}/{relative}{suffix}", digest)
-        try:
-            if stored is None or os.readlink(location) != str(stored):
-                return None
-        except OSError:
-            return None
-        files[suffix] = digest
-    return files
-
-
-def _replay_identity(
-    snapshot: ProjectSnapshot,
-    isolated: Path,
-    program: Path,
-    imports: Any,
-    closure: list[list[str]],
-) -> tuple[str, str, list[list[str]]] | None:
-    """Key, context and digested modules of these imports; None if a file is unknown."""
-    toolchain = {
-        path: digest
-        for path, digest in snapshot.digests.items()
-        if path.startswith("toolchain/")
-    }
-    if not toolchain:
-        return None
-    modules = []
-    for name, loaded in closure:
-        files = _module_files(snapshot, isolated, name, loaded)
-        if files is None:
-            return None
-        modules.append([name, replay_cache.module_digest(files)])
-    context = replay_cache.context_digest(
-        toolchain=toolchain,
-        program_sha256=hashlib.sha256(program.read_bytes()).hexdigest(),
-    )
-    key = replay_cache.import_key(context=context, imports=imports, modules=modules)
-    return key, context, modules
-
-
-def _axiom_entry(value: Any) -> bool:
-    """Whether ``value`` is one axiom as both helpers write it: name and module."""
-    return (
-        isinstance(value, dict)
-        and set(value) == {"name", "module"}
-        and isinstance(value["name"], str)
-        and isinstance(value["module"], (str, type(None)))
-    )
-
-
-def _replay_report(
-    output: str, closure: list[list[str]], imports: Any
-) -> dict[str, Any]:
-    """Validate the kernel replay's report and that it loaded the predicted closure."""
-    try:
-        value = json.loads(output)
-    except ValueError:
-        value = None
-    if (
-        not isinstance(value, dict)
-        or value.get("replay")
-        not in ("full", "imports only", "imports incremental", "imports cached")
-        or type(value.get("imports_replayed")) is not bool
-        or type(value.get("extendable")) is not bool
-        or not (
-            value.get("base_modules") is None
-            or (
-                type(value["base_modules"]) is int
-                and 0 <= value["base_modules"] <= len(closure)
-            )
-        )
-        or (value["replay"] == "imports incremental")
-        != (value.get("base_modules") is not None)
-        or value.get("fresh") not in (None, "restated", "quotient")
-        or not isinstance(value.get("imports"), list)
-        or not isinstance(value.get("modules"), list)
-        or not isinstance(value.get("theorems"), list)
-        or not all(
-            isinstance(item, dict)
-            and set(item) == {"name", "axioms"}
-            and isinstance(item["name"], str)
-            and isinstance(item["axioms"], list)
-            and all(_axiom_entry(axiom) for axiom in item["axioms"])
-            for item in value["theorems"]
-        )
-        or len({item["name"] for item in value["theorems"]}) != len(value["theorems"])
-        or (
-            value["replay"] in ("imports only", "imports incremental")
-            and value["theorems"]
-        )
-    ):
-        raise SnapshotError("The independent kernel replay report is malformed.")
-    if value["imports"] != imports or value["modules"] != closure:
-        raise SnapshotError(
-            "Independent kernel replay loaded a different import closure."
-        )
-    return value
-
-
-def _replayed_axioms(
-    replayed: dict[str, Any], reported: dict[str, dict[str, Any]]
-) -> dict[str, list[dict[str, Any]]]:
-    """Return each declared theorem's axioms as the kernel replay collected them.
-
-    The replay collects them in the environment where it kernel-checked the
-    module, which holds no imported extension state; they alone decide a
-    theorem's status. The module report collects them again over Lean's own
-    import. Both must list the same theorems with equal axioms, in the same
-    order and with the same modules, or the check fails: a difference means one
-    of the two read something the other did not.
-    """
-    found = {item["name"]: item["axioms"] for item in replayed["theorems"]}
-    if set(found) != set(reported):
-        raise SnapshotError(
-            "The independent kernel replay and the module report list different "
-            "theorems."
-        )
-    for name, theorem in reported.items():
-        if theorem["axioms"] != found[name]:
-            raise SnapshotError(
-                "The independent kernel replay and the module report disagree on "
-                f"the axioms of {name}."
-            )
-    return found
-
-
-def _toolchain_provenance(snapshot: ProjectSnapshot, closure: list[list[str]]) -> None:
-    """Require every module the toolchain provides to be loaded from the toolchain."""
-    for name, loaded in closure:
-        try:
-            relative = str(module_path(name))
-        except SnapshotError:
-            continue  # Not a name the toolchain uses.
-        trusted = snapshot.toolchain / "lib/lean" / (relative + ".olean")
-        if os.path.lexists(trusted) and Path(loaded) != trusted:
-            raise SnapshotError(
-                f"The toolchain module {name} was loaded from outside the toolchain."
             )
 
 
@@ -816,7 +487,7 @@ def _check_text(
         text = snapshot.source.read_bytes().decode().replace("\r\n", "\n")
         spans = {e["name"]: (e["start"], e["end"]) for e in entries}
         # The claims each claim uses: display only, like the reporter's axioms.
-        notebooks = _project_modules(setup, project_root)
+        notebooks = project_modules(setup, project_root)
         claim_names = set(spans)
         # How the reader's Lean printed each statement in its own scope: display
         # only, beside the reporter's kernel form (`type`).
@@ -829,7 +500,7 @@ def _check_text(
         theorems = compare_reports(
             reports["reference"], reports["candidate"], [e["name"] for e in entries]
         )
-        for name in _reports(reports["candidate"])[1]:
+        for name in declarations(reports["candidate"])[1]:
             if name.rsplit(".", 1)[-1].startswith(tag) and name not in examples:
                 raise SnapshotError(
                     f"The candidate declares {name} under a name reserved for "
@@ -839,11 +510,11 @@ def _check_text(
         # Python alone reads and writes the record of fully replayed imports;
         # the sandboxed replay only learns whether it may skip that step.
         imports = reports["candidate"]["imports"]
-        closure = _closure(reports["candidate"], module)
+        closure = import_closure(reports["candidate"], module)
         if closure is None:
             raise SnapshotError("The independent module report has no import closure.")
-        _toolchain_provenance(snapshot, closure)
-        replay_identity = _replay_identity(snapshot, isolated, replay, imports, closure)
+        toolchain_provenance(snapshot, closure)
+        imports_identity = replay_identity(snapshot, isolated, replay, imports, closure)
         cache = replay_cache.cache_directory()
         if cache is not None and cache.is_relative_to(root):
             cache = None
@@ -851,8 +522,8 @@ def _check_text(
         mode = "full"
         replayed_now = False
         added_modules = 0
-        if replay_identity is not None:
-            replay_key, context, digested = replay_identity
+        if imports_identity is not None:
+            replay_key, context, digested = imports_identity
             mode = "imports-cached"
             if cache is None or not replay_cache.contains(
                 cache, replay_key, context=context, modules=digested
@@ -876,7 +547,7 @@ def _check_text(
                 started = time.monotonic()
                 try:
                     with timed("replay_imports"):
-                        imported = _replay_report(
+                        imported = replay_report(
                             _run(
                                 snapshot,
                                 ["lean", f"-M{memory}", "--run", str(replay), module]
@@ -929,7 +600,7 @@ def _check_text(
         )
         try:
             with timed("replay"):
-                replayed = _replay_report(
+                replayed = replay_report(
                     _run(
                         snapshot,
                         ["lean", f"-M{memory}", "--run", str(replay), module]
@@ -963,7 +634,7 @@ def _check_text(
                 replay_kind = "imports cached"
         # Statuses come from the replay's axioms alone; the module report's
         # must equal them.
-        authority = _replayed_axioms(replayed, _reports(reports["candidate"])[1])
+        authority = replayed_axioms(replayed, declarations(reports["candidate"])[1])
         observations = []
         for theorem in theorems:
             axioms = authority[theorem["name"]]
@@ -981,7 +652,7 @@ def _check_text(
                 else "checked" if standard else "assumptions"
             )
             first, last = line_range(text, *spans[theorem["name"]])
-            uses = _claim_uses(theorem.get("uses", []), module, claim_names, notebooks)
+            uses = claim_uses(theorem.get("uses", []), module, claim_names, notebooks)
             observations.append(
                 {
                     "name": theorem["name"],
