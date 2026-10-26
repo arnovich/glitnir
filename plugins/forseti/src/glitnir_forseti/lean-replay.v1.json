@@ -1,6 +1,6 @@
 {
   "schema": "gimle.forseti.lean-replay/v2",
-  "release_sha256": "b37efe0c404e3c8bcd652c3b39089457f307f5890b9bb12e23f1270fb16a3668",
+  "release_sha256": "25ac189d2449cb89177cfeb7a8e218abb8e221379d96b96ac71a882cabc120bc",
   "closure_program_sha256": "60d07a94daf2298ae5e053a74349efc2fa8a1d826e2192277657f3489becb97d",
   "toolchain": "leanprover/lean4:v4.35.0",
   "toolchain_binaries": {
@@ -32,7 +32,7 @@
         {
           "name": "asgard",
           "modules": 12,
-          "digest": "6207259e0b7c994cbef47edbbef27c22bade12d0cb0f5ba16677cda65997d9bc"
+          "digest": "9f0cc117a7ccf4f8e2620073832ea6217b5a36080433a98ada171c310886f008"
         },
         {
           "name": "batteries",
@@ -90,7 +90,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "e8f0fe236f5c72754cbc90dfbdaced287547d2ed2e2a069daf129aa4d9c9a0a3"
+          "digest": "5757978fb70de7f6759d20c0fd3148ccb0c19e7b1c23a1f671a3d7d85c83ad44"
         },
         {
           "name": "batteries",
@@ -148,7 +148,7 @@
         {
           "name": "asgard",
           "modules": 18,
-          "digest": "28bccb2b573ba1a786f9ebc57c2ab7e8c990ea7421ff1756878b1ed09965b3d1"
+          "digest": "a0768e1305d7f770e2fbe402cf3f6f5342b727ff75f2c393b3d3bc494626b487"
         },
         {
           "name": "batteries",
@@ -158,7 +158,7 @@
         {
           "name": "forseti",
           "modules": 2,
-          "digest": "e3398ebfb60234ba9575d9a7d979af31d744f3e9653c58cd2c2bcccafd1fb2db"
+          "digest": "29d1a6b640046fd0d9cf54b41f5dd6ea07101e1d8191dcb80489436478cc119d"
         },
         {
           "name": "importGraph",
@@ -213,7 +213,7 @@
         {
           "name": "asgard",
           "modules": 16,
-          "digest": "231993eaa4329594172e18cead6e7399dfc72c4c5274219a725e89956cb47548"
+          "digest": "30b34e997afa10cbf743af0a2f9c389fef844f5376630a1bfa086e9b9138001f"
         },
         {
           "name": "batteries",
@@ -223,7 +223,7 @@
         {
           "name": "forseti",
           "modules": 1,
-          "digest": "690a788be0fa236e7cb5a1f4dea28289ddfc5ba9d8a5d3fe72acf1ba7f64ab1b"
+          "digest": "73d3b5d1fda0189500a177025dceeb49c5dba4796de16e5417ca93c34a23dfa7"
         },
         {
           "name": "importGraph",
@@ -276,7 +276,7 @@
         {
           "name": "asgard",
           "modules": 47,
-          "digest": "fd39c597e55ba2b5b359065b0614093a6e3fd20d717ecf2ddbb3c7769d489ae3"
+          "digest": "2dbfffc66a671877c805b6d9736556bdb311315b62123c6a5f01675d18bb14f3"
         },
         {
           "name": "batteries",
@@ -286,7 +286,7 @@
         {
           "name": "forseti",
           "modules": 4,
-          "digest": "f76ef73b237dd3150b829f34c1d290e4ae39d1ce19876737a3c7520f754d426b"
+          "digest": "cb00015b386175c0a4aac1099457465941ffd3ce896b65782d734cee1bc51bbe"
         },
         {
           "name": "importGraph",
@@ -340,7 +340,7 @@
         {
           "name": "asgard",
           "modules": 25,
-          "digest": "d7ab0616e66db3d876694d8c8779c2f231b5b54c7f28a3ea263957a547ef5e81"
+          "digest": "55a8c3f34f88213bcd4e47e726e9338b608c3eec3ee93f42638995065fcbd01a"
         },
         {
           "name": "batteries",
@@ -350,7 +350,7 @@
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "b6b3adb6617305f9ad1a18f9b3b491216db19e214775cd3e58b00d75a11dd816"
+          "digest": "56e7a35bb6e380c63cb3218aba129108bf599d5fd08e948e70fc8abf63cf19df"
         },
         {
           "name": "importGraph",
@@ -403,7 +403,7 @@
         {
           "name": "asgard",
           "modules": 6,
-          "digest": "3e79509e4cc514f91c25b4f45e4951f2da0f5d404aeef8f331b0cfebace9bbfc"
+          "digest": "587f20470f8afd6a91f83a942e8b9fdfe63786cdcc987d893f75704ddf4e74e0"
         },
         {
           "name": "batteries",
@@ -413,7 +413,7 @@
         {
           "name": "forseti",
           "modules": 5,
-          "digest": "a5437d99bf8c0bb21d51c000f731125d05dfa7a91a34d170eec6db10130daf6a"
+          "digest": "cd4d4000ca00a47ef9dce31d8910203835e238b17977372f8227660319846005"
         },
         {
           "name": "importGraph",
@@ -466,7 +466,7 @@
         {
           "name": "asgard",
           "modules": 6,
-          "digest": "3e79509e4cc514f91c25b4f45e4951f2da0f5d404aeef8f331b0cfebace9bbfc"
+          "digest": "587f20470f8afd6a91f83a942e8b9fdfe63786cdcc987d893f75704ddf4e74e0"
         },
         {
           "name": "batteries",
@@ -476,7 +476,7 @@
         {
           "name": "forseti",
           "modules": 4,
-          "digest": "25041ce7c4f9c8466ca24d774b3a7eb8b0c7e951a70803236bc3ef51efb4cf51"
+          "digest": "0d55b57736fb7db43892d41d4e7cb7021a9b0110f7684ee6aedc51e1e16028b8"
         },
         {
           "name": "importGraph",
@@ -530,7 +530,7 @@
         {
           "name": "asgard",
           "modules": 24,
-          "digest": "592271fdda881dd08d385a3dee6e5b523bbb3f14b9cae3c3ee31e45287a25b6a"
+          "digest": "eb323b7649e30fdb5a77e01ba681c8874329077065e6a28b4bb0b010654e0399"
         },
         {
           "name": "batteries",
@@ -540,7 +540,7 @@
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "462f31dadf777348c5eb3acc97ef1f5d14abbd998c063556ab252a1c6e63ce67"
+          "digest": "b5e7c19c059a9c4aeacd26999ca5acb84e11f341b94cf6030dbcc9a668cee8c0"
         },
         {
           "name": "importGraph",
@@ -594,7 +594,7 @@
         {
           "name": "asgard",
           "modules": 26,
-          "digest": "38fb645fe2c0e685fd2f7fc11b8a155818615bbb3aa9b645cd3850d488120c1e"
+          "digest": "3ad0fdcf677d418b85107bf71a92ff76c0716c17f92859c6cb8628410021db68"
         },
         {
           "name": "batteries",
@@ -604,7 +604,7 @@
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "6684816c99db8a05adfe610786ddffcc3c73eabe5eaaeb377021a841e742093b"
+          "digest": "7d58750eb272b135cd0cdbd7df5807b3f5f728f1c1ebde25411791c27c5258ea"
         },
         {
           "name": "importGraph",
@@ -658,7 +658,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "68bd9241c7fc23e5b2384f5463e44819d9fbb1df53bae61d439922ffec03ee3f"
+          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
         },
         {
           "name": "batteries",
@@ -668,7 +668,7 @@
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "600f24e8b9151ee64fe9bdb65697c99bcef54ca6d06eaec4e84f9697adde3342"
+          "digest": "a04f831b99101270e522eedc767be08b1ae929460443880d2f0f431afceb7db8"
         },
         {
           "name": "importGraph",
@@ -723,7 +723,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "68bd9241c7fc23e5b2384f5463e44819d9fbb1df53bae61d439922ffec03ee3f"
+          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
         },
         {
           "name": "batteries",
@@ -733,7 +733,7 @@
         {
           "name": "forseti",
           "modules": 14,
-          "digest": "2487d478a1656e036a360ef89aa060010636ea179316a4d5d50ccfa79245056f"
+          "digest": "f4b4a33eb91f9d804b0eec833a9e8110a4f9e6dc92bef33a9ba00e7546bc9ac8"
         },
         {
           "name": "importGraph",
@@ -788,7 +788,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "68bd9241c7fc23e5b2384f5463e44819d9fbb1df53bae61d439922ffec03ee3f"
+          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
         },
         {
           "name": "batteries",
@@ -798,7 +798,7 @@
         {
           "name": "forseti",
           "modules": 15,
-          "digest": "6780e552fbeb223c7131732fe2d96967f4d858a47d793246a186e0340caa4dcd"
+          "digest": "450476ad3537dc882eae296070396410e6871bc73e76fe10d7bc389d62c47d01"
         },
         {
           "name": "importGraph",
@@ -852,7 +852,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "68bd9241c7fc23e5b2384f5463e44819d9fbb1df53bae61d439922ffec03ee3f"
+          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
         },
         {
           "name": "batteries",
@@ -862,7 +862,7 @@
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "404e39fc10233515cf70bc70ccf76fd6c582484b32ed2c627bc5644474c22c98"
+          "digest": "f795645ff59ac41106e9e71f4788f25c9e4c23ddeecd3f5c085ac3687b672c03"
         },
         {
           "name": "importGraph",
@@ -916,7 +916,7 @@
         {
           "name": "asgard",
           "modules": 24,
-          "digest": "592271fdda881dd08d385a3dee6e5b523bbb3f14b9cae3c3ee31e45287a25b6a"
+          "digest": "eb323b7649e30fdb5a77e01ba681c8874329077065e6a28b4bb0b010654e0399"
         },
         {
           "name": "batteries",
@@ -926,7 +926,7 @@
         {
           "name": "forseti",
           "modules": 8,
-          "digest": "aa2df63d0de57adc37249c8992bdefa3d9efe8705d330a485afa90c043d7e735"
+          "digest": "8c1d479a99b240b3c3a8a2cda25e03fbe2920924d40471c19610d13df6250d41"
         },
         {
           "name": "importGraph",
@@ -980,7 +980,7 @@
         {
           "name": "asgard",
           "modules": 18,
-          "digest": "28381908a18af9d69cd7353e3e27296d01e10f79b4ffce031e96c6410fcc4b5c"
+          "digest": "44e2af43510c9f30cbb57756858e6974f4fead089d3b8844cca4504ca16a268c"
         },
         {
           "name": "batteries",
@@ -990,7 +990,7 @@
         {
           "name": "forseti",
           "modules": 10,
-          "digest": "6356fc581645fbdfeac451b05fcae5a846b7377f9a51a130647ce720af8e6178"
+          "digest": "c0a951316b1bd7dabe67d7d8057bc704cd9721724fd92148ea77c2b83fb3d683"
         },
         {
           "name": "importGraph",
@@ -1044,7 +1044,7 @@
         {
           "name": "asgard",
           "modules": 25,
-          "digest": "d7ab0616e66db3d876694d8c8779c2f231b5b54c7f28a3ea263957a547ef5e81"
+          "digest": "55a8c3f34f88213bcd4e47e726e9338b608c3eec3ee93f42638995065fcbd01a"
         },
         {
           "name": "batteries",
@@ -1054,7 +1054,7 @@
         {
           "name": "forseti",
           "modules": 11,
-          "digest": "07fd34ded2221f2dbd4c4907439674773ea5848b0b4475d72f584079d5eef1b1"
+          "digest": "d39ed41a1183821cf41c85e91786c9b88fa3f83c7d520101619048fe23df22b1"
         },
         {
           "name": "importGraph",
@@ -1108,7 +1108,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "68bd9241c7fc23e5b2384f5463e44819d9fbb1df53bae61d439922ffec03ee3f"
+          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
         },
         {
           "name": "batteries",
@@ -1118,7 +1118,7 @@
         {
           "name": "forseti",
           "modules": 10,
-          "digest": "91f9b0659a542191bc3d06eab67641a01481b3a02eadd778035dbb8d08549c5c"
+          "digest": "4b5f2ac999548a14efa5e2556867b1359d704559a8820cb7482d0561b75b663f"
         },
         {
           "name": "importGraph",
@@ -1172,7 +1172,7 @@
         {
           "name": "asgard",
           "modules": 15,
-          "digest": "c8c9a128b0b74a69a424c312926f1c38fda25df290630cb30077050453a622b8"
+          "digest": "da27c7b6d3a6f7ead9f0a7cc224433b455949e1c835ad17c491afe6c9a724df6"
         },
         {
           "name": "batteries",
@@ -1182,7 +1182,7 @@
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "7b81e3a1187579bbc4b6b58deffff0b02ddb4e3d07672a2813273e18f3abafe0"
+          "digest": "a9e535b1b7a27c04f9784cc9827207a0665f10f975e02a8cf4e41fe44d99eb0c"
         },
         {
           "name": "importGraph",
@@ -1237,7 +1237,7 @@
         {
           "name": "asgard",
           "modules": 18,
-          "digest": "28381908a18af9d69cd7353e3e27296d01e10f79b4ffce031e96c6410fcc4b5c"
+          "digest": "44e2af43510c9f30cbb57756858e6974f4fead089d3b8844cca4504ca16a268c"
         },
         {
           "name": "batteries",
@@ -1247,7 +1247,7 @@
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "7b81e3a1187579bbc4b6b58deffff0b02ddb4e3d07672a2813273e18f3abafe0"
+          "digest": "a9e535b1b7a27c04f9784cc9827207a0665f10f975e02a8cf4e41fe44d99eb0c"
         },
         {
           "name": "importGraph",
@@ -1301,7 +1301,7 @@
         {
           "name": "asgard",
           "modules": 22,
-          "digest": "5569df40d023f8570abaf6338b904cff46b7d8df6bc9f8953ac8e1606c2fd614"
+          "digest": "45422d6df68b70655206d2078eb61d9f739bb5f51d9797096e91f2c214d1e4d0"
         },
         {
           "name": "batteries",
@@ -1311,7 +1311,7 @@
         {
           "name": "forseti",
           "modules": 9,
-          "digest": "2ae9e503f9083cece99882e34e2f9fa9b30f96024c85391776914ff60c605ce1"
+          "digest": "ca52ab0e66cd48853e9c3695d1a35b57c8e162241f1c0532bbbf224fe4844d83"
         },
         {
           "name": "importGraph",
@@ -1364,7 +1364,7 @@
         {
           "name": "asgard",
           "modules": 6,
-          "digest": "3e79509e4cc514f91c25b4f45e4951f2da0f5d404aeef8f331b0cfebace9bbfc"
+          "digest": "587f20470f8afd6a91f83a942e8b9fdfe63786cdcc987d893f75704ddf4e74e0"
         },
         {
           "name": "batteries",
@@ -1374,7 +1374,7 @@
         {
           "name": "forseti",
           "modules": 5,
-          "digest": "f9562d8f1a92f0119831b8542174338b13882f8bedc91e724eb073ccfc419539"
+          "digest": "fb6b6f8e3ae92b62b76de8fdf04c0652ea97c0ac7c75253a81ecdab2000338de"
         },
         {
           "name": "importGraph",

@@ -1,10 +1,10 @@
 {
   "schema": "gimle.forseti.lean-release/v1",
-  "support_version": "gimle.forseti.lean-support/v21",
+  "support_version": "gimle.forseti.lean-support/v22",
   "toolchain": "leanprover/lean4:v4.35.0",
-  "support_source_sha256": "60b318b2003ef526f67e63b2e3f8f967c73e0bb9e619194e3f51c1c577a32c6e",
-  "checker_sha256": "c133a67c981758d5d1990f54cd66838bbcb78a621b4776395110f569ec5f5d4a",
-  "lockfile_sha256": "85e8cfb17079543f9d262e507b687610164c12ccf751d780f313c1efc0aa797b",
+  "support_source_sha256": "04a10aa285559ef40cb42c4b45b891202c855ac8df8b9bd8a9a1352bbcdf3130",
+  "checker_sha256": "d01cabde3b3e924db668ec4aa0ab6db7b3318d766af8d0c1be1600d84ea8bacc",
+  "lockfile_sha256": "cefb552a3e3bc233a1156795639dbda074a7f263ccbbcca6848138b49f8057dc",
   "import": "Gimle.Forseti",
   "axiom_allowlist": [
     "Classical.choice",
@@ -14,7 +14,7 @@
   "dependencies": [
     {
       "name": "asgard",
-      "revision": "692a116da2dc546eb6de26714c2a4fb49115933d"
+      "revision": "fb826ea5e538d2732a48741d6f268887950375d0"
     },
     {
       "name": "mathlib",
@@ -57,39 +57,39 @@
     {
       "package": "forseti",
       "path": "Gimle/Forseti.lean",
-      "sha256": "60b318b2003ef526f67e63b2e3f8f967c73e0bb9e619194e3f51c1c577a32c6e"
+      "sha256": "04a10aa285559ef40cb42c4b45b891202c855ac8df8b9bd8a9a1352bbcdf3130"
     },
     {
       "package": "forseti",
       "path": "Executables/Checker.lean",
-      "sha256": "c133a67c981758d5d1990f54cd66838bbcb78a621b4776395110f569ec5f5d4a"
+      "sha256": "d01cabde3b3e924db668ec4aa0ab6db7b3318d766af8d0c1be1600d84ea8bacc"
     },
     {
       "package": "asgard",
       "path": "Gimle/Asgard.lean",
-      "sha256": "e15651847a49cf9cb8539fffcf3f704b4fff27f735374337fab92e34920bdd55"
+      "sha256": "f19def469fb0c436dbe5ef099e6719cde2c2ca3b6fa0400e769bc30f37cc1dc3"
     },
     {
       "package": "asgard",
       "path": "Gimle/Asgard/Circuit.lean",
-      "sha256": "9f6ba54d8f9e971bceeb9fdad2d59ca64b2ac4d63f5a030dfbeb271a73d58cdd"
+      "sha256": "fd8c1417d8e1bb7c0e018d3f22bb3850f064c8ef1dc50c113b86c766fee67aa3"
     },
     {
       "package": "asgard",
       "path": "Gimle/Asgard/Semantics/Real.lean",
-      "sha256": "c029ad5f0f5b8038c0eaee55025315c9927a573b65b9d6bb81b5b512a16ee349"
+      "sha256": "6c541beedf2edacb8f70cde6fb3b68a555169264a572db7672187f26f4424dc0"
     },
     {
       "package": "asgard",
       "path": "Gimle/Asgard/Rewrite.lean",
-      "sha256": "6394542e7c39664ee827355d6da1a7cfbf1cd9e6e4915705d14f6aaa678b1a5c"
+      "sha256": "a01785ac4613aa1df5a39dc3d696f95d27474d58e99330eff471f9872a68d524"
     }
   ],
   "build_configs": [
     {
       "package": "forseti",
       "path": "lakefile.toml",
-      "sha256": "869d160e982856dcfff30aedd45bd4e3415ada1637ec2ce017169b93b705b863"
+      "sha256": "7eccd303be96cd6d6488cc0c7e06e96080907ff043ed4958cf3625e74a3a5eab"
     },
     {
       "package": "asgard",
