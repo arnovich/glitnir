@@ -8,7 +8,7 @@ A notebook is an ordinary `.lean` file: the prose lives in a specific Markdown f
 
 Glitnir is also this VS Code extension, which renders and checks notebooks beside their source, and an authoring skill that teaches coding agents such as Claude Code or Codex to write Lean in this style.
 
-See [example notebooks](https://arnovich.github.io/forseti-examples/).
+See [example notebooks](https://notebooks.gimlelabs.com/).
 
 ## The Origin
 
@@ -131,9 +131,10 @@ theorem hello : True := by
    `Hello.lean` with the `glitnir-notebooks` skill and follow its work in the
    preview.
 
-The [Forseti examples](https://github.com/arnovich/forseti-examples) repository
-has notebooks on circuits, dynamical systems and PDEs; they are Forseti projects
-and need the plugin.
+The [Glitnir notebooks](https://github.com/arnovich/glitnir-notebooks) repository
+has notebooks on circuits, dynamical systems and PDEs. Some examples use the
+Forseti and Asgard libraries; install the Forseti plugin for their graphical
+views, simulation evidence and decision cards.
 
 ## Coding agents
 
