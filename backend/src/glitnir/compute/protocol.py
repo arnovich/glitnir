@@ -5,6 +5,8 @@ import json
 import os
 import re
 import shutil
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 from uuid import UUID, uuid4
@@ -227,14 +229,29 @@ def validate_request(request: dict[str, Any]) -> None:
         raise ValueError("Invalid through_line")
 
 
-def _copy_regular(source: str, destination: str) -> str:
+def _copy_regular(
+    source: str, destination: str, monitor: Callable[[], None] = lambda: None
+) -> str:
     path = Path(source)
     if path.is_symlink() or not path.is_file():
         raise ValueError("Prepared artifacts must be regular files")
-    return shutil.copy2(source, destination)
+    with path.open("rb") as incoming, Path(destination).open("wb") as outgoing:
+        while chunk := incoming.read(1024 * 1024):
+            monitor()
+            outgoing.write(chunk)
+            outgoing.flush()
+            monitor()
+    shutil.copystat(source, destination)
+    return destination
 
 
-def stage_project(prepared: Path, request: dict[str, Any], destination: Path) -> Path:
+def stage_project(
+    prepared: Path,
+    request: dict[str, Any],
+    destination: Path,
+    *,
+    monitor: Callable[[], None] = lambda: None,
+) -> Path:
     """Reuse one private, materialized project per serial worker process.
 
     Dependencies/builds are copied once, never linked to mutable operator files.
@@ -242,6 +259,7 @@ def stage_project(prepared: Path, request: dict[str, Any], destination: Path) ->
     A journal restores the previous candidate even after an interrupted child.
     """
     validate_request(request)
+    monitor()
     source = prepared / source_path(request["path"])
     if project_root(source).resolve() != prepared.resolve():
         raise ValueError("Source path crosses a nested project boundary")
@@ -261,9 +279,11 @@ def stage_project(prepared: Path, request: dict[str, Any], destination: Path) ->
             target = root / path.relative_to(prepared)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(read_regular(path, 8 * 1024 * 1024))
+            monitor()
         if (prepared / ".lake").exists():
             # Reject links before copytree can follow them. Ignore repository metadata.
             for parent, directories, files in os.walk(prepared / ".lake"):
+                monitor()
                 directories[:] = [d for d in directories if d != ".git"]
                 if any(
                     (Path(parent) / name).is_symlink()
@@ -275,10 +295,11 @@ def stage_project(prepared: Path, request: dict[str, Any], destination: Path) ->
             shutil.copytree(
                 prepared / ".lake",
                 root / ".lake",
-                copy_function=_copy_regular,
+                copy_function=partial(_copy_regular, monitor=monitor),
                 ignore=shutil.ignore_patterns(".git"),
             )
         (destination / "ready").touch()
+    monitor()
     if not (destination / "ready").is_file():
         raise ValueError("Worker staging was interrupted; restart with a new journal")
     if marker.exists():
@@ -296,4 +317,5 @@ def stage_project(prepared: Path, request: dict[str, Any], destination: Path) ->
     target.write_text(request["source"])
     if context_digest(target) != request["context_sha256"]:
         raise ValueError("Prepared dependency context changed while staging")
+    monitor()
     return target

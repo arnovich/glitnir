@@ -440,6 +440,103 @@ def prepared_lean_project(tmp_path, project_toolchain):
     return build_example_project(tmp_path / "project", project_toolchain)
 
 
+@pytest.fixture
+def lemma_bundle():
+    """The versioned golden wire fixture also tested by Taskvalet."""
+    import json
+
+    return json.loads(
+        (Path(__file__).parent / "fixtures/lean-lemma-v1.json").read_text()
+    )
+
+
+@pytest.fixture
+def stub_handoff(tmp_path, lemma_bundle, monkeypatch):
+    """Exercise real durable staging with stubbed build and metadata inspection."""
+    import json
+
+    import glitnir.compute.handoff as module
+    from glitnir.compute.protocol import context_digest, digest
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    base = tmp_path / "prepared"
+    base.mkdir()
+    (base / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (base / "lakefile.toml").write_text(
+        'name = "example"\n[[lean_lib]]\nname = "Example"\n'
+    )
+    (base / ".lake").mkdir()
+    value = lemma_bundle
+    value["job"]["request"].update(
+        checker_sha256=module.checker_digest(),
+        context_sha256=context_digest(base / "Candidate.lean"),
+    )
+    value["sha256"] = digest(
+        json.dumps(
+            {k: v for k, v in value.items() if k != "sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
+    )
+    builds = []
+
+    def build(project, *args):
+        builds.append(project)
+        (project / ".lake/artifact").write_bytes(b"fake unit-test artifact")
+
+    def inspect(source, **kwargs):
+        return {
+            "status": "resolved",
+            "setup": {"name": "Next", "importArts": {"Candidate": [["fake.olean"]]}},
+        }
+
+    monkeypatch.setattr(module, "require_build_limits", lambda memory_mb: None)
+    monkeypatch.setattr(module, "build_module", build)
+    monkeypatch.setattr(module, "inspect_project", inspect)
+    return base, value, "import Candidate\ntheorem reused : True := candidate\n", builds
+
+
+@pytest.fixture
+def handoff_project(tmp_path, project_toolchain, lemma_bundle):
+    """A public source-root Lake project and a dedicated exact-source module."""
+    import json
+    import subprocess
+
+    from glitnir.compute.protocol import checker_digest, context_digest, digest
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    base = tmp_path / "prepared"
+    base.mkdir()
+    (base / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (base / "lakefile.toml").write_text(
+        'name = "example"\n[[lean_lib]]\nname = "Example"\n'
+    )
+    (base / "Example.lean").write_text("theorem base : True := by trivial\n")
+    subprocess.run(
+        [str(project_toolchain / "bin/lake"), "--keep-toolchain", "build", "Example"],
+        cwd=base,
+        check=True,
+        capture_output=True,
+        timeout=180,
+    )
+    value = lemma_bundle
+    request = value["job"]["request"]
+    request.update(
+        path="Example/Checked.lean",
+        checker_sha256=checker_digest(),
+        context_sha256=context_digest(base / "Example/Checked.lean"),
+    )
+    value["job"]["result"]["module"] = "Example.Checked"
+    payload = {k: v for k, v in value.items() if k != "sha256"}
+    value["sha256"] = digest(
+        json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode()
+    )
+    return base, value, "import Example.Checked\ntheorem reused : True := candidate\n"
+
+
 @pytest.fixture(scope="session")
 def replay_records(tmp_path_factory):
     """Record each base closure's full replay once per session, on first use.

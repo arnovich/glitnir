@@ -104,3 +104,98 @@ def test_the_committed_pin_is_generated_from_the_release() -> None:
     document, lockfile = pin.release_pin(project)
     assert document == release.RELEASE_BYTES
     assert lockfile == release.LOCKFILE_BYTES
+
+
+def test_the_support_version_counts_up() -> None:
+    assert (
+        pin.next_support_version("gimle.forseti.lean-support/v21")
+        == "gimle.forseti.lean-support/v22"
+    )
+    with pytest.raises(SystemExit, match="not a numbered support version"):
+        pin.next_support_version("gimle.forseti.lean-support")
+
+
+def test_the_support_version_moves_only_with_the_content(tmp_path) -> None:
+    """A re-pin of the same release keeps the version; a changed one bumps it."""
+    project = _project(tmp_path)
+    document, _ = pin.release_pin(project)
+    assert pin.bumped_support_version(document, document) is None
+    committed = json.loads(document)
+    committed["lockfile_sha256"] = "0" * 64
+    moved = json.dumps(committed).encode()
+    assert pin.bumped_support_version(document, moved) == pin.next_support_version(
+        pin.SUPPORT_VERSION
+    )
+
+
+def test_a_support_version_bumped_by_hand_is_kept(tmp_path) -> None:
+    """A constant already bumped by hand is not bumped a second time."""
+    project = _project(tmp_path)
+    document, _ = pin.release_pin(project)
+    committed = json.loads(document)
+    committed["support_version"] = "gimle.forseti.lean-support/v1"
+    committed["lockfile_sha256"] = "0" * 64
+    assert pin.bumped_support_version(document, json.dumps(committed).encode()) is None
+
+
+def test_the_tool_rewrites_only_its_support_constant() -> None:
+    source = 'X = "a"\nSUPPORT_VERSION = "old/v1"\nY = "old/v1"\n'
+    assert pin.with_support_version(source, "old/v1", "old/v2") == (
+        'X = "a"\nSUPPORT_VERSION = "old/v2"\nY = "old/v1"\n'
+    )
+    with pytest.raises(SystemExit, match="exactly one"):
+        pin.with_support_version(source, "other/v1", "other/v2")
+
+
+def _run_main(monkeypatch, tmp_path: Path, project: Path, *flags: str) -> int:
+    """Run the tool's entry point against copies of every file it writes."""
+    files = {
+        "RELEASE_PIN": tmp_path / "out/lean-release.v1.json",
+        "LOCKFILE_PIN": tmp_path / "out/lean-lockfile.v1.json",
+        "ORIGIN_RECORD": tmp_path / "out/lean-release-origin.v1.json",
+        "TOOL": tmp_path / "out/pin_lean_release.py",
+    }
+    if not files["TOOL"].exists():
+        files["TOOL"].parent.mkdir(parents=True, exist_ok=True)
+        files["TOOL"].write_bytes(_TOOL.read_bytes())
+        committed = json.loads(pin.release_pin(project)[0])
+        committed["lockfile_sha256"] = "0" * 64  # the release moved since
+        files["RELEASE_PIN"].write_text(json.dumps(committed))
+        files["LOCKFILE_PIN"].write_text("{}")
+        files["ORIGIN_RECORD"].write_text("{}")
+    monkeypatch.setattr(pin, "REPOSITORY", tmp_path)
+    for name, path in files.items():
+        monkeypatch.setattr(pin, name, path)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["pin_lean_release.py", str(project), "--forseti-tag", "v1.0.0"]
+        + ["--asgard-tag", "v2.0.0", "--verified-on", "2026-01-01", *flags],
+    )
+    return pin.main()
+
+
+def test_bump_support_writes_the_bumped_version_everywhere(
+    monkeypatch, tmp_path
+) -> None:
+    """The pin and the tool's constant move together, and a re-run is current."""
+    project = _project(tmp_path)
+    bumped = pin.next_support_version(pin.SUPPORT_VERSION)
+    assert _run_main(monkeypatch, tmp_path, project, "--bump-support", "--check") == 1
+    assert _run_main(monkeypatch, tmp_path, project, "--bump-support") == 0
+    written = json.loads((tmp_path / "out/lean-release.v1.json").read_bytes())
+    assert written["support_version"] == bumped
+    tool = (tmp_path / "out/pin_lean_release.py").read_text()
+    assert f'SUPPORT_VERSION = "{bumped}"' in tool
+    origin = json.loads((tmp_path / "out/lean-release-origin.v1.json").read_bytes())
+    assert (origin["forseti_lean_tag"], origin["asgard_lean_tag"]) == (
+        "v1.0.0",
+        "v2.0.0",
+    )
+
+
+def test_without_bump_support_the_version_stays(monkeypatch, tmp_path) -> None:
+    project = _project(tmp_path)
+    assert _run_main(monkeypatch, tmp_path, project) == 0
+    written = json.loads((tmp_path / "out/lean-release.v1.json").read_bytes())
+    assert written["support_version"] == pin.SUPPORT_VERSION
+    assert (tmp_path / "out/pin_lean_release.py").read_bytes() == _TOOL.read_bytes()

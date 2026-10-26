@@ -52,6 +52,7 @@ exclude = ["**/*.lean", "**/*.lean.template"]
 testpaths = ["tests"]
 markers = [
     "live: runs Lean (every test_live_ test); CI runs these in their own job",
+    "handoff_build: runs untrusted Lake preparation in a bounded Linux cgroup scope",
 ]
 
 [tool.coverage.run]
