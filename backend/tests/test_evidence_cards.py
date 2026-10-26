@@ -22,6 +22,7 @@ from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import evidence_cards
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.providers.outcomes import checked_evidence
+from glitnir.service import runs as source_runs
 from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
@@ -414,7 +415,7 @@ def _saved_service(tmp_path: Path, monkeypatch, fingerprint: str):
         calls.append(1)
         return {"sha256": fingerprint}
 
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(module, "environment_fingerprint", environment)
     text = f"def M := 1\n{DIRECTIVE}\n"
     path = tmp_path / "A.lean"

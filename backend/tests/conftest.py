@@ -27,13 +27,14 @@ SERVICE_MODULES = (
     "glitnir.service.views",
 )
 
-#: The service attributes that hold a worker thread, or None when idle.
+#: Where the service holds a worker thread, or None when idle: an attribute of
+#: the service or a dotted path through one of its components.
 WORKER_ATTRIBUTES = (
     "_worker",
     "_inspection_worker",
-    "_evidence_worker",
-    "_decision_worker",
-    "_view_worker",
+    "_runs._evidence_worker",
+    "_runs._decision_worker",
+    "_views._view_worker",
 )
 
 
@@ -45,7 +46,9 @@ def settle(service: source_preview.SourcePreviewService, timeout: float = 30.0) 
     """
     stuck = []
     for attribute in WORKER_ATTRIBUTES:
-        worker = getattr(service, attribute, None)
+        worker = service
+        for name in attribute.split("."):
+            worker = getattr(worker, name, None)
         if worker is not None:
             worker.join(timeout=timeout)
             if worker.is_alive():
@@ -292,7 +295,7 @@ def awake_depth(monkeypatch):
 def draw_each_alone(monkeypatch):
     """Fake the preview's view runs with a fake of one view's drawing.
 
-    `draw_each_alone(render)` replaces `source_preview.render_project_views`
+    `draw_each_alone(render)` replaces `views.render_project_views`
     with a run that draws each of its views with `render`, called with
     the notebook, then `line`, `kind`, `name`, `using` and the run's other
     options.
@@ -309,7 +312,7 @@ def draw_each_alone(monkeypatch):
                 ]
             }
 
-        monkeypatch.setattr("glitnir.service.preview.render_project_views", run)
+        monkeypatch.setattr("glitnir.service.views.render_project_views", run)
 
     return install
 
@@ -843,9 +846,10 @@ def registered_git_dependency(tmp_path, project_toolchain):
 def patch_fingerprint(monkeypatch):
     """Return a function replacing `environment_fingerprint` where it is used.
 
-    The service's runs call it through `glitnir.service.preview`; the snapshot's
-    `Fingerprints` calls it through `glitnir.preview.snapshot`. The fake gets the
-    positional arguments only, not the `remote` keyword.
+    The service's checks and runs call it through `glitnir.service.preview` and
+    `glitnir.service.runs`; the snapshot's `Fingerprints` calls it through
+    `glitnir.preview.snapshot`. The fake gets the positional arguments only, not
+    the `remote` keyword.
     """
 
     def patch(fake):

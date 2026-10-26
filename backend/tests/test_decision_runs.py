@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from conftest import evidence_provider, raises, settle, sha
+from conftest import evidence_provider, patch_service_name, raises, settle, sha
 
 from glitnir.lean import project_checking
 from glitnir.lean.project_inspection import TOOLCHAIN
@@ -23,7 +23,9 @@ from glitnir.providers import (
     DecisionRequest,
     Providers,
 )
-from glitnir.service.preview import (
+from glitnir.service import runs as source_runs
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.runs import (
     BYTE_ORDER_MARK,
     CHANGED_DURING_RUN,
     DECISION_CANCELLED,
@@ -34,7 +36,6 @@ from glitnir.service.preview import (
     NOTHING_TO_STOP,
     RUN_BUSY,
     SOURCE_CHANGED,
-    SourcePreviewService,
 )
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
@@ -106,14 +107,14 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
         {},
     )
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
         )
-    monkeypatch.setattr(source_preview, "check_candidate", check or checked)
-    monkeypatch.setattr(source_preview, "provider_imports_error", imports_ok)
+    monkeypatch.setattr(source_runs, "check_candidate", check or checked)
+    monkeypatch.setattr(source_runs, "provider_imports_error", imports_ok)
     monkeypatch.setattr(
-        source_preview,
+        source_runs,
         "run_provider_lean",
         lean or (lambda source, **options: {"error": "Lean is not here."}),
     )
@@ -125,7 +126,7 @@ def _service(tmp_path, monkeypatch, provider=None, check=None, lean=None):
 def _run(service, line=LINE) -> str:
     key = service.run_decision(sha(TEXT), line)
     settle(service)
-    assert not service._decision_worker.is_alive()
+    assert not service._runs._decision_worker.is_alive()
     return key
 
 
@@ -565,17 +566,16 @@ def test_a_provider_that_raises_on_cancel_reads_as_cancelled(
 def test_stop_after_the_run_commits_to_saving_finds_nothing_to_stop(
     tmp_path, monkeypatch
 ):
-    from glitnir.service import preview as source_preview
 
     saving, release = threading.Event(), threading.Event()
-    save = source_preview.save_records
+    save = source_runs.save_records
 
     def slow_save(path, records):
         saving.set()
         assert release.wait(10)
         save(path, records)
 
-    monkeypatch.setattr(source_preview, "save_records", slow_save)
+    monkeypatch.setattr(source_runs, "save_records", slow_save)
     service, _calls = _service(tmp_path, monkeypatch)
     try:
         service.run_decision(sha(TEXT), LINE)
@@ -676,7 +676,7 @@ def test_runs_are_refused_without_deciding(
     finally:
         service.close()
     assert str(raised.value) == message
-    assert service._decision_worker is None
+    assert service._runs._decision_worker is None
 
 
 def _rejecting(name, kind, goal):
@@ -734,14 +734,13 @@ def test_source_saved_during_the_run_is_not_saved(tmp_path, monkeypatch):
 def test_a_provider_without_imports_decides_without_a_setup_step(tmp_path, monkeypatch):
     """The real import check prepares nothing when there is nothing to import."""
     from glitnir.lean import provider_lean
-    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("the setup was prepared")
 
     service, calls = _service(tmp_path, monkeypatch, _decision_provider(imports=()))
     monkeypatch.setattr(
-        source_preview, "provider_imports_error", provider_lean.provider_imports_error
+        source_runs, "provider_imports_error", provider_lean.provider_imports_error
     )
     monkeypatch.setattr(provider_lean, "inspect_project", forbidden)
     monkeypatch.setattr(provider_lean, "describe_project", forbidden)
@@ -757,7 +756,6 @@ def test_a_provider_without_imports_decides_without_a_setup_step(tmp_path, monke
 def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch):
     """The real setup step refuses; neither the provider nor Lean runs."""
     from glitnir.lean import provider_lean
-    from glitnir.service import preview as source_preview
 
     def forbidden(*args, **kwargs):
         pytest.fail("the decision went ahead")
@@ -766,7 +764,7 @@ def test_a_missing_provider_import_refuses_before_deciding(tmp_path, monkeypatch
         tmp_path, monkeypatch, _decision_provider(decide=forbidden), check=forbidden
     )
     monkeypatch.setattr(
-        source_preview, "provider_imports_error", provider_lean.provider_imports_error
+        source_runs, "provider_imports_error", provider_lean.provider_imports_error
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
     (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
@@ -877,7 +875,7 @@ def test_close_cancels_the_decision_and_refuses_new_runs(tmp_path, monkeypatch):
     service.run_decision(sha(TEXT), LINE)
     assert started.wait(10)
     service.close()
-    assert not service._decision_worker.is_alive()
+    assert not service._runs._decision_worker.is_alive()
     assert not records_path(service.path).exists()
     with pytest.raises(SnapshotError, match="closed"):
         service.run_decision(sha(TEXT), LINE)
@@ -886,7 +884,6 @@ def test_close_cancels_the_decision_and_refuses_new_runs(tmp_path, monkeypatch):
 
 
 def test_close_waits_for_all_workers_within_one_deadline(tmp_path, monkeypatch):
-    from glitnir.service import preview as source_preview
 
     class Slow:
         def __init__(self) -> None:
@@ -896,12 +893,14 @@ def test_close_waits_for_all_workers_within_one_deadline(tmp_path, monkeypatch):
             self.timeouts.append(timeout)
 
     clock = iter([100.0, 140.0, 160.0, 170.0])
-    monkeypatch.setattr(
-        source_preview, "time", SimpleNamespace(monotonic=lambda: next(clock))
+    patch_service_name(
+        monkeypatch, "time", SimpleNamespace(monotonic=lambda: next(clock))
     )
     service, _calls = _service(tmp_path, monkeypatch)
     workers = [Slow(), Slow(), Slow()]
-    service._worker, service._evidence_worker, service._decision_worker = workers
+    service._worker, service._runs._evidence_worker, service._runs._decision_worker = (
+        workers
+    )
     service.close()
     assert [w.timeouts for w in workers] == [[15.0], [0.0], [0.0]]
 
@@ -1123,9 +1122,7 @@ def test_a_decision_run_is_kept_awake_while_deciding_and_checking(
     tmp_path, monkeypatch, awake_depth
 ):
     """Deciding can take minutes before the candidate check: one held run."""
-    from glitnir.service import preview as source_preview
-
-    depth = awake_depth(source_preview)
+    depth = awake_depth(source_runs)
     held: list[tuple[str, int]] = []
 
     def decide(request, cancel):
@@ -1219,11 +1216,9 @@ class _Imports:
 
 def test_setup_failures_before_deciding_are_not_saved(tmp_path, monkeypatch):
     """A missing provider import, or `imports` raising, is shown only."""
-    from glitnir.service import preview as source_preview
-
     service, _calls = _service(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        source_preview,
+        source_runs,
         "provider_imports_error",
         lambda source, **options: {
             "error": f"Run `lake build Demo.Decide` in {tmp_path}.",
@@ -1233,9 +1228,9 @@ def test_setup_failures_before_deciding_are_not_saved(tmp_path, monkeypatch):
     try:
         _run(service)
         first = _card(service)
-        job = service._decision_job(sha(TEXT), LINE)
+        job = service._runs._decision_job(sha(TEXT), LINE)
         broken = SimpleNamespace(**{**job.__dict__, "provider": _Imports()})
-        error, saved = service._decision_run(broken, threading.Event())
+        error, saved = service._runs._decision_run(broken, threading.Event())
     finally:
         service.close()
     assert first["run_error"] == f"Run `lake build Demo.Decide` in {tmp_path}."
@@ -1315,7 +1310,7 @@ def test_a_failure_that_cannot_be_saved_still_shows_its_own_error(
     service, _calls = _service(tmp_path, monkeypatch, _refusing())
     sidecar = records_path(service.path)
     sidecar.write_text("not json")
-    caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
+    caplog.set_level(logging.DEBUG, logger="glitnir.service.runs")
     try:
         _run(service)
         card = _card(service)
@@ -1344,16 +1339,14 @@ def test_a_failure_while_the_preview_closes_is_not_saved(tmp_path, monkeypatch):
 
 def test_stop_before_a_failure_is_saved_saves_nothing(tmp_path, monkeypatch):
     """Stop either wins or finds nothing to stop, as for a saved decision."""
-    from glitnir.service import preview as source_preview
-
-    shortened = source_preview.failure_message
+    shortened = source_runs.failure_message
 
     def stop_first(message):
         service.stop_decision()
         return shortened(message)
 
     service, _calls = _service(tmp_path, monkeypatch, _refusing())
-    monkeypatch.setattr(source_preview, "failure_message", stop_first)
+    monkeypatch.setattr(source_runs, "failure_message", stop_first)
     try:
         _run(service)
         card = _card(service)

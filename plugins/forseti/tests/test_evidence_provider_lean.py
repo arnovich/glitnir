@@ -79,8 +79,8 @@ def _run(path: Path, line: int) -> dict:
     service = SourcePreviewService(path)
     try:
         service.run_evidence(sha, line)
-        service._evidence_worker.join(timeout=2400)
-        assert not service._evidence_worker.is_alive(), "the run did not finish"
+        service._runs._evidence_worker.join(timeout=2400)
+        assert not service._runs._evidence_worker.is_alive(), "the run did not finish"
         return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
     finally:
         service.close()

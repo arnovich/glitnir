@@ -1,5 +1,6 @@
 """Ordinary source preview never interprets project code or saved proof records."""
 
+import dataclasses
 import hashlib
 import os
 import re
@@ -7,13 +8,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import raises, settle
+from conftest import patch_service_name, raises, settle
 
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import TOOLCHAIN, supported_version
 from glitnir.preview import snapshot as preview_snapshot
 from glitnir.providers import Providers
 from glitnir.service import preview as source_preview
+from glitnir.service import runs as source_runs
+from glitnir.service import views as source_views
 from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
@@ -1016,7 +1019,7 @@ def _drawn(service, cell: int, line: int) -> dict:
     while answer.get("status") in ("drawing", "queued"):
         mine = answer["status"] == "drawing"
         settle(service)
-        assert not service._view_worker.is_alive()
+        assert not service._views._view_worker.is_alive()
         # A queued view asks again once the drawing before it has ended.
         answer = service.view_job(answer["job"]) if mine else service.view(cell, line)
     return answer
@@ -1144,8 +1147,6 @@ def test_a_view_request_never_waits_for_lean(
     """Drawing runs in a worker; its job is polled until it ends."""
     import threading
 
-    from glitnir.service import preview as source_preview
-
     started, finish = threading.Event(), threading.Event()
     calls = []
 
@@ -1164,7 +1165,7 @@ def test_a_view_request_never_waits_for_lean(
     job = first["job"]
     assert first == {
         "status": "drawing",
-        "message": source_preview.VIEW_STARTING,
+        "message": source_views.VIEW_STARTING,
         "job": job,
     }
     assert started.wait(10)
@@ -1187,7 +1188,7 @@ def test_a_view_request_never_waits_for_lean(
     assert service.view(cell, 4) == {"svg": "<svg>4</svg>"}
     assert calls == [3, 4]
     assert service.view_job("0" * 32) == {
-        "error": source_preview.UNKNOWN_JOB,
+        "error": source_views.UNKNOWN_JOB,
         "transient": True,
     }
     service.close()
@@ -1207,6 +1208,11 @@ def test_polling_a_job_reads_no_notebook(
         pytest.fail("a poll read the notebook")
 
     monkeypatch.setattr(service, "_text", forbidden)
+    monkeypatch.setattr(
+        service._views,
+        "_context",
+        dataclasses.replace(service._views._context, text=forbidden),
+    )
     patch_fingerprint(forbidden)
     assert service.view_job(job) == {"svg": "<svg/>"}
 
@@ -1222,7 +1228,7 @@ def test_an_unknown_environment_draws_once_and_says_so(
 
     renders = []
     draw_each_alone(lambda path, **o: renders.append(1) or {"svg": "<svg/>"})
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module,
             "environment_fingerprint",
@@ -1275,7 +1281,9 @@ def test_a_view_is_keyed_by_the_providers_modules(
     patch_fingerprint(fingerprint)
     keys = []
     draw_each_alone(
-        lambda path, **o: keys.extend(j.key for j in service._view_run.jobs.values())
+        lambda path, **o: keys.extend(
+            j.key for j in service._views._view_run.jobs.values()
+        )
         or {"svg": "<svg/>"}
     )
     path = tmp_path / "A.lean"
@@ -1293,7 +1301,6 @@ def test_stop_cancels_only_that_cards_view(
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError
-    from glitnir.service import preview as source_preview
 
     started = threading.Event()
     calls = []
@@ -1317,12 +1324,12 @@ def test_stop_cancels_only_that_cards_view(
     for other in ((sha, 3), ("0" * 64, 4)):
         with pytest.raises(SnapshotError, match="not being drawn"):
             service.cancel_view(*other)
-    run = service._view_run
+    run = service._views._view_run
     assert run is not None and not run.jobs[4].cancel.is_set()
     service.cancel_view(sha, 4)
     settle(service)
     # Not transient: the reader asked for it, so nothing redraws it unasked.
-    assert service.view_job(job) == {"error": source_preview.VIEW_CANCELLED}
+    assert service.view_job(job) == {"error": source_views.VIEW_CANCELLED}
     assert _drawn(service, cell, 4) == {"svg": "<svg/>"}
     assert len(calls) == 2
 
@@ -1372,7 +1379,7 @@ def test_close_stops_a_view_being_drawn(
     job = service.view(cell, 4)["job"]
     assert started.wait(10)
     service.close()
-    assert not service._view_worker.is_alive()
+    assert not service._views._view_worker.is_alive()
     assert service.view_job(job) == {"error": source_preview.CLOSED}
     assert service.view(cell, 4) == {"error": source_preview.CLOSED}
 
@@ -1387,7 +1394,7 @@ def test_a_failing_view_worker_always_ends(
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
     assert _drawn(service, cell, 4) == {"error": "View drawing failed: boom"}
-    assert service._view_run is None
+    assert service._views._view_run is None
 
 
 INCOMPLETE = (
@@ -1622,11 +1629,11 @@ def _evidence_service(tmp_path, monkeypatch, provider=None, runner=None):
         "load_providers",
         lambda: Providers({}, {"simulate": provider}, {}, {}),
     )
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
         )
-    monkeypatch.setattr(source_preview, "run_provider_lean", runner or run)
+    monkeypatch.setattr(source_runs, "run_provider_lean", runner or run)
     path = tmp_path / "A.lean"
     path.write_text(EVIDENCE_TEXT)
     return SourcePreviewService(path), calls
@@ -1639,7 +1646,7 @@ def _evidence_sha() -> str:
 def _run_evidence(service, line=4):
     key = service.run_evidence(_evidence_sha(), line)
     settle(service)
-    assert not service._evidence_worker.is_alive()
+    assert not service._runs._evidence_worker.is_alive()
     return key
 
 
@@ -1797,7 +1804,7 @@ def _asking_lean_every_time(monkeypatch):
     stand for runs in previews opened one after another, or for a project
     rebuilt between runs, where Lean's output is not kept from one to the next.
     """
-    monkeypatch.setattr(source_preview, "_emission_key", lambda *args: None)
+    monkeypatch.setattr(source_runs, "_emission_key", lambda *args: None)
 
 
 def test_unreadable_payloads_and_runner_errors_become_run_errors(tmp_path, monkeypatch):
@@ -1838,7 +1845,7 @@ def test_runs_are_refused_without_lean(tmp_path, monkeypatch, sha, line, message
     finally:
         service.close()
     assert str(raised.value) == message
-    assert service._evidence_worker is None
+    assert service._runs._evidence_worker is None
     assert _saved_failures(service) == {}
 
 
@@ -1878,7 +1885,7 @@ def test_one_run_at_a_time_shown_as_running(tmp_path, monkeypatch):
     import threading
 
     from glitnir.lean.project_snapshot import SnapshotError
-    from glitnir.service.preview import RUN_BUSY
+    from glitnir.service.runs import RUN_BUSY
 
     started, release = threading.Event(), threading.Event()
     outcomes = iter([{"error": "first failed"}, {"payload": "{}"}])
@@ -1913,7 +1920,7 @@ def test_one_run_at_a_time_shown_as_running(tmp_path, monkeypatch):
 
 def test_source_saved_during_the_run_is_not_saved(tmp_path, monkeypatch):
     from glitnir.notebook.check_records import records_path
-    from glitnir.service.preview import CHANGED_DURING_RUN
+    from glitnir.service.runs import CHANGED_DURING_RUN
 
     path = tmp_path / "A.lean"
 
@@ -1966,8 +1973,8 @@ def test_evidence_saves_wait_for_other_records_writes(tmp_path, monkeypatch):
         with service._records_lock:
             service.run_evidence(_evidence_sha(), 4)
             assert ran.wait(10)
-            service._evidence_worker.join(timeout=0.2)
-            assert service._evidence_worker.is_alive()
+            service._runs._evidence_worker.join(timeout=0.2)
+            assert service._runs._evidence_worker.is_alive()
             assert not records_path(service.path).exists()
         settle(service)
         card = _card(service)
@@ -1995,11 +2002,10 @@ def test_a_check_keeps_evidence_saved_before_it(tmp_path, monkeypatch):
 def test_missing_provider_import_is_a_run_error_without_lean(tmp_path, monkeypatch):
     """Review Focus 4: the real runner refuses before the sandbox starts."""
     from glitnir.lean import provider_lean
-    from glitnir.service import preview as source_preview
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        source_preview, "run_provider_lean", provider_lean.run_provider_lean
+        source_runs, "run_provider_lean", provider_lean.run_provider_lean
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
     (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
@@ -2053,7 +2059,7 @@ def test_close_cancels_the_run_and_refuses_new_ones(tmp_path, monkeypatch):
     service.run_evidence(_evidence_sha(), 4)
     assert started.wait(10)
     service.close()
-    assert not service._evidence_worker.is_alive()
+    assert not service._runs._evidence_worker.is_alive()
     with pytest.raises(SnapshotError, match="closed"):
         service.run_evidence(_evidence_sha(), 4)
 
@@ -2304,7 +2310,7 @@ def test_a_view_passes_its_environment_digest_to_the_renderer(
     draw_each_alone(lambda path, **options: calls.append(options) or {"svg": "<svg/>"})
     service = _view_service(tmp_path, monkeypatch)
     cell = service.snapshot()["views"][0]["cell"]
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module,
             "environment_fingerprint",
@@ -2331,6 +2337,47 @@ def test_an_evidence_run_passes_its_environment_digest(
     assert seen == [expected]
 
 
+def test_components_share_the_service_locks_and_cancel(tmp_path: Path) -> None:
+    from glitnir.service.runs import DirectiveRuns
+    from glitnir.service.views import ViewDrawing
+
+    path = tmp_path / "A.lean"
+    path.write_text("theorem t : True := by\n  trivial\n")
+    service = SourcePreviewService(path)
+    try:
+        assert isinstance(service._runs, DirectiveRuns)
+        assert isinstance(service._views, ViewDrawing)
+        for component in (service._runs, service._views):
+            assert component._context.state_lock is service._state_lock
+            assert component._context.records_lock is service._records_lock
+            assert component._context.cancel is service._cancel
+    finally:
+        service.close()
+
+
+def test_snapshot_shows_a_run_in_progress(tmp_path: Path, monkeypatch) -> None:
+    import threading
+
+    started, finish = threading.Event(), threading.Event()
+
+    def run(source, **options):
+        started.set()
+        finish.wait(5)
+        return {"payload": '{"x": 1}'}
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    try:
+        key = service.run_evidence(_evidence_sha(), 4)
+        assert started.wait(5)
+        assert _card(service)["status"] == "running"
+        running, errors, saved = service._runs.state()
+        assert running == key and errors == {} and saved == frozenset()
+    finally:
+        finish.set()
+        settle(service)
+        service.close()
+
+
 # ----- saved drawings ----------------------------------------------------------
 
 
@@ -2346,7 +2393,7 @@ def _saving_view_service(
     renders: list[dict] = []
     answer = {"svg": "<svg/>"} if drawing is None else drawing
     draw_each_alone(lambda path, **options: renders.append(options) or dict(answer))
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module,
             "environment_fingerprint",
@@ -2633,8 +2680,8 @@ def _run_service(tmp_path, monkeypatch, runs, text=THREE_VIEWS, **options):
     """A view service drawing with `runs`, in a known environment."""
     from glitnir.service import preview as source_preview
 
-    monkeypatch.setattr(source_preview, "render_project_views", runs)
-    for module in (source_preview, preview_snapshot):
+    monkeypatch.setattr(source_views, "render_project_views", runs)
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module,
             "environment_fingerprint",
@@ -2758,7 +2805,6 @@ def test_directive_inside_a_command_is_drawn_alone(tmp_path, monkeypatch):
 
 def test_stop_drops_only_that_view(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SnapshotError
-    from glitnir.service import preview as source_preview
 
     runs = _HeldRuns()
     service = _run_service(tmp_path, monkeypatch, runs)
@@ -2767,7 +2813,7 @@ def test_stop_drops_only_that_view(tmp_path, monkeypatch):
         assert runs.started.wait(10)
         sha = service.snapshot()["sha256"]
         service.cancel_view(sha, 4)
-        cancelled = {"error": source_preview.VIEW_CANCELLED}
+        cancelled = {"error": source_views.VIEW_CANCELLED}
         # Answered at once; the run goes on for the others.
         assert service.view_job(answers[4]["job"]) == cancelled
         assert service.view_job(answers[2]["job"])["status"] == "drawing"
@@ -2789,7 +2835,6 @@ def test_stop_drops_only_that_view(tmp_path, monkeypatch):
 
 
 def test_stopping_every_view_stops_the_run(tmp_path, monkeypatch):
-    from glitnir.service import preview as source_preview
 
     runs = _HeldRuns()
     service = _run_service(tmp_path, monkeypatch, runs)
@@ -2806,7 +2851,7 @@ def test_stopping_every_view_stops_the_run(tmp_path, monkeypatch):
         settle(service)
         for answer in answers.values():
             assert service.view_job(answer["job"]) == {
-                "error": source_preview.VIEW_CANCELLED
+                "error": source_views.VIEW_CANCELLED
             }
     finally:
         service.close()
@@ -2895,7 +2940,6 @@ def test_a_failed_run_of_one_view_is_not_retried(tmp_path, monkeypatch):
 
 def test_views_of_another_provider_wait(tmp_path, monkeypatch):
     from glitnir.providers import ViewProvider
-    from glitnir.service import preview as source_preview
 
     graph = ViewProvider("graph", frozenset({"graph"}), (), "", "g:", lambda *a: "")
     runs = _HeldRuns()
@@ -2907,7 +2951,7 @@ def test_views_of_another_provider_wait(tmp_path, monkeypatch):
         assert runs.started.wait(10)
         assert _ask(service, 3) == {
             "status": "queued",
-            "message": source_preview.VIEW_QUEUED,
+            "message": source_views.VIEW_QUEUED,
             "job": first["job"],
         }
         runs.release.set()
@@ -2929,7 +2973,7 @@ def test_close_ends_every_view_of_the_run(tmp_path, monkeypatch):
     answers = {line: _ask(service, line) for line in (2, 4, 6)}
     assert runs.started.wait(10)
     service.close()
-    assert not service._view_worker.is_alive()
+    assert not service._views._view_worker.is_alive()
     assert runs.calls[0][1].is_set()
     for answer in answers.values():
         assert service.view_job(answer["job"]) == {"error": source_preview.CLOSED}
@@ -2953,16 +2997,14 @@ def test_a_failing_run_ends_every_view(tmp_path, monkeypatch):
             assert service.view_job(answer["job"]) == {
                 "error": "View drawing failed: boom"
             }
-        assert service._view_run is None
+        assert service._views._view_run is None
     finally:
         service.close()
 
 
 def test_a_run_draws_no_more_views_than_are_kept(tmp_path, monkeypatch):
     """Every answer of a run must outlast it, so a run is at most the cache size."""
-    from glitnir.service import preview as source_preview
-
-    monkeypatch.setattr(source_preview, "MAX_CACHED_VIEWS", 2)
+    monkeypatch.setattr(source_views, "MAX_CACHED_VIEWS", 2)
     runs = _HeldRuns()
     runs.release.set()
     service = _run_service(tmp_path, monkeypatch, runs)
@@ -3026,7 +3068,7 @@ def _unsupported_service(tmp_path: Path, monkeypatch, toolchain: str | None):
         {},
     )
     monkeypatch.setattr(source_preview, "load_providers", lambda: providers)
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module, "environment_fingerprint", lambda *a, **k: {"sha256": FP}
         )
@@ -3038,7 +3080,7 @@ def _unsupported_service(tmp_path: Path, monkeypatch, toolchain: str | None):
         "run_provider_lean",
         "provider_imports_error",
     ):
-        monkeypatch.setattr(source_preview, name, forbidden)
+        patch_service_name(monkeypatch, name, forbidden)
     monkeypatch.setattr(proof_steps, "trace_file", forbidden)
     monkeypatch.setattr(threading.Thread, "start", forbidden)
     (tmp_path / "lakefile.toml").write_text('name = "demo"')
@@ -3125,9 +3167,9 @@ def test_every_lean_request_is_refused_up_front_on_another_version(
     assert service.proof_steps.snapshot() == {"status": "idle", "nodes": []}
     assert service._inspection_lock.acquire(blocking=False)
     service._inspection_lock.release()
-    assert service._run_lock.acquire(blocking=False)
-    service._run_lock.release()
-    assert service._running is None and service._run_errors == {}
+    assert service._runs._run_lock.acquire(blocking=False)
+    service._runs._run_lock.release()
+    assert service._runs._running is None and service._runs._run_errors == {}
     service.close()
 
 
@@ -3250,11 +3292,10 @@ def test_a_setup_error_naming_a_local_path_is_never_saved(tmp_path, monkeypatch)
     """Lake's "build these modules" advice names the project root: not saved."""
     from glitnir.lean import provider_lean
     from glitnir.notebook.check_records import records_path
-    from glitnir.service import preview as source_preview
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        source_preview, "run_provider_lean", provider_lean.run_provider_lean
+        source_runs, "run_provider_lean", provider_lean.run_provider_lean
     )
     (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
     (tmp_path / "lean-toolchain").write_text(TOOLCHAIN + "\n")
@@ -3377,11 +3418,11 @@ def test_a_failure_while_the_preview_closes_is_not_saved(tmp_path, monkeypatch):
 def test_a_refused_start_saves_nothing(tmp_path, monkeypatch):
     from glitnir.lean.project_snapshot import SnapshotError
     from glitnir.notebook.check_records import records_path
-    from glitnir.service.preview import RUN_BUSY
+    from glitnir.service.runs import RUN_BUSY
 
     service, _calls = _evidence_service(tmp_path, monkeypatch)
     try:
-        with service._run_lock:
+        with service._runs._run_lock:
             with pytest.raises(SnapshotError, match=RUN_BUSY):
                 service.run_evidence(_evidence_sha(), 4)
     finally:
@@ -3582,7 +3623,7 @@ def test_an_unsaved_failure_is_logged_without_its_message(
     secret = str(tmp_path / "private.csv")
     provider = _evidence_provider(compute=raises(ValueError(f"Cannot read {secret}")))
     service, _calls = _evidence_service(tmp_path, monkeypatch, provider)
-    caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
+    caplog.set_level(logging.DEBUG, logger="glitnir.service.runs")
     try:
         _run_evidence(service)
     finally:
@@ -3604,7 +3645,7 @@ def test_a_failure_that_cannot_be_written_is_logged_by_its_error_type(
         tmp_path, monkeypatch, runner=lambda source, **options: dict(_LEAN_ERROR)
     )
     records_path(service.path).write_text("not json")
-    caplog.set_level(logging.DEBUG, logger="glitnir.service.preview")
+    caplog.set_level(logging.DEBUG, logger="glitnir.service.runs")
     try:
         _run_evidence(service)
     finally:
@@ -3670,7 +3711,7 @@ def _rerun(service, text, line=4):
     service.path.write_text(text)
     service.run_evidence(hashlib.sha256(text.encode()).hexdigest(), line)
     settle(service)
-    assert not service._evidence_worker.is_alive()
+    assert not service._runs._evidence_worker.is_alive()
     return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
 
 
@@ -3839,7 +3880,7 @@ def test_only_printed_output_is_remembered(tmp_path, monkeypatch, failed):
 
 
 def test_remembered_output_is_bounded_by_count_and_size():
-    from glitnir.service.preview import _Emissions
+    from glitnir.service.runs import _Emissions
 
     kept = _Emissions(entries=2, size=10)
     kept.keep(("a",), "1234")
@@ -3907,7 +3948,7 @@ def test_output_kept_before_an_environment_change_is_used_after_it_is_undone(
 
 def _key_parts(**changes):
     """The arguments of `_emission_key` for a demo job, with `changes`."""
-    from glitnir.service.preview import _EvidenceJob
+    from glitnir.service.runs import _EvidenceJob
 
     parts = {
         "text": EVIDENCE_TEXT,
@@ -3952,14 +3993,14 @@ def _key_parts(**changes):
     ],
 )
 def test_everything_lean_is_given_is_part_of_the_key(changes):
-    from glitnir.service.preview import _emission_key
+    from glitnir.service.runs import _emission_key
 
     assert _emission_key(*_key_parts(**changes)) != _emission_key(*_key_parts())
 
 
 def test_the_header_below_a_directive_is_part_of_the_key():
     """Lake's setup reads the whole header, even lines after the directive."""
-    from glitnir.service.preview import _emission_key
+    from glitnir.service.runs import _emission_key
 
     text = "-- @evidence simulate M (h := 1/100)\nimport Demo.Evidence\n"
     other = "-- @evidence simulate M (h := 1/100)\nmodule\nimport Demo.Evidence\n"
@@ -3978,6 +4019,6 @@ def test_the_header_below_a_directive_is_part_of_the_key():
     ],
 )
 def test_no_key_for_an_unknown_or_malformed_environment(environment):
-    from glitnir.service.preview import _emission_key
+    from glitnir.service.runs import _emission_key
 
     assert _emission_key(*_key_parts(environment=environment)) is None

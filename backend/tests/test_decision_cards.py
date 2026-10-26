@@ -17,6 +17,7 @@ from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import decision_cards
 from glitnir.providers import DecisionProvider, DecisionRequest, Providers
 from glitnir.providers.outcomes import checked_decision
+from glitnir.service import runs as source_runs
 from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
@@ -322,7 +323,7 @@ def test_snapshot_lists_decisions_without_processes_or_deciding(
     loaded = Providers({}, {}, {"stream": provider, "entailment": provider}, {})
     monkeypatch.setattr(subprocess, "Popen", forbidden)
     monkeypatch.setattr(source_preview, "load_providers", lambda: loaded)
-    monkeypatch.setattr(source_preview, "run_provider_lean", forbidden)
+    monkeypatch.setattr(source_runs, "run_provider_lean", forbidden)
     path = tmp_path / "A.lean"
     path.write_text(f"def x := 1\n\n{HEAD}\n{MORE}\n-- @decide t : trajectory m\n")
     snapshot = SourcePreviewService(path).snapshot()
@@ -558,7 +559,7 @@ def _decision_snapshot(tmp_path, monkeypatch, fingerprints=None):
         return {"sha256": FP}
 
     monkeypatch.setattr(source_preview, "load_providers", lambda: _loaded(_provider()))
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(module, "environment_fingerprint", fingerprint)
     path = tmp_path / "A.lean"
     path.write_text(DECIDING)
