@@ -80,9 +80,9 @@ uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
   'backend/dist/glitnir-0.1.9-py3-none-any.whl[dev]'
 (cd backend && ../.venv/bin/python -m pytest \
-  && ../.venv/bin/black --check src tests scripts \
-  && ../.venv/bin/isort --check-only src tests scripts \
-  && ../.venv/bin/flake8 src tests scripts && ../.venv/bin/mypy src scripts)
+  && ../.venv/bin/black --check src tests scripts experiments \
+  && ../.venv/bin/isort --check-only src tests scripts experiments \
+  && ../.venv/bin/flake8 src tests scripts experiments && ../.venv/bin/mypy src scripts experiments)
 
 # Optional: the Forseti view and evidence provider and its tests (as in CI). Its dependencies
 # are named explicitly because glitnir is not on an index.
@@ -443,3 +443,10 @@ with SavedNotebook(Path("examples/Decay.lean")) as notebook:
 page = {"snapshot": snapshot, "views": views, "css": export_styles()}
 Path("decay.json").write_text(json.dumps(page))  # read by your renderer driver
 ```
+
+## Offline warm Lean experiment
+
+`backend/experiments/warm_pool` is an advisory-only, fixed-fixture prototype,
+excluded from the backend wheel and extension. See its README for the bounded
+benchmark, isolation/recovery probes, evidence and production decision. It does
+not install a service or add an API or editor setting.
