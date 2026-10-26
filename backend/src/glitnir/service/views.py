@@ -27,7 +27,7 @@ from glitnir.service.context import CLOSED, PreviewContext, _sha256
 
 MAX_CACHED_VIEWS = 64
 # Views are drawn in a worker, one Lean run at a time, each run drawing every
-# view it can (`SourcePreviewService.view`); the editor polls `view` for them.
+# view it can (`ViewDrawing.view`); the editor polls `view` for them.
 VIEW_STARTING = "Preparing the view."
 VIEW_QUEUED = "Waiting for another view to finish drawing."
 VIEW_CANCELLED = "View drawing cancelled."
@@ -300,7 +300,9 @@ class ViewDrawing:
             return _drawing_answer(asked)
 
     def _answer_during_run(self, key: tuple[str, str, int]) -> dict[str, Any] | None:
-        """Answer for the view `key` while a run draws, or None; hold `_state_lock`.
+        """Answer for the view `key` while a run draws, or None.
+
+        Hold `context.state_lock`.
 
         A view of the run answers with its own job; any other waits for one
         of the run's jobs. A run of a replaced saved source is stopped first:
@@ -336,7 +338,7 @@ class ViewDrawing:
         return _labelled(*found)
 
     def _cancel_run(self, run: _ViewRun) -> None:
-        """Stop a whole run and each of its views; hold `_state_lock`."""
+        """Stop a whole run and each of its views; hold `context.state_lock`."""
         run.cancel.set()
         for job in run.jobs.values():
             job.cancel.set()
@@ -459,7 +461,7 @@ class ViewDrawing:
         self._save_drawing(job, drawing)
 
     def _end_view_job(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
-        """Keep a job's answer for its polls, once; hold `_state_lock`.
+        """Keep a job's answer for its polls, once; hold `context.state_lock`.
 
         A stopped job answers that it was cancelled, whatever was drawn: its
         drawing is neither kept nor saved.
@@ -479,14 +481,14 @@ class ViewDrawing:
             del self._finished_views[next(iter(self._finished_views))]
 
     def _remember_timed_out(self, key: tuple[str, str, int]) -> None:
-        """Draw the view `key` alone from now on; hold `_state_lock`."""
+        """Draw the view `key` alone from now on; hold `context.state_lock`."""
         self._timed_out.pop(key, None)
         self._timed_out[key] = None
         while len(self._timed_out) > MAX_CACHED_VIEWS:
             del self._timed_out[next(iter(self._timed_out))]
 
     def _keep_drawing(self, key: tuple[str, str, int], drawing: dict[str, Any]) -> None:
-        """Keep a drawing in memory, the oldest dropped; hold `_state_lock`."""
+        """Keep a drawing in memory, the oldest dropped; hold `context.state_lock`."""
         self._drawings[key] = drawing
         while len(self._drawings) > MAX_CACHED_VIEWS:
             del self._drawings[next(iter(self._drawings))]

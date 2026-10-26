@@ -111,7 +111,7 @@ def _with_sleep() -> Callable[[], float] | None:
     return lambda: time.clock_gettime(clock)
 
 
-class SleepWatch:
+class _SleepWatch:
     """Measure how long the computer slept since the watch was started.
 
     `time.monotonic` stops while the computer sleeps (on macOS and Linux),
@@ -158,7 +158,7 @@ def noting_sleep(progress: Callable[[str], None]) -> Callable[[str], None]:
     A run that the computer's sleep held up then says so in its progress, so a
     stalled stage is not mistaken for a slow one.
     """
-    watch = SleepWatch()
+    watch = _SleepWatch()
 
     def report(message: str) -> None:
         progress(message + watch.note())

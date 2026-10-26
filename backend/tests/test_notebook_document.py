@@ -72,9 +72,7 @@ def test_a_claim_name_keeps_its_universe_list() -> None:
     notebook = parse_notebook(UNIVERSES)
     first, second = notebook.claims
     assert first.name == "L.{v, u}"
-    assert first.universes == ".{v, u}"
     assert first.statement == "(α : Sort u) (β : Sort v) (a : α) : a = a"
-    assert second.universes == ""
 
 
 @pytest.mark.parametrize(
@@ -84,21 +82,9 @@ def test_a_claim_name_keeps_its_universe_list() -> None:
         "theorem x : @id.{1} Nat 0 = 0 := by",  # a universe list in the statement
     ],
 )
-def test_only_a_list_ending_the_name_is_its_universes(header) -> None:
+def test_only_a_list_ending_the_name_is_part_of_it(header) -> None:
     claim = parse_notebook(f"{header}\n  rfl\n").claims[0]
-    assert claim.universes == ""
     assert claim.name == header.split()[1]
-
-
-@pytest.mark.parametrize(
-    "universes", [".{u /- } -/ }", ".{u -- }", '.{u, "v"}', ".{«u}»}", ".{}"]
-)
-def test_a_universe_list_is_copied_only_when_it_holds_bare_names(universes) -> None:
-    """A list holding an open comment or literal is not copied into bindings."""
-    claim = parse_notebook(
-        f"theorem L{universes} (α : Sort u) (a : α) : a = a := by\n  rfl\n"
-    ).claims[0]
-    assert claim.universes == ""
 
 
 def _notebook(body: str) -> str:

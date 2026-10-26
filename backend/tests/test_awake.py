@@ -11,7 +11,7 @@ import pytest
 from glitnir.lean import awake as awake_module
 
 #: The real class, which a test replaces in the module with clocks it controls.
-SleepWatch = awake_module.SleepWatch
+_SleepWatch = awake_module._SleepWatch
 
 
 class _Process:
@@ -185,8 +185,8 @@ class _Clocks:
     def sleep(self, seconds: float) -> None:
         self.with_sleep_now += seconds
 
-    def watch(self) -> SleepWatch:
-        return SleepWatch(
+    def watch(self) -> _SleepWatch:
+        return _SleepWatch(
             with_sleep=lambda: self.with_sleep_now,
             monotonic=lambda: self.monotonic_now,
         )
@@ -228,7 +228,7 @@ def test_setting_the_wall_clock_is_no_sleep(
 
 def test_the_real_clocks_count_no_sleep_over_a_moment() -> None:
     """On macOS and Linux the watch reads two real clocks that agree awake."""
-    watch = SleepWatch()
+    watch = _SleepWatch()
     assert 0.0 <= watch.slept_seconds() < 1.0
     if sys.platform in ("darwin", "linux"):
         assert awake_module._with_sleep() is not None
@@ -238,7 +238,7 @@ def test_without_a_sleep_counting_clock_no_sleep_is_reported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(awake_module, "_with_sleep", lambda: None)
-    watch = SleepWatch()
+    watch = _SleepWatch()
     assert watch.slept_seconds() == 0.0 and watch.note() == ""
 
 
@@ -246,7 +246,7 @@ def test_progress_notes_the_sleep_since_the_run_started(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clocks = _Clocks()
-    monkeypatch.setattr(awake_module, "SleepWatch", lambda: clocks.watch())
+    monkeypatch.setattr(awake_module, "_SleepWatch", lambda: clocks.watch())
     messages: list[str] = []
     progress = awake_module.noting_sleep(messages.append)
     progress("Resolving project environment")

@@ -16,6 +16,11 @@ import subprocess
 import sys
 from collections.abc import Callable
 
+from glitnir.lean._supervisor import FAILED
+
+#: The exit status of the sandbox supervisor when it, not the command, failed.
+SUPERVISOR_FAILED: int = FAILED
+
 LEAN_AXIOM_ALLOWLIST = ("Classical.choice", "Quot.sound", "propext")
 
 MAX_TIMEOUT_MS = 1_800_000

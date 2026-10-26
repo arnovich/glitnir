@@ -48,7 +48,7 @@ def test_confined_commands_see_a_read_only_root_and_named_paths(
         cwd=writable,
     )
     assert command[:3] == ["/bin/sh", "-c", 'exec "$@" 9<"$0"']
-    assert Path(command[3]).read_bytes() == sandbox.keyring_filter()
+    assert Path(command[3]).read_bytes() == sandbox._keyring_filter()
     assert command[4:7] == ["/usr/bin/bwrap", "--seccomp", "9"]
     joined = " ".join(command)
     for flag in ("--unshare-all", "--die-with-parent", "--new-session"):
@@ -95,7 +95,7 @@ def test_without_a_sandbox_lean_does_not_start(
 def test_opting_out_runs_lean_unconfined(no_sandbox, monkeypatch, tmp_path) -> None:
     monkeypatch.setenv(sandbox.UNSANDBOXED_VARIABLE, "1")
     assert sandbox.confine(["lean", "x"], readable=[], cwd=tmp_path) == ["lean", "x"]
-    assert sandbox.unsandboxed_allowed()
+    assert sandbox._unsandboxed_allowed()
 
 
 def test_readable_paths_include_the_toolchain_and_resolved_links(
@@ -178,7 +178,7 @@ def test_a_confined_process_sees_only_system_programs_and_named_paths(
 
 
 def test_the_keyring_filter_denies_exactly_the_keyring_calls() -> None:
-    program = sandbox.keyring_filter()
+    program = sandbox._keyring_filter()
     ops = [program[i : i + 8] for i in range(0, len(program), 8)]
     assert len(program) % 8 == 0 and len(ops) == 1 + 3 * 8 + 1
     import struct
@@ -603,3 +603,10 @@ def test_the_supervisor_imports_where_there_is_no_kqueue(monkeypatch) -> None:
     monkeypatch.delitem(sys.modules, "glitnir.lean._supervisor", raising=False)
     supervisor = importlib.import_module("glitnir.lean._supervisor")
     assert supervisor.FAILED == 125
+
+
+def test_the_supervisor_failure_code_has_a_public_name() -> None:
+    from glitnir.lean import environment
+    from glitnir.lean._supervisor import FAILED
+
+    assert environment.SUPERVISOR_FAILED == FAILED

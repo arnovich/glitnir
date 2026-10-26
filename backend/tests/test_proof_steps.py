@@ -124,7 +124,7 @@ def test_editor_trace_routes_are_explicit_and_do_not_write_metadata(
         assert request("/api/proof/start", "POST", body, headers=False)[0] == 403
         status, first = request("/api/proof/start", "POST", body)
         assert status == 202
-        settle(service.proof_steps)
+        settle(service)
         recorded = request("/api/proof/trace")[1]
         assert recorded["id"] == first["id"]
         assert recorded["status"] == "ready"

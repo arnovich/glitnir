@@ -104,7 +104,7 @@ def _source_digest(source: Path) -> str:
     return hashlib.sha256(text.replace("\r\n", "\n").encode()).hexdigest()
 
 
-def toolchain_directory() -> str:
+def _toolchain_directory() -> str:
     """Name elan's directory for `TOOLCHAIN`, such as `leanprover--lean4---v4.35.0`."""
     return TOOLCHAIN.replace("/", "--").replace(":", "---")
 
@@ -121,7 +121,7 @@ def lake_matches(version: str) -> bool:
 def _toolchain() -> Path:
     """Locate the supported installed toolchain without invoking elan."""
     home = Path(os.environ.get("ELAN_HOME", Path.home() / ".elan"))
-    root = (home / "toolchains" / toolchain_directory()).resolve()
+    root = (home / "toolchains" / _toolchain_directory()).resolve()
     if not all((root / "bin" / name).is_file() for name in ("lake", "lean")):
         raise ValueError(
             f"Install {TOOLCHAIN} with elan before inspecting this project."
@@ -229,7 +229,7 @@ def _run(
             kill_and_reap(process)
 
 
-def validate_setup(value: Any, root: Path, toolchain: Path) -> dict[str, Any]:
+def _validate_setup(value: Any, root: Path, toolchain: Path) -> dict[str, Any]:
     """Validate the supported Lake schema and all returned artifact locations."""
     if not isinstance(value, dict):
         raise ValueError("Lake returned an invalid module setup.")
@@ -359,7 +359,7 @@ def inspect_project(
         report = json.loads(output)
         if not isinstance(report, dict) or set(report) != {"setup", "resolution"}:
             raise ValueError("Invalid prepared project inspection report.")
-        setup = validate_setup(report["setup"], root, toolchain)
+        setup = _validate_setup(report["setup"], root, toolchain)
         resolution = validate_resolution(report["resolution"], root)
         if _source_digest(source) != digest or describe_project(source) != project:
             raise ValueError(

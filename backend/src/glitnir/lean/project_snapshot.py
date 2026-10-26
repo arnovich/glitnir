@@ -179,7 +179,7 @@ def copy_file(
     return digest.hexdigest()
 
 
-def hash_file(
+def _hash_file(
     source: Path,
     *,
     max_bytes: int,
@@ -196,7 +196,7 @@ def hash_file(
     return digest.hexdigest(), size
 
 
-def store_file(
+def _store_file(
     source: Path,
     store: ArtifactStore,
     namespace: str,
@@ -399,12 +399,12 @@ def _capture(
             )
             size = target.stat().st_size
         elif kept == "hashed":
-            digest, size = hash_file(
+            digest, size = _hash_file(
                 original, max_bytes=limit, cancel=cancel, deadline=deadline
             )
         else:
             namespace = namespaces[relative.split("/", 1)[0]]
-            digest, size = store_file(
+            digest, size = _store_file(
                 original,
                 store,
                 namespace,

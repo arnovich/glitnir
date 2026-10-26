@@ -907,7 +907,7 @@ def test_provider_lean_uses_the_configured_memory_limit(
     _reporting(monkeypatch, {"information": ["demoView:<svg/>"], "errors": []}, calls)
     from glitnir.lean import limits
 
-    monkeypatch.setattr(limits, "physical_memory_mb", lambda: 65536)
+    monkeypatch.setattr(limits, "_physical_memory_mb", lambda: 65536)
     if configured is None:
         monkeypatch.delenv("GLITNIR_MEMORY_LIMIT_MB", raising=False)
     else:

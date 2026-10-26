@@ -26,6 +26,11 @@ class PreviewContext:
     are the service's: `text` reads the saved source, `fingerprint` and
     `snapshot` are `_fingerprint` and `_snapshot`, `unsupported` says why Lean
     cannot run for this notebook, and `providers` loads installed providers.
+
+    The callables are bound at construction, so a component reaches the service
+    only through them: patching a service attribute such as `_text` afterwards
+    does not reach the components. Tests replace the context with
+    `dataclasses.replace` instead.
     """
 
     path: Path

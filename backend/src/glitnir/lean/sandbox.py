@@ -158,7 +158,7 @@ def _system_binds() -> list[str]:
     return binds
 
 
-def keyring_filter() -> bytes:
+def _keyring_filter() -> bytes:
     """Return the classic-BPF seccomp program denying the keyring calls.
 
     Each architecture's block loads the system call number and returns
@@ -186,7 +186,7 @@ def _filter_file() -> Path:
     path = directory / "keyring.bpf"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
-        stream.write(keyring_filter())
+        stream.write(_keyring_filter())
     return path
 
 
@@ -320,7 +320,7 @@ def sandbox_available() -> bool:
     return _bubblewrap() is not None or _seatbelt() is not None
 
 
-def unsandboxed_allowed() -> bool:
+def _unsandboxed_allowed() -> bool:
     """Whether the caller opted into running Lean unconfined."""
     return os.environ.get(UNSANDBOXED_VARIABLE) == "1"
 
@@ -375,7 +375,7 @@ def confine(
     if bwrap is None and _seatbelt() is not None:
         return _seatbelt_command(command, readable, writable)
     if bwrap is None:
-        if not required and unsandboxed_allowed():
+        if not required and _unsandboxed_allowed():
             return list(command)
         if required:
             raise SandboxUnavailable("project inspection requires a working sandbox")

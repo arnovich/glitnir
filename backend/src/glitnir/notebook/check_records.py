@@ -910,7 +910,7 @@ def view_status(
     return "stale"
 
 
-def block_follows(text: str, end_line: int, block: str) -> bool:
+def _block_follows(text: str, end_line: int, block: str) -> bool:
     """Whether the lines right after the one-based ``end_line`` are ``block``'s."""
     lines = _normal(text).split("\n")
     wanted = block.split("\n")
@@ -936,7 +936,7 @@ def decision_status(
     if (
         verification is not None
         and verification["status"] == "checked"
-        and block_follows(text, end_line, outcome["block"])
+        and _block_follows(text, end_line, outcome["block"])
     ):
         return "accepted"
     if not matches(entry["fingerprint"], fingerprint, compare_environment) or entry[

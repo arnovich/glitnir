@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -168,7 +169,7 @@ class _Emissions:
 
     In memory only, at most `entries` outputs and `size` characters together
     (not bytes), the oldest dropped first; one larger than `size` is not kept.
-    Not thread-safe: the service holds `_state_lock` around it.
+    Not thread-safe: its caller holds `context.state_lock` around it.
     """
 
     def __init__(
@@ -308,36 +309,7 @@ class DirectiveRuns:
                 is not `sha256`, or the directive at `line` is missing, in
                 error or unavailable.
         """
-        if self._context.cancel.is_set():
-            raise SnapshotError(CLOSED)
-        unsupported = self._context.unsupported()
-        if unsupported is not None:
-            raise SnapshotError(unsupported)
-        if not self._run_lock.acquire(blocking=False):
-            raise SnapshotError(RUN_BUSY)
-        try:
-            job = self._evidence_job(sha256, line)
-            with self._context.state_lock:
-                if self._context.cancel.is_set():
-                    raise SnapshotError(CLOSED)
-                self._run_errors.pop(job.key, None)
-                self._running = job.key
-                worker = threading.Thread(
-                    target=self._run_evidence_work, args=(job,), daemon=False
-                )
-                self._evidence_worker = worker
-                try:
-                    worker.start()
-                except RuntimeError as error:
-                    self._running = None
-                    self._evidence_worker = None
-                    raise SnapshotError(
-                        f"Evidence run could not start: {error}"
-                    ) from error
-        except BaseException:
-            self._run_lock.release()
-            raise
-        return job.key
+        return self._start(lambda: self._evidence_job(sha256, line))
 
     def _evidence_job(self, sha256: str, line: int) -> _EvidenceJob:
         """Find the runnable directive at `line` in the saved text `sha256`."""
@@ -368,16 +340,78 @@ class DirectiveRuns:
             request=request,
         )
 
-    def _run_evidence_work(self, job: _EvidenceJob) -> None:
+    def _start(self, make_job: Callable[[], _EvidenceJob | _DecisionJob]) -> str:
+        """Take the run gate, build the job and start its worker; return its key.
+
+        `make_job` runs only once the gate is held, so a busy, closed or
+        unsupported preview is refused before the saved source is examined.
+        A decision job gets its own cancel event, which `stop_decision` sets.
+
+        Raises:
+            SnapshotError: The preview is closed, the project's Lean version
+                is not supported, a run is already active, or `make_job`
+                refuses.
+        """
+        if self._context.cancel.is_set():
+            raise SnapshotError(CLOSED)
+        unsupported = self._context.unsupported()
+        if unsupported is not None:
+            raise SnapshotError(unsupported)
+        if not self._run_lock.acquire(blocking=False):
+            raise SnapshotError(RUN_BUSY)
+        try:
+            job = make_job()
+            decision = isinstance(job, _DecisionJob)
+            with self._context.state_lock:
+                if self._context.cancel.is_set():
+                    raise SnapshotError(CLOSED)
+                cancel = threading.Event() if decision else None
+                self._run_errors.pop(job.key, None)
+                self._running = job.key
+                self._decision_cancel = cancel
+                worker = threading.Thread(
+                    target=self._work, args=(job, cancel), daemon=False
+                )
+                if decision:
+                    self._decision_worker = worker
+                else:
+                    self._evidence_worker = worker
+                try:
+                    worker.start()
+                except RuntimeError as error:
+                    self._running = None
+                    self._decision_cancel = None
+                    if decision:
+                        self._decision_worker = None
+                    else:
+                        self._evidence_worker = None
+                    kind = "Decision" if decision else "Evidence"
+                    raise SnapshotError(
+                        f"{kind} run could not start: {error}"
+                    ) from error
+        except BaseException:
+            self._run_lock.release()
+            raise
+        return job.key
+
+    def _work(
+        self, job: _EvidenceJob | _DecisionJob, cancel: threading.Event | None
+    ) -> None:
         """Run one job, keeping its error for the card; always end the run."""
         error: str | None = None
         saved = False
+        kind = "Evidence" if isinstance(job, _EvidenceJob) else "Decision"
         try:
-            # The provider's own computation may take minutes after Lean too.
+            # The provider's own computation may take minutes after Lean too,
+            # and a decision is followed by checking its candidate: one run.
             with awake():
-                error, saved = self._evidence_run(job)
+                if isinstance(job, _EvidenceJob):
+                    error, saved = self._evidence_run(job)
+                else:
+                    assert cancel is not None
+                    error, saved = self._decision_run(job, cancel)
         except Exception as failure:  # the run must always end
-            error = f"Evidence run failed: {failure}"
+            error = f"{kind} run failed: {failure}"
         finally:
             self._end_run(job.key, error, saved)
 
@@ -631,39 +665,7 @@ class DirectiveRuns:
                 is not `sha256`, or the directive at `line` is missing, in
                 error or unavailable.
         """
-        if self._context.cancel.is_set():
-            raise SnapshotError(CLOSED)
-        unsupported = self._context.unsupported()
-        if unsupported is not None:
-            raise SnapshotError(unsupported)
-        if not self._run_lock.acquire(blocking=False):
-            raise SnapshotError(RUN_BUSY)
-        try:
-            job = self._decision_job(sha256, line)
-            with self._context.state_lock:
-                if self._context.cancel.is_set():
-                    raise SnapshotError(CLOSED)
-                cancel = threading.Event()
-                self._run_errors.pop(job.key, None)
-                self._running = job.key
-                self._decision_cancel = cancel
-                worker = threading.Thread(
-                    target=self._run_decision_work, args=(job, cancel), daemon=False
-                )
-                self._decision_worker = worker
-                try:
-                    worker.start()
-                except RuntimeError as error:
-                    self._running = None
-                    self._decision_cancel = None
-                    self._decision_worker = None
-                    raise SnapshotError(
-                        f"Decision run could not start: {error}"
-                    ) from error
-        except BaseException:
-            self._run_lock.release()
-            raise
-        return job.key
+        return self._start(lambda: self._decision_job(sha256, line))
 
     def stop_decision(self) -> None:
         """Ask the running decision to stop; it then saves nothing.
@@ -784,19 +786,6 @@ class DirectiveRuns:
             provider=provider,
             request=request,
         )
-
-    def _run_decision_work(self, job: _DecisionJob, cancel: threading.Event) -> None:
-        """Run one decision, keeping its error for the card; always end the run."""
-        error: str | None = None
-        saved = False
-        try:
-            # Deciding and then checking the candidate: one run, kept awake.
-            with awake():
-                error, saved = self._decision_run(job, cancel)
-        except Exception as failure:  # the run must always end
-            error = f"Decision run failed: {failure}"
-        finally:
-            self._end_run(job.key, error, saved)
 
     def _decision_run(
         self, job: _DecisionJob, cancel: threading.Event

@@ -245,7 +245,7 @@ def test_live_missing_and_stale_imports_do_not_build(prepared_lean_project):
 def test_invalid_setup_is_rejected(value, tmp_path):
     """Malformed output is not a resolved environment."""
     with pytest.raises(ValueError):
-        inspection.validate_setup(value, tmp_path, tmp_path)
+        inspection._validate_setup(value, tmp_path, tmp_path)
 
 
 def test_artifact_paths_must_be_regular_and_confined(tmp_path):
@@ -263,10 +263,10 @@ def test_artifact_paths_must_be_regular_and_confined(tmp_path):
         dynlibs=[],
     )
     with pytest.raises(ValueError, match="outside"):
-        inspection.validate_setup(value, root, root)
+        inspection._validate_setup(value, root, root)
     value["importArts"] = {"B": [[str(root)]]}
     with pytest.raises(ValueError, match="regular"):
-        inspection.validate_setup(value, root, root)
+        inspection._validate_setup(value, root, root)
 
 
 def test_live_cancelled_inspection_does_not_run(prepared_lean_project):
@@ -357,7 +357,7 @@ def test_negative_lean_option_is_not_a_nat(tmp_path):
         dynlibs=[],
     )
     with pytest.raises(ValueError, match="options"):
-        inspection.validate_setup(value, tmp_path, tmp_path)
+        inspection._validate_setup(value, tmp_path, tmp_path)
 
 
 def test_live_cancel_reaps_running_configuration(prepared_lean_project, monkeypatch):
@@ -685,7 +685,7 @@ def test_the_supported_version_follows_toolchain_alone(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(inspection, "TOOLCHAIN", "leanprover/lean4:v4.99.0")
     assert inspection.supported_version() == "4.99.0"
-    assert inspection.toolchain_directory() == "leanprover--lean4---v4.99.0"
+    assert inspection._toolchain_directory() == "leanprover--lean4---v4.99.0"
     elan = tmp_path / "elan"
     bin_ = elan / "toolchains" / "leanprover--lean4---v4.99.0" / "bin"
     bin_.mkdir(parents=True)
