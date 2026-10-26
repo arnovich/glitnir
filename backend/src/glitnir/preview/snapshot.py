@@ -455,6 +455,7 @@ def build_snapshot(
                 ),
                 running,
                 run_errors,
+                saved_failures,
             )
         ),
         "directive_providers": {

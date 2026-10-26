@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import re
 import secrets
 import tempfile
 import threading
@@ -25,6 +26,7 @@ from glitnir.lean.fingerprint import (
 )
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
+    TIMED_OUT,
     check_candidate,
     check_project,
     check_seconds,
@@ -55,6 +57,7 @@ from glitnir.notebook.check_records import (
     saved_views,
     view_status,
     with_decision,
+    with_decision_failure,
     with_evidence,
     with_evidence_failure,
     with_view,
@@ -176,14 +179,14 @@ def _sha256(text: str) -> str:
 
 
 def _crash(
-    provider: EvidenceProvider, failure: BaseException
+    provider: EvidenceProvider | DecisionProvider, failure: BaseException
 ) -> tuple[str, tuple[str, str] | None]:
     """Word a provider crash, and the failure to save for it, if any.
 
     A crash's text is not written for the reader and may name any path or
     URL, so only its exception type is saved. An `ImportError` is a missing
     or broken dependency, a setup failure that says nothing about the
-    directive: it is shown, never saved.
+    directive: it is shown, never saved. For evidence and decisions alike.
     """
     message = provider_failure(provider, failure)
     if isinstance(failure, ImportError):
@@ -194,18 +197,30 @@ def _crash(
     )
 
 
-def _not_saved(kind: str, reason: str) -> bool:
-    """Log why a failed run was not saved, never its message; return False."""
-    _LOG.debug("A failed evidence run (%s) was not saved: %s.", kind, reason)
+def _not_saved(run: str, kind: str, reason: str) -> bool:
+    """Log why a failed `run` was not saved, never its message; return False."""
+    _LOG.debug("A failed %s run (%s) was not saved: %s.", run, kind, reason)
     return False
 
 
-def _names_local_path(message: str, notebook: Path) -> bool:
-    """Whether ``message`` names a directory of this machine it may mention.
+# What looks like an absolute path on any machine: a POSIX path of at least two
+# segments ("/opt/x"), a Windows drive path ("C:\x" or "C:/x"), a path under
+# the home directory ("~/x") or a file URL. A fraction such as "1/2/3", a
+# relative path and a web URL's path do not match.
+_ABSOLUTE_PATH = re.compile(
+    r"(?<![\w.:/~])/[^\s/]+/|(?<!\w)[A-Za-z]:[\\/]|(?<![\w/])~/|(?i:file):/"
+)
 
-    The notebook's directory and project, the home directory and the
-    temporary directory are looked for, as given and resolved.
+
+def _names_local_path(message: str, notebook: Path) -> bool:
+    """Whether ``message`` names a path, so that it may not be saved.
+
+    Anything that looks like an absolute path (`_ABSOLUTE_PATH`) counts, and
+    so do the notebook's directory and project, the home directory and the
+    temporary directory, as given and resolved.
     """
+    if _ABSOLUTE_PATH.search(message):
+        return True
     places = [notebook.parent, Path.home(), Path(tempfile.gettempdir())]
     try:
         root = describe_project(notebook)["root"]
@@ -1559,24 +1574,38 @@ class SourcePreviewService:
             self._emissions.keep(key, payload)
 
     def _save_failure(
-        self, job: _EvidenceJob, environment: dict[str, Any], kind: str, message: str
+        self,
+        job: _EvidenceJob | _DecisionJob,
+        environment: dict[str, Any],
+        kind: str,
+        message: str,
+        cancel: threading.Event | None = None,
     ) -> bool:
         """Save a failed run in the notebook's records, if it may be; say if it was.
 
         Not when the preview is closing, the environment is unknown, the
         message names a local path (committed records hold none), or the
-        saved source is no longer the one that was run. Saving never replaces
-        the run's own error: a failure that cannot be saved is only shown, and
-        logged without its message, which may name a path.
+        saved source is no longer the one that was run. A decision's failure
+        is not saved once its `cancel` is set: checked under the state lock,
+        as a decision's save is, so Stop either wins or finds nothing to stop.
+        Saving never replaces the run's own error: a failure that cannot be
+        saved is only shown, and logged without its message, which may name a
+        path.
         """
+        if isinstance(job, _EvidenceJob):
+            run, write = "evidence", with_evidence_failure
+            prefix = evidence_prefix_sha256(job.text, job.line)
+        else:
+            run, write = "decision", with_decision_failure
+            prefix = decision_prefix_sha256(job.text, job.end_line)
         if self._cancel.is_set():
-            return _not_saved(kind, "the preview is closing")
+            return _not_saved(run, kind, "the preview is closing")
         if environment.get("unknown"):
-            return _not_saved(kind, "the environment is unknown")
+            return _not_saved(run, kind, "the environment is unknown")
         if _names_local_path(message, self.path):
-            return _not_saved(kind, "its message names a local path")
+            return _not_saved(run, kind, "its message names a local path")
         entry = {
-            "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
+            "prefix_sha256": prefix,
             "fingerprint": environment["sha256"],
             "provider": job.provider.name,
             "created": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1584,10 +1613,17 @@ class SourcePreviewService:
             "message": failure_message(message),
         }
         with self._records_lock:
+            if cancel is not None:
+                with self._state_lock:
+                    if cancel.is_set():
+                        return _not_saved(run, kind, "the run was stopped")
+                    self._decision_cancel = None
             try:
                 if _sha256(self._text()) != job.sha256:
-                    return _not_saved(kind, "the saved source changed during the run")
-                records = with_evidence_failure(
+                    return _not_saved(
+                        run, kind, "the saved source changed during the run"
+                    )
+                records = write(
                     load_records(self.path),
                     job.key,
                     entry,
@@ -1597,7 +1633,8 @@ class SourcePreviewService:
                 save_records(self.path, records)
             except Exception as error:  # noqa: BLE001 - the run's error is shown
                 _LOG.warning(
-                    "A failed evidence run (%s) was not saved: %s",
+                    "A failed %s run (%s) was not saved: %s",
+                    run,
                     kind,
                     type(error).__name__,
                 )
@@ -1770,32 +1807,62 @@ class SourcePreviewService:
     def _run_decision_work(self, job: _DecisionJob, cancel: threading.Event) -> None:
         """Run one decision, keeping its error for the card; always end the run."""
         error: str | None = None
+        saved = False
         try:
             # Deciding and then checking the candidate: one run, kept awake.
             with awake():
-                error = self._decision_run(job, cancel)
+                error, saved = self._decision_run(job, cancel)
         except Exception as failure:  # the run must always end
             error = f"Decision run failed: {failure}"
         finally:
-            self._end_run(job.key, error)
+            self._end_run(job.key, error, saved)
 
-    def _decision_run(self, job: _DecisionJob, cancel: threading.Event) -> str | None:
+    def _decision_run(
+        self, job: _DecisionJob, cancel: threading.Event
+    ) -> tuple[str | None, bool]:
         """Decide, validate, check the candidate and save; return the error, if any.
 
-        Nothing is saved once `cancel` is set. Failures that say nothing about
-        the block (a busy slot, a timeout, a changed file) are run errors, never
-        saved verdicts.
+        Nothing is saved once `cancel` is set. A failure that says something
+        about the directive is saved as its failure (`_decision_attempt`); the
+        error returned is the run's own either way, and the flag says whether
+        it was saved.
         """
         provider = job.provider
         try:  # provider code must never break the preview
             imports = tuple(provider.imports)
         except BaseException as failure:
-            return provider_failure(provider, failure)
+            return provider_failure(provider, failure), False
         # Taken before the run so an environment change during it leaves the
-        # saved decision out of date.
+        # saved decision, or failure, out of date.
         environment = environment_fingerprint(
             self.path, job.text, remote=remote_identity(self.path)
         )
+        message, to_save = self._decision_attempt(job, cancel, imports, environment)
+        if message is None or to_save is None:
+            return message, False
+        kind, saved = to_save
+        if self._save_failure(job, environment, kind, saved, cancel):
+            return message, True
+        # Stopped before the failure could be saved: like a stopped run.
+        return (DECISION_CANCELLED if cancel.is_set() else message), False
+
+    def _decision_attempt(
+        self,
+        job: _DecisionJob,
+        cancel: threading.Event,
+        imports: tuple[str, ...],
+        environment: dict[str, Any],
+    ) -> tuple[str | None, tuple[str, str] | None]:
+        """Run the decision; return its error, if any, and the failure to save.
+
+        The failure is its kind (`check_records.DECISION_FAILURE_KINDS`) and
+        the message to save, or None for an error that is not saved: anything
+        but the provider's crash or refusal, an outcome that is not a decision
+        of the directive, or the candidate check's own time limit. A crash is
+        saved as its exception type alone (`_crash`). A block the kernel check
+        rejects is no failure: it is saved as the decision, `rejected`.
+        """
+        provider = job.provider
         fingerprint = environment["sha256"]
         # The block is inserted into the notebook, so the notebook must already
         # import what it needs.
@@ -1807,31 +1874,40 @@ class SourcePreviewService:
             cancel=cancel,
         )
         if refused is not None:
-            return DECISION_CANCELLED if cancel.is_set() else str(refused["error"])
+            return (
+                DECISION_CANCELLED if cancel.is_set() else str(refused["error"])
+            ), None
         try:
             answer = provider.decide(job.request, cancel)
         except ValueError as failure:
             if cancel.is_set():  # how a provider may honour the cancel
-                return DECISION_CANCELLED
-            return str(failure) or provider_failure(provider, failure)
+                return DECISION_CANCELLED, None
+            # The provider's way of saying it cannot decide this goal: its
+            # message is meant for the reader, not a crash report.
+            message = str(failure) or provider_failure(provider, failure)
+            return message, ("refused", message)
         except BaseException as failure:
             if cancel.is_set() and isinstance(failure, Exception):
-                return DECISION_CANCELLED
-            return provider_failure(provider, failure)
+                return DECISION_CANCELLED, None
+            return _crash(provider, failure)
         if cancel.is_set():
-            return DECISION_CANCELLED
+            return DECISION_CANCELLED, None
         try:
             outcome = checked_decision(answer)
         except ValueError as failure:
-            return f"Provider {provider.name} returned an invalid decision: {failure}"
+            invalid = (
+                f"Provider {provider.name} returned an invalid decision: {failure}"
+            )
+            return invalid, ("invalid", invalid)
         verification: dict[str, Any] | None = None
         if outcome["status"] != "unknown":
             expected = expected_theorem(job.name, outcome["status"])
             if outcome["theorem"].split(".")[-1] != expected:
-                return (
+                misnamed = (
                     f"The provider proposed `{outcome['theorem']}`, "
                     f"expected `{expected}`."
                 )
+                return misnamed, ("invalid", misnamed)
             try:
                 verdict = check_candidate(
                     self.path,
@@ -1842,7 +1918,16 @@ class SourcePreviewService:
                     cancel=cancel,
                 )
             except SnapshotError as failure:
-                return DECISION_CANCELLED if cancel.is_set() else str(failure)
+                if cancel.is_set():
+                    return DECISION_CANCELLED, None
+                if str(failure) == TIMED_OUT:
+                    # The check's own limit, not a wait for the slot.
+                    limit = f"{check_seconds():g}"
+                    timed_out = (
+                        f"The candidate check reached its time limit of {limit} s."
+                    )
+                    return timed_out, ("timeout", timed_out)
+                return str(failure), None
             kind = verdict["type"]
             if kind is not None and len(kind) > MAX_TYPE:
                 kind = kind[: MAX_TYPE - 1] + "…"
@@ -1866,14 +1951,14 @@ class SourcePreviewService:
             # one discarding uses too.
             with self._state_lock:
                 if cancel.is_set():
-                    return DECISION_CANCELLED
+                    return DECISION_CANCELLED, None
                 self._decision_cancel = None
             try:
                 unchanged = _sha256(self._text()) == job.sha256
             except (OSError, ValueError):
                 unchanged = False
             if not unchanged:
-                return CHANGED_DURING_RUN
+                return CHANGED_DURING_RUN, None
             try:
                 records = with_decision(
                     load_records(self.path),
@@ -1884,8 +1969,8 @@ class SourcePreviewService:
                 )
                 save_records(self.path, records)
             except ValueError as failure:
-                return str(failure)
+                return str(failure), None
             except OSError as failure:
-                return f"The decision could not be saved: {failure}."
+                return f"The decision could not be saved: {failure}.", None
         # Saved, but under a fingerprint that matches nothing: say why.
-        return unknown_git_note(environment)
+        return unknown_git_note(environment), None
