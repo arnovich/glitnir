@@ -2378,6 +2378,35 @@ def test_snapshot_shows_a_run_in_progress(tmp_path: Path, monkeypatch) -> None:
         service.close()
 
 
+def test_a_second_run_of_either_kind_is_refused_while_one_runs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import threading
+
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.service.runs import RUN_BUSY
+
+    started, finish = threading.Event(), threading.Event()
+
+    def run(source, **options):
+        started.set()
+        finish.wait(5)
+        return {"payload": '{"x": 1}'}
+
+    service, _calls = _evidence_service(tmp_path, monkeypatch, runner=run)
+    try:
+        service.run_evidence(_evidence_sha(), 4)
+        assert started.wait(5)
+        with pytest.raises(SnapshotError, match=RUN_BUSY):
+            service.run_decision(_evidence_sha(), 4)
+        with pytest.raises(SnapshotError, match=RUN_BUSY):
+            service.run_evidence(_evidence_sha(), 4)
+    finally:
+        finish.set()
+        settle(service)
+        service.close()
+
+
 # ----- saved drawings ----------------------------------------------------------
 
 
