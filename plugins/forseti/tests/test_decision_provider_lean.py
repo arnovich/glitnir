@@ -74,8 +74,8 @@ def _decide(path: Path, line: int) -> dict:
     service = SourcePreviewService(path)
     try:
         service.run_decision(sha, line)
-        service._decision_worker.join(timeout=2400)
-        assert not service._decision_worker.is_alive(), "the run did not finish"
+        service._runs._decision_worker.join(timeout=2400)
+        assert not service._runs._decision_worker.is_alive(), "the run did not finish"
         return next(c for c in service.snapshot()["decisions"] if c["line"] == line)
     finally:
         service.close()

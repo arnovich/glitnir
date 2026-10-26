@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from conftest import raises
 
 from glitnir.notebook.check_records import (
     evidence_prefix_sha256,
@@ -21,6 +22,7 @@ from glitnir.preview import snapshot as preview_snapshot
 from glitnir.preview.cards import evidence_cards
 from glitnir.providers import EvidenceProvider, EvidenceRequest, Providers
 from glitnir.providers.outcomes import checked_evidence
+from glitnir.service import runs as source_runs
 from glitnir.service.preview import SourcePreviewService
 
 # Environment fingerprints are SHA-256 digests; any other string matches nothing.
@@ -226,19 +228,12 @@ def test_a_directive_error_is_kept_and_never_parsed():
     assert card["error"] == BAD_TARGET and calls == []
 
 
-def _raises(error: BaseException):
-    def call(*_arguments):
-        raise error
-
-    return call
-
-
 @pytest.mark.parametrize(
     "changes, message",
     [
-        ({"parse": _raises(RuntimeError("boom"))}, "RuntimeError: boom"),
-        ({"parse": _raises(SystemExit(3))}, "SystemExit: 3"),
-        ({"unavailable": _raises(KeyError("x"))}, "KeyError: 'x'"),
+        ({"parse": raises(RuntimeError("boom"))}, "RuntimeError: boom"),
+        ({"parse": raises(SystemExit(3))}, "SystemExit: 3"),
+        ({"unavailable": raises(KeyError("x"))}, "KeyError: 'x'"),
     ],
 )
 def test_provider_failures_become_card_errors(changes, message):
@@ -420,7 +415,7 @@ def _saved_service(tmp_path: Path, monkeypatch, fingerprint: str):
         calls.append(1)
         return {"sha256": fingerprint}
 
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(module, "environment_fingerprint", environment)
     text = f"def M := 1\n{DIRECTIVE}\n"
     path = tmp_path / "A.lean"

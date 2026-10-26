@@ -3,6 +3,7 @@
 import hashlib
 
 import pytest
+from conftest import settle
 
 from glitnir.compute.protocol import context_digest
 from glitnir.notebook.check_records import load_records
@@ -46,7 +47,7 @@ def test_remote_preview_records_exact_context_or_refuses_drift(
     service = SourcePreviewService(source)
     try:
         service.check(sha)
-        service._worker.join(timeout=10)
+        settle(service)
         assert not service._worker.is_alive()
         if change_before_acquisition:
             assert service._check["status"] == "unavailable"

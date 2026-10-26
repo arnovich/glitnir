@@ -2308,3 +2308,16 @@ def test_a_decision_failure_save_never_drops_the_evidence_failures(monkeypatch):
     )
     assert set(saved_evidence_failures(records)) == set(keys)
     assert set(saved_decision_failures(records)) == {DECISION_KEY}
+
+
+def test_records_schema_validates_what_load_records_accepts(tmp_path: Path) -> None:
+    from glitnir.notebook import records_schema
+
+    path = tmp_path / "A.lean"
+    path.write_text(TEXT)
+    records = records_from_check(TEXT, RESULT, FP)
+    save_records(path, records)
+    loaded = load_records(path)
+    assert loaded is not None
+    assert records_schema.well_formed(loaded)
+    assert not records_schema.well_formed({**loaded, "claims": "not a list"})

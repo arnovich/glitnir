@@ -499,6 +499,7 @@ def _service(tmp_path, monkeypatch, payload: str):
     """A preview of `NOTEBOOK` whose Lean runner prints `payload`."""
     from glitnir.preview import snapshot as preview_snapshot
     from glitnir.service import preview as source_preview
+    from glitnir.service import runs as source_runs
 
     simulate, iterate = forseti.evidence_providers()
     monkeypatch.setattr(
@@ -506,12 +507,12 @@ def _service(tmp_path, monkeypatch, payload: str):
         "load_providers",
         lambda: Providers({}, {"simulate": simulate, "iterate": iterate}, {}, {}),
     )
-    for module in (source_preview, preview_snapshot):
+    for module in (source_preview, source_runs, preview_snapshot):
         monkeypatch.setattr(
             module, "environment_fingerprint", lambda *a, **k: {"sha256": "f" * 64}
         )
     monkeypatch.setattr(
-        source_preview, "run_provider_lean", lambda source, **o: {"payload": payload}
+        source_runs, "run_provider_lean", lambda source, **o: {"payload": payload}
     )
     path = tmp_path / "Notebook.lean"
     path.write_text(NOTEBOOK)
@@ -521,8 +522,8 @@ def _service(tmp_path, monkeypatch, payload: str):
 def _run_card(service, line: int) -> dict:
     sha = hashlib.sha256(NOTEBOOK.encode()).hexdigest()
     service.run_evidence(sha, line)
-    service._evidence_worker.join(timeout=30)
-    assert not service._evidence_worker.is_alive()
+    service._runs._evidence_worker.join(timeout=30)
+    assert not service._runs._evidence_worker.is_alive()
     return next(c for c in service.snapshot()["evidence"] if c["line"] == line)
 
 

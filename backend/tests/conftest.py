@@ -1,16 +1,151 @@
 """Shared fixtures for the project-mode Lean checking tests."""
 
 import contextlib
+import hashlib
+import importlib
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from glitnir.preview import snapshot as preview_snapshot
+from glitnir.providers import EvidenceProvider, EvidenceRequest
 from glitnir.service import preview as source_preview
 
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
+
+#: The notebook `lake` writes.
+LAKE_NOTEBOOK = "import Demo.View\n\ndef c := 1\n-- @view circuit c\ndef later := 2\n"
+
+#: The modules that may bind the names a test patches on the preview service.
+SERVICE_MODULES = (
+    "glitnir.service.preview",
+    "glitnir.service.runs",
+    "glitnir.service.views",
+)
+
+#: Where the service holds a worker thread, or None when idle: an attribute of
+#: the service or a dotted path through one of its components.
+WORKER_ATTRIBUTES = (
+    "_worker",
+    "_inspection_worker",
+    "_runs._evidence_worker",
+    "_runs._decision_worker",
+    "_views._view_worker",
+)
+
+
+def settle(service: source_preview.SourcePreviewService, timeout: float = 30.0) -> None:
+    """Wait up to `timeout` seconds for each worker thread the service holds.
+
+    Fails if any worker is still alive afterwards, so a stuck worker fails the
+    test instead of hanging the suite.
+    """
+    stuck = []
+    for attribute in WORKER_ATTRIBUTES:
+        worker = service
+        for name in attribute.split("."):
+            worker = getattr(worker, name, None)
+        if worker is not None:
+            worker.join(timeout=timeout)
+            if worker.is_alive():
+                stuck.append(attribute)
+    if stuck:
+        raise AssertionError(f"workers still running after {timeout}s: {stuck}")
+
+
+def sha(text: str) -> str:
+    """The SHA-256 of `text` encoded as UTF-8, as the notebook hash is."""
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def raises(error: BaseException) -> Callable[..., NoReturn]:
+    """Return a stand-in callable that raises `error` whatever it is given."""
+
+    def call(*_arguments, **_options) -> NoReturn:
+        raise error
+
+    return call
+
+
+def evidence_provider(
+    imports: tuple[str, ...] = (), unavailable: str | None = None
+) -> EvidenceProvider:
+    """A minimal `simulate` evidence provider, unavailable with the given reason."""
+    return EvidenceProvider(
+        name="demo",
+        verbs=frozenset({"simulate"}),
+        imports=imports,
+        preamble="",
+        marker="m:",
+        parse=lambda verb, target, options: EvidenceRequest(verb, target, {}),
+        command=lambda request: "",
+        compute=lambda request, payload: {},
+        unavailable=lambda: unavailable,
+    )
+
+
+def lake(tmp_path, monkeypatch, import_arts, asked=None, required_sha256=None):
+    """A Lake notebook whose inspected setup provides `import_arts`.
+
+    The modules each inspection was asked to add are appended to `asked`; when
+    `required_sha256` is given, each inspection must be of that digest.
+    Returns the notebook path and the toolchain directory.
+    """
+    from glitnir.lean import provider_lean
+
+    (tmp_path / "lakefile.toml").write_text('name = "demo"\n')
+    source = tmp_path / "Note.lean"
+    source.write_text(LAKE_NOTEBOOK)
+    toolchain = tmp_path / "toolchain"
+    toolchain.mkdir()
+    monkeypatch.setattr(provider_lean, "_toolchain", lambda: toolchain)
+
+    def inspect(path, *, expected_sha256, cancel, imports=()):
+        assert path == source
+        assert required_sha256 in (None, expected_sha256)
+        if asked is not None:
+            asked.append(imports)
+        return {
+            "status": "resolved",
+            "setup": {
+                "name": "Note",
+                "isModule": False,
+                "importArts": import_arts,
+                "plugins": [],
+                "dynlibs": [],
+                "options": {},
+            },
+            "resolution": {"inputs": []},
+        }
+
+    monkeypatch.setattr(provider_lean, "inspect_project", inspect)
+    return source, toolchain
+
+
+def patch_service_name(monkeypatch, name: str, value) -> None:
+    """Replace `name` on every service module that exists and binds it.
+
+    The preview service's names are bound in several modules, and a test must
+    patch each one that looks the name up. Fail if no listed module binds it, so
+    a name that moved cannot leave a test patching nothing.
+    """
+    patched = False
+    for module_name in SERVICE_MODULES:
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as error:
+            if error.name != module_name:
+                raise
+            continue
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+            patched = True
+    if not patched:
+        pytest.fail(f"no service module binds {name!r}")
 
 
 def _live_gate_set() -> bool:
@@ -160,7 +295,7 @@ def awake_depth(monkeypatch):
 def draw_each_alone(monkeypatch):
     """Fake the preview's view runs with a fake of one view's drawing.
 
-    `draw_each_alone(render)` replaces `source_preview.render_project_views`
+    `draw_each_alone(render)` replaces `views.render_project_views`
     with a run that draws each of its views with `render`, called with
     the notebook, then `line`, `kind`, `name`, `using` and the run's other
     options.
@@ -177,7 +312,7 @@ def draw_each_alone(monkeypatch):
                 ]
             }
 
-        monkeypatch.setattr("glitnir.service.preview.render_project_views", run)
+        monkeypatch.setattr("glitnir.service.views.render_project_views", run)
 
     return install
 
@@ -808,16 +943,17 @@ def registered_git_dependency(tmp_path, project_toolchain):
 def patch_fingerprint(monkeypatch):
     """Return a function replacing `environment_fingerprint` where it is used.
 
-    The service's runs call it through `glitnir.service.preview`; the snapshot's
-    `Fingerprints` calls it through `glitnir.preview.snapshot`. The fake gets the
-    positional arguments only, not the `remote` keyword.
+    The service's checks and runs call it through `glitnir.service.preview` and
+    `glitnir.service.runs`; the snapshot's `Fingerprints` calls it through
+    `glitnir.preview.snapshot`. The fake gets the positional arguments only, not
+    the `remote` keyword.
     """
 
     def patch(fake):
         def call(*args, **_remote):
             return fake(*args)
 
-        monkeypatch.setattr(source_preview, "environment_fingerprint", call)
+        patch_service_name(monkeypatch, "environment_fingerprint", call)
         monkeypatch.setattr(preview_snapshot, "environment_fingerprint", call)
 
     return patch
