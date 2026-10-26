@@ -1211,3 +1211,53 @@ def saved_drawings(path: Path) -> dict:
     from glitnir.notebook.check_records import load_records, saved_views
 
     return saved_views(load_records(path))
+
+
+EXAMPLES = (
+    "theorem a : True := True.intro\n"
+    "example : True := trivial\n"
+    "/-- doc -/\nexample (p : Prop) (h : p) : p := h\n"
+)
+
+
+def example_entries(text: str, tag: str = "_glitnir_example_") -> list[dict]:
+    """Reader entries for `EXAMPLES`, as `ProjectRead.lean` reports them."""
+    data = text.encode()
+    second = data.index(b"example")
+    doc = data.index(b"/-- doc")
+    third = data.index(b"example", doc)
+    return [
+        {"name": "a", "start": 0, "end": second - 1},
+        {
+            "name": f"_private.M.0.{tag}{second}",
+            "start": second,
+            "end": doc - 1,
+            "keyword": [second, second + 7],
+        },
+        {
+            "name": f"_private.M.0.{tag}{third}",
+            "start": doc,
+            "end": len(data) - 1,
+            "keyword": [third, third + 7],
+        },
+    ]
+
+
+def edits_of(text, entries, unclaimed=(), tag="_glitnir_example_"):
+    """The edits `example_edits` makes of `text` with the reader's report."""
+    from glitnir.lean.examples import example_edits
+
+    edits, kept = example_edits(text, entries, list(unclaimed), tag)
+    assert kept == list(unclaimed)
+    return edits
+
+
+def claim_of(text, keyword, start=None, tag="_glitnir_example_"):
+    """A reader entry claiming the `example` at byte offset `keyword`."""
+    end = text.encode().find(b"\n", keyword)
+    return {
+        "name": f"_private.M.0.{tag}{keyword}",
+        "start": keyword if start is None else start,
+        "end": end if end > 0 else len(text.encode()),
+        "keyword": [keyword, keyword + 7],
+    }

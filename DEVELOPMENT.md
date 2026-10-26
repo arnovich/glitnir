@@ -46,6 +46,12 @@ The repository has four parts:
   `glitnir.notebook.records_schema` says what a well-formed
   `<Notebook>.glitnir.json` is; `check_records` reads, writes and interprets
   one.
+  `glitnir.lean.project_checking` holds the two checks, `check_project` and
+  `check_candidate`, and the orchestration between their Lean runs; the runs
+  themselves (`observer`), where a run failed (`failures`), examples checked
+  as theorems (`examples`), what the report and replay programs said
+  (`reports`, `replay`) and a decision block's text and verdict (`candidate`)
+  are its own modules.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by
