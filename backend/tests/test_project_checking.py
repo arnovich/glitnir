@@ -2170,7 +2170,7 @@ def _example_entries(text: str, tag: str = "_glitnir_example_") -> list[dict]:
 
 def test_example_tag_never_occurs_in_the_source():
     """Generated theorem names cannot be written, declared or used by the source."""
-    from glitnir.lean.project_checking import EXAMPLE_TAG, example_tag
+    from glitnir.lean.examples import EXAMPLE_TAG, example_tag
 
     assert example_tag("example : True := trivial") == EXAMPLE_TAG
     text = f"def {EXAMPLE_TAG}1 : Nat := 1 -- _{EXAMPLE_TAG}\n"
@@ -2179,17 +2179,17 @@ def test_example_tag_never_occurs_in_the_source():
 
 
 def _edits(text, entries, unclaimed=(), tag="_glitnir_example_"):
-    """The edits `_example_edits` makes of `text` with the reader's report."""
-    from glitnir.lean.project_checking import _example_edits
+    """The edits `example_edits` makes of `text` with the reader's report."""
+    from glitnir.lean.examples import example_edits
 
-    edits, kept = _example_edits(text, entries, list(unclaimed), tag)
+    edits, kept = example_edits(text, entries, list(unclaimed), tag)
     assert kept == list(unclaimed)
     return edits
 
 
 def test_examples_are_rewritten_only_at_their_keywords():
     """The compiled text differs only where `example` became the named theorem."""
-    from glitnir.lean.project_checking import _check_rewrite, _rewrite_examples
+    from glitnir.lean.examples import check_rewrite, rewrite_examples
 
     data = _EXAMPLES.encode()
     entries = _example_entries(_EXAMPLES)
@@ -2199,14 +2199,14 @@ def test_examples_are_rewritten_only_at_their_keywords():
         (second, f"private theorem _glitnir_example_{second}".encode()),
         (third, f"private theorem _glitnir_example_{third}".encode()),
     ]
-    compiled = _rewrite_examples(data, edits)
+    compiled = rewrite_examples(data, edits)
     assert compiled.decode() == (
         "theorem a : True := True.intro\n"
         f"private theorem _glitnir_example_{second} : True := trivial\n"
         "/-- doc -/\n"
         f"private theorem _glitnir_example_{third} (p : Prop) (h : p) : p := h\n"
     )
-    _check_rewrite(data, compiled, edits)
+    check_rewrite(data, compiled, edits)
     pairs = zip(_EXAMPLES.split("\n"), compiled.decode().split("\n"), strict=True)
     for saved, built in pairs:
         if saved.startswith("example"):
@@ -2214,8 +2214,8 @@ def test_examples_are_rewritten_only_at_their_keywords():
             assert built.endswith(saved.removeprefix("example"))
         else:
             assert built == saved
-    assert _rewrite_examples(data, []) == data
-    _check_rewrite(data, data, [])
+    assert rewrite_examples(data, []) == data
+    check_rewrite(data, data, [])
 
 
 @pytest.mark.parametrize(
@@ -2230,17 +2230,17 @@ def test_examples_are_rewritten_only_at_their_keywords():
 )
 def test_any_other_difference_in_the_compiled_text_fails(compiled):
     """The checker refuses compiled text that differs anywhere but the keywords."""
-    from glitnir.lean.project_checking import _check_rewrite, _rewrite_examples
+    from glitnir.lean.examples import check_rewrite, rewrite_examples
     from glitnir.lean.project_snapshot import SnapshotError
 
     data = _EXAMPLES.encode()
     edits = _edits(_EXAMPLES, _example_entries(_EXAMPLES))
     with pytest.raises(SnapshotError, match="differs from the saved source"):
-        _check_rewrite(data, compiled(_rewrite_examples(data, edits)), edits)
+        check_rewrite(data, compiled(rewrite_examples(data, edits)), edits)
     with pytest.raises(SnapshotError, match="differs from the saved source"):
-        _check_rewrite(data, _rewrite_examples(data, edits), [(0, b"theorem")])
+        check_rewrite(data, rewrite_examples(data, edits), [(0, b"theorem")])
     with pytest.raises(SnapshotError, match="differs from the saved source"):
-        _check_rewrite(data, data.replace(b"example", b"exampl\n", 1), [(0, b"x\n")])
+        check_rewrite(data, data.replace(b"example", b"exampl\n", 1), [(0, b"x\n")])
 
 
 def _malformed(entries):
@@ -2503,8 +2503,8 @@ def test_an_example_keyword_outside_a_command_withholds_from_before_it():
 
 def test_an_unreadable_file_withholds_from_its_first_claimed_example():
     """Where the lexer cannot follow Lean, examples are refused, not guessed."""
+    from glitnir.lean.examples import example_edits
     from glitnir.lean.failures import CommandFailure
-    from glitnir.lean.project_checking import _example_edits
 
     text = 'def s : String := s!"{1}"\nexample : True := trivial\n'
     keyword = text.encode().index(b"example")
@@ -2514,7 +2514,7 @@ def test_an_unreadable_file_withholds_from_its_first_claimed_example():
     plain = {"start": keyword, "end": len(text) - 1, "keyword": [keyword, keyword + 7]}
     # Nothing is rewritten, and its non-claims are not recorded either: they
     # were never reconciled with the lexer.
-    assert _example_edits(text, [], [plain], "_glitnir_example_") == ([], [])
+    assert example_edits(text, [], [plain], "_glitnir_example_") == ([], [])
 
 
 def test_examples_using_decl_name_are_refused():
@@ -2532,17 +2532,17 @@ def test_examples_using_decl_name_are_refused():
 
 def test_compiled_positions_map_back_to_the_saved_source():
     """Offsets after a rewritten keyword shift back; inside it, to the keyword."""
-    from glitnir.lean.project_checking import _original_offset, _rewrite_examples
+    from glitnir.lean.examples import original_offset, rewrite_examples
 
     data = _EXAMPLES.encode()
     edits = _edits(_EXAMPLES, _example_entries(_EXAMPLES))
-    compiled = _rewrite_examples(data, edits)
+    compiled = rewrite_examples(data, edits)
     for marker in (b"theorem a", b"True := trivial", b"/-- doc", b"(p : Prop)", b"h\n"):
-        assert _original_offset(compiled.index(marker), edits) == data.index(marker)
+        assert original_offset(compiled.index(marker), edits) == data.index(marker)
     second = edits[0][0]
     for inside in range(second, second + len(edits[0][1])):
-        assert _original_offset(inside, edits) == second
-    assert _original_offset(len(compiled), edits) == len(data)
+        assert original_offset(inside, edits) == second
+    assert original_offset(len(compiled), edits) == len(data)
 
 
 @pytest.mark.parametrize(
@@ -2554,19 +2554,16 @@ def test_candidate_failure_in_an_example_maps_through_the_rewrite(message, noted
 
     The section-variable note is added only to an unknown identifier.
     """
+    from glitnir.lean.examples import EXAMPLE_NOTE, rewrite_examples
     from glitnir.lean.failures import CommandFailure
-    from glitnir.lean.project_checking import (
-        EXAMPLE_NOTE,
-        _candidate_failure,
-        _rewrite_examples,
-    )
+    from glitnir.lean.project_checking import _candidate_failure
     from glitnir.lean.project_snapshot import SnapshotError
 
     text = "example : True := trivial\nexample : 1 = 2 := rfl\n"
     second = text.index("example : 1")
     entries = [_claim(text, 0), _claim(text, second)]
     edits = _edits(text, entries)
-    compiled = _rewrite_examples(text.encode(), edits).decode()
+    compiled = rewrite_examples(text.encode(), edits).decode()
     # The column is past the end of the saved line, inside the compiled one.
     column = compiled.split("\n")[1].index("rfl")
     assert column > len(text.split("\n")[1])
@@ -2609,6 +2606,7 @@ def test_withheld_message_carries_the_example_note(tmp_path, monkeypatch):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.examples import EXAMPLE_NOTE
     from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
@@ -2619,7 +2617,7 @@ def test_withheld_message_carries_the_example_note(tmp_path, monkeypatch):
             raise CommandFailure(
                 "S.lean:2:19: error: rfl failed",
                 offset=text.index("example"),
-                note=checking.EXAMPLE_NOTE,
+                note=EXAMPLE_NOTE,
             )
         return {"status": "checked_snapshot", "theorems": [{"name": "a"}]}
 
@@ -2629,7 +2627,7 @@ def test_withheld_message_carries_the_example_note(tmp_path, monkeypatch):
     )
     assert result["withheld"] == {
         "from_line": 2,
-        "message": f"rfl failed ({checking.EXAMPLE_NOTE})",
+        "message": f"rfl failed ({EXAMPLE_NOTE})",
     }
 
 
@@ -2825,6 +2823,7 @@ def test_a_candidate_cannot_declare_a_reserved_name(tmp_path, monkeypatch):
 def test_a_check_without_examples_compiles_the_frozen_source(tmp_path, monkeypatch):
     """Files without examples compile exactly the frozen snapshot copy."""
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.examples import EXAMPLE_TAG
 
     calls = _fake_check_stages(tmp_path, monkeypatch)
     source = tmp_path / "A.lean"
@@ -2838,7 +2837,7 @@ def test_a_check_without_examples_compiles_the_frozen_source(tmp_path, monkeypat
     compile_call = next(c for c in calls if "-o" in c)
     assert Path(compile_call[-1]).parent.name == "snapshot"
     reader = next(c for c in calls if "--run" in c)
-    assert reader[7] == checking.EXAMPLE_TAG
+    assert reader[7] == EXAMPLE_TAG
 
 
 def test_live_loose_file_checks_and_records_proof_steps(tmp_path, project_toolchain):
