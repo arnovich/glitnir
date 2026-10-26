@@ -1,5 +1,6 @@
 """The fast environment fingerprint changes exactly when checking inputs change."""
 
+import ast
 import hashlib
 import json
 import os
@@ -1206,3 +1207,55 @@ def test_live_fingerprint_is_portable_across_checkouts(
     _lake_build(second, project_toolchain)
     assert trace_digest(traces[1]) != trace_digest(traces[0])
     assert current() is False
+
+
+# Saved results hold only this digest, so these values must never change: a change
+# marks every saved result out of date. They are of `_project`'s layout.
+_LOCAL_PIN = "f24b2f9807f144760f067465693cd9ba06d64920defc8047d3bf182c1424b8b7"
+_REMOTE_PIN = "b9f1dd6cb92a5eaef4218005653a6cd2d65c8a67188b3247bcadad11fb6fd187"
+
+
+def test_local_fingerprint_value_is_pinned(tmp_path, monkeypatch):
+    monkeypatch.delenv("GLITNIR_EXECUTION_BACKEND", raising=False)
+    source = _project(tmp_path)
+    found = environment_fingerprint(source, source.read_text())
+    assert found["sha256"] == _LOCAL_PIN
+    assert "execution" not in found
+
+
+def test_remote_fingerprint_value_is_pinned(tmp_path, monkeypatch):
+    """The caller-supplied remote identity hashes as it did when computed inside."""
+    from glitnir.compute import client
+
+    for key, value in (
+        ("GLITNIR_EXECUTION_BACKEND", "taskvalet"),
+        ("GLITNIR_TASKVALET_URL", "http://x"),
+        ("GLITNIR_TASKVALET_PROJECT", "p"),
+        ("GLITNIR_TASKVALET_ENVIRONMENT", "e"),
+    ):
+        monkeypatch.setenv(key, value)
+    # The installed checker's own bytes change with every release.
+    monkeypatch.setattr(client, "checker_digest", lambda: "c" * 64)
+    source = _project(tmp_path)
+    remote = client.remote_identity(source)
+    assert remote is not None and remote["execution"]["GLITNIR_TASKVALET_URL"]
+    found = environment_fingerprint(source, source.read_text(), remote=remote)
+    assert found["sha256"] == _REMOTE_PIN
+    assert found["execution"] == remote["execution"]
+
+
+def test_every_backend_fingerprint_call_passes_the_remote_identity():
+    """A call without `remote=` would fingerprint a remote check as local."""
+    import glitnir
+
+    root = Path(glitnir.__file__).parent
+    missing = []
+    for path in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "environment_fingerprint"
+                and not any(k.arg == "remote" for k in node.keywords)
+            ):
+                missing.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert missing == []

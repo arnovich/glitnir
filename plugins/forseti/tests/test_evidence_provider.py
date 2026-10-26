@@ -508,7 +508,7 @@ def _service(tmp_path, monkeypatch, payload: str):
     )
     for module in (source_preview, preview_snapshot):
         monkeypatch.setattr(
-            module, "environment_fingerprint", lambda *a: {"sha256": "f" * 64}
+            module, "environment_fingerprint", lambda *a, **k: {"sha256": "f" * 64}
         )
     monkeypatch.setattr(
         source_preview, "run_provider_lean", lambda source, **o: {"payload": payload}

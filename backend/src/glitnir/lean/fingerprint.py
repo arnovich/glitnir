@@ -22,7 +22,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Callable, NoReturn
 
 from glitnir.lean import (
     axiom_report,
@@ -40,6 +40,9 @@ _IN_BLOCK = re.compile(r"/-|-/")
 _MAX_FILE = 4 * 1024 * 1024
 _MAX_SOURCES = 20000
 _COMPONENT = re.compile(r"[A-Za-z_][A-Za-z0-9_'!?]*|«[^/\\\x00]+»")
+#: A fingerprint for a function of the modules loaded besides the notebook's.
+Fingerprint = Callable[..., str]
+
 #: Seconds all git commands of one fingerprint may take together.
 FINGERPRINT_SECONDS = 90
 #: Seconds one ``git status`` may take; it is retried once after a timeout.
@@ -657,6 +660,7 @@ def environment_fingerprint(
     text: str,
     imports: tuple[str, ...] = (),
     known_packages: list[dict[str, Any]] | None = None,
+    remote: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Identify toolchain, Lake files, builds, project sources and dependencies.
 
@@ -665,13 +669,15 @@ def environment_fingerprint(
     manifest revision, HEAD and cleanliness, each imported module by its
     `trace_digest`, the project sources by relative path and content
     (`project_sources`), and the checker (`checker_identity`). Under remote
-    execution it also holds ``execution``, the selected backend and its
-    Taskvalet URL, project and environment; ``compute_context``, the prepared
-    dependency context by relative path and content; and ``compute_checker``,
-    the installed checker's files by relative path and content. None of them
-    holds a path either. So the same sources and byte-identical builds in
-    another checkout, or on another machine, give the same digest, and
-    results saved there are current here.
+    execution the caller passes `remote`, the fields it adds as they are:
+    ``execution``, the selected backend and its Taskvalet URL, project and
+    environment; ``compute_context``, the prepared dependency context by
+    relative path and content; and ``compute_checker``, the installed checker's
+    files by relative path and content (`glitnir.compute.client.remote_identity`
+    makes them; this layer cannot import it). None of them holds a path
+    either. So the same sources and byte-identical builds in another checkout,
+    or on another machine, give the same digest, and results saved there are
+    current here.
 
     `imports` are modules loaded besides the notebook's own, as a view or
     evidence provider's are: their project sources and build traces count as
@@ -753,14 +759,8 @@ def environment_fingerprint(
     }
     if unreadable:
         identity["unreadable_traces"] = sorted(unreadable)
-    from glitnir.compute.client import execution_identity
-    from glitnir.compute.protocol import checker_digest, context_digest
-
-    execution = execution_identity()
-    if execution is not None:
-        identity["execution"] = execution
-        identity["compute_context"] = context_digest(source)
-        identity["compute_checker"] = checker_digest()
+    if remote:
+        identity.update(remote)
     unknown = (
         any("reason" in package for package in packages)
         or bool(sources and sources["unknown"])

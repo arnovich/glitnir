@@ -712,11 +712,15 @@ def patch_fingerprint(monkeypatch):
     """Return a function replacing `environment_fingerprint` where it is used.
 
     The service's runs call it through `glitnir.service.preview`; the snapshot's
-    `Fingerprints` calls it through `glitnir.preview.snapshot`.
+    `Fingerprints` calls it through `glitnir.preview.snapshot`. The fake gets the
+    positional arguments only, not the `remote` keyword.
     """
 
     def patch(fake):
-        monkeypatch.setattr(source_preview, "environment_fingerprint", fake)
-        monkeypatch.setattr(preview_snapshot, "environment_fingerprint", fake)
+        def call(*args, **_remote):
+            return fake(*args)
+
+        monkeypatch.setattr(source_preview, "environment_fingerprint", call)
+        monkeypatch.setattr(preview_snapshot, "environment_fingerprint", call)
 
     return patch

@@ -416,7 +416,7 @@ def _saved_service(tmp_path: Path, monkeypatch, fingerprint: str):
     monkeypatch.setattr(source_preview, "load_providers", lambda: _loaded(_provider()))
     calls: list[int] = []
 
-    def environment(*_arguments):
+    def environment(*_arguments, **_options):
         calls.append(1)
         return {"sha256": fingerprint}
 

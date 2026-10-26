@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 import pytest
 
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.fingerprint import environment_fingerprint
 from glitnir.notebook.check_records import (
     load_records,
@@ -23,7 +24,6 @@ from glitnir.notebook.check_records import (
     save_records,
 )
 from glitnir.preview.linked import (
-    MAX_SOURCE_BYTES,
     NotebookLinkError,
     read_linked_notebook,
 )
@@ -314,3 +314,13 @@ def test_uses_of_other_notebooks_link_to_readable_files_only(project) -> None:
         None,
     ]
     assert load_records(main)["claims"][0]["uses"] == uses, "links are not saved"
+
+
+def test_the_source_size_limit_is_defined_once():
+    """Every layer reads `glitnir.lean.environment`'s limit: 16 MiB, as before."""
+    import glitnir.preview.linked as linked
+    import glitnir.service.cli as cli
+
+    assert MAX_SOURCE_BYTES == 16 * 1024 * 1024
+    assert linked.MAX_SOURCE_BYTES is MAX_SOURCE_BYTES
+    assert cli.MAX_SOURCE_BYTES is MAX_SOURCE_BYTES

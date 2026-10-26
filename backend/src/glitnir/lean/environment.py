@@ -24,6 +24,7 @@ MAX_HEARTBEATS = 10_000_000
 #: declares, and large generated definitions (such as rational tables) make
 #: that output grow quickly, so the cap leaves generous headroom.
 MAX_OUTPUT_BYTES = 4_194_304
+#: The largest saved notebook or source file any layer reads: 16 MiB.
 MAX_SOURCE_BYTES = 16_777_216
 
 _PR_SET_PDEATHSIG = 1

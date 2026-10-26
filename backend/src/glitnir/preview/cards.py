@@ -10,8 +10,9 @@ A provider's outcome is untrusted; `providers.outcomes` is all of it the
 preview and the saved records ever see.
 """
 
-from typing import Any, Callable
+from typing import Any
 
+from glitnir.lean.fingerprint import Fingerprint
 from glitnir.lean.project_views import view_provider_sha256
 from glitnir.notebook.check_records import (
     decision_failure_status,
@@ -30,9 +31,6 @@ from glitnir.providers import (
     Providers,
 )
 from glitnir.providers.outcomes import checked_decision, checked_evidence
-
-#: A fingerprint for a function of the modules loaded besides the notebook's.
-Fingerprint = Callable[..., str]
 
 
 def provider_failure(

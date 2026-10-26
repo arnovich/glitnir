@@ -14,10 +14,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from glitnir.compute.client import check_remote, from_environment
+from glitnir.compute.client import check_remote, from_environment, remote_identity
 from glitnir.lean.awake import awake
 from glitnir.lean.digest import fingerprint_ok
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.fingerprint import (
+    Fingerprint,
     environment_fingerprint,
     header_words,
     unknown_git_note,
@@ -87,7 +89,6 @@ from glitnir.preview.linked import (
     unbuilt_sibling_imports,
 )
 from glitnir.preview.snapshot import (
-    Fingerprint,
     Fingerprints,
     PreviewState,
     build_snapshot,
@@ -724,9 +725,11 @@ class SourcePreviewService:
                     self._check = {**self._check, "message": message}
 
         try:
-            text = read_regular(self.path, 16 * 1024 * 1024).decode()
+            text = read_regular(self.path, MAX_SOURCE_BYTES).decode()
             progress("Reading dependency state")
-            environment = environment_fingerprint(self.path, text)
+            environment = environment_fingerprint(
+                self.path, text, remote=remote_identity(self.path)
+            )
             compiled: list[dict[str, Any]] = []
 
             def acquired() -> None:
@@ -736,7 +739,11 @@ class SourcePreviewService:
                 # change after this leaves them out of date.
                 if not compiled:
                     progress("Reading dependency state")
-                    compiled.append(environment_fingerprint(self.path, text))
+                    compiled.append(
+                        environment_fingerprint(
+                            self.path, text, remote=remote_identity(self.path)
+                        )
+                    )
 
             if from_environment() is not None:
 
@@ -1433,7 +1440,9 @@ class SourcePreviewService:
         # Taken before the run so an environment change during it leaves the
         # saved evidence out of date, and before the provider's command so a
         # failure in it can be saved.
-        environment = environment_fingerprint(self.path, job.text, imports)
+        environment = environment_fingerprint(
+            self.path, job.text, imports, remote=remote_identity(self.path)
+        )
         message, to_save = self._evidence_attempt(job, imports, environment)
         if message is None or to_save is None:
             return message, False
@@ -1553,7 +1562,11 @@ class SourcePreviewService:
         output would describe neither environment for sure.
         """
         after = environment_fingerprint(
-            self.path, job.text, imports, environment.get("packages")
+            self.path,
+            job.text,
+            imports,
+            environment.get("packages"),
+            remote=remote_identity(self.path),
         )
         if after.get("unknown") or after.get("sha256") != environment["sha256"]:
             return
@@ -1821,7 +1834,9 @@ class SourcePreviewService:
             return provider_failure(provider, failure), False
         # Taken before the run so an environment change during it leaves the
         # saved decision, or failure, out of date.
-        environment = environment_fingerprint(self.path, job.text)
+        environment = environment_fingerprint(
+            self.path, job.text, remote=remote_identity(self.path)
+        )
         message, to_save = self._decision_attempt(job, cancel, imports, environment)
         if message is None or to_save is None:
             return message, False

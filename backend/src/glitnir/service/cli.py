@@ -19,13 +19,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from glitnir.compute.client import check_remote, from_environment
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import check_project
 from glitnir.lean.scratch import sweep_stale_scratch
 from glitnir.service.server import serve
-
-#: The largest saved file ``check`` reads.
-MAX_SOURCE_BYTES = 16 * 1024 * 1024
 
 
 def main(argv: Sequence[str] | None = None) -> int:
