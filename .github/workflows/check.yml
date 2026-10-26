@@ -92,10 +92,10 @@ jobs:
         run: |
           # The live job runs the rest: every test_live_ test (marked live).
           ../.venv/bin/python -m pytest -m "not live" --cov --cov-report=term-missing
-          ../.venv/bin/black --check src tests scripts
-          ../.venv/bin/isort --check-only src tests scripts
-          ../.venv/bin/flake8 src tests scripts
-          ../.venv/bin/mypy src scripts
+          ../.venv/bin/black --check src tests scripts experiments
+          ../.venv/bin/isort --check-only src tests scripts experiments
+          ../.venv/bin/flake8 src tests scripts experiments
+          ../.venv/bin/mypy src scripts experiments
       - name: Check the Forseti extension package
         working-directory: plugins/forseti
         run: |
@@ -192,6 +192,21 @@ jobs:
           .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "Linux CI requires a working bubblewrap sandbox"'
           # The one Lean version Glitnir checks, from project_inspection.TOOLCHAIN.
           elan toolchain install "$(.venv/bin/python -c 'from glitnir.lean.project_inspection import TOOLCHAIN; print(TOOLCHAIN)')"
+      - name: Bound the experimental native-test store for this toolchain
+        run: |
+          .venv/bin/python - <<'PYCODE'
+          import os
+          import shutil
+          from glitnir.lean.project_inspection import _toolchain
+          # Same trusted input filter as project_snapshot.capture/preflight.
+          needed = sum(p.stat().st_size for p in (_toolchain() / "lib").rglob("*")
+                       if p.is_file() and p.suffix not in {".a", ".ilean", ".tbd"})
+          allowance = max(3 * 1024**3, needed + 1024**3)
+          assert allowance <= 16 * 1024**3, "Experimental CI store exceeds ceiling"
+          assert shutil.disk_usage(".").free > allowance + 1024**3
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"GLITNIR_WARM_TEST_DISK_BYTES={allowance}\n")
+          PYCODE
       - name: Check handoff builds inside an aggregate resource boundary
         working-directory: backend
         run: |
@@ -234,6 +249,16 @@ jobs:
       # JSON Glitnir reads from it.
       - name: Elaborate the Lean helper programs
         run: .venv/bin/python backend/scripts/check_helpers.py
+      - name: Elaborate the offline experimental helper
+        working-directory: backend
+        run: |
+          ../.venv/bin/python - <<'PY'
+          from scripts.check_helpers import elaborate
+          from experiments.warm_pool.environment import PROGRAM
+          from glitnir.lean.project_inspection import _toolchain
+          status, output = elaborate(PROGRAM, _toolchain(), lake=False)
+          assert status == 0 and not output, output
+          PY
   # The plugin-live shards, from plugins/forseti/tools/live_shards.py, so the
   # matrix always covers the whole suite exactly once.
   plugin-live-shards:

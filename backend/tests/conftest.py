@@ -2,6 +2,7 @@
 
 import contextlib
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,69 @@ from glitnir.service import preview as source_preview
 
 #: `Example.Helper` as `prepared_lean_project` builds it.
 EXAMPLE_HELPER = "def helper : Nat := 1\n"
+
+
+@pytest.fixture
+def stub_warm_runtime():
+    """A controllable elaborator for scheduler identity and recovery behavior."""
+    import threading
+
+    from experiments.warm_pool.runtime import Interrupted
+
+    gate, started = threading.Event(), threading.Event()
+    calls = []
+
+    class Environment:
+        key = "a" * 64
+        changed = False
+
+        def assert_current(self):
+            if self.changed:
+                raise Interrupted("environment changed")
+
+    class Session:
+        def __init__(self, environment, limits, generation):
+            self.environment, self.generation = environment, generation
+            self.closed, self.requests = False, 0
+
+        def check(self, request):
+            calls.append((request.identity, request.source, self.generation))
+            self.requests += 1
+            if request.source == "blocked":
+                started.set()
+                assert gate.wait(3)
+            if request.source == "crash":
+                raise Interrupted("process exited before reply")
+            return {"status": "elaborated", "errors": [], "warnings": []}
+
+        def close(self):
+            self.closed = True
+
+    try:
+        yield Environment(), Session, calls, gate, started
+    finally:
+        gate.set()
+
+
+@pytest.fixture
+def warm_environment(tmp_path, project_toolchain):
+    """A captured public fixture with its own bounded, disposable artifact store."""
+    from experiments.warm_pool.environment import create_fixture, freeze
+    from experiments.warm_pool.resources import Budget
+    from glitnir.lean import artifact_store
+
+    disk_bytes = int(os.environ.get("GLITNIR_WARM_TEST_DISK_BYTES", 3 * 1024**3))
+    assert 3 * 1024**3 <= disk_bytes <= 16 * 1024**3
+    try:
+        with Budget(tmp_path, disk_bytes=disk_bytes) as budget:
+            source = create_fixture(
+                tmp_path / "warm-base", project_toolchain, budget=budget
+            )
+            with artifact_store.lease(tmp_path / "store", prune=False) as store:
+                yield freeze(source, tmp_path / "warm-snapshot", store, budget)
+    finally:
+        shutil.rmtree(tmp_path / "warm-snapshot", ignore_errors=True)
+        shutil.rmtree(tmp_path / "store", ignore_errors=True)
 
 
 def _live_gate_set() -> bool:
