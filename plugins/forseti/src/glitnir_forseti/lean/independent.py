@@ -68,7 +68,7 @@ from types import MappingProxyType
 from typing import Any
 
 # Switch to glitnir.lean.environment.SUPERVISOR_FAILED when the glitnir floor rises
-# past 0.1.8.
+# past 0.1.9: v0.1.9 was tagged before it existed.
 from glitnir.lean._supervisor import FAILED as SUPERVISOR_FAILED
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.environment import bind_to_parent, kill_and_reap
