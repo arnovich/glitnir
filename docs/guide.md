@@ -499,7 +499,7 @@ v0.5.0, does; an older build reports the missing module.
 
 `entailment`, `trajectory` and `stepped` decisions and `simulate` and `sample`
 evidence pass Glitnir's check in the plugin's live tests against Forseti Lean
-v0.4.1 on Lean 4.35.0 (Linux CI, 2026-10-25, run 40217643283). `stream`
+v0.5.0 on Lean 4.35.0 (Linux CI, 2026-10-26, run 40361406695). `stream`
 decisions and `iterate` evidence were run through Glitnir's checker locally on
 macOS on 2026-10-23 (Glitnir 0.1.5, Lean 4.35.0); CI covers `stream` decisions
 only, as `iterate` needs Python Asgard. The first check of a Forseti project replays Mathlib and

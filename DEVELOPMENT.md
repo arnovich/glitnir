@@ -71,7 +71,7 @@ With Python 3.12+, uv and Node 22+, run from the repository root:
 uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
-  'backend/dist/glitnir-0.1.8-py3-none-any.whl[dev]'
+  'backend/dist/glitnir-0.1.9-py3-none-any.whl[dev]'
 (cd backend && ../.venv/bin/python -m pytest \
   && ../.venv/bin/black --check src tests scripts \
   && ../.venv/bin/isort --check-only src tests scripts \
@@ -82,7 +82,7 @@ uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
 uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
 uv pip install --python .venv/bin/python --no-deps \
-  plugins/forseti/dist/glitnir_forseti-0.1.8-py3-none-any.whl
+  plugins/forseti/dist/glitnir_forseti-0.1.9-py3-none-any.whl
 (cd plugins/forseti && ../../.venv/bin/python -m pytest -q && ../../.venv/bin/black --check src tests tools \
   && ../../.venv/bin/isort --check-only src tests tools && ../../.venv/bin/flake8 src tests tools \
   && ../../.venv/bin/mypy src)
@@ -203,8 +203,8 @@ test allows each block 300 s to check (on CI's Linux runners a block takes
 CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
 pinned release; run them locally for macOS. Its first all-green run was run
 39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
-Lean 4.35.0. Against the current pin, forseti-lean v0.4.1 with asgard-lean
-v0.3.2, every shard passed in run 40217643283 (2026-10-25). `stream` decisions and `iterate` evidence were verified on
+Lean 4.35.0. Against the current pin, forseti-lean v0.5.0 with asgard-lean
+v0.4.0, every shard passed in run 40361406695 (2026-10-26). `stream` decisions and `iterate` evidence were verified on
 2026-10-23, locally on macOS (Glitnir 0.1.5, Lean 4.35.0). CI covers `stream`
 decisions in `tests/test_stream_decision_lean.py`; `iterate` needs Python
 Asgard, which CI does not install, so it stays a local check. The plugin README
