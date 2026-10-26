@@ -11,9 +11,13 @@ from pathlib import Path
 
 from glitnir.compute.client import Client, Settings, result_from_job, save_receipt
 from glitnir.compute.environments import EnvironmentCache, load_registry
+from glitnir.compute.handoff import prepare_handoff
+from glitnir.compute.lemma_bundle import load_bundle
 from glitnir.compute.protocol import make_request, validate_request
 from glitnir.compute.worker import Worker, execute, run_workers
 from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
+from glitnir.lean.project import read_regular
+from glitnir.lean.sandbox import SandboxUnavailable
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -28,6 +32,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--credential-file", type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
+    handoff = commands.add_parser(
+        "prepare-handoff",
+        help="Build a lemma and preflight a worker copy; submits no job",
+    )
+    handoff.add_argument("prepared", type=Path)
+    handoff.add_argument("bundle", type=Path)
+    handoff.add_argument("candidate", type=Path)
+    handoff.add_argument("--directory", type=Path, required=True)
+    handoff.add_argument(
+        "--path",
+        required=True,
+        help="New relative candidate path in the derived project",
+    )
+    handoff.add_argument("--timeout-seconds", type=int, default=600)
+    handoff.add_argument("--memory-mb", type=int, default=8192)
+    handoff.add_argument(
+        "--max-bytes",
+        type=int,
+        required=True,
+        help="Aggregate disk ceiling for both private copies",
+    )
     submit = commands.add_parser("submit")
     submit.add_argument("source", type=Path)
     submit.add_argument("--receipt", type=Path, required=True)
@@ -53,6 +78,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name in ("prepared", "request", "output", "scratch"):
         child.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.command == "prepare-handoff":
+        try:
+            value = prepare_handoff(
+                args.prepared,
+                load_bundle(args.bundle),
+                read_regular(args.candidate, 1_000_000).decode("utf-8"),
+                args.directory,
+                environment=args.environment,
+                candidate_path=args.path,
+                timeout_seconds=args.timeout_seconds,
+                memory_mb=args.memory_mb,
+                max_bytes=args.max_bytes,
+            )
+            print(json.dumps(value))
+            return 0
+        except (OSError, ValueError, SandboxUnavailable) as error:
+            print(str(error), file=sys.stderr)
+            return 1
     stop = threading.Event()
     previous = {}
     for sig in (signal.SIGTERM, signal.SIGINT):

@@ -199,7 +199,16 @@ jobs:
           # that skips for any other reason fails too (tests/conftest.py).
           GLITNIR_REQUIRE_PROJECT_INSPECTION: '1'
           GLITNIR_TEST_PROOF_TRACE: '1'
-        run: ../.venv/bin/python -m pytest -m live -rs --durations=30
+        run: ../.venv/bin/python -m pytest -m 'live and not handoff_build' -rs --durations=30
+      - name: Check handoff builds inside an aggregate resource boundary
+        working-directory: backend
+        run: |
+          sudo systemd-run --quiet --wait --pipe --collect \
+            --property=User="$(id -un)" --property=WorkingDirectory="$PWD" \
+            --property=MemoryMax=4G --property=MemorySwapMax=0 --property=TasksMax=128 \
+            /usr/bin/env HOME="$HOME" PATH="$PATH" \
+            GLITNIR_REQUIRE_PROJECT_INSPECTION=1 GLITNIR_TEST_PROOF_TRACE=1 \
+            "$PWD/../.venv/bin/python" -m pytest -m 'live and handoff_build' -rs --durations=30
   helpers:
     needs: build
     runs-on: ubuntu-24.04

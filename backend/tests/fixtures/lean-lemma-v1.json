@@ -1,0 +1,56 @@
+{
+  "format": "taskvalet.lean-lemma/v1",
+  "origin": {
+    "server": "https://example.test",
+    "project": "lab",
+    "storage_id": "sqlite:example",
+    "actor": "agent/00000000-0000-4000-8000-000000000002",
+    "run_id": "00000000-0000-4000-8000-000000000002",
+    "task": "001-research",
+    "problem": "00000000-0000-4000-8000-000000000003",
+    "problem_version": 1,
+    "assignment": "00000000-0000-4000-8000-000000000004",
+    "statement": "Prove True.",
+    "assumptions": "Lean standard axioms."
+  },
+  "job": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "project": "lab",
+    "state": "completed",
+    "phase": null,
+    "created": 1.0,
+    "deadline": 61.0,
+    "request": {
+      "request_id": "00000000-0000-4000-8000-000000000001",
+      "kind": "glitnir.check/v1",
+      "environment": "lean-project",
+      "checker_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "context_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source_sha256": "88103f23c939204808ee22cf671426e28b4e214acb91d5a8dbb5d0e206c4498f",
+      "source": "theorem candidate : True := by trivial\n",
+      "path": "Candidate.lean",
+      "through_line": null,
+      "timeout_seconds": 60,
+      "memory_mb": 4096
+    },
+    "worker": "agent/worker",
+    "result": {
+      "status": "checked_snapshot",
+      "source_sha256": "88103f23c939204808ee22cf671426e28b4e214acb91d5a8dbb5d0e206c4498f",
+      "toolchain": "leanprover/lean4:v4.35.0",
+      "module": "Candidate",
+      "withheld": null,
+      "theorems": [
+        {
+          "name": "candidate",
+          "status": "checked",
+          "axioms": []
+        }
+      ]
+    }
+  },
+  "declarations": [
+    "candidate"
+  ],
+  "sha256": "cd40f483a7c151c78d27c391ed76ebd27fa8b62593f6ed14c3cab0f3148b8d35"
+}
