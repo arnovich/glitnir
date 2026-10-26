@@ -555,6 +555,11 @@ def test_the_imports_replay_has_its_own_deadline(tmp_path, monkeypatch):
     # The 0.2 s the import replay took is added back to the check's deadline.
     assert deadlines["imports-cached"] >= started + budget + 0.2
     assert deadlines["imports-cached"] <= finished + budget
+    # The reader, the compile and both reports ran under one deadline, which
+    # the one-time import replay did not move; only the module replay's did.
+    earlier = _staged_check.deadlines[:-2]
+    assert len(earlier) == 4 and len(set(earlier)) == 1
+    assert deadlines["imports-cached"] >= earlier[0] + 0.2
 
 
 @pytest.mark.parametrize("failure", ["Project check timed out.", "cancelled"])
