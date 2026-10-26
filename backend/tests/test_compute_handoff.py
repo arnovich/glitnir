@@ -178,6 +178,7 @@ def test_context_change_and_symlinks_fail_before_build(stub_handoff, tmp_path):
         "infinity",
         "future",
         "boolean",
+        "null_state",
     ],
 )
 def test_saved_state_and_artifacts_are_revalidated(
@@ -210,7 +211,7 @@ def test_saved_state_and_artifacts_are_revalidated(
         saved["probe_request"]["path"] = "Other.lean"
     elif change == "artifact":
         (root / "build/project/.lake/artifact").write_text("corrupted")
-    else:
+    elif change != "null_state":
         saved["deadline"] = {
             "deadline": 0,
             "nan": float("nan"),
@@ -218,7 +219,7 @@ def test_saved_state_and_artifacts_are_revalidated(
             "future": 10**12,
             "boolean": True,
         }[change]
-    path.write_text(json.dumps(saved))
+    path.write_text(json.dumps(None if change == "null_state" else saved))
     with pytest.raises(ValueError):
         prepare_handoff(base, bundle, candidate, root, **options)
 

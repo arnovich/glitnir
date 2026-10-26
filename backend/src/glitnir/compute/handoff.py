@@ -292,6 +292,10 @@ def _prepare_locked(
         else None
     )
     if state is None:
+        if state_path.exists():
+            raise ValueError(
+                "Invalid saved handoff state; refusing to reset its budget"
+            )
         state = {
             "format": "glitnir.lean-handoff-state/v1",
             "inputs": inputs,
