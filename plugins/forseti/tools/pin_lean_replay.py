@@ -15,8 +15,8 @@ platform adds that platform's digest and keeps the rest, and fails if the
 closures there are not byte-identical. A release bump keeps every platform's
 digest while the toolchain stays the same; changing the toolchain keeps only
 the platform the pin is made on. `.github/workflows/forseti-pins.yml` runs
-this on Linux: it records ``Linux-x86_64`` and keeps ``Darwin-arm64`` while
-the toolchain is unchanged; after a toolchain change, run this on macOS too.
+this on Linux, which records ``Linux-x86_64``, and then on macOS on the Linux
+result, which records ``Darwin-arm64``, so a toolchain change pins both.
 
 The replay pin is separate from ``lean-release.v1.json`` and names that pin's
 sha256, so the two move together and neither widens the other. Run it after

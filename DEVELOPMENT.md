@@ -284,7 +284,11 @@ request. It:
 6. uploads the artifact `forseti-pins` (`forseti-pins.patch`, the changed files
    under `files/` and `resolved.json`) and writes a summary with the resolved
    commits, the support version, the toolchain digests per platform, the changed
-   files and the commands to apply the patch.
+   files and the commands to apply the patch;
+7. when every step passed, starts the `macos` job on an arm64 macOS runner. It
+   applies that patch, builds the same release commit, runs `pin_lean_replay.py`
+   to add the `Darwin-arm64` digest, runs the same pin tests there and uploads
+   `forseti-pins-macos`, the patch for both platforms, in the same layout.
 
 A ref that is not a tag makes a probe, which the summary says: its origin record
 names the ref as given, `check.yml` is left alone and
@@ -297,16 +301,21 @@ digest from the committed pin when that pin names the same toolchain, because
 those bytes are the toolchain release's own and change only with it. A re-pin
 on an unchanged toolchain therefore leaves `Darwin-arm64` byte-for-byte as it
 was, and macOS replay still re-observes every closure against it. When the
-toolchain changes, the other digests are dropped, the summary warns, and replay
-on macOS reports the environment unknown (never a proof) until
-`tools/pin_lean_replay.py` is run there on the applied patch.
+toolchain changes, the Linux run drops the other digests and the `macos` job
+records `Darwin-arm64` again. Its `pin_lean_replay.py` fails if any closure
+differs from the Linux one for the same release, so the job also shows that
+the compiled library is byte-identical on macOS. A replay pin without a
+platform's digest makes replay there report the environment unknown, never a
+proof.
 
-To apply a run's pins, on a branch:
+To apply a run's pins for both platforms, on a branch:
 
 ```sh
-gh run download RUN_ID -R arnovich/glitnir -n forseti-pins -D forseti-pins
+gh run download RUN_ID -R arnovich/glitnir -n forseti-pins-macos -D forseti-pins
 git apply --index forseti-pins/forseti-pins.patch
 ```
+
+If the `macos` job failed, `-n forseti-pins` is the Linux-only patch.
 
 Then update the docs that name the pinned tags (this file, `docs/guide.md`,
 `plugins/forseti/README.md` and

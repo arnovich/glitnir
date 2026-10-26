@@ -2,9 +2,12 @@ name: Regenerate Forseti Lean pins
 # Rebuilds a Forseti Lean release on Linux and regenerates the plugin's Lean
 # pins from it (tools/pin_lean_release.py, then tools/pin_lean_replay.py), so a
 # re-pin never needs a local Lean build. It checks the regenerated pins with the
-# plugin's pin tests and uploads them as a patch (artifact forseti-pins). It
-# never pushes, commits or opens a pull request: a maintainer reviews the patch
-# and applies it on a branch. DEVELOPMENT.md, "Re-pinning Forseti Lean".
+# plugin's pin tests and uploads them as a patch (artifact forseti-pins). The
+# macos job then applies that patch on macOS, adds the Darwin-arm64 toolchain
+# digest to the replay pin, checks it there and uploads the patch for both
+# platforms (artifact forseti-pins-macos). Neither job pushes, commits or opens
+# a pull request: a maintainer reviews the patch and applies it on a branch.
+# DEVELOPMENT.md, "Re-pinning Forseti Lean".
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +36,10 @@ jobs:
   regenerate:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    outputs:
+      forseti_commit: ${{ steps.refs.outputs.forseti_commit }}
+      forseti_kind: ${{ steps.refs.outputs.forseti_kind }}
+      asgard_kind: ${{ steps.refs.outputs.asgard_kind }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -282,8 +289,7 @@ jobs:
               echo
               echo "> [!WARNING]"
               echo "> The toolchain changed, so only this platform's toolchain digest is pinned."
-              echo "> Replay on any other platform (macOS) reports the environment unknown until"
-              echo "> \`tools/pin_lean_replay.py\` is run there on this patch."
+              echo "> The macos job adds Darwin-arm64; apply its forseti-pins-macos artifact."
             fi
             echo
             echo "### Changed files"
@@ -295,11 +301,150 @@ jobs:
             echo "### Apply"
             echo
             echo '```sh'
-            echo "gh run download $GITHUB_RUN_ID -R $GITHUB_REPOSITORY -n forseti-pins -D forseti-pins"
+            echo "gh run download $GITHUB_RUN_ID -R $GITHUB_REPOSITORY -n forseti-pins-macos -D forseti-pins"
             echo "git apply --index forseti-pins/forseti-pins.patch"
             echo '```'
+            echo
+            echo "forseti-pins-macos, from the macos job, holds both platforms' pins. This job's"
+            echo "forseti-pins is the Linux-only patch that the macos job starts from."
             echo
             echo "Then update the docs that name the pinned tags (DEVELOPMENT.md, docs/guide.md,"
             echo "plugins/forseti/README.md, skills/glitnir-notebooks/references/optional-features.md)"
             echo "and let the pull request's plugin-live job run the whole suite against the release."
+          } >> "$GITHUB_STEP_SUMMARY"
+  # Observes the Darwin-arm64 toolchain digest on the patch the Linux job made.
+  # closure.build_pin refuses closures that differ from the Linux ones for the
+  # same release, so this also checks that the compiled library is
+  # byte-identical on macOS. Every step mirrors one in regenerate.
+  macos:
+    needs: regenerate
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      FORSETI_COMMIT: ${{ needs.regenerate.outputs.forseti_commit }}
+      FORSETI_KIND: ${{ needs.regenerate.outputs.forseti_kind }}
+      ASGARD_KIND: ${{ needs.regenerate.outputs.asgard_kind }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          enable-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: forseti-pins
+          path: ${{ runner.temp }}/linux-pins
+      - name: Apply the Linux pins
+        run: |
+          patch="$RUNNER_TEMP/linux-pins/forseti-pins.patch"
+          if [ -s "$patch" ]; then git apply "$patch"; fi
+          git diff --stat
+      - name: Fetch the Forseti Lean release
+        run: |
+          dir="$RUNNER_TEMP/forseti-lean"
+          git init --quiet "$dir"
+          git -C "$dir" remote add origin "$FORSETI_URL"
+          git -C "$dir" fetch --quiet --depth 1 origin "$FORSETI_COMMIT"
+          git -C "$dir" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$dir" rev-parse HEAD)" = "$FORSETI_COMMIT"
+      - name: Build and install the backend and plugin
+        run: |
+          uv build backend --wheel --out-dir "$RUNNER_TEMP/wheels"
+          uv build plugins/forseti --wheel --out-dir "$RUNNER_TEMP/wheels"
+          backend=$(echo "$RUNNER_TEMP"/wheels/glitnir-*-py3-none-any.whl)
+          test -f "$backend"
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock "${backend}[dev]"
+          uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
+          uv pip install --python .venv/bin/python --no-deps "$RUNNER_TEMP"/wheels/glitnir_forseti-*-py3-none-any.whl
+      - name: Install elan and check the sandbox
+        run: |
+          curl -fsSL https://github.com/leanprover/elan/releases/download/v4.2.4/elan-aarch64-apple-darwin.tar.gz -o "$RUNNER_TEMP/elan.tar.gz"
+          echo "7ad829861392c718dfebde3a83b5c8508df47be02af68894b094b0b3952616e5  $RUNNER_TEMP/elan.tar.gz" | shasum -a 256 --check
+          tar -xzf "$RUNNER_TEMP/elan.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/elan-init" -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          .venv/bin/python -c 'from glitnir.lean.sandbox import sandbox_available; assert sandbox_available(), "macOS requires a working sandbox"'
+      - name: Build the Forseti Lean release
+        working-directory: ${{ runner.temp }}/forseti-lean
+        run: |
+          lake exe cache get
+          lake build
+          list=$("$GITHUB_WORKSPACE/.venv/bin/python" -c 'from glitnir_forseti import providers; print(" ".join(sorted({m for p in providers() for m in p.imports if m.startswith("Gimle.")})))')
+          read -ra modules <<< "$list"
+          lake build "${modules[@]}"
+      - name: Add the Darwin-arm64 digest to the replay pin
+        id: replay
+        run: .venv/bin/python plugins/forseti/tools/pin_lean_replay.py "$RUNNER_TEMP/forseti-lean"
+      - name: Reinstall the plugin with the new replay pin
+        run: |
+          rm -f "$RUNNER_TEMP"/wheels/glitnir_forseti-*.whl
+          uv build plugins/forseti --wheel --out-dir "$RUNNER_TEMP/wheels"
+          uv pip install --python .venv/bin/python --no-deps --reinstall "$RUNNER_TEMP"/wheels/glitnir_forseti-*-py3-none-any.whl
+      - name: Check the pins on macOS
+        id: tests
+        working-directory: plugins/forseti
+        env:
+          FORSETI_REQUIRE_LEAN_PROJECT: '1'
+          PROBE: ${{ needs.regenerate.outputs.forseti_kind != 'tag' || needs.regenerate.outputs.asgard_kind != 'tag' }}
+        run: |
+          export FORSETI_LEAN_PROJECT="$RUNNER_TEMP/forseti-lean"
+          deselect=()
+          if [ "$PROBE" = true ]; then
+            deselect=(--deselect tests/test_lean_release.py::test_release_records_which_checkout_satisfies_it)
+          fi
+          ../../.venv/bin/python -m pytest -v --tb=short -rfE "${deselect[@]}" \
+            tests/test_pin_lean_release.py tests/test_lean_release.py \
+            tests/test_entailment_lean.py::test_the_replay_pin_matches_the_release \
+            tests/test_entailment_lean.py::test_the_replay_pin_is_current
+      - name: Collect the patch for both platforms
+        if: always() && steps.replay.outcome == 'success'
+        env:
+          TESTS: ${{ steps.tests.outcome }}
+        run: |
+          out="$RUNNER_TEMP/forseti-pins"
+          mkdir -p "$out/files"
+          paths=(
+            plugins/forseti/src/glitnir_forseti/lean-release.v1.json
+            plugins/forseti/src/glitnir_forseti/lean-lockfile.v1.json
+            plugins/forseti/src/glitnir_forseti/lean-replay.v1.json
+            plugins/forseti/tests/fixtures/lean-release-origin.v1.json
+            plugins/forseti/tools/pin_lean_release.py
+            .github/workflows/check.yml
+          )
+          git diff --binary -- "${paths[@]}" > "$out/forseti-pins.patch"
+          git diff --name-only -- "${paths[@]}" > "$out/changed.txt"
+          while read -r path; do
+            mkdir -p "$out/files/$(dirname "$path")"
+            cp "$path" "$out/files/$path"
+          done < "$out/changed.txt"
+          jq --arg tests_macos "$TESTS" '. + {$tests_macos}' "$RUNNER_TEMP/linux-pins/resolved.json" > "$out/resolved.json"
+      - name: Upload the patch for both platforms
+        if: always() && steps.replay.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: forseti-pins-macos
+          path: ${{ runner.temp }}/forseti-pins
+          if-no-files-found: error
+          retention-days: 14
+      - name: Summarize
+        if: always()
+        env:
+          OUTCOMES: replay-pin=${{ steps.replay.outcome }} tests=${{ steps.tests.outcome }}
+        run: |
+          replay=plugins/forseti/src/glitnir_forseti/lean-replay.v1.json
+          old=$(git show "HEAD:$replay" 2> /dev/null | jq -c '.toolchain_binaries // {}')
+          new=$(jq -c '.toolchain_binaries // {}' "$replay" 2> /dev/null || echo '{}')
+          {
+            echo "## Forseti Lean pins on macOS"
+            echo
+            echo "forseti-lean \`$FORSETI_COMMIT\` ($FORSETI_KIND). Steps: $OUTCOMES."
+            echo
+            echo "- Per platform, against the committed pin: $(jq -nr --argjson old "$old" --argjson new "$new" \
+              '[($old + $new | keys[]) as $k | "\($k) \(if $old[$k] == null then "added" elif $new[$k] == null then "dropped" elif $old[$k] == $new[$k] then "unchanged" else "changed" end)"] | join(", ")')"
+            echo
+            echo '```'
+            git diff --stat
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
