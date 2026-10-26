@@ -25,6 +25,11 @@ claims after it, and 2 when checking is unavailable.
 The editor's **Check saved file** additionally saves results to
 `<Notebook>.glitnir.json`.
 
+For operator preparation of a reusable Lean source module before a remote check,
+see [checked-source handoffs](../docs/lemma-handoffs.md). The Linux preparation
+command builds real Lake artifacts and preflights a worker copy without submitting
+a compute job or changing proof authority.
+
 See the [Glitnir README](https://github.com/arnovich/glitnir#readme) for
 installation and the notebook format, and
 [DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md)
