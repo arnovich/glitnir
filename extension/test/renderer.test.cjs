@@ -663,6 +663,7 @@ test('a run that failed and was saved this session offers Run again', async () =
   try {
     const card = window.document.querySelector('#doc .evidence');
     assert.equal(card.querySelector('.box-head .pill').textContent, 'Failed');
+    assert.doesNotMatch(card.textContent, /Not run yet/);
     assert.equal(card.querySelector('[data-act="evidence-run"]').textContent, 'Run again');
   } finally { window.close(); }
 });
@@ -961,6 +962,7 @@ test('this session\'s decision run error replaces the saved failure, or comes be
     const notes = card => [...card.querySelectorAll('.note-line')].map(n => n.textContent);
     assert.deepEqual(notes(cards[0]), ['The last run failed: The goal has no variables.']);
     assert.deepEqual(decisionButtons(cards[0]), ['Run again']);
+    assert.doesNotMatch(cards[0].textContent, /Not run yet/);
     assert.deepEqual(notes(cards[1]), ['The last run failed: crashed']);
     assert.deepEqual(notes(cards[2]), [`The last run failed: ${busy}`, 'An earlier run failed on 2026-10-25: The goal has no variables.']);
   } finally { window.close(); }
