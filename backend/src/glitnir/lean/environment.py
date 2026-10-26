@@ -76,7 +76,7 @@ def kill_and_reap(process: subprocess.Popen[bytes]) -> None:
     process.wait()
 
 
-def _set_output_file_limit(max_output_bytes: int) -> None:
+def set_output_file_limit(max_output_bytes: int) -> None:
     """Cap the child's writable output in the child itself.
 
     Args:
@@ -108,7 +108,7 @@ def bind_to_parent(parent_pid: int, max_output_bytes: int | None = None) -> None
         OSError: If the kernel refuses the parent-death signal.
     """
     if max_output_bytes is not None:
-        _set_output_file_limit(max_output_bytes)
+        set_output_file_limit(max_output_bytes)
     if _PRCTL is None:
         return
     if _PRCTL(_PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
