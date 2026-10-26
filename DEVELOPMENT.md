@@ -39,6 +39,13 @@ The repository has four parts:
   renderer's view-model and assets and starts no thread or server, but it is
   not side-effect free: the editor's `--export` command writes the renderer
   bundle, and snapshot fingerprints may run git.
+  `glitnir.service.preview` composes two components, `runs.DirectiveRuns`
+  (evidence and decision runs, remembered Lean output, saved failures) and
+  `views.ViewDrawing` (view jobs and saved drawings), which share its locks and
+  cancel event through a frozen `PreviewContext` and never hold the service.
+  `glitnir.notebook.records_schema` says what a well-formed
+  `<Notebook>.glitnir.json` is; `check_records` reads, writes and interprets
+  one.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by
