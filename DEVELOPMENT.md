@@ -245,6 +245,75 @@ Keep public CI independent of private repositories. Tests requiring an external
 corpus or optional simulation must declare those prerequisites without skipping
 independent tests in the same module.
 
+## Re-pinning Forseti Lean
+
+The plugin pins one Forseti Lean release by content: `lean-release.v1.json`,
+`lean-lockfile.v1.json` and `lean-replay.v1.json` in
+`plugins/forseti/src/glitnir_forseti`, the origin record
+`plugins/forseti/tests/fixtures/lean-release-origin.v1.json`, `SUPPORT_VERSION`
+in `plugins/forseti/tools/pin_lean_release.py` and the tag and commit
+plugin-live clones in `check.yml`. Regenerate them on a Linux runner with the
+manually dispatched **Regenerate Forseti Lean pins** workflow
+(`.github/workflows/forseti-pins.yml`), so no local Lean build is needed:
+
+```sh
+gh workflow run forseti-pins.yml -R arnovich/glitnir \
+  -f forseti_ref=v0.4.1 -f asgard_ref=v0.3.2   # -f bump_support=false to keep the version
+```
+
+It has read-only permissions and no secrets, and it never pushes or opens a pull
+request. It:
+
+1. resolves `forseti_ref` and `asgard_ref` in the public forseti-lean and
+   asgard-lean repositories (a tag as `refs/tags/NAME`, a 40-hex SHA as itself,
+   anything else as a branch) and fails unless the forseti-lean commit's
+   `lake-manifest.json` locks exactly that asgard-lean commit from asgard-lean;
+2. installs the backend and plugin built from the dispatched Glitnir commit,
+   elan and the sandbox, and builds the release as plugin-live does
+   (`lake exe cache get`, `lake build`, then the providers' modules);
+3. runs `pin_lean_release.py` with `--forseti-tag`/`--asgard-tag` set to the
+   inputs (and `--bump-support` unless `bump_support` is false, which bumps
+   `SUPPORT_VERSION` only when the pinned content changed), then reinstalls the
+   plugin so the replay tool and the tests read the new release pin, and runs
+   `pin_lean_replay.py`;
+4. when `forseti_ref` is a tag, points plugin-live's clone at it and its commit;
+5. runs the pin tests against the regenerated, reinstalled pins under
+   `FORSETI_REQUIRE_LEAN_PROJECT=1`: `test_pin_lean_release.py`,
+   `test_lean_release.py`, `test_the_replay_pin_matches_the_release` and
+   `test_the_replay_pin_is_current`;
+6. uploads the artifact `forseti-pins` (`forseti-pins.patch`, the changed files
+   under `files/` and `resolved.json`) and writes a summary with the resolved
+   commits, the support version, the toolchain digests per platform, the changed
+   files and the commands to apply the patch.
+
+A ref that is not a tag makes a probe, which the summary says: its origin record
+names the ref as given, `check.yml` is left alone and
+`test_release_records_which_checkout_satisfies_it`, which requires tags, is
+deselected. Do not commit a probe's pins.
+
+The replay pin records one toolchain digest per platform. The run on Linux
+observes `Linux-x86_64`; `closure.build_pin` keeps every other platform's
+digest from the committed pin when that pin names the same toolchain, because
+those bytes are the toolchain release's own and change only with it. A re-pin
+on an unchanged toolchain therefore leaves `Darwin-arm64` byte-for-byte as it
+was, and macOS replay still re-observes every closure against it. When the
+toolchain changes, the other digests are dropped, the summary warns, and replay
+on macOS reports the environment unknown (never a proof) until
+`tools/pin_lean_replay.py` is run there on the applied patch.
+
+To apply a run's pins, on a branch:
+
+```sh
+gh run download RUN_ID -R arnovich/glitnir -n forseti-pins -D forseti-pins
+git apply --index forseti-pins/forseti-pins.patch
+```
+
+Then update the docs that name the pinned tags (this file, `docs/guide.md`,
+`plugins/forseti/README.md` and
+`skills/glitnir-notebooks/references/optional-features.md`) and open a pull
+request; its plugin-live job runs the whole plugin suite against the release.
+Both tools still run locally on a built checkout, as their docstrings describe.
+
 ## Releases
 
 Release instructions for maintainers are in [AGENTS.md](AGENTS.md#releases),
