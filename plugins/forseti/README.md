@@ -80,7 +80,7 @@ proofs may unroll a recursion over every mark, only up to 1024 marks, four
 years. A longer claim is `UNKNOWN: unsupported`. `stepped` decisions and
 `sample` evidence need a Forseti Lean build that contains
 `Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the
-pinned release, Forseti Lean v0.4.1, does; an older build reports the missing
+pinned release, Forseti Lean v0.5.0, does; an older build reports the missing
 module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says

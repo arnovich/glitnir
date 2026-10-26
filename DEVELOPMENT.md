@@ -227,7 +227,7 @@ jobs are:
 - **helpers** elaborates every Lean helper program on that Lean with
   `backend/scripts/check_helpers.py`, requiring no output.
 - **plugin-live** builds the Forseti Lean release the plugin pins (forseti-lean
-  `v0.4.1`, checked against its commit) and runs the plugin's whole test suite
+  `v0.5.0`, checked against its commit) and runs the plugin's whole test suite
   against it with `FORSETI_REQUIRE_LEAN_PROJECT=1`, so a Lean test that cannot
   run or skips fails (a `skipif` it declares, or the optional `simulation`
   input, stays a skip). It runs as a matrix of shards, each building the release
@@ -258,7 +258,7 @@ manually dispatched **Regenerate Forseti Lean pins** workflow
 
 ```sh
 gh workflow run forseti-pins.yml -R arnovich/glitnir \
-  -f forseti_ref=v0.4.1 -f asgard_ref=v0.3.2   # -f bump_support=false to keep the version
+  -f forseti_ref=v0.5.0 -f asgard_ref=v0.4.0   # -f bump_support=false to keep the version
 ```
 
 It has read-only permissions and no secrets, and it never pushes or opens a pull
