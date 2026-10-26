@@ -538,6 +538,74 @@ def test_a_pin_that_names_no_toolchain_keeps_others_only_for_its_release() -> No
     assert bumped["toolchain_binaries"] == {"Darwin-arm64": "b" * 64}
 
 
+def test_a_toolchain_digest_reads_only_the_named_platforms_files(tmp_path) -> None:
+    """Another platform's toolchain, such as an extracted archive, digests as there."""
+    import hashlib
+    import platform
+
+    from glitnir_forseti.lean import closure
+
+    for relative in closure.TOOLCHAIN_BINARIES["Darwin"][:-1]:
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_bytes(relative.encode())
+    entries = [
+        f"{r}={hashlib.sha256(r.encode()).hexdigest()}"
+        for r in closure.TOOLCHAIN_BINARIES["Darwin"][:-1]
+    ] + [f"{closure.TOOLCHAIN_BINARIES['Darwin'][-1]}=absent"]
+    expected = hashlib.sha256("\n".join(entries).encode()).hexdigest()
+    assert closure.toolchain_digest(tmp_path, "Darwin") == expected
+    assert closure.toolchain_digest(tmp_path, "Linux") != expected
+    assert closure._binaries(tmp_path) == closure.toolchain_digest(
+        tmp_path, platform.system()
+    )
+
+
+def test_the_pin_adds_digests_computed_from_toolchain_files() -> None:
+    from glitnir_forseti.lean import closure
+
+    pin = closure.build_pin(
+        [_observation("Linux-x86_64", "c" * 64)],
+        toolchains={"Darwin-arm64": "b" * 64, "Linux-x86_64": "c" * 64},
+    )
+    assert pin["toolchain_binaries"] == {
+        "Darwin-arm64": "b" * 64,
+        "Linux-x86_64": "c" * 64,
+    }
+
+
+def test_a_computed_digest_must_agree_with_the_observed_one() -> None:
+    """The observed platform checks that its installed toolchain is the archive's."""
+    from glitnir_forseti.lean import closure
+
+    with pytest.raises(ValueError, match="Linux-x86_64"):
+        closure.build_pin(
+            [_observation("Linux-x86_64", "c" * 64)],
+            toolchains={"Linux-x86_64": "e" * 64},
+        )
+
+
+def test_a_computed_digest_must_agree_with_the_pinned_one_for_the_toolchain() -> None:
+    from glitnir_forseti.lean import closure
+
+    previous = closure.build_pin(
+        [_observation("Linux-x86_64", "c" * 64)],
+        toolchains={"Darwin-arm64": "b" * 64},
+    )
+    with pytest.raises(ValueError, match="Darwin-arm64"):
+        closure.build_pin(
+            [_observation("Linux-x86_64", "c" * 64)],
+            previous,
+            toolchains={"Darwin-arm64": "e" * 64},
+        )
+    changed = {**previous, "toolchain": "leanprover/lean4:v0.0.0"}
+    merged = closure.build_pin(
+        [_observation("Linux-x86_64", "c" * 64)],
+        changed,
+        toolchains={"Darwin-arm64": "e" * 64},
+    )
+    assert merged["toolchain_binaries"]["Darwin-arm64"] == "e" * 64
+
+
 def test_a_platform_may_add_an_import_set_to_the_same_release() -> None:
     """A new closure is added beside the pinned ones; a changed one still is not."""
     from glitnir_forseti.lean import closure

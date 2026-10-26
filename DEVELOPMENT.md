@@ -282,7 +282,7 @@ request. It:
    inputs (and `--bump-support` unless `bump_support` is false, which bumps
    `SUPPORT_VERSION` only when the pinned content changed), then reinstalls the
    plugin so the replay tool and the tests read the new release pin, and runs
-   `pin_lean_replay.py`;
+   `pin_lean_replay.py` with every supported platform's toolchain (below);
 4. when `forseti_ref` is a tag, points plugin-live's clone at it and its commit;
 5. runs the pin tests against the regenerated, reinstalled pins under
    `FORSETI_REQUIRE_LEAN_PROJECT=1`: `test_pin_lean_release.py`,
@@ -298,15 +298,18 @@ names the ref as given, `check.yml` is left alone and
 `test_release_records_which_checkout_satisfies_it`, which requires tags, is
 deselected. Do not commit a probe's pins.
 
-The replay pin records one toolchain digest per platform. The run on Linux
-observes `Linux-x86_64`; `closure.build_pin` keeps every other platform's
-digest from the committed pin when that pin names the same toolchain, because
-those bytes are the toolchain release's own and change only with it. A re-pin
-on an unchanged toolchain therefore leaves `Darwin-arm64` byte-for-byte as it
-was, and macOS replay still re-observes every closure against it. When the
-toolchain changes, the other digests are dropped, the summary warns, and replay
-on macOS reports the environment unknown (never a proof) until
-`tools/pin_lean_replay.py` is run there on the applied patch.
+The replay pin records one toolchain digest per platform: a digest of the
+toolchain release's own `lean`, `leanchecker` and shared libraries for that
+platform, which change only with the toolchain. Nothing has to run on a
+platform to pin it. The workflow downloads the Lean release's archives for
+`Linux-x86_64`, `Linux-aarch64`, `Darwin-x86_64` and `Darwin-arm64`, checks
+each against the SHA-256 GitHub reports for it, and passes the extracted
+toolchains to `pin_lean_replay.py --toolchain PLATFORM=DIR`. Each computed
+digest must equal the committed one when the toolchain is unchanged, and the
+`Linux-x86_64` one must equal the digest of the elan install the run observed,
+which shows that elan installs the archive's bytes. Closures are the same on
+every platform, and replay re-observes every closure where it runs. A platform
+the pin has no digest for reports the environment unknown, never a proof.
 
 To apply a run's pins, on a branch:
 

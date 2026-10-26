@@ -2,7 +2,7 @@
 
 Usage, from a built release checkout that already satisfies the release pin::
 
-    uv run python tools/pin_lean_replay.py PROJECT [--check]
+    uv run python tools/pin_lean_replay.py PROJECT [--check] [--toolchain P=DIR]...
 
 Replay of an entailment artifact imports ``Gimle.Forseti.Syntax.Certificate``,
 and replay of a trajectory root also imports its model's Lean module; each
@@ -10,13 +10,16 @@ import set's closure is thousands of modules. `glitnir_forseti.lean.closure`
 hashes every artifact Lean loads for them, and every package source, into one
 digest per package; this script records those digests, per import set, in
 ``src/glitnir_forseti/lean-replay.v1.json``. The toolchain binaries are pinned
-per platform, under the toolchain they belong to: running this on another
-platform adds that platform's digest and keeps the rest, and fails if the
-closures there are not byte-identical. A release bump keeps every platform's
-digest while the toolchain stays the same; changing the toolchain keeps only
-the platform the pin is made on. `.github/workflows/forseti-pins.yml` runs
-this on Linux: it records ``Linux-x86_64`` and keeps ``Darwin-arm64`` while
-the toolchain is unchanged; after a toolchain change, run this on macOS too.
+per platform, under the toolchain they belong to. They are digests of the
+toolchain's own files, so ``--toolchain Darwin-arm64=DIR`` adds a platform's
+digest from its toolchain extracted into DIR, without running anything there;
+each must agree with the digest observed here and with the one pinned for the
+same toolchain. Running this on another platform also adds its digest and
+keeps the rest, and fails if the closures there are not byte-identical. A
+release bump keeps every platform's digest while the toolchain stays the same;
+changing the toolchain keeps only the platforms this run digests.
+`.github/workflows/forseti-pins.yml` runs this on Linux with every supported
+platform's toolchain extracted from the Lean release's archives.
 
 The replay pin is separate from ``lean-release.v1.json`` and names that pin's
 sha256, so the two move together and neither widens the other. Run it after
@@ -28,11 +31,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 from glitnir_forseti.entailment.render import ALGEBRAIC_IMPORTS, IMPORTS, PSATZ_IMPORTS
-from glitnir_forseti.lean.closure import ClosureObservation, build_pin, observe_closure
+from glitnir_forseti.lean.closure import (
+    TOOLCHAIN_BINARIES,
+    ClosureObservation,
+    build_pin,
+    observe_closure,
+    toolchain_digest,
+)
 from glitnir_forseti.lean.session import SessionLimits
 from glitnir_forseti.stepped.models import replay_imports as stepped_imports
 from glitnir_forseti.streams.models import replay_imports as stream_imports
@@ -40,6 +50,17 @@ from glitnir_forseti.trajectory.models import replay_imports
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 REPLAY_PIN = REPOSITORY / "src/glitnir_forseti/lean-replay.v1.json"
+
+
+def _toolchain(value: str) -> tuple[str, Path]:
+    """Parse ``PLATFORM=DIR``, a platform `current_platform` names."""
+    name, _, directory = value.partition("=")
+    match = re.fullmatch(r"([A-Za-z]+)-[A-Za-z0-9_]+", name)
+    if match is None or match.group(1) not in TOOLCHAIN_BINARIES:
+        raise argparse.ArgumentTypeError(f"not a supported platform: {name!r}")
+    if not Path(directory).is_dir():
+        raise argparse.ArgumentTypeError(f"not a directory: {directory!r}")
+    return name, Path(directory)
 
 
 def main() -> int:
@@ -52,7 +73,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("project", type=Path)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--toolchain",
+        type=_toolchain,
+        action="append",
+        default=[],
+        metavar="PLATFORM=DIR",
+    )
     arguments = parser.parse_args()
+    toolchains = {
+        name: toolchain_digest(directory, name.split("-")[0])
+        for name, directory in arguments.toolchain
+    }
 
     observations = []
     import_sets = {
@@ -73,7 +105,7 @@ def main() -> int:
         observations.append(observed)
     previous = json.loads(REPLAY_PIN.read_bytes()) if REPLAY_PIN.is_file() else None
     try:
-        pin = build_pin(observations, previous)
+        pin = build_pin(observations, previous, toolchains)
     except ValueError as error:
         print(f"cannot pin: {error}", file=sys.stderr)
         return 1
