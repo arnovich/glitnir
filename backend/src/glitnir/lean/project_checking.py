@@ -5,12 +5,14 @@ import json
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.lean import replay_cache
+from glitnir.lean.artifact_store import ArtifactStore
 from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.candidate import candidate_text, candidate_verdict, failure_location
@@ -232,6 +234,285 @@ def _refuse_unsupported(source: Path) -> None:
         raise SnapshotError(message)
 
 
+@dataclass(frozen=True)
+class _Check:
+    """What one check was asked: fixed for the whole call."""
+
+    source: Path
+    text: str
+    text_sha256: str
+    saved_sha256: str
+    cancel: threading.Event
+    progress: Callable[[str], None]
+    rest: str | None
+    timed: Callable[[str], AbstractContextManager[None]]
+
+
+@dataclass(frozen=True)
+class _Environment:
+    """Phase 1, `_resolve`: the project and the toolchain the check compiles in."""
+
+    toolchain: Path
+    setup: dict[str, Any]
+    resolution: dict[str, Any] | None
+    project_root: Path | None
+    module: str
+
+
+@dataclass(frozen=True)
+class _Frozen:
+    """Phase 2, `_capture`: the snapshot, the helper programs and the identity."""
+
+    root: Path
+    snapshot: ProjectSnapshot
+    digest: str
+    reader: Path
+    reporter: Path
+    replay: Path
+    identity: str
+    deadline: float
+    memory: int
+    setup_path: Path
+    tag: str
+    continuation: list[str]
+    builds: dict[str, Path]
+    relative: Path
+    run: Callable[..., str]
+
+
+@dataclass(frozen=True)
+class _Read:
+    """Phase 3, `_read`: what the reader reported about the saved text."""
+
+    entries: list[dict[str, Any]]
+    unclaimed: list[dict[str, Any]]
+    saved_bytes: bytes
+
+
+@dataclass(frozen=True)
+class _Compiled:
+    """Phase 4, `_compile`: the examples' edits, and the examples claiming nothing."""
+
+    edits: list[tuple[int, bytes]]
+    unclaimed: list[dict[str, Any]]
+
+
+def _resolve(check: _Check) -> _Environment:
+    """Resolve the project's environment, or refuse one Glitnir cannot check."""
+    project = describe_project(check.source)
+    toolchain = _toolchain()
+    resolution = None
+    if project["kind"] == "lake":
+        check.progress("Resolving project environment")
+        with check.timed("resolve"):
+            inspected = inspect_project(
+                check.source, expected_sha256=check.saved_sha256, cancel=check.cancel
+            )
+        if inspected["status"] != "resolved":
+            raise SnapshotError(inspected["message"])
+        setup = inspected["setup"]
+        resolution = inspected["resolution"]
+        project_root = Path(project["root"]).resolve()
+    else:
+        support = lean_support(project)
+        if not support["supported"]:
+            raise SnapshotError(support["message"])
+        setup = {
+            "name": "GlitnirStandalone",
+            "isModule": False,
+            "importArts": {},
+            "plugins": [],
+            "dynlibs": [],
+            "options": {},
+        }
+        project_root = None
+    module = setup["name"]
+    if (toolchain / "lib/lean" / module_path(module)).with_suffix(".olean").exists():
+        raise SnapshotError("The checked module shadows a trusted toolchain module.")
+    return _Environment(
+        toolchain=toolchain,
+        setup=setup,
+        resolution=resolution,
+        project_root=project_root,
+        module=module,
+    )
+
+
+def _capture(
+    check: _Check, environment: _Environment, root: Path, store: ArtifactStore
+) -> _Frozen:
+    """Freeze the project in a private snapshot and compose the helper programs."""
+    check.progress("Preparing isolated environment")
+    with check.timed("capture"):
+        snapshot = capture(
+            root,
+            check.source,
+            environment.setup,
+            environment.toolchain,
+            environment.project_root,
+            check.cancel,
+            configuration=(
+                {
+                    item["path"]: item["sha256"]
+                    for item in environment.resolution["inputs"]
+                }
+                if environment.resolution
+                else None
+            ),
+            text=check.text,
+            store=store,
+        )
+    digest = hashlib.sha256(snapshot.source.read_bytes()).hexdigest()
+    if digest != check.text_sha256:
+        raise SnapshotError("Saved source changed; refresh and retry.")
+    reader, reporter, replay = _programs(root / "programs")
+    helper_identity = hashlib.sha256(
+        json.dumps(
+            {
+                p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in (reader, reporter, replay)
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    identity = hashlib.sha256(
+        (
+            "glitnir.project-check/v1\0"
+            + snapshot.identity
+            + helper_identity
+            + json.dumps(environment.resolution, sort_keys=True)
+        ).encode()
+    ).hexdigest()
+    deadline = time.monotonic() + check_seconds()
+    memory = memory_limit_mb()
+    setup_path = root / "programs/setup.json"
+    setup_path.write_text(json.dumps(snapshot.setup))
+    check.progress("Checking saved file")
+    tag = example_tag(check.text)
+    continuation = []
+    if check.rest is not None:
+        # Only parsed, after the prefix's last command, never compiled.
+        rest_path = root / "programs" / "rest.lean"
+        rest_path.write_text(check.rest)
+        continuation = [str(rest_path)]
+    run = partial(_run, snapshot, cancel=check.cancel, deadline=deadline)
+    builds = {key: root / key for key in ("reference", "candidate")}
+    relative = module_path(environment.module)
+    for directory in builds.values():
+        (directory / relative.parent).mkdir(parents=True)
+    return _Frozen(
+        root=root,
+        snapshot=snapshot,
+        digest=digest,
+        reader=reader,
+        reporter=reporter,
+        replay=replay,
+        identity=identity,
+        deadline=deadline,
+        memory=memory,
+        setup_path=setup_path,
+        tag=tag,
+        continuation=continuation,
+        builds=builds,
+        relative=relative,
+        run=run,
+    )
+
+
+def _read(check: _Check, frozen: _Frozen) -> _Read:
+    """Run the reader over the saved text and validate what it reported."""
+    report_path = frozen.builds["reference"] / "source-report.json"
+    try:
+        with check.timed("read"):
+            frozen.run(
+                [
+                    "lean",
+                    f"-M{frozen.memory}",
+                    "--run",
+                    str(frozen.reader),
+                    str(frozen.snapshot.source),
+                    str(frozen.setup_path),
+                    str(frozen.snapshot.artifacts),
+                    frozen.tag,
+                    str(frozen.builds["reference"] / (str(frozen.relative) + ".olean")),
+                    str(report_path),
+                    *frozen.continuation,
+                ],
+                cwd=frozen.builds["reference"],
+                readable=[frozen.reader.parent],
+                writable=True,
+            )
+    except SnapshotError as error:
+        failure = _reader_failure(error, report_path, check.text)
+        if failure is not None:
+            raise failure from error
+        raise
+    source_report = json.loads(read_regular(report_path, OUTPUT_BYTES))
+    entries = (
+        source_report.get("declarations") if isinstance(source_report, dict) else None
+    )
+    if not isinstance(entries, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("name"), str)
+        and type(item.get("start")) is int
+        and type(item.get("end")) is int
+        and 0 <= item["start"] < item["end"] <= frozen.snapshot.source.stat().st_size
+        for item in entries
+    ):
+        raise SnapshotError("The source declaration report is malformed.")
+    unclaimed = source_report.get("examples", [])
+    if not isinstance(unclaimed, list):
+        raise SnapshotError("The source declaration report is malformed.")
+    saved_bytes = frozen.snapshot.source.read_bytes()
+    if saved_bytes != check.text.encode():
+        raise SnapshotError("Saved source changed; refresh and retry.")
+    return _Read(entries=entries, unclaimed=unclaimed, saved_bytes=saved_bytes)
+
+
+def _compile(check: _Check, frozen: _Frozen, read: _Read) -> _Compiled:
+    """Compile the text, its examples as the theorems the reader read them as."""
+    edits, unclaimed = example_edits(
+        check.text, read.entries, read.unclaimed, frozen.tag
+    )
+    compiled_source = frozen.snapshot.source
+    compiled_text = None
+    if edits:
+        # Examples compile as the theorems the reader read them as. Only
+        # their keywords change, so every line keeps its number.
+        compiled_source = frozen.root / "compiled" / frozen.snapshot.source.name
+        compiled_source.parent.mkdir()
+        compiled_source.write_bytes(rewrite_examples(read.saved_bytes, edits))
+        compiled_source.chmod(0o400)
+        compiled_bytes = compiled_source.read_bytes()
+        check_rewrite(read.saved_bytes, compiled_bytes, edits)
+        compiled_text = compiled_bytes.decode()
+    try:
+        with check.timed("compile"):
+            frozen.run(
+                [
+                    "lean",
+                    f"-M{frozen.memory}",
+                    "-DmaxHeartbeats=1000000",
+                    "--setup",
+                    str(frozen.setup_path),
+                    "-o",
+                    str(frozen.builds["candidate"] / (str(frozen.relative) + ".olean")),
+                    str(compiled_source),
+                ],
+                cwd=frozen.builds["candidate"],
+                readable=[frozen.reader.parent, compiled_source.parent],
+                writable=True,
+            )
+    except SnapshotError as error:
+        failure = _candidate_failure(
+            error, check.text, read.entries, compiled_text, edits
+        )
+        if failure is not None:
+            raise failure from error
+        raise
+    return _Compiled(edits=edits, unclaimed=unclaimed)
+
+
 def _check_text(
     source: Path,
     text: str,
@@ -252,203 +533,47 @@ def _check_text(
     ``acquired`` is called once the Lean slot is held, before anything is read.
     ``stages`` records how long each stage takes (`StageTimes`).
     """
-    cancellation = cancel
-    timed = (stages or StageTimes()).stage
     if "\r" in text:
         # Lean converts CRLF again, so a stray carriage return before a line
         # end would move every position Lean reports against these bytes.
         raise SnapshotError(CARRIAGE_RETURN)
-    expected_sha256 = hashlib.sha256(text.encode()).hexdigest()
+    check = _Check(
+        source=source,
+        text=text,
+        text_sha256=hashlib.sha256(text.encode()).hexdigest(),
+        saved_sha256=saved_sha256,
+        cancel=cancel,
+        progress=progress,
+        rest=rest,
+        timed=(stages or StageTimes()).stage,
+    )
     # A check waits for another Lean run, a view say, rather than failing at
     # once, so views drawn one after another never keep it out.
     # The Mac is kept awake from the slot to the last Lean process: the stages
     # between Lean runs, the snapshot capture above all, take minutes too.
     with (
-        snapshot_slot(cancel=cancellation, waiting=lambda: progress(SLOT_WAITING)),
+        snapshot_slot(cancel=check.cancel, waiting=lambda: progress(SLOT_WAITING)),
         awake(),
         scratch_directory("glitnir-check-") as temporary,
         artifact_lease(temporary) as store,
     ):
-        if cancellation.is_set():
+        if check.cancel.is_set():
             raise SnapshotError("Project check cancelled.")
         acquired()
-        project = describe_project(source)
-        toolchain = _toolchain()
-        resolution = None
-        if project["kind"] == "lake":
-            progress("Resolving project environment")
-            with timed("resolve"):
-                inspected = inspect_project(
-                    source, expected_sha256=saved_sha256, cancel=cancellation
-                )
-            if inspected["status"] != "resolved":
-                raise SnapshotError(inspected["message"])
-            setup = inspected["setup"]
-            resolution = inspected["resolution"]
-            project_root = Path(project["root"]).resolve()
-        else:
-            support = lean_support(project)
-            if not support["supported"]:
-                raise SnapshotError(support["message"])
-            setup = {
-                "name": "GlitnirStandalone",
-                "isModule": False,
-                "importArts": {},
-                "plugins": [],
-                "dynlibs": [],
-                "options": {},
-            }
-            project_root = None
-        module = setup["name"]
-        if (
-            (toolchain / "lib/lean" / module_path(module))
-            .with_suffix(".olean")
-            .exists()
-        ):
-            raise SnapshotError(
-                "The checked module shadows a trusted toolchain module."
-            )
-        root = Path(temporary).resolve()
-        progress("Preparing isolated environment")
-        with timed("capture"):
-            snapshot = capture(
-                root,
-                source,
-                setup,
-                toolchain,
-                project_root,
-                cancellation,
-                configuration=(
-                    {item["path"]: item["sha256"] for item in resolution["inputs"]}
-                    if resolution
-                    else None
-                ),
-                text=text,
-                store=store,
-            )
-        digest = hashlib.sha256(snapshot.source.read_bytes()).hexdigest()
-        if digest != expected_sha256:
-            raise SnapshotError("Saved source changed; refresh and retry.")
-        reader, reporter, replay = _programs(root / "programs")
-        helper_identity = hashlib.sha256(
-            json.dumps(
-                {
-                    p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-                    for p in (reader, reporter, replay)
-                },
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
-        identity = hashlib.sha256(
-            (
-                "glitnir.project-check/v1\0"
-                + snapshot.identity
-                + helper_identity
-                + json.dumps(resolution, sort_keys=True)
-            ).encode()
-        ).hexdigest()
-        deadline = time.monotonic() + check_seconds()
-        memory = memory_limit_mb()
-        setup_path = root / "programs/setup.json"
-        setup_path.write_text(json.dumps(snapshot.setup))
-        progress("Checking saved file")
-        tag = example_tag(text)
-        continuation = []
-        if rest is not None:
-            # Only parsed, after the prefix's last command, never compiled.
-            rest_path = root / "programs" / "rest.lean"
-            rest_path.write_text(rest)
-            continuation = [str(rest_path)]
-        run = partial(_run, snapshot, cancel=cancellation, deadline=deadline)
-        builds = {key: root / key for key in ("reference", "candidate")}
-        relative = module_path(module)
-        for directory in builds.values():
-            (directory / relative.parent).mkdir(parents=True)
-        try:
-            with timed("read"):
-                run(
-                    [
-                        "lean",
-                        f"-M{memory}",
-                        "--run",
-                        str(reader),
-                        str(snapshot.source),
-                        str(setup_path),
-                        str(snapshot.artifacts),
-                        tag,
-                        str(builds["reference"] / (str(relative) + ".olean")),
-                        str(builds["reference"] / "source-report.json"),
-                        *continuation,
-                    ],
-                    cwd=builds["reference"],
-                    readable=[reader.parent],
-                    writable=True,
-                )
-        except SnapshotError as error:
-            failure = _reader_failure(
-                error, builds["reference"] / "source-report.json", text
-            )
-            if failure is not None:
-                raise failure from error
-            raise
-        source_report = json.loads(
-            read_regular(builds["reference"] / "source-report.json", OUTPUT_BYTES)
-        )
-        entries = (
-            source_report.get("declarations")
-            if isinstance(source_report, dict)
-            else None
-        )
-        if not isinstance(entries, list) or not all(
-            isinstance(item, dict)
-            and isinstance(item.get("name"), str)
-            and type(item.get("start")) is int
-            and type(item.get("end")) is int
-            and 0 <= item["start"] < item["end"] <= snapshot.source.stat().st_size
-            for item in entries
-        ):
-            raise SnapshotError("The source declaration report is malformed.")
-        unclaimed = source_report.get("examples", [])
-        if not isinstance(unclaimed, list):
-            raise SnapshotError("The source declaration report is malformed.")
-        saved_bytes = snapshot.source.read_bytes()
-        if saved_bytes != text.encode():
-            raise SnapshotError("Saved source changed; refresh and retry.")
-        edits, unclaimed = example_edits(text, entries, unclaimed, tag)
-        compiled_source = snapshot.source
-        compiled_text = None
-        if edits:
-            # Examples compile as the theorems the reader read them as. Only
-            # their keywords change, so every line keeps its number.
-            compiled_source = root / "compiled" / snapshot.source.name
-            compiled_source.parent.mkdir()
-            compiled_source.write_bytes(rewrite_examples(saved_bytes, edits))
-            compiled_source.chmod(0o400)
-            compiled_bytes = compiled_source.read_bytes()
-            check_rewrite(saved_bytes, compiled_bytes, edits)
-            compiled_text = compiled_bytes.decode()
-        try:
-            with timed("compile"):
-                run(
-                    [
-                        "lean",
-                        f"-M{memory}",
-                        "-DmaxHeartbeats=1000000",
-                        "--setup",
-                        str(setup_path),
-                        "-o",
-                        str(builds["candidate"] / (str(relative) + ".olean")),
-                        str(compiled_source),
-                    ],
-                    cwd=builds["candidate"],
-                    readable=[reader.parent, compiled_source.parent],
-                    writable=True,
-                )
-        except SnapshotError as error:
-            failure = _candidate_failure(error, text, entries, compiled_text, edits)
-            if failure is not None:
-                raise failure from error
-            raise
+        environment = _resolve(check)
+        frozen = _capture(check, environment, Path(temporary).resolve(), store)
+        read = _read(check, frozen)
+        compiled = _compile(check, frozen, read)
+        # The later phases still read their former locals; the next change
+        # makes them phase functions too.
+        cancellation, timed = check.cancel, check.timed
+        setup, resolution = environment.setup, environment.resolution
+        project_root, module = environment.project_root, environment.module
+        root, snapshot, digest = frozen.root, frozen.snapshot, frozen.digest
+        reader, reporter, replay = frozen.reader, frozen.reporter, frozen.replay
+        identity, deadline, memory = frozen.identity, frozen.deadline, frozen.memory
+        tag, run, builds = frozen.tag, frozen.run, frozen.builds
+        entries, unclaimed = read.entries, compiled.unclaimed
 
         def report(key: str) -> Any:
             """Report one build from its own isolated tree."""
