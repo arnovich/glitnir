@@ -37,6 +37,7 @@ WORKER_ATTRIBUTES = (
     "_runs._evidence_worker",
     "_runs._decision_worker",
     "_views._view_worker",
+    "proof_steps._worker",
 )
 
 
@@ -50,7 +51,7 @@ def settle(service: source_preview.SourcePreviewService, timeout: float = 30.0) 
     for attribute in WORKER_ATTRIBUTES:
         worker = service
         for name in attribute.split("."):
-            worker = getattr(worker, name, None)
+            worker = getattr(worker, name)
         if worker is not None:
             worker.join(timeout=timeout)
             if worker.is_alive():
@@ -129,7 +130,7 @@ def lake(tmp_path, monkeypatch, import_arts, asked=None, required_sha256=None):
 
 
 def patch_service_name(monkeypatch, name: str, value) -> None:
-    """Replace `name` on every service module that exists and binds it.
+    """Replace `name` on every service module that binds it.
 
     The preview service's names are bound in several modules, and a test must
     patch each one that looks the name up. Fail if no listed module binds it, so
@@ -137,12 +138,7 @@ def patch_service_name(monkeypatch, name: str, value) -> None:
     """
     patched = False
     for module_name in SERVICE_MODULES:
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as error:
-            if error.name != module_name:
-                raise
-            continue
+        module = importlib.import_module(module_name)
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
             patched = True
