@@ -300,7 +300,9 @@ class ViewDrawing:
             return _drawing_answer(asked)
 
     def _answer_during_run(self, key: tuple[str, str, int]) -> dict[str, Any] | None:
-        """Answer for the view `key` while a run draws, or None; hold `context.state_lock`.
+        """Answer for the view `key` while a run draws, or None.
+
+        Hold `context.state_lock`.
 
         A view of the run answers with its own job; any other waits for one
         of the run's jobs. A run of a replaced saved source is stopped first:
