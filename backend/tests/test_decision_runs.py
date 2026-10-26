@@ -1082,7 +1082,7 @@ def test_live_decision_run_saves_a_checked_candidate(
     service = source_preview.SourcePreviewService(source)
     try:
         key = service.run_decision(sha(text), 4)
-        settle(service)
+        settle(service, timeout=300)
         [card] = service.snapshot()["decisions"]
     finally:
         service.close()

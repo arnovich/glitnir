@@ -37,13 +37,21 @@ WORKER_ATTRIBUTES = (
 )
 
 
-def settle(service: source_preview.SourcePreviewService) -> None:
-    """Wait for every worker thread the service holds to finish."""
+def settle(service: source_preview.SourcePreviewService, timeout: float = 30.0) -> None:
+    """Wait up to `timeout` seconds for each worker thread the service holds.
+
+    Fails if any worker is still alive afterwards, so a stuck worker fails the
+    test instead of hanging the suite.
+    """
+    stuck = []
     for attribute in WORKER_ATTRIBUTES:
         worker = getattr(service, attribute, None)
         if worker is not None:
-            worker.join(timeout=900)
-    return None
+            worker.join(timeout=timeout)
+            if worker.is_alive():
+                stuck.append(attribute)
+    if stuck:
+        raise AssertionError(f"workers still running after {timeout}s: {stuck}")
 
 
 def sha(text: str) -> str:

@@ -1160,7 +1160,7 @@ def test_live_fingerprint_is_portable_across_checkouts(
     service = SourcePreviewService(source)
     try:
         service.check(hashlib.sha256(text.encode()).hexdigest())
-        settle(service)
+        settle(service, timeout=900)
         assert not service._worker.is_alive()
         assert service._check["status"] == "checked_snapshot", service._check
         [claim] = service.snapshot()["project_claims"]

@@ -426,7 +426,7 @@ def test_live_check_through_the_first_of_two_claims(prepared_lean_project):
     try:
         for through in (None, 3):
             service.check(sha, through)
-            settle(service)
+            settle(service, timeout=900)
             assert service.snapshot()["preview"]["check"]["status"] == (
                 "checked_snapshot"
             ), service.snapshot()["preview"]["check"]

@@ -546,7 +546,7 @@ def test_live_evidence_run_saves_a_current_snapshot(prepared_lean_project, monke
     service = source_preview.SourcePreviewService(source)
     try:
         key = service.run_evidence(sha(text), 4)
-        settle(service)
+        settle(service, timeout=300)
         [card] = service.snapshot()["evidence"]
     finally:
         service.close()
