@@ -96,9 +96,9 @@ unknown-identifier rejection. The package also contains the deciders' replay
 against a pinned Forseti Lean release and its command lines, which are not
 reachable from the editor.
 
-**Verified on 2026-10-25** against Forseti Lean v0.4.1 with Asgard Lean v0.3.2
+**Verified on 2026-10-26** against Forseti Lean v0.5.0 with Asgard Lean v0.4.0
 (Lean 4.35.0), the pinned release, by CI's `plugin-live` shards on Linux (run
-40217643283), every one green:
+40361406695), every one green:
 `streams` 88 passed (`tests/test_streams_lean.py` and
 `tests/test_mild_stream_lean.py`, kernel replay of the stream roots against
 the pinned release); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,
@@ -110,8 +110,8 @@ claim; `tests/test_entailment_lean.py`; `tests/test_evidence_provider_lean.py`
 `simulate`; the skip is `iterate`, which needs Python Asgard); `stepped` 27
 passed (`tests/test_stepped_lean.py`: the lane's ten examples, its template
 variants and caps, a rejected false block and the `sample` card, each block
-checked in 69–75 s, the first after a one-time import replay); and `rest`
-1546 passed with 14 skipped, all Python Asgard simulations or macOS-only
+checked in 71–76 s, the first after a one-time import replay); and `rest`
+1559 passed with 14 skipped, all Python Asgard simulations or macOS-only
 sandbox probes (`tests/test_lean_release.py`,
 `tests/test_live_lean_gate.py`, `tests/test_lean_independent.py`,
 `tests/test_lean_sandbox_attacks.py` and the unit tests). The view preamble
