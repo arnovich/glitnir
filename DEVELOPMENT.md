@@ -275,7 +275,7 @@ request. It:
    inputs (and `--bump-support` unless `bump_support` is false, which bumps
    `SUPPORT_VERSION` only when the pinned content changed), then reinstalls the
    plugin so the replay tool and the tests read the new release pin, and runs
-   `pin_lean_replay.py`;
+   `pin_lean_replay.py` with every supported platform's toolchain (below);
 4. when `forseti_ref` is a tag, points plugin-live's clone at it and its commit;
 5. runs the pin tests against the regenerated, reinstalled pins under
    `FORSETI_REQUIRE_LEAN_PROJECT=1`: `test_pin_lean_release.py`,
@@ -284,38 +284,32 @@ request. It:
 6. uploads the artifact `forseti-pins` (`forseti-pins.patch`, the changed files
    under `files/` and `resolved.json`) and writes a summary with the resolved
    commits, the support version, the toolchain digests per platform, the changed
-   files and the commands to apply the patch;
-7. when every step passed, starts the `macos` job on an arm64 macOS runner. It
-   applies that patch, builds the same release commit, runs `pin_lean_replay.py`
-   to add the `Darwin-arm64` digest, runs the same pin tests there and uploads
-   `forseti-pins-macos`, the patch for both platforms, in the same layout.
+   files and the commands to apply the patch.
 
 A ref that is not a tag makes a probe, which the summary says: its origin record
 names the ref as given, `check.yml` is left alone and
 `test_release_records_which_checkout_satisfies_it`, which requires tags, is
 deselected. Do not commit a probe's pins.
 
-The replay pin records one toolchain digest per platform. The run on Linux
-observes `Linux-x86_64`; `closure.build_pin` keeps every other platform's
-digest from the committed pin when that pin names the same toolchain, because
-those bytes are the toolchain release's own and change only with it. A re-pin
-on an unchanged toolchain therefore leaves `Darwin-arm64` byte-for-byte as it
-was, and macOS replay still re-observes every closure against it. When the
-toolchain changes, the Linux run drops the other digests and the `macos` job
-records `Darwin-arm64` again. Its `pin_lean_replay.py` fails if any closure
-differs from the Linux one for the same release, so the job also shows that
-the compiled library is byte-identical on macOS. A replay pin without a
-platform's digest makes replay there report the environment unknown, never a
-proof.
+The replay pin records one toolchain digest per platform: a digest of the
+toolchain release's own `lean`, `leanchecker` and shared libraries for that
+platform, which change only with the toolchain. Nothing has to run on a
+platform to pin it. The workflow downloads the Lean release's archives for
+`Linux-x86_64`, `Linux-aarch64`, `Darwin-x86_64` and `Darwin-arm64`, checks
+each against the SHA-256 GitHub reports for it, and passes the extracted
+toolchains to `pin_lean_replay.py --toolchain PLATFORM=DIR`. Each computed
+digest must equal the committed one when the toolchain is unchanged, and the
+`Linux-x86_64` one must equal the digest of the elan install the run observed,
+which shows that elan installs the archive's bytes. Closures are the same on
+every platform, and replay re-observes every closure where it runs. A platform
+the pin has no digest for reports the environment unknown, never a proof.
 
-To apply a run's pins for both platforms, on a branch:
+To apply a run's pins, on a branch:
 
 ```sh
-gh run download RUN_ID -R arnovich/glitnir -n forseti-pins-macos -D forseti-pins
+gh run download RUN_ID -R arnovich/glitnir -n forseti-pins -D forseti-pins
 git apply --index forseti-pins/forseti-pins.patch
 ```
-
-If the `macos` job failed, `-n forseti-pins` is the Linux-only patch.
 
 Then update the docs that name the pinned tags (this file, `docs/guide.md`,
 `plugins/forseti/README.md` and

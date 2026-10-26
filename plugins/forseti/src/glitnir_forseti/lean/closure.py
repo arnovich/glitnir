@@ -33,6 +33,7 @@ import platform
 import shutil
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from importlib.resources import files
@@ -122,7 +123,9 @@ class ClosureObservation:
 
 
 def build_pin(
-    observations: list[ClosureObservation], previous: dict[str, object] | None = None
+    observations: list[ClosureObservation],
+    previous: dict[str, object] | None = None,
+    toolchains: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Assemble the pin from one observation per import set.
 
@@ -138,10 +141,16 @@ def build_pin(
     For the same release, every import set ``previous`` pins must be observed,
     byte-identically; an import set it does not pin is added.
 
+    ``toolchains`` adds, per platform, a digest `toolchain_digest` computed
+    from that platform's toolchain files, such as the Lean release's archive
+    for it. Each must equal the digest observed here or kept for the same
+    toolchain.
+
     Raises:
         ValueError: If the observations disagree about the toolchain binaries,
-            or a closure ``previous`` pins for the same release differs — the
-            compiled library is not byte-identical across the platforms.
+            a closure ``previous`` pins for the same release differs — the
+            compiled library is not byte-identical across the platforms — or a
+            computed toolchain digest differs from the one observed or kept.
     """
     seen = {(o.platform, o.binaries) for o in observations}
     if len(seen) != 1:
@@ -184,6 +193,13 @@ def build_pin(
         ):
             binaries.update({k: v for k, v in kept.items() if type(v) is str})
     binaries[platform] = digest
+    for name, computed in (toolchains or {}).items():
+        if binaries.get(name, computed) != computed:
+            raise ValueError(
+                f"the toolchain digest computed for {name} differs from the one "
+                "observed or pinned for this toolchain"
+            )
+        binaries[name] = computed
     return {
         "schema": REPLAY_SCHEMA,
         "release_sha256": RELEASE_SHA256,
@@ -425,13 +441,22 @@ def digest_closure(
     )
 
 
-def _binaries(toolchain: Path) -> str:
-    """Digest the toolchain programs and libraries replay executes."""
+def toolchain_digest(toolchain: Path, system: str) -> str:
+    """Digest the toolchain programs and libraries replay executes on ``system``.
+
+    It only reads files, so it digests another platform's toolchain, such as
+    one extracted from the Lean release's archive, as replay there would.
+    """
     entries = []
-    for relative in TOOLCHAIN_BINARIES.get(platform.system(), ()):
+    for relative in TOOLCHAIN_BINARIES.get(system, ()):
         path = toolchain / relative
         entries.append(f"{relative}={_sha256(path) if path.is_file() else 'absent'}")
     return hashlib.sha256("\n".join(entries).encode()).hexdigest()
+
+
+def _binaries(toolchain: Path) -> str:
+    """Digest the toolchain programs and libraries replay executes here."""
+    return toolchain_digest(toolchain, platform.system())
 
 
 def verify_closure(
