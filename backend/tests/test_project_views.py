@@ -665,7 +665,7 @@ def _elaborate(tmp_path, toolchain, parts, offsets=None, marker="mark:"):
     """
     import threading
 
-    from glitnir.lean.project_checking import run_observer
+    from glitnir.lean.observer import run_observer
     from glitnir.lean.provider_lean import PROGRAM
 
     inputs, output = tmp_path / "inputs", tmp_path / "output"

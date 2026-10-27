@@ -9,6 +9,7 @@ import pytest
 from conftest import evidence_provider, patch_service_name, raises, settle, sha
 
 from glitnir.lean import project_checking
+from glitnir.lean.observer import TIMED_OUT
 from glitnir.lean.project_inspection import TOOLCHAIN
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.notebook.check_records import (
@@ -446,7 +447,7 @@ def test_a_candidate_check_reaching_its_time_limit_is_saved(tmp_path, monkeypatc
     monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", "90000")
 
     def timed_out(source, **options):
-        raise SnapshotError(project_checking.TIMED_OUT)
+        raise SnapshotError(TIMED_OUT)
 
     service, _calls = _service(tmp_path, monkeypatch, check=timed_out)
     try:

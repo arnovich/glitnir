@@ -710,7 +710,7 @@ def test_errors_of_the_directive_itself_are_marked_as_lean_s(tmp_path, monkeypat
 
 def test_reaching_the_run_time_limit_is_marked(tmp_path, monkeypatch):
     from glitnir.lean import provider_lean
-    from glitnir.lean.project_checking import TIMED_OUT
+    from glitnir.lean.observer import TIMED_OUT
     from glitnir.lean.project_snapshot import SnapshotError
 
     source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
