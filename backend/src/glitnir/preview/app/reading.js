@@ -1,16 +1,18 @@
 // The workbench's reading view: Lean read as a textbook.
 (() => {
   'use strict';
-  const W = window.glitnirWorkbench;
+  const workbench = window.glitnirWorkbench;
   const {$, DECLARATION, HOST, UI, checking, claim, decisionHTML, directiveNotes, esc, evidenceHTML, icon,
     inlineHTML, leanCellHTML, leanHTML, linkedPath, markdown, needsDecider, needsProvider, nonClaimsHTML,
     projectCardsHTML, projectClaimHTML, projectEvidence, refresh, showNotebookAt, sourceDirectivesHTML,
-    statusOf, summariesOf, title, toneOf, useHTML, viewHTML, withheldBannerHTML} = W;
-  // Defined by a later file; bound when it loads.
-  const refutationHTML = (...a) => W.refutationHTML(...a);
-  const render = (...a) => W.render(...a);
-  const showSourceLines = (...a) => W.showSourceLines(...a);
+    statusOf, summariesOf, title, toneOf, useHTML, viewHTML, withheldBannerHTML} = workbench;
+  // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
+  const refutationHTML = (...a) => workbench.refutationHTML(...a);
+  const render = (...a) => workbench.render(...a);
+  const showSourceLines = (...a) => workbench.showSourceLines(...a);
   // ----- Lean read as a textbook ----------------------------------------------
+  // Presentation only: recognized declarations get mathematical cards and an
+  // exact source fold. Unknown syntax gets an explicit card, never disappears.
   const TRUST = /\b(sorry|admit|axiom|opaque|unsafe|implemented_by|extern|native_decide|set_option|variable|universe)\b|\bdebug\./;
 
   // Column-0 lines that continue the command above them.
@@ -596,7 +598,7 @@
       <div class="source"><table>${rows.map(r => `${range && r.n === range.start ? `<tr class="source-return"><td colspan="3">${back}</td></tr>` : ''}<tr id="source-L${r.n}" tabindex="-1" data-source-line="${r.n}" data-line-target="${Boolean(range && r.n >= range.start && r.n <= range.end)}" ${r.c ? `data-claim="${esc(r.c.name)}" data-tone="${toneOf(r.c)}" data-selected="${UI.selected === r.c.name}"` : ''}><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="${r.n}" data-sha="${esc(UI.data.sha256)}" aria-label="Show line ${r.n} in Document">${r.n}</a></td><td>${leanHTML(r.line) || ' '}</td></tr>`).join('')}</table></div>`;
   }
 
-  Object.assign(W, {cellEntries, cellView, commands, declarationParts, docHTML, fieldHTML, leanOf,
+  Object.assign(workbench, {cellEntries, cellView, commands, declarationParts, docHTML, fieldHTML, leanOf,
     lineLinkHTML, namespaceHTML, namespaceScopes, openSource, plainComments, proofSections, renderDoc,
     renderSource, revealSection, sourceFoldHTML, textbookHTML, trimmed, unevenQuotes});
 })();

@@ -4114,15 +4114,29 @@ test('the rendered workbench is pinned by a fixture', async () => {
     window.Date.prototype.toLocaleTimeString = function () { return this.toISOString().slice(11, 19); };
     window.HTMLElement.prototype.scrollIntoView = () => {};
   };
+  const pictured = illustrated('# Pictured\n\n![Plot](assets/p.png)', [{path: 'assets/p.png', status: 'ok', sha256: 'b'.repeat(64)}]);
+  const picture = async (url, options, page) => url.startsWith('/asset?')
+    ? {ok: true, status: 200, blob: async () => new page.Blob([Buffer.from('PNG')], {type: 'image/png'})}
+    : {ok: true, json: async () => pictured};
+  const viewed = {file: 'A.lean', sha256: 'b'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
+    cells: [{index: 0, kind: 'source', start: 1, end: 3, text: 'theorem t : True := by\n  -- @view circuit c\n  trivial\n', claim: 't'}],
+    project_claims: [{name: 't', status: 'checked', current: true, axioms: [], start_line: 1, end_line: 3}],
+    views: [{cell: 0, line: 2, kind: 'circuit', name: 'c', using: [], error: ''}],
+    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+  const drawing = async url => ({ok: true, json: async () => url.startsWith('/api/view?') ? {svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'} : viewed});
   const renders = async () => {
     const parts = [];
-    for (const [snapshot, act] of [
+    for (const [snapshot, act, fetch] of [
       [projectNotebook({current: false}), d => d.querySelector('[data-mode="source"]').click()],
       [projectNotebook(), null],
       [evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'current', snapshot: evidenceBody()})]), null],
       [decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'candidate', outcome: decisionOutcome(), verification: checkedVerification()})]), null],
+      [pictured, null, picture],
+      [viewed, null, drawing],
+      [evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'failed', run_error: 'crashed', failure: evidenceFailure()})]), null],
     ]) {
-      const window = await renderSnapshot(snapshot, {browser: true, katex: true, onWindow: fixed});
+      const window = await renderSnapshot(snapshot, {browser: fetch || true, katex: true, onWindow: fixed});
+      await new Promise(resolve => setTimeout(resolve, 60));
       // What the page shows, not how it is loaded: its own script tags are not pinned.
       const shown = () => window.document.body.innerHTML.replace(/<script src="\/[^"]*"><\/script>\n?|<!-- host scripts -->\n?/g, '');
       try {

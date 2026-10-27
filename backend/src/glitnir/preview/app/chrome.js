@@ -1,7 +1,7 @@
 // The workbench's chrome, keyboard shortcuts and interaction; it loads the page.
 (() => {
   'use strict';
-  const W = window.glitnirWorkbench;
+  const workbench = window.glitnirWorkbench;
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
     currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, icon, images,
@@ -9,7 +9,7 @@
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
     renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI,
-    showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = W;
+    showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = workbench;
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
     const busy = UI.data && UI.data.checking.length;
@@ -494,7 +494,7 @@
     if (map[e.key]) { e.preventDefault(); map[e.key](); }
   });
 
-  Object.assign(W, {render, renderChrome, renderConnection, select, showSourceLines});
+  Object.assign(workbench, {render, renderChrome, renderConnection, select, showSourceLines});
 
   load();
 })();

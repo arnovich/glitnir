@@ -660,3 +660,329 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 </svg>
 
 
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Pictured.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">Pictured</h1>
+    <div class="subline" id="subline"></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"></ol>
+      <h4 class="label" id="graph-label">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses" viewBox="0 0 172 28" height="28"><defs><marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8" fill="var(--faint)"></path></marker></defs></svg>
+      <p class="small muted" id="graph-note">Arcs come from Lean: the earlier claims a proof's axioms name.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner" id="banner" hidden="" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">0 result no longer matches the file: .</span><button type="button" id="check-project" hidden="">Check saved file</button><button type="button" id="inspect-project" hidden="" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="9" aria-label="Show lines 1–9 in Source" title="Show in Source">L1–9</a></span></div><section class="cell prose"><figure class="figure"><img alt="Plot" src="data:image/png;base64,UE5H"><figcaption>Plot</figcaption></figure></section></div></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">No claims</b><span class="small muted" id="insp-sub"></span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><p class="small muted">This notebook has no theorems yet.</p></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+
+
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">A.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">Source hash: bbbbbbbb</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">A.lean</h1>
+    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"><li><button type="button" data-act="goto" data-id="t" aria-current="true" title="t"><span class="o-claim">t</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="t"><span class="dot" data-tone="green"></span> t</button></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-start="1" data-end="3" aria-label="Show lines 1–3 in Source" title="Show in Source">L1–3</a></span></div><section class="cell project-claim" id="cell-t" data-claim="t">
+      <article class="claim card-proposition" data-tone="green" data-selected="true" aria-label="Theorem t">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>t</code></dfn>  <span class="pill" data-tone="green">Kernel checked</span> <span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-start="1" data-end="3" aria-label="Show lines 1–3 in Source" title="Show in Source">L1–3</a></span></h3>
+        
+        
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="\text{True}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>True</mtext></mrow><annotation encoding="application/x-tex">\text{True}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6833em;"></span><span class="mord text"><span class="mord">True</span></span></span></span></span></span></div></div></div>
+        
+        
+        <p class="small muted claim-axioms">Assumptions: none</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:t:theorem t : True := by
+  -- @view circuit c
+  trivial"><summary class="small muted">Lean source &amp; proof · 3 lines</summary><pre><span class="kw">theorem</span> t : True := <span class="kw">by</span>
+  <span class="cm">-- @view circuit c</span>
+  trivial</pre></details></div>
+        
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="t" data-line="3" data-sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" title="Compile and kernel-replay lines 1–3 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–3 only; later claims are not rechecked</span></div>
+      </article></section><section data-document-start="2" data-document-end="2" class="cell box view-cell"><h3 class="card-header def-head "><span class="def-kind">circuit diagram</span> <dfn><code>c</code></dfn>   <span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-start="2" data-end="2" aria-label="Show lines 2–2 in Source" title="Show in Source">L2–2</a></span></h3><div class="view-body"><img alt="circuit view of c" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E"></div></section></div></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">t</b><span class="small muted" id="insp-sub">theorem · kernel checked</span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><div class="focus"><div class="row"><span class="pill" data-tone="green">Kernel checked</span></div>
+        <dl><dt>name</dt><dd>t</dd><dt>lines</dt><dd><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-start="1" data-end="3" aria-label="Show lines 1–3 in Source" title="Show in Source">L1–3</a></span></dd><dt>result</dt><dd>current</dd><dt>uses</dt><dd class="insp-uses"><span class="muted">not recorded by this check</span></dd></dl></div>
+      
+      <div class="insp-section insp-check"><button type="button" class="secondary" data-act="check-through" data-id="t" data-line="3" data-sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" title="Compile and kernel-replay lines 1–3 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through this claim</button><span class="small muted"><kbd>r</kbd> · compiles and kernel-replays lines 1–3 of the saved file; later claims are not rechecked. <b>Check saved file</b> checks all of it.</span></div>
+      <div class="insp-section"><h5>Assumptions from the last check</h5><p class="small muted">None.</p></div>
+      <div class="insp-section goal-section"><h5>Proof goals</h5><button type="button" class="secondary" data-act="goal" data-id="t">Inspect proof goals</button><p class="small muted goal-caption">Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.</p></div></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+
+
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">E.lean</h1>
+    <div class="subline" id="subline"></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="2" aria-label="Show lines 1–2 in Source" title="Show in Source">L1–2</a></span></div><section class="cell reading-card card-definition definition compact-definition">
+      <h3 class="card-header def-head "><span class="def-kind">Definition</span> <dfn><code>M</code></dfn>   <span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></h3>
+      <div class="card-body">
+      
+      
+      <div class="formal-expression"><span class="formal-line math typeset" data-tex="1"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn></mrow><annotation encoding="application/x-tex">1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">1</span></span></span></span></span></div>
+      </div>
+      <div class="card-source"><details class="def-lean" data-fold-key="definition:def M := 1"><summary class="small muted">Lean source · 1 line</summary><pre><span class="kw">def</span> M := 1</pre></details></div>
+    </section><section data-document-start="2" data-document-end="2" class="cell box evidence"><div class="box-head"><span class="tag">Evidence · not proof</span><span class="small">simulate <code>M</code> · demo</span><span class="evidence-state"><span class="pill" data-tone="red">Failed</span><span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="2" data-end="2" aria-label="Show lines 2–2 in Source" title="Show in Source">L2–2</a></span></span></div><div class="note-line" data-tone="red"><svg class="ic"><use href="#i-x"></use></svg><span><span class="lean-message">The last run failed: crashed</span></span></div><div class="claim-actions"><button type="button" class="primary" data-act="evidence-run" data-line="2" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><svg class="ic"><use href="#i-replay"></use></svg>Run again</button><span class="small muted">Evidence never changes a claim's status.</span></div></section></div></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">No saved results</b><span class="small muted" id="insp-sub"></span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><p class="small muted">No claim of this file has a saved result. Check the saved file to see each claim's status here.</p></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+
+

@@ -1,17 +1,17 @@
 // The workbench's mathematics, views and figures, and prose images.
 (() => {
   'use strict';
-  const W = window.glitnirWorkbench;
+  const workbench = window.glitnirWorkbench;
   const {$, API, HOST, LABEL, UI, claim, esc, fetch, icon, leanOff, leanVersion, linkedPath, post,
-    projectMode, recorded, refresh} = W;
-  // Defined by a later file; bound when it loads.
-  const leanOf = (...a) => W.leanOf(...a);
-  const lineLinkHTML = (...a) => W.lineLinkHTML(...a);
-  const namespaceScopes = (...a) => W.namespaceScopes(...a);
-  const render = (...a) => W.render(...a);
-  const select = (...a) => W.select(...a);
-  const textbookHTML = (...a) => W.textbookHTML(...a);
-  const trimmed = (...a) => W.trimmed(...a);
+    projectMode, recorded, refresh} = workbench;
+  // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
+  const leanOf = (...a) => workbench.leanOf(...a);
+  const lineLinkHTML = (...a) => workbench.lineLinkHTML(...a);
+  const namespaceScopes = (...a) => workbench.namespaceScopes(...a);
+  const render = (...a) => workbench.render(...a);
+  const select = (...a) => workbench.select(...a);
+  const textbookHTML = (...a) => workbench.textbookHTML(...a);
+  const trimmed = (...a) => workbench.trimmed(...a);
   // ----- mathematics ------------------------------------------------------------
   // `$…$` is inline and `$$…$$` display TeX, typeset by the vendored KaTeX
   // after each render. The HTML carries only the TeX, so without KaTeX, or
@@ -638,7 +638,7 @@
     return parts.join('');
   }
 
-  Object.assign(W, {assetPath, cancelCheck, cancelInspection, cancelView, closeDiagram, decisionAction,
+  Object.assign(workbench, {assetPath, cancelCheck, cancelInspection, cancelView, closeDiagram, decisionAction,
     decisionHTML, diagramAction, directiveNotes, evidenceHTML, forgetImages, images, inlineHTML, leanCellHTML,
     loadImage, markdown, needsDecider, needsProvider, projectCardsHTML, projectEvidence, renderDiagramDialog,
     restoreDiagramUI, runEvidence, saveDiagramUI, sourceDirectivesHTML, title, typesetMath, viewHTML, when});

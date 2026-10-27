@@ -2,10 +2,10 @@
 // workbench files are pinned to it here.
 const assert = require('node:assert/strict');
 const {existsSync, readdirSync, readFileSync} = require('node:fs');
-const Module = require('node:module');
 const path = require('node:path');
 const {test} = require('node:test');
 const {JSDOM} = require('jsdom');
+const {previewPage} = require('./webview-page.cjs');
 
 const media = path.resolve(__dirname, '../../dist/media');
 const app = path.resolve(__dirname, '../../backend/src/glitnir/preview/app');
@@ -32,17 +32,17 @@ test('the files share names only through the namespace', () => {
   const order = name => WORKBENCH.indexOf(name);
   const published = new Map();
   for (const [name, text] of sources) {
-    for (const item of names((text.match(/^  Object\.assign\(W, \{([\s\S]*?)\}\);/m) || [, ''])[1])) {
+    for (const item of names((text.match(/^  Object\.assign\(workbench, \{([\s\S]*?)\}\);/m) || [, ''])[1])) {
       assert.ok(!published.has(item), `${item} is published by ${published.get(item)} and ${name}`);
       published.set(item, name);
     }
   }
   for (const [name, text] of sources) {
-    for (const item of names((text.match(/^  const \{([\s\S]*?)\} = W;/m) || [, ''])[1])) {
+    for (const item of names((text.match(/^  const \{([\s\S]*?)\} = workbench;/m) || [, ''])[1])) {
       assert.ok(published.has(item), `${name} takes ${item}, which no file publishes`);
       assert.ok(order(published.get(item)) < order(name), `${name} takes ${item} from ${published.get(item)}, which loads later`);
     }
-    for (const [, item] of text.matchAll(/^  const [\w$]+ = \(\.\.\.a\) => W\.([\w$]+)\(\.\.\.a\);/gm)) {
+    for (const [, item] of text.matchAll(/^  const [\w$]+ = \(\.\.\.a\) => workbench\.([\w$]+)\(\.\.\.a\);/gm)) {
       assert.ok(published.has(item), `${name} stubs ${item}, which no file publishes`);
       assert.ok(order(published.get(item)) > order(name), `${name} stubs ${item}, but ${published.get(item)} loads earlier`);
     }
@@ -50,12 +50,12 @@ test('the files share names only through the namespace', () => {
   assert.ok(published.size > 100, 'the namespace carries the shared names');
   // The lists are exact: every shared name a file uses it takes or stubs, and it takes nothing it does not use.
   // A file reaching a name it did not take would get the window's global instead (`fetch` past the editor host).
-  const strip = text => text.replace(/^\s*\/\/.*$/gm, '').replace(/^  const \{[\s\S]*?\} = W;/m, '')
-    .replace(/^  const [\w$]+ = \(\.\.\.a\) => W\.[\w$]+\(\.\.\.a\);$/gm, '').replace(/^  Object\.assign\(W, \{[\s\S]*?\}\);/m, '');
+  const strip = text => text.replace(/^\s*\/\/.*$/gm, '').replace(/^  const \{[\s\S]*?\} = workbench;/m, '')
+    .replace(/^  const [\w$]+ = \(\.\.\.a\) => workbench\.[\w$]+\(\.\.\.a\);$/gm, '').replace(/^  Object\.assign\(workbench, \{[\s\S]*?\}\);/m, '');
   const uses = (text, item) => new RegExp(`(?<![\\w$.'"\`-])${item.replace(/\$/g, '\\$')}(?![\\w$'"\`-])`).test(text);
   for (const [name, text] of sources) {
-    const taken = new Set([...names((text.match(/^  const \{([\s\S]*?)\} = W;/m) || [, ''])[1]),
-      ...[...text.matchAll(/^  const [\w$]+ = \(\.\.\.a\) => W\.([\w$]+)\(\.\.\.a\);/gm)].map(match => match[1])]);
+    const taken = new Set([...names((text.match(/^  const \{([\s\S]*?)\} = workbench;/m) || [, ''])[1]),
+      ...[...text.matchAll(/^  const [\w$]+ = \(\.\.\.a\) => workbench\.([\w$]+)\(\.\.\.a\);/gm)].map(match => match[1])]);
     const body = strip(text);
     const problems = [];
     for (const [item, owner] of published) {
@@ -69,15 +69,7 @@ test('the files share names only through the namespace', () => {
 });
 
 test('the webview rewrites every local tag and inserts the host scripts first', () => {
-  const file = fsPath => ({fsPath});
-  const load = Module._load;
-  let previewHtml;
-  Module._load = function (name, parent, ...rest) {
-    if (name === 'vscode') return {Uri: {joinPath: (uri, ...parts) => file(path.join(uri.fsPath, ...parts))}};
-    return load.call(this, name, parent, ...rest);
-  };
-  try { ({previewHtml} = require('../../dist/webview')); } finally { Module._load = load; }
-  const html = previewHtml({cspSource: 'https://resource.invalid', asWebviewUri: uri => ({toString: () => 'https://resource.invalid/' + path.basename(uri.fsPath)})}, file(media));
+  const html = previewPage(media);
   assert.doesNotMatch(html, /(src|href)="\//, 'a local reference survived the rewrite');
   assert.ok(!html.includes('<!-- host scripts -->'), 'the marker is replaced by the host scripts');
   const {window} = new JSDOM(html);

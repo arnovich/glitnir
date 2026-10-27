@@ -1,13 +1,13 @@
 // The workbench's claim inspector and proof goals.
 (() => {
   'use strict';
-  const W = window.glitnirWorkbench;
+  const workbench = window.glitnirWorkbench;
   const {$, API, UI, cellEntries, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
     currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, icon, inlineHTML,
     leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
-    useChipsHTML} = W;
-  // Defined by a later file; bound when it loads.
-  const render = (...a) => W.render(...a);
+    useChipsHTML} = workbench;
+  // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
+  const render = (...a) => workbench.render(...a);
   // ----- inspector ------------------------------------------------------------------
   function refutationHTML(c) {
     return c.refutation ? `<div class="insp-section"><h5>Refutation${c.refutation.context === c.context ? '' : ' · old context'}</h5><p class="small">A proof of <code>¬ ${esc(c.name)}</code>, recorded beside the notebook; last check ${esc(c.refutation.verdict)}.</p><pre>${esc(':= by\n  ' + c.refutation.script.join('\n  '))}</pre></div>` : '';
@@ -196,5 +196,5 @@
 `;
   }
 
-  Object.assign(W, {cancelGoals, inspectGoals, refutationHTML, renderInspector});
+  Object.assign(workbench, {cancelGoals, inspectGoals, refutationHTML, renderInspector});
 })();

@@ -7,27 +7,27 @@
 (() => {
   'use strict';
   window.glitnirWorkbench = {};
-  const W = window.glitnirWorkbench;
-  // Defined by a later file; bound when it loads.
-  const cellEntries = (...a) => W.cellEntries(...a);
-  const closeDiagram = (...a) => W.closeDiagram(...a);
-  const commands = (...a) => W.commands(...a);
-  const declarationParts = (...a) => W.declarationParts(...a);
-  const docHTML = (...a) => W.docHTML(...a);
-  const fieldHTML = (...a) => W.fieldHTML(...a);
-  const forgetImages = (...a) => W.forgetImages(...a);
-  const leanOf = (...a) => W.leanOf(...a);
-  const lineLinkHTML = (...a) => W.lineLinkHTML(...a);
-  const namespaceHTML = (...a) => W.namespaceHTML(...a);
-  const plainComments = (...a) => W.plainComments(...a);
-  const render = (...a) => W.render(...a);
-  const renderChrome = (...a) => W.renderChrome(...a);
-  const renderConnection = (...a) => W.renderConnection(...a);
-  const revealSection = (...a) => W.revealSection(...a);
-  const sourceFoldHTML = (...a) => W.sourceFoldHTML(...a);
-  const title = (...a) => W.title(...a);
-  const trimmed = (...a) => W.trimmed(...a);
-  const unevenQuotes = (...a) => W.unevenQuotes(...a);
+  const workbench = window.glitnirWorkbench;
+  // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
+  const cellEntries = (...a) => workbench.cellEntries(...a);
+  const closeDiagram = (...a) => workbench.closeDiagram(...a);
+  const commands = (...a) => workbench.commands(...a);
+  const declarationParts = (...a) => workbench.declarationParts(...a);
+  const docHTML = (...a) => workbench.docHTML(...a);
+  const fieldHTML = (...a) => workbench.fieldHTML(...a);
+  const forgetImages = (...a) => workbench.forgetImages(...a);
+  const leanOf = (...a) => workbench.leanOf(...a);
+  const lineLinkHTML = (...a) => workbench.lineLinkHTML(...a);
+  const namespaceHTML = (...a) => workbench.namespaceHTML(...a);
+  const plainComments = (...a) => workbench.plainComments(...a);
+  const render = (...a) => workbench.render(...a);
+  const renderChrome = (...a) => workbench.renderChrome(...a);
+  const renderConnection = (...a) => workbench.renderConnection(...a);
+  const revealSection = (...a) => workbench.revealSection(...a);
+  const sourceFoldHTML = (...a) => workbench.sourceFoldHTML(...a);
+  const title = (...a) => workbench.title(...a);
+  const trimmed = (...a) => workbench.trimmed(...a);
+  const unevenQuotes = (...a) => workbench.unevenQuotes(...a);
   // VS Code uses the same renderer with a restricted, host-owned transport.
   const HOST = window.glitnirHost;
   const fetch = window.glitnirHost ? window.glitnirHost.fetch : window.fetch.bind(window);
@@ -549,8 +549,7 @@
   }
 
   // ----- helpers --------------------------------------------------------------
-  // Presentation only: recognized declarations get mathematical cards and an
-  // exact source fold. Unknown syntax gets an explicit card, never disappears.
+  // A declaration command's modifiers, keyword and name; reading.js reads the rest.
   const DECLARATION = /^(?:@\[.*\]\s*)?(?:(?:private|protected|noncomputable|scoped|local|nonrec|partial|unsafe)\s+)*(class\s+inductive|def|abbrev|structure|inductive|class|instance|axiom|opaque|example|theorem|lemma)\b\s*(«[^»]*»|[^\s:({[]*)/;
 
   // In project mode the claims are the saved project records, named as the
@@ -608,7 +607,7 @@
   const LEAN_TOKENS = /(\/-[\s\S]*?-\/|--[^\n]*)|\b(noncomputable|def|theorem|lemma|example|axiom|abbrev|instance|structure|inductive|where|namespace|end|import|open|by|fun|have|show|calc|let|variable|section)\b/g;
   const leanHTML = t => esc(t).replace(LEAN_TOKENS, (match, comment, keyword) => comment ? `<span class="cm">${comment}</span>` : `<span class="kw">${keyword}</span>`);
 
-  Object.assign(W, {$, API, DECLARATION, HOST, LABEL, UI, breakableName, checkBusy, checkProject,
+  Object.assign(workbench, {$, API, DECLARATION, HOST, LABEL, UI, breakableName, checkBusy, checkProject,
     checkThroughHTML, checkedStatementHTML, checking, claim, claimLabel, claimReading, claims, currencyNoted,
     currencyPillHTML, currencyText, esc, fetch, icon, inspectProject, inspecting, inspection, leanHTML,
     leanOff, leanVersion, linkedPath, load, markLiveChanges, nonClaimsHTML, openNotebook, post,
