@@ -19,7 +19,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 NODE_KINDS = (
@@ -236,8 +236,8 @@ def _collapse(text: str) -> str:
     return " ".join(text.split())
 
 
-def _header(first_rest: str, following: list[str]) -> str:
-    """Return the header text up to the top-level `:=` or `where`."""
+def _split_header(first_rest: str, following: list[str]) -> tuple[str, str]:
+    """Return the header up to the top-level `:=` or `where`, and the text after."""
     depth = 0
     out: list[str] = []
     lines = [first_rest, *following]
@@ -252,18 +252,29 @@ def _header(first_rest: str, following: list[str]) -> str:
                 depth += 1
             elif char in _CLOSERS:
                 depth -= 1
-            elif depth <= 0 and line.startswith(":=", position):
-                return _collapse("".join(out) + line[:position])
-            elif (
-                depth <= 0
-                and line.startswith("where", position)
-                and (position == 0 or not (line[position - 1].isalnum()))
-                and line[position + 5 :][:1] in ("", " ", "\t")
+            elif depth <= 0 and (
+                line.startswith(":=", position)
+                or (
+                    line.startswith("where", position)
+                    and (position == 0 or not (line[position - 1].isalnum()))
+                    and line[position + 5 :][:1] in ("", " ", "\t")
+                )
             ):
-                return _collapse("".join(out) + line[:position])
+                tail = [
+                    line[position:],
+                    *(rest.split("--", 1)[0] for rest in lines[index + 1 :]),
+                ]
+                return _collapse("".join(out) + line[:position]), _collapse(
+                    " ".join(tail)
+                )
             position += 1
         out.append(line + " ")
-    return _collapse("".join(out))
+    return _collapse("".join(out)), ""
+
+
+def _header(first_rest: str, following: list[str]) -> str:
+    """Return the header text up to the top-level `:=` or `where`."""
+    return _split_header(first_rest, following)[0]
 
 
 def _continuation(lines: list[str], start: int) -> list[str]:
@@ -417,6 +428,130 @@ def check_commit(outline: dict[str, Any], base: Path) -> list[Problem]:
     return [Problem("note", f"project moved {count} commits since {recorded}")]
 
 
+_CLAIM_RE = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)*"
+    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
+    r"|public|scoped|local)\s+)*"
+    r"(?:theorem|lemma)\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
+)
+_EXACT_RE = re.compile(r":=\s*by\s+exact\s+(?P<target>\S+)")
+_TOKEN_RE = re.compile(
+    r"(?:[^\W\d]|«[^»]*»)(?:[\w'!?]|«[^»]*»|\.(?=[^\W\d]|«))*|\d+|\S"
+)
+_IDENT_START_RE = re.compile(r"[^\W\d]|«")
+
+
+def _tokens(text: str) -> list[str]:
+    """Split Lean text into identifiers (dots and `«…»` included) and symbols."""
+    return _TOKEN_RE.findall(text)
+
+
+def same_statement(written: str, declared: str, namespaces: Sequence[str]) -> bool:
+    """Tell whether a written header restates the declared one.
+
+    The headers match token by token. A declared name may be written in full,
+    or with any of the enclosing or opened namespaces as its prefix.
+    """
+    left, right = _tokens(written), _tokens(declared)
+    if len(left) != len(right):
+        return False
+    for token, wanted in zip(left, right):
+        if token == wanted:
+            continue
+        if _IDENT_START_RE.match(wanted) and any(
+            token == f"{space}.{wanted}" for space in namespaces
+        ):
+            continue
+        return False
+    return True
+
+
+def _claims_in(text: str) -> list[tuple[str, str, str]]:
+    """Return (name, header, tail) for each column-0 theorem or lemma in text."""
+    lines = text.splitlines()
+    found: list[tuple[str, str, str]] = []
+    in_comment = False
+    for index, line in enumerate(lines):
+        if in_comment:
+            in_comment = "-/" not in line
+            continue
+        if line.startswith("/-"):
+            in_comment = "-/" not in line
+            continue
+        match = _CLAIM_RE.match(line)
+        if match:
+            header, tail = _split_header(
+                match.group("rest"), _continuation(lines, index)
+            )
+            found.append((match.group("name"), header, tail))
+    return found
+
+
+def check_notebook(
+    outline: dict[str, Any], base: Path, notebook: Path
+) -> list[Problem]:
+    """Compare the notebook's claims with the outline and the project."""
+    try:
+        text = notebook.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return [_error(f"notebook {notebook} cannot be read")]
+    root = _project_root(outline, base)
+    nodes = {
+        str(item["claim"]): item
+        for item in outline.get("nodes", [])
+        if isinstance(item.get("claim"), str)
+    }
+    problems: list[Problem] = []
+    written: set[str] = set()
+    for name, header, tail in _claims_in(text):
+        written.add(name)
+        exact = _EXACT_RE.fullmatch(tail)
+        if not exact:
+            problems.append(_error(f"claim {name} is not 'by exact <project theorem>'"))
+            continue
+        item = nodes.get(name)
+        if item is None:
+            problems.append(_error(f"claim {name} is not a claim of any node"))
+            continue
+        target = exact.group("target")
+        entries = [e for e in item.get("lean", []) if e.get("name") == target]
+        if not entries:
+            problems.append(
+                _error(
+                    f"claim {name}: {target} is not a lean name of node {item['id']}"
+                )
+            )
+            continue
+        problems.extend(_compare_claim(root, name, header, target, entries[0]))
+    for claim, item in nodes.items():
+        if claim not in written:
+            problems.append(
+                _error(f"node {item['id']}: claim {claim} is not in the notebook")
+            )
+    return problems
+
+
+def _compare_claim(
+    root: Path, claim: str, header: str, target: str, entry: dict[str, Any]
+) -> list[Problem]:
+    """Compare one claim's header with the declaration it cites."""
+    file = str(entry["file"])
+    try:
+        found = [d for d in declarations(root, file) if d.name == target]
+    except (OSError, UnicodeDecodeError):
+        return [_error(f"claim {claim}: file {file} cannot be read")]
+    if not found:
+        return [_error(f"claim {claim}: no declaration {target} in {file}")]
+    if any(same_statement(header, d.type, d.namespaces) for d in found):
+        return []
+    return [
+        _error(
+            f"claim {claim}: statement {header!r} differs from "
+            f"{target} in {file}: {found[0].type!r}"
+        )
+    ]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Return the command-line parser."""
     parser = argparse.ArgumentParser(prog="walkthrough.py", description=__doc__)
@@ -442,6 +577,8 @@ def main(argv: list[str] | None = None) -> int:
     if not any(p.level == "error" for p in problems):
         base = args.outline.parent
         problems += check_lean_entries(outline, base) + check_commit(outline, base)
+        if args.notebook is not None and not any(p.level == "error" for p in problems):
+            problems += check_notebook(outline, base, args.notebook)
     for problem in problems:
         print(f"{problem.level}: {problem.message}")
     return 1 if any(p.level == "error" for p in problems) else 0

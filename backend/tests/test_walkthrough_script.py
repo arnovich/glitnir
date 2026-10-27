@@ -130,7 +130,9 @@ def test_usage_error_exits_2() -> None:
 
 def test_notebook_option_is_accepted(tmp_path: Path) -> None:
     path = write(tmp_path, outline())
-    assert run("check", str(path), "--notebook", "x.lean").returncode == 0
+    notebook = tmp_path / "x.lean"
+    notebook.write_text("import Mathlib\n", encoding="utf-8")
+    assert run("check", str(path), "--notebook", str(notebook)).returncode == 0
 
 
 def test_running_leaves_the_skill_folder_unchanged(tmp_path: Path) -> None:
@@ -376,3 +378,107 @@ def test_a_bad_project_commit_is_rejected_without_running_git(
     assert "7 to 40 lowercase hex characters" in result.stdout
     assert snapshot_tree(tmp_path / "proj") == before
     assert not list(tmp_path.glob("**/*..HEAD"))
+
+
+def claim_outline(commit: str) -> dict[str, Any]:
+    """Return an outline whose node `one` claims `w_one` and cites `A.B.one`."""
+    data = lean_outline(commit, entry())
+    data["nodes"][0]["id"] = "one"
+    data["nodes"][0]["claim"] = "w_one"
+    return data
+
+
+def notebook_run(tmp_path: Path, data: dict[str, Any], text: str) -> Any:
+    """Run `check` with a notebook containing the text."""
+    notebook = tmp_path / "nb.lean"
+    notebook.write_text(text, encoding="utf-8")
+    return run("check", str(write(tmp_path, data)), "--notebook", str(notebook))
+
+
+def test_a_matching_claim_passes(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = "import X\n\ntheorem w_one : True := by\n  exact A.B.one\n"
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 0 and result.stdout == "", result.stdout
+
+
+def test_a_multi_line_claim_header_passes(tmp_path: Path) -> None:
+    data = lean_outline(
+        make_project(tmp_path),
+        entry(name="A.B.two", line=3, type="(n : Nat) : n = n"),
+    )
+    data["nodes"][0]["claim"] = "w_two"
+    text = "theorem w_two (n : Nat) :\n    n = n := by\n  exact A.B.two\n"
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 0 and result.stdout == "", result.stdout
+
+
+def test_same_statement_resolves_namespaces() -> None:
+    same = load_script().same_statement
+    assert same(": A.B.Foo", ": Foo", ("A", "A.B"))
+    assert not same(": C.Foo", ": Foo", ("A",))
+    assert same(": A.Foo x", ": A.Foo x", ())
+    assert not same(": Foo x", ": Foo", ("A",))
+    assert not same(": Foo y", ": Foo x", ())
+    assert same(": «a.b».c", ": «a.b».c", ())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "theorem w_one : True := A.B.one\n",
+        "theorem w_one : True := by\n  exact A.B.one\n  rfl\n",
+        "theorem w_one : True := by\n  simp\n",
+        "theorem w_one : True\n",
+    ],
+)
+def test_a_claim_must_be_by_exact(tmp_path: Path, text: str) -> None:
+    data = claim_outline(make_project(tmp_path))
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 1
+    assert "claim w_one is not 'by exact <project theorem>'" in result.stdout
+
+
+def test_a_claim_must_cite_its_nodes_theorem(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = "theorem w_one : 1 = 1 := by\n  exact A.three\n"
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 1 and "A.three" in result.stdout
+
+
+def test_a_claim_with_another_statement_shows_both(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    result = notebook_run(
+        tmp_path, data, "theorem w_one : False := by\n  exact A.B.one\n"
+    )
+    assert result.returncode == 1
+    assert ": False" in result.stdout and ": True" in result.stdout
+
+
+def test_an_unlisted_claim_is_an_error(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = "theorem w_one : True := by\n  exact A.B.one\n"
+    text += "theorem w_other : True := by\n  exact A.B.one\n"
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 1 and "w_other" in result.stdout
+
+
+def test_a_missing_claim_is_an_error(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    result = notebook_run(tmp_path, data, "import X\n")
+    assert result.returncode == 1 and "w_one" in result.stdout
+
+
+def test_an_unreadable_notebook_is_an_error(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    result = run(
+        "check", str(write(tmp_path, data)), "--notebook", str(tmp_path / "no.lean")
+    )
+    assert result.returncode == 1 and "no.lean" in result.stdout
+
+
+def test_notebook_is_skipped_after_earlier_errors(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    data["nodes"][0]["lean"][0]["type"] = ": False"
+    result = notebook_run(tmp_path, data, "import X\n")
+    assert result.returncode == 1 and "w_one" not in result.stdout
