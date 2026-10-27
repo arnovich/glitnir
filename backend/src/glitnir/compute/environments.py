@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from glitnir.compute.disk_budget import check_disk_budget
 from glitnir.compute.protocol import CONFIG_FILES, checker_digest, source_path
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_inspection import TOOLCHAIN, _toolchain, lake_matches
@@ -265,6 +266,7 @@ class EnvironmentCache:
         self.active_entry: Path | None = None
         self.active_reused: bool | None = None
         self.lock_fd: int | None = None
+        self._checking_budget = False
 
     def ready(self, recipes: Sequence[Recipe]) -> list[str]:
         """Return cache hints; verify integrity under the lease lock."""
@@ -274,19 +276,17 @@ class EnvironmentCache:
             if (self.root / r.key(self.checker) / "ready.json").is_file()
         ]
 
-    def check_budget(self, entry: Path, recipe: Recipe) -> None:
-        """Count entry data, including Git objects and private candidate stages."""
-        # Live build/download tools atomically rename temporary files. Only this
-        # sampled size scan tolerates disappearances; immutable inventories stay
-        # strict, and all other filesystem errors still fail the preparation.
-        size = 0
-        for path in _files(entry, missing_ok=True):
-            try:
-                size += path.lstat().st_size
-            except FileNotFoundError:
-                continue
-        if size > recipe.max_bytes:
-            raise ValueError("Environment exceeds its disk budget")
+    def check_budget(
+        self, entry: Path, recipe: Recipe, monitor: Monitor = lambda: None
+    ) -> None:
+        """Count every entry tree, without recursively scanning from lease callbacks."""
+        if self._checking_budget:
+            return  # The outer scan still enforces this serial cache's budget.
+        self._checking_budget = True
+        try:
+            check_disk_budget(entry, recipe.max_bytes, monitor)
+        finally:
+            self._checking_budget = False
 
     @contextmanager
     def prepare(self, recipe: Recipe, run: Runner, monitor: Monitor) -> Iterator[Path]:
@@ -337,17 +337,17 @@ class EnvironmentCache:
                     try:
                         self.active_entry = temporary
                         self._build(temporary, recipe, run, monitor)
-                        self.check_budget(temporary, recipe)
+                        self.check_budget(temporary, recipe, monitor)
                         os.replace(temporary, entry)
                         self.active_entry = entry
                     finally:
                         if temporary.exists():
                             shutil.rmtree(temporary)
-                self.check_budget(entry, recipe)
+                self.check_budget(entry, recipe, monitor)
                 os.utime(entry, None)
                 _recover_stage(entry)
                 yield entry
-                self.check_budget(entry, recipe)
+                self.check_budget(entry, recipe, monitor)
             except BaseException:
                 if entry.exists():
                     shutil.rmtree(entry)
