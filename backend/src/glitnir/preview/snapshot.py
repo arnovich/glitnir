@@ -17,7 +17,11 @@ from typing import Any, Callable
 
 from glitnir.compute.client import remote_identity
 from glitnir.lean.environment import MAX_SOURCE_BYTES
-from glitnir.lean.fingerprint import Fingerprint, environment_fingerprint
+from glitnir.lean.fingerprint import (
+    Fingerprint,
+    FingerprintRecord,
+    environment_fingerprint,
+)
 from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import lean_support
@@ -58,7 +62,7 @@ NOTICE = (
 class PreviewState:
     """What a running preview adds to its saved notebook: all empty by default."""
 
-    check: dict[str, Any] | None = None
+    check: Mapping[str, Any] | None = None
     inspection: dict[str, Any] | None = None
     running: str | None = None
     run_errors: Mapping[str, str] = field(default_factory=dict)
@@ -113,7 +117,7 @@ def cut_short(message: str) -> bool:
     )
 
 
-def _failed_fresh_check(observation: dict[str, Any] | None, sha256: str) -> bool:
+def _failed_fresh_check(observation: Mapping[str, Any] | None, sha256: str) -> bool:
     """Whether the latest check of this exact text was unavailable, not cut short."""
     if observation is None or observation.get("status") != "unavailable":
         return False
@@ -310,10 +314,10 @@ class Fingerprints:
     def __init__(self, path: Path, text: str) -> None:
         """Keep the notebook and its saved text; nothing is computed yet."""
         self._path, self._text = path, text
-        self._found: dict[tuple[str, ...], dict[str, Any]] = {}
+        self._found: dict[tuple[str, ...], FingerprintRecord] = {}
         self._failed: dict[tuple[str, ...], Exception] = {}
 
-    def environment(self, imports: tuple[str, ...] = ()) -> dict[str, Any]:
+    def environment(self, imports: tuple[str, ...] = ()) -> FingerprintRecord:
         """Return the fingerprint taken with `imports`."""
         if imports in self._failed:
             raise self._failed[imports]

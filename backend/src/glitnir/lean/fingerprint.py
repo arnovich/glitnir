@@ -22,7 +22,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, NoReturn
+from typing import Any, Callable, NoReturn, NotRequired, TypedDict
 
 from glitnir.lean import (
     axiom_report,
@@ -180,9 +180,82 @@ def _directory_lock(directory: Path) -> threading.Lock:
         return _LOCKS.setdefault(str(directory), threading.Lock())
 
 
+class GitState(TypedDict):
+    """Whether a checkout is at its manifest commit and clean; `reason` when unknown."""
+
+    head: str | None
+    at_manifest: bool
+    clean: bool | None
+    reason: NotRequired[str]
+
+
+class PackageState(TypedDict):
+    """One dependency of the project: its manifest entry and its checkout's state."""
+
+    name: str
+    rev: str | None
+    head: str | None
+    at_manifest: bool
+    clean: bool | None
+    reason: NotRequired[str]
+
+
+class Sources(TypedDict):
+    """The project's own Lean sources the notebook may import, by digest."""
+
+    files: list[list[str | None]]
+    errors: list[str]
+    truncated: bool
+    closure: bool
+    unknown: list[str]
+
+
+class CheckerIdentity(TypedDict):
+    """The checking code shipped with Glitnir and what it accepts."""
+
+    toolchain: str
+    programs: dict[str, str | None]
+    axiom_allowlist: list[str]
+
+
+class RemoteIdentity(TypedDict):
+    """What remote execution adds to a fingerprint (`client.remote_identity`)."""
+
+    execution: dict[str, Any]
+    compute_context: str
+    compute_checker: str
+
+
+class _Identity(TypedDict):
+    """Everything an environment fingerprint hashes."""
+
+    toolchain: str | None
+    files: dict[str, str | None]
+    packages: list[PackageState]
+    imports: dict[str, str | None]
+    sources: Sources | None
+    checker: CheckerIdentity
+    unreadable_traces: NotRequired[list[str]]
+    execution: NotRequired[dict[str, Any]]
+    compute_context: NotRequired[str]
+    compute_checker: NotRequired[str]
+
+
+class FingerprintRecord(_Identity):
+    """An environment fingerprint: its digests and the identity they hash.
+
+    `stable_sha256` is the same identity with each unknown state marked
+    unknown; `unknown` says whether any state was.
+    """
+
+    sha256: str
+    stable_sha256: str
+    unknown: bool
+
+
 def git_state(
     directory: Path, rev: str | None, deadline: float | None = None
-) -> dict[str, Any]:
+) -> GitState:
     """Report whether a dependency checkout is at its manifest commit and clean.
 
     Not cached: an unstaged edit changes neither HEAD nor the index, so only
@@ -254,7 +327,7 @@ def git_state(
             )
         finally:
             lock.release()
-    state: dict[str, Any] = {
+    state: GitState = {
         "head": head,
         "at_manifest": rev is not None and head == rev,
         "clean": None if status is None else status == "",
@@ -533,7 +606,7 @@ def _source_digest(
 
 def project_sources(
     root: Path, notebook: Path, imports: list[str] | None = None
-) -> dict[str, Any]:
+) -> Sources:
     """Hash the project's own Lean sources that the notebook may import.
 
     A fresh check never rebuilds (setup uses ``--no-build``), so an edited
@@ -625,7 +698,7 @@ def project_sources(
     }
 
 
-def checker_identity() -> dict[str, Any]:
+def checker_identity() -> CheckerIdentity:
     """Identify the checking code shipped with Glitnir and what it accepts.
 
     The helper programs are the exact files a check copies into its snapshot,
@@ -659,9 +732,9 @@ def environment_fingerprint(
     source: Path,
     text: str,
     imports: tuple[str, ...] = (),
-    known_packages: list[dict[str, Any]] | None = None,
-    remote: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    known_packages: list[PackageState] | None = None,
+    remote: RemoteIdentity | None = None,
+) -> FingerprintRecord:
     """Identify toolchain, Lake files, builds, project sources and dependencies.
 
     The identity holds no absolute path: the toolchain named by
@@ -705,9 +778,9 @@ def environment_fingerprint(
         name: info.get("sha256") or info.get("error")
         for name, info in project.get("files", {}).items()
     }
-    packages: list[dict[str, Any]] = []
+    packages: list[PackageState] = []
     roots: list[Path] = []
-    sources: dict[str, Any] | None = None
+    sources: Sources | None = None
     header = header_imports(text)
     named = [*(direct_imports(text) if header is None else header)]
     named += [module for module in imports if module not in named]
@@ -725,9 +798,9 @@ def environment_fingerprint(
             roots.append(base)
             reused = known.get((entry["name"], entry.get("rev")))
             if reused is not None:
-                packages.append(dict(reused))
+                packages.append(reused.copy())
                 continue
-            state = (
+            state: GitState = (
                 git_state(base, entry.get("rev"), deadline)
                 if entry.get("type") == "git" and (base / ".git").exists()
                 else {"head": None, "at_manifest": False, "clean": False}
@@ -749,7 +822,7 @@ def environment_fingerprint(
                 # Present but no Lake trace: unknown, never a missing build.
                 unreadable.append(module)
                 break
-    identity = {
+    identity: _Identity = {
         "toolchain": project.get("toolchain"),
         "files": files,
         "packages": packages,
@@ -802,7 +875,7 @@ def _digest(identity: dict[str, Any]) -> str:
     ).hexdigest()
 
 
-def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
+def unknown_git_note(fingerprint: FingerprintRecord) -> str | None:
     """Explain the git states, sources and build traces a fingerprint could not read.
 
     Returns:
@@ -812,7 +885,8 @@ def unknown_git_note(fingerprint: dict[str, Any]) -> str | None:
     for package in fingerprint.get("packages", []):
         if "reason" in package:
             names.setdefault(package["reason"], []).append(package["name"])
-    sources = (fingerprint.get("sources") or {}).get("unknown") or []
+    found = fingerprint.get("sources")
+    sources = (found["unknown"] if found else None) or []
     traces = fingerprint.get("unreadable_traces") or []
     notes = []
     if names:

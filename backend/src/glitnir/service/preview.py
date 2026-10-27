@@ -3,6 +3,7 @@
 import hashlib
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
@@ -10,12 +11,13 @@ from glitnir.compute.client import check_remote, from_environment, remote_identi
 from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.fingerprint import (
     Fingerprint,
+    FingerprintRecord,
     environment_fingerprint,
     unknown_git_note,
 )
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import check_project, through_line_end
-from glitnir.lean.project_inspection import inspect_project, lean_support
+from glitnir.lean.project_inspection import Inspection, inspect_project, lean_support
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.notebook.check_records import (
     load_records,
@@ -56,7 +58,7 @@ NOTHING_CHECKING = "No check is running."
 INSPECTION_CANCELLED = "Project inspection cancelled."
 
 
-def _inspection_summary(result: dict[str, Any], sha256: str) -> dict[str, Any]:
+def _inspection_summary(result: Inspection, sha256: str) -> dict[str, Any]:
     """Keep what the preview shows of an inspection; never the setup itself.
 
     The setup lists every module of the import closure (megabytes with
@@ -102,7 +104,7 @@ class SourcePreviewService:
         self._cancel = threading.Event()
         self._inspection_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._check: dict[str, Any] | None = None
+        self._check: Mapping[str, Any] | None = None
         self._check_cancel: threading.Event | None = None
         self._worker: threading.Thread | None = None
         self._inspection: dict[str, Any] | None = None
@@ -301,8 +303,8 @@ class SourcePreviewService:
             self._check_cancel.set()
 
     def _with_import_hint(
-        self, result: dict[str, Any], environment: dict[str, Any]
-    ) -> dict[str, Any]:
+        self, result: Mapping[str, Any], environment: FingerprintRecord
+    ) -> Mapping[str, Any]:
         """Explain unbuilt sibling imports, unless the check was cut short."""
         message = str(result.get("message", ""))
         if (
@@ -344,7 +346,7 @@ class SourcePreviewService:
             environment = environment_fingerprint(
                 self.path, text, remote=remote_identity(self.path)
             )
-            compiled: list[dict[str, Any]] = []
+            compiled: list[FingerprintRecord] = []
 
             def acquired() -> None:
                 # Retaken once the check holds the Lean slot, before it reads
@@ -359,6 +361,7 @@ class SourcePreviewService:
                         )
                     )
 
+            result: Mapping[str, Any]
             if from_environment() is not None:
 
                 def remote_acquired(context_sha256: str) -> None:
@@ -520,11 +523,11 @@ class SourcePreviewService:
         found = assets.references(prose(cells(self._text())))
         return assets.read(self.path, found, reference, sha256)
 
-    def view(self, cell: int, line: int) -> dict[str, Any]:
+    def view(self, cell: int, line: int) -> Mapping[str, Any]:
         """Report one listed directive's drawing (`ViewDrawing.view`)."""
         return self._views.view(cell, line)
 
-    def view_job(self, job_id: str) -> dict[str, Any]:
+    def view_job(self, job_id: str) -> Mapping[str, Any]:
         """Answer a poll for one view job (`ViewDrawing.view_job`)."""
         return self._views.view_job(job_id)
 

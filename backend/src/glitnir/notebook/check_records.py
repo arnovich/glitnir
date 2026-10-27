@@ -108,6 +108,7 @@ import copy
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
@@ -280,7 +281,7 @@ def save_records(notebook: Path, records: dict[str, Any]) -> None:
 
 def records_from_check(
     text: str,
-    result: dict[str, Any],
+    result: Mapping[str, Any],
     fingerprint: str,
     previous: dict[str, Any] | None = None,
 ) -> dict[str, Any]:

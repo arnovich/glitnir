@@ -10,13 +10,16 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from glitnir.compute.protocol import checker_digest, context_digest, make_request
 from glitnir.compute.telemetry import describe
+from glitnir.lean.fingerprint import RemoteIdentity
 from glitnir.lean.limits import check_seconds, memory_limit_mb
+from glitnir.lean.results import CheckOutcome
 
 MAX_RESPONSE = 2_500_000
 
@@ -96,7 +99,7 @@ def execution_identity() -> dict[str, str] | None:
     }
 
 
-def remote_identity(source: Path) -> dict[str, Any] | None:
+def remote_identity(source: Path) -> RemoteIdentity | None:
     """Return the fields a fingerprint of `source` adds under remote execution.
 
     None for local execution. They go to `environment_fingerprint` as its
@@ -121,7 +124,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def save_receipt(path: Path, value: dict[str, Any]) -> None:
+def save_receipt(path: Path, value: Mapping[str, Any]) -> None:
     """Replace a private journal atomically, without storing any credential."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as stream:
@@ -236,7 +239,7 @@ class Client:
         raise ValueError("Taskvalet polling deadline reached; retain the receipt")
 
 
-def result_from_job(job: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+def result_from_job(job: dict[str, Any], request: dict[str, Any]) -> CheckOutcome:
     """Accept only a completed report bound to this exact immutable request."""
     if (
         job.get("id") != request["request_id"]
@@ -259,17 +262,22 @@ def result_from_job(job: dict[str, Any], request: dict[str, Any]) -> dict[str, A
         and result.get("source_sha256") != request["source_sha256"]
     ):
         raise ValueError("Remote checker result belongs to different source")
-    return {
-        **result,
-        "execution": {
-            "kind": "taskvalet",
-            "job": job["id"],
-            "worker": job["worker"],
-            "context_sha256": request["context_sha256"],
-            "checker_sha256": request["checker_sha256"],
-            "environment": request["environment"],
+    # The checks above are what admit a remote result; its shape is the
+    # checker's own, which the worker produced with check_project.
+    return cast(
+        CheckOutcome,
+        {
+            **result,
+            "execution": {
+                "kind": "taskvalet",
+                "job": job["id"],
+                "worker": job["worker"],
+                "context_sha256": request["context_sha256"],
+                "checker_sha256": request["checker_sha256"],
+                "environment": request["environment"],
+            },
         },
-    }
+    )
 
 
 def check_remote(
@@ -280,7 +288,7 @@ def check_remote(
     progress: Callable[[str], None],
     through_line: int | None = None,
     acquired: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
+) -> CheckOutcome:
     """Submit a full project check from the editor's existing background workflow."""
     settings = from_environment()
     if settings is None:

@@ -7,7 +7,7 @@ import tempfile
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +17,7 @@ from glitnir.compute.client import remote_identity
 from glitnir.lean.awake import awake
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.fingerprint import (
+    FingerprintRecord,
     environment_fingerprint,
     header_words,
     unknown_git_note,
@@ -206,7 +207,7 @@ def _emission_key(
     preamble: Any,
     marker: Any,
     command: Any,
-    environment: dict[str, Any],
+    environment: FingerprintRecord,
 ) -> tuple[str, ...] | None:
     """Name everything an evidence run's Lean is given, or None if it cannot be.
 
@@ -465,7 +466,10 @@ class DirectiveRuns:
         return message, self._save_failure(job, environment, kind, saved)
 
     def _evidence_attempt(
-        self, job: _EvidenceJob, imports: tuple[str, ...], environment: dict[str, Any]
+        self,
+        job: _EvidenceJob,
+        imports: tuple[str, ...],
+        environment: FingerprintRecord,
     ) -> tuple[str | None, tuple[str, str] | None]:
         """Run the job; return its error, if any, and the failure to save.
 
@@ -489,7 +493,7 @@ class DirectiveRuns:
         with self._context.state_lock:
             kept = None if key is None else self._emissions.get(key)
         if kept is not None:
-            result: dict[str, Any] = {"payload": kept}
+            result: Mapping[str, Any] = {"payload": kept}
         else:
             result = run_provider_lean(
                 self._context.path,
@@ -569,7 +573,7 @@ class DirectiveRuns:
         payload: str,
         job: _EvidenceJob,
         imports: tuple[str, ...],
-        environment: dict[str, Any],
+        environment: FingerprintRecord,
     ) -> None:
         """Keep Lean's output if the environment did not change during the run.
 
@@ -591,7 +595,7 @@ class DirectiveRuns:
     def _save_failure(
         self,
         job: _EvidenceJob | _DecisionJob,
-        environment: dict[str, Any],
+        environment: FingerprintRecord,
         kind: str,
         message: str,
         cancel: threading.Event | None = None,
@@ -823,7 +827,7 @@ class DirectiveRuns:
         job: _DecisionJob,
         cancel: threading.Event,
         imports: tuple[str, ...],
-        environment: dict[str, Any],
+        environment: FingerprintRecord,
     ) -> tuple[str | None, tuple[str, str] | None]:
         """Run the decision; return its error, if any, and the failure to save.
 

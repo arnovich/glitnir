@@ -2,14 +2,38 @@
 
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 from glitnir.lean.project import read_regular
 
 PROGRAM = Path(__file__).with_name("PreparedProject.lean")
 
 
-def validate_resolution(value: Any, root: Path) -> dict[str, Any]:
+class ResolutionInput(TypedDict):
+    """One configuration file the prepared packages were resolved from."""
+
+    path: str
+    sha256: str | None
+
+
+class ResolutionPackage(TypedDict):
+    """One prepared package: name, directory in the project and manifest entry."""
+
+    name: str
+    path: str
+    entry: dict[str, Any]
+
+
+class Resolution(TypedDict):
+    """How a project's packages were resolved: prepared locally, from these inputs."""
+
+    kind: Literal["prepared_local"]
+    packages: list[ResolutionPackage]
+    inputs: list[ResolutionInput]
+    adapter_sha256: str
+
+
+def validate_resolution(value: Any, root: Path) -> Resolution:
     """Bind the helper's captured bytes and optional absences to confined paths."""
     if (
         not isinstance(value, dict)
@@ -31,7 +55,7 @@ def validate_resolution(value: Any, root: Path) -> dict[str, Any]:
             raise ValueError("Prepared package input is a symbolic link.")
         return path.resolve()
 
-    inputs = []
+    inputs: list[ResolutionInput] = []
     seen = set()
     for item in value["inputs"]:
         if not isinstance(item, dict) or set(item) != {"path", "contents"}:
@@ -59,7 +83,7 @@ def validate_resolution(value: Any, root: Path) -> dict[str, Any]:
                 ),
             }
         )
-    packages = []
+    packages: list[ResolutionPackage] = []
     names = set()
     for item in value["packages"]:
         if (
@@ -75,7 +99,13 @@ def validate_resolution(value: Any, root: Path) -> dict[str, Any]:
         if not path.is_dir():
             raise ValueError("Prepared package directory is missing.")
         names.add(item["name"])
-        packages.append({**item, "path": str(path.relative_to(root))})
+        packages.append(
+            {
+                "name": item["name"],
+                "path": str(path.relative_to(root)),
+                "entry": item["entry"],
+            }
+        )
     return {
         "kind": "prepared_local",
         "packages": packages,

@@ -1,7 +1,5 @@
 """A decision candidate's text and verdict: the saved prefix plus a provider block."""
 
-from typing import Any
-
 from glitnir.lean.environment import LEAN_AXIOM_ALLOWLIST
 from glitnir.lean.failures import (
     CommandFailure,
@@ -10,6 +8,7 @@ from glitnir.lean.failures import (
     line_range,
 )
 from glitnir.lean.project_snapshot import SnapshotError
+from glitnir.lean.results import Theorem, Verdict
 
 
 def candidate_text(saved: str, insert_after_line: int, block: str) -> str:
@@ -36,8 +35,8 @@ def failure_location(failure: CommandFailure, text: str, insert_after_line: int)
 
 
 def candidate_verdict(
-    theorems: list[dict[str, Any]], theorem: str, first: int, last: int
-) -> dict[str, Any]:
+    theorems: list[Theorem], theorem: str, first: int, last: int
+) -> Verdict:
     """Accept only one `checked` declaration of `theorem` within lines first..last."""
     found = [
         item
@@ -54,16 +53,13 @@ def candidate_verdict(
         )
         return {"status": "rejected", "message": message, "axioms": [], "type": None}
     name, status, axioms = found[0]["name"], found[0]["status"], found[0]["axioms"]
-    verdict: dict[str, Any] = {
-        "status": "rejected",
-        # Names only (the saved decision and the card hold strings); the
-        # modules stay in the rejection message below.
-        "axioms": list(dict.fromkeys(a["name"] for a in axioms)),
-        "type": found[0]["type"],
-    }
+    # Names only (the saved decision and the card hold strings); the
+    # modules stay in the rejection message below.
+    names = list(dict.fromkeys(a["name"] for a in axioms))
+    kind = found[0]["type"]
     if status == "checked":
         message = f"The checker reports `{name}` as checked."
-        return {**verdict, "status": "checked", "message": message}
+        return {"status": "checked", "message": message, "axioms": names, "type": kind}
     if status == "admitted":
         message = f"`{name}` is admitted: its proof depends on `sorry`."
     else:
@@ -83,4 +79,4 @@ def candidate_verdict(
                 f"`{name}` depends on axioms the checker could not trace to "
                 f"Lean's own modules: {listed}."
             )
-    return {**verdict, "message": message}
+    return {"status": "rejected", "message": message, "axioms": names, "type": kind}

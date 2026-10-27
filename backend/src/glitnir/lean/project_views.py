@@ -3,10 +3,11 @@
 import hashlib
 import json
 import threading
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
-from glitnir.lean.provider_lean import run_provider_batch
+from glitnir.lean.provider_lean import ProviderError, run_provider_batch
 from glitnir.providers import ViewProvider
 from glitnir.providers.outcomes import checked_drawing
 
@@ -35,13 +36,13 @@ def view_provider_sha256(
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def _provider_failed(provider: ViewProvider, error: Exception) -> dict[str, Any]:
+def _provider_failed(provider: ViewProvider, error: Exception) -> ProviderError:
     return {
         "error": f"Provider {provider.name} failed: {type(error).__name__}: {error}"
     }
 
 
-def _drawing(result: dict[str, Any]) -> dict[str, Any]:
+def _drawing(result: Mapping[str, Any]) -> Mapping[str, Any]:
     """Check one view's payload as a drawing, saying if proofs were skipped."""
     if "payload" not in result:
         return result
@@ -60,7 +61,7 @@ def render_project_views(
     cancel: threading.Event,
     progress: Callable[[str], None] | None = None,
     environment_sha256: str | None = None,
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     """Draw several views of one provider in one sandboxed Lean run.
 
     `views` holds `(directive line, kind, name, using)`, lines ascending. As
@@ -82,7 +83,7 @@ def render_project_views(
         marker = provider.marker
     except Exception as error:
         return _provider_failed(provider, error)
-    results: list[dict[str, Any] | None] = []
+    results: list[Mapping[str, Any] | None] = []
     commands: list[tuple[int, str]] = []
     for line, kind, name, using in views:
         try:

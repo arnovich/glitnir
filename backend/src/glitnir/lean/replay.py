@@ -9,6 +9,7 @@ from typing import Any
 
 from glitnir.lean import replay_cache
 from glitnir.lean.project_snapshot import ProjectSnapshot, SnapshotError, module_path
+from glitnir.lean.results import Axiom
 
 
 def module_files(
@@ -154,7 +155,7 @@ def replay_report(
 
 def replayed_axioms(
     replayed: dict[str, Any], reported: dict[str, dict[str, Any]]
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, list[Axiom]]:
     """Return each declared theorem's axioms as the kernel replay collected them.
 
     The replay collects them in the environment where it kernel-checked the

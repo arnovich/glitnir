@@ -11,7 +11,7 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,7 +41,7 @@ def validate(
     source: str,
     cancel: threading.Event,
     *,
-    checker: Callable[..., dict[str, Any]] = check_candidate,
+    checker: Callable[..., Mapping[str, Any]] = check_candidate,
 ) -> dict[str, Any]:
     """Run the independent native checker on exactly the submitted candidate."""
     environment.assert_current()

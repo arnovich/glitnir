@@ -4,12 +4,70 @@ import json
 import math
 import re
 import xml.etree.ElementTree as ElementTree
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict, cast, overload
 
 MAX_SVG_BYTES = 1_000_000
 
 
-def checked_drawing(text: str) -> dict[str, Any]:
+class Drawing(TypedDict, total=False):
+    """A checked drawing: its SVG and, from a diagram report, its structured parts."""
+
+    svg: str
+    graph: Any
+    model: Any
+    detail: Any
+    contracts: Any
+
+
+class DrawingError(TypedDict):
+    """Why a provider's drawing is not shown."""
+
+    error: str
+
+
+class Series(TypedDict):
+    """Evidence samples: the times, one list of values per named series."""
+
+    times: list[float]
+    values: list[list[float | None]]
+    names: list[str]
+
+
+class Evidence(TypedDict):
+    """Checked evidence as the preview shows and the records save it."""
+
+    format: str
+    series: Series
+    plane: NotRequired[list[int]]
+    provenance: list[list[str]]
+    finite: bool
+
+
+class ProvedDecision(TypedDict):
+    """A proven or refuted outcome: its block and the theorem the block declares."""
+
+    status: Literal["proven", "refuted"]
+    reason: str
+    stages: list[list[str]]
+    block: str
+    theorem: str
+
+
+class UnknownDecision(TypedDict):
+    """An outcome that decides nothing: no block, no theorem."""
+
+    status: Literal["unknown"]
+    reason: str
+    stages: list[list[str]]
+    block: None
+    theorem: None
+
+
+#: What `checked_decision` returns.
+Decision = ProvedDecision | UnknownDecision
+
+
+def checked_drawing(text: str) -> Drawing | DrawingError:
     """Accept a bounded presentation report, retaining the isolated SVG fallback."""
     if len(text.encode("utf-8")) > MAX_SVG_BYTES:
         return {"error": "the drawing is too large to show"}
@@ -26,14 +84,19 @@ def checked_drawing(text: str) -> dict[str, Any]:
         return checked
     # The app validates structured geometry before rendering. Raw SVG is used
     # only as an image; no markup from a report enters the notebook DOM.
-    return {
-        key: report[key]
-        for key in ("svg", "graph", "model", "detail", "contracts")
-        if key in report
-    }
+    drawing: Drawing = {"svg": report["svg"]}
+    if "graph" in report:
+        drawing["graph"] = report["graph"]
+    if "model" in report:
+        drawing["model"] = report["model"]
+    if "detail" in report:
+        drawing["detail"] = report["detail"]
+    if "contracts" in report:
+        drawing["contracts"] = report["contracts"]
+    return drawing
 
 
-def _checked_svg(text: str) -> dict[str, Any]:
+def _checked_svg(text: str) -> Drawing | DrawingError:
     if len(text.encode("utf-8")) > MAX_SVG_BYTES:
         return {"error": "the drawing is too large to show"}
     try:
@@ -53,6 +116,14 @@ MAX_PAIRS = 32
 MAX_BYTES = 2_000_000
 _BODY_KEYS = {"format", "series", "plane", "provenance", "finite"}
 _SERIES_KEYS = {"times", "values", "names"}
+
+
+@overload
+def _number(value: Any, what: str) -> float: ...
+
+
+@overload
+def _number(value: Any, what: str, *, nullable: bool) -> float | None: ...
 
 
 def _number(value: Any, what: str, *, nullable: bool = False) -> float | None:
@@ -84,7 +155,7 @@ def _list(value: Any, what: str, limit: int) -> list[Any]:
     return value
 
 
-def _checked_series(series: Any) -> dict[str, Any]:
+def _checked_series(series: Any) -> Series:
     if not isinstance(series, dict) or set(series) != _SERIES_KEYS:
         raise ValueError("series must hold exactly times, values and names.")
     times = [
@@ -126,7 +197,7 @@ def _checked_provenance(provenance: Any) -> list[list[str]]:
     return pairs
 
 
-def checked_evidence(body: Any) -> dict[str, Any]:
+def checked_evidence(body: Any) -> Evidence:
     """Return a normalised copy of provider output, or raise ValueError.
 
     Provider output is untrusted: the shape, bounds and finiteness checked here
@@ -145,11 +216,14 @@ def checked_evidence(body: Any) -> dict[str, Any]:
     if not isinstance(body["finite"], bool):
         raise ValueError("finite must be true or false.")
     series = _checked_series(body["series"])
-    checked: dict[str, Any] = {"format": EVIDENCE_FORMAT, "series": series}
+    checked: Evidence = {
+        "format": EVIDENCE_FORMAT,
+        "series": series,
+        "provenance": _checked_provenance(body["provenance"]),
+        "finite": body["finite"],
+    }
     if "plane" in body:
         checked["plane"] = _checked_plane(body["plane"], len(series["names"]))
-    checked["provenance"] = _checked_provenance(body["provenance"])
-    checked["finite"] = body["finite"]
     size = len(json.dumps(checked, separators=(",", ":")).encode("utf-8"))
     if size > MAX_BYTES:
         raise ValueError(f"Evidence may hold at most {MAX_BYTES} bytes.")
@@ -218,7 +292,7 @@ def _checked_block(block: Any) -> str:
     return block
 
 
-def checked_decision(outcome: Any) -> dict[str, Any]:
+def checked_decision(outcome: Any) -> Decision:
     """Return a normalised copy of a provider's outcome, or raise ValueError.
 
     `status` is required; `reason` and `stages` default to empty. A proven or
@@ -235,24 +309,31 @@ def checked_decision(outcome: Any) -> dict[str, Any]:
     status = outcome.get("status")
     if not isinstance(status, str) or status not in OUTCOME_STATUSES:
         raise ValueError("status must be proven, refuted or unknown.")
-    checked: dict[str, Any] = {
-        "status": status,
-        "reason": _bounded(outcome.get("reason", ""), "reason", MAX_REASON),
-        "stages": _checked_stages(outcome.get("stages", [])),
-        "block": None,
-        "theorem": None,
-    }
+    reason = _bounded(outcome.get("reason", ""), "reason", MAX_REASON)
+    stages = _checked_stages(outcome.get("stages", []))
     block, theorem = outcome.get("block"), outcome.get("theorem")
     if status == "unknown":
         if block is not None or theorem is not None:
             raise ValueError("An unknown decision has no block or theorem.")
-        return checked
-    checked["block"] = _checked_block(block)
+        return {
+            "status": "unknown",
+            "reason": reason,
+            "stages": stages,
+            "block": None,
+            "theorem": None,
+        }
+    checked_block = _checked_block(block)
     if (
         not isinstance(theorem, str)
         or len(theorem) > MAX_THEOREM
         or not _THEOREM.fullmatch(theorem)
     ):
         raise ValueError("theorem must name the Lean theorem the block declares.")
-    checked["theorem"] = theorem
-    return checked
+    return {
+        # Checked against OUTCOME_STATUSES above, and not "unknown" here.
+        "status": cast(Literal["proven", "refuted"], status),
+        "reason": reason,
+        "stages": stages,
+        "block": checked_block,
+        "theorem": theorem,
+    }

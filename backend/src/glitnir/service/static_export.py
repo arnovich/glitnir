@@ -27,6 +27,7 @@ import base64
 import os
 import re
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -189,7 +190,7 @@ class SavedNotebook:
             modules.update(provider_imports(providers.views[view["kind"]]))
         return sorted(modules)
 
-    def draw_view(self, cell: int, line: int) -> dict[str, Any]:
+    def draw_view(self, cell: int, line: int) -> Mapping[str, Any]:
         """Draw the view listed at `cell` and `line` of the snapshot; wait for it.
 
         A drawing saved for the view in the notebook's records is used as
@@ -221,7 +222,7 @@ class SavedNotebook:
         except Exception as error:  # noqa: BLE001 - reported as the drawing
             return {"error": f"View drawing failed: {type(error).__name__}: {error}"}
 
-    def _drawn(self, cell: int, line: int) -> dict[str, Any]:
+    def _drawn(self, cell: int, line: int) -> Mapping[str, Any]:
         service = self._service
         saved = self._saved_drawing(cell, line)
         if saved is not None:
@@ -239,7 +240,7 @@ class SavedNotebook:
             if state == "drawing" and not polled.get("transient"):
                 return polled
 
-    def _saved_drawing(self, cell: int, line: int) -> dict[str, Any] | None:
+    def _saved_drawing(self, cell: int, line: int) -> Mapping[str, Any] | None:
         """Return the view's saved drawing as recorded, or None to draw it."""
         service = self._service
         text = service._text()
