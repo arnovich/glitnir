@@ -1,8 +1,20 @@
 const assert = require('node:assert/strict');
-const {readFileSync} = require('node:fs');
+const {readFileSync, writeFileSync} = require('node:fs');
 const path = require('node:path');
 const {test} = require('node:test');
 const {JSDOM} = require('jsdom');
+
+// The page's script tags are the one list of renderer scripts, in load order;
+// the editor host inserts its own two at the marker, as the webview does.
+function rendererScripts(media, {katex = false, bridge = false} = {}) {
+  const html = readFileSync(path.join(media, 'index.html'), 'utf8');
+  const scripts = [];
+  for (const match of html.matchAll(/<!-- host scripts -->|<script src="\/([^"]+)"><\/script>/g)) {
+    if (match[1] === undefined) { if (bridge) scripts.push('bridge.js', 'review.js'); }
+    else if (katex || !match[1].startsWith('katex/')) scripts.push(match[1]);
+  }
+  return scripts;
+}
 
 test('the shared renderer loads through the bridge and keeps unsaved checks off the wire', async () => {
   const media = path.resolve(__dirname, '../../dist/media');
@@ -32,11 +44,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, ...reply}})));
   }});
   try {
-    window.eval(readFileSync(path.join(media, 'bridge.js'), 'utf8'));
-    window.eval(readFileSync(path.join(media, 'review.js'), 'utf8'));
-    window.eval(readFileSync(path.join(media, 'circuits.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'cards.js'), 'utf8'));
-    window.eval(readFileSync(path.join(media, 'app.js'), 'utf8'));
+    for (const name of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, name), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.equal(window.document.getElementById('title').textContent, 'Example');
     assert.match(window.document.getElementById('doc').textContent, /A saved notebook/);
@@ -72,7 +80,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
 });
 
 // Loads the packaged renderer over a fixed snapshot and waits for it to draw.
-async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onAsset, browser = false} = {}) {
+async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onAsset, onWindow, browser = false} = {}) {
   const media = path.resolve(__dirname, '../../dist/media');
   const html = readFileSync(path.join(media, 'index.html'), 'utf8').replace('<body>', '<body><div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden></button>');
   const dom = new JSDOM(html, {runScripts: 'outside-only', url: 'https://preview.invalid/'});
@@ -114,13 +122,9 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
     const json = message.path === '/api/notebook' ? snapshot : message.path.startsWith('/api/proof/') ? onProof?.(message) || {} : message.path === '/api/export/styles' ? {css: '.static-notebook{color:black}'} : message.path.startsWith('/api/view?') || message.path.startsWith('/api/view/job?') ? onView?.(message.path) || {} : {queued: []};
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: structuredClone(json)}})));
   }});
-  if (katex) window.eval(readFileSync(path.join(media, 'katex/katex.min.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'export.js'), 'utf8'));
   if (browser) window.fetch = async (url, options) => typeof browser === 'function' ? browser(url, options, window) : {ok: true, json: async () => snapshot};
-  else { window.eval(readFileSync(path.join(media, 'bridge.js'), 'utf8')); window.eval(readFileSync(path.join(media, 'review.js'), 'utf8')); }
-  window.eval(readFileSync(path.join(media, 'circuits.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'cards.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'app.js'), 'utf8'));
+  onWindow?.(window);
+  for (const name of rendererScripts(media, {katex, bridge: !browser})) window.eval(readFileSync(path.join(media, name), 'utf8'));
   await new Promise(resolve => setTimeout(resolve, 60));
   return window;
 }
@@ -1804,7 +1808,7 @@ test('project source preview reads Lean as cards, with source navigation and an 
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
   }});
   try {
-    for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+    for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 80));
     const doc = window.document.getElementById('doc');
     assert.equal(doc.querySelector('.definition dfn').textContent, 't');
@@ -1928,7 +1932,7 @@ test('project prose links open sibling notebooks only', async () => {
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
   }});
   try {
-    for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+    for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 80));
     const links = [...window.document.querySelectorAll('#doc a.notebook-reference')];
     assert.equal(links.length, 1);
@@ -1973,7 +1977,7 @@ test('project claim cards show saved status and out-of-date results', async () =
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
   }});
   try {
-    for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+    for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 80));
     const cards = [...window.document.querySelectorAll('#doc .project-claim')];
     assert.equal(cards.length, 5);
@@ -2055,7 +2059,7 @@ test('project source cells show provider views under the cell', async () => {
       queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
     }});
     try {
-      for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+      for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
       await new Promise(resolve => setTimeout(resolve, 120));
       const doc = window.document.getElementById('doc');
       const view = doc.querySelector('.view-cell');
@@ -4102,4 +4106,49 @@ test('the evidence and decision run handlers are inert on an unsupported project
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.deepEqual(messages.filter(m => /^\/api\/(evidence|decide)\//.test(m.path || '')), []);
   } finally { window.close(); }
+});
+
+test('the rendered workbench is pinned by a fixture', async () => {
+  // The clock and scrolling are the only things a render could depend on besides its snapshot.
+  const fixed = window => {
+    window.Date.prototype.toLocaleTimeString = function () { return this.toISOString().slice(11, 19); };
+    window.HTMLElement.prototype.scrollIntoView = () => {};
+  };
+  const pictured = illustrated('# Pictured\n\n![Plot](assets/p.png)', [{path: 'assets/p.png', status: 'ok', sha256: 'b'.repeat(64)}]);
+  const picture = async (url, options, page) => url.startsWith('/asset?')
+    ? {ok: true, status: 200, blob: async () => new page.Blob([Buffer.from('PNG')], {type: 'image/png'})}
+    : {ok: true, json: async () => pictured};
+  const viewed = {file: 'A.lean', sha256: 'b'.repeat(64), checking: [], check_errors: {}, claims: [], links: [],
+    cells: [{index: 0, kind: 'source', start: 1, end: 3, text: 'theorem t : True := by\n  -- @view circuit c\n  trivial\n', claim: 't'}],
+    project_claims: [{name: 't', status: 'checked', current: true, axioms: [], start_line: 1, end_line: 3}],
+    views: [{cell: 0, line: 2, kind: 'circuit', name: 'c', using: [], error: ''}],
+    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+  const drawing = async url => ({ok: true, json: async () => url.startsWith('/api/view?') ? {svg: '<svg xmlns="http://www.w3.org/2000/svg"/>'} : viewed});
+  const renders = async () => {
+    const parts = [];
+    for (const [snapshot, act, fetch] of [
+      [projectNotebook({current: false}), d => d.querySelector('[data-mode="source"]').click()],
+      [projectNotebook(), null],
+      [evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'current', snapshot: evidenceBody()})]), null],
+      [decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'candidate', outcome: decisionOutcome(), verification: checkedVerification()})]), null],
+      [pictured, null, picture],
+      [viewed, null, drawing],
+      [evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'failed', run_error: 'crashed', failure: evidenceFailure()})]), null],
+    ]) {
+      const window = await renderSnapshot(snapshot, {browser: fetch || true, katex: true, onWindow: fixed});
+      await new Promise(resolve => setTimeout(resolve, 60));
+      // What the page shows, not how it is loaded: its own script tags are not pinned.
+      const shown = () => window.document.body.innerHTML.replace(/<script src="\/[^"]*"><\/script>\n?|<!-- host scripts -->\n?/g, '');
+      try {
+        parts.push(shown());
+        if (act) { act(window.document); parts.push(shown()); }
+      } finally { window.close(); }
+    }
+    return parts.join('\n<!-- next -->\n');
+  };
+  const html = await renders();
+  assert.equal(await renders(), html, 'rendering is deterministic');
+  const fixture = path.join(__dirname, 'fixtures', 'workbench.html');
+  if (process.env.UPDATE_FIXTURES) writeFileSync(fixture, html);
+  assert.equal(html, readFileSync(fixture, 'utf8'), 'the rendered page differs from extension/test/fixtures/workbench.html; set UPDATE_FIXTURES=1 only for a deliberate renderer change');
 });

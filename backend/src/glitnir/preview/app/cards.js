@@ -1,4 +1,4 @@
-// Presentation-only reading cards. Recognition and proof status belong to app.js.
+// Presentation-only reading cards. Recognition and proof status belong to `reading.js` and `workbench.js`.
 (() => {
   'use strict';
   const esc = value => String(value).replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));

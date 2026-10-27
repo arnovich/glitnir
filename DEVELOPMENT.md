@@ -27,7 +27,14 @@ The repository has four parts:
   runtime the extension's probe refuses a backend whose renderer differs ("The
   installed Glitnir runtime is incompatible with this Glitnir build"), so build
   the extension against the wheel of the same commit. Do not maintain a second
-  renderer.
+  renderer. The workbench is five scripts, `workbench.js`, `figures.js`,
+  `reading.js`, `inspector.js` and `chrome.js`, loaded in that order after
+  `export.js`, `circuits.js` and `cards.js`; they share their names through
+  `window.glitnirWorkbench`, which is the workbench's own namespace and no
+  interface. `index.html`'s tags are the one list of scripts: the webview
+  rewrites every tag and inserts its own at `<!-- host scripts -->`, the
+  renderer tests load what the page lists, and a gallery must do the same
+  rather than name the files.
 - **Thin, universal VSIX.** The packaged extension contains no Python, Lean or
   Mathlib. Packaging pins the backend wheel in `backend/dist` (asset name, size,
   SHA-256 and release tag) as `glitnirBackend` in the packaged `package.json`;
