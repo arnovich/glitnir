@@ -226,3 +226,118 @@ def test_registry_checks_credential_for_every_project(tmp_path, monkeypatch, cap
     assert main(args) == 0
     assert [w.client.settings.project for w in called] == ["a", "b"]
     assert all(w.capabilities["environments"] == ["env"] for w in called)
+
+
+def test_handoff_worker_cli_uses_explicit_operator_inputs(
+    stub_handoff, tmp_path, monkeypatch, capsys
+):
+    """The combined command uses a worker key, never participant credentials."""
+    import glitnir.compute.__main__ as module
+
+    base, bundle, candidate, _ = stub_handoff
+    bundle_file = tmp_path / "bundle.json"
+    bundle_file.write_text(json.dumps(bundle))
+    candidate_file = tmp_path / "Next.lean"
+    candidate_file.write_text(candidate)
+    key = tmp_path / "worker.json"
+    key.write_text(
+        json.dumps(
+            {
+                "url": "https://example.test",
+                "projects": ["lab"],
+                "token": "private-token",
+            }
+        )
+    )
+    key.chmod(0o400)
+    calls = []
+
+    def serve(client, prepared, fetched, source, directory, **policy):
+        calls.append((client.settings, prepared, fetched, source, directory, policy))
+        policy["on_ready"]({"format": "glitnir.handoff-worker/v1"})
+
+    monkeypatch.setattr(module, "serve_handoff", serve)
+    assert (
+        main(
+            [
+                "--server",
+                "https://example.test",
+                "--project",
+                "lab",
+                "--environment",
+                "reuse",
+                "--credential-file",
+                str(key),
+                "handoff-worker",
+                str(base),
+                str(bundle_file),
+                str(candidate_file),
+                "--directory",
+                str(tmp_path / "session"),
+                "--path",
+                "Next.lean",
+                "--timeout-seconds",
+                "60",
+                "--memory-mb",
+                "4096",
+                "--max-bytes",
+                "10000000",
+                "--lifetime-seconds",
+                "600",
+            ]
+        )
+        == 0
+    )
+    settings, prepared, fetched, source, directory, policy = calls[0]
+    assert settings.token == "private-token"
+    assert prepared == base and fetched == bundle and source == candidate
+    assert policy["lifetime_seconds"] == 600
+    assert policy["timeout_seconds"] == 60
+    assert "private-token" not in capsys.readouterr().out
+
+
+def test_handoff_worker_handles_unavailable_sandbox(
+    stub_handoff, tmp_path, monkeypatch, capsys
+):
+    from glitnir.lean.sandbox import SandboxUnavailable
+
+    base, bundle, candidate, _ = stub_handoff
+    bundle_file, candidate_file = tmp_path / "bundle.json", tmp_path / "Next.lean"
+    bundle_file.write_text(json.dumps(bundle))
+    candidate_file.write_text(candidate)
+    monkeypatch.setenv("GLITNIR_TASKVALET_TOKEN", "private-token")
+
+    def unavailable(*args, **kwargs):
+        raise SandboxUnavailable("bwrap missing")
+
+    monkeypatch.setattr("glitnir.compute.__main__.serve_handoff", unavailable)
+    assert (
+        main(
+            [
+                "--server",
+                "https://example.test",
+                "--project",
+                "lab",
+                "--environment",
+                "reuse",
+                "handoff-worker",
+                str(base),
+                str(bundle_file),
+                str(candidate_file),
+                "--directory",
+                str(tmp_path / "session"),
+                "--path",
+                "Next.lean",
+                "--timeout-seconds",
+                "60",
+                "--memory-mb",
+                "4096",
+                "--max-bytes",
+                "10000000",
+                "--lifetime-seconds",
+                "600",
+            ]
+        )
+        == 2
+    )
+    assert "bwrap missing" in capsys.readouterr().err

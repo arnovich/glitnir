@@ -1322,3 +1322,58 @@ def compute_telemetry():
         },
         "worker_observed_at": 1010.0,
     }
+
+
+@pytest.fixture
+def handoff_session(stub_handoff, tmp_path, monkeypatch):
+    """A real frozen preparation with fake capture/transport, never a Lean proof."""
+    import json
+    import threading
+
+    from glitnir.compute import handoff_worker as module
+    from glitnir.compute.client import Client, Settings
+
+    base, bundle, source, _ = stub_handoff
+    root = tmp_path / "session"
+    events, ready = [], []
+    monkeypatch.setattr(module, "require_build_limits", lambda value: None)
+    monkeypatch.setattr(
+        module, "capture_preflight", lambda *args: events.append("capture")
+    )
+    monkeypatch.setattr(
+        module.Worker, "register", lambda self: events.append("register")
+    )
+
+    def claim(self, stop):
+        events.append("claim")
+        stop.set()
+        return False
+
+    monkeypatch.setattr(module.Worker, "run_once", claim)
+
+    def run(**overrides):
+        def on_ready(value):
+            events.append("ready")
+            assert (
+                json.loads((root / "compute-profile.json").read_text())
+                == value["profile"]
+            )
+            ready.append(value)
+
+        arguments = dict(
+            client=Client(Settings("https://example.test", "lab", "reuse", "secret")),
+            prepared=base,
+            bundle=bundle,
+            candidate=source,
+            directory=root,
+            candidate_path="Next.lean",
+            timeout_seconds=60,
+            memory_mb=4096,
+            max_bytes=10000000,
+            lifetime_seconds=600,
+            stop=threading.Event(),
+            on_ready=on_ready,
+        )
+        module.serve_handoff(**{**arguments, **overrides})
+
+    return run, root, events, ready
