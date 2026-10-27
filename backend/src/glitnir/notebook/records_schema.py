@@ -12,6 +12,7 @@ from typing import Any
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.project_checking import MAX_USES
 from glitnir.providers.outcomes import (
+    Decision,
     checked_decision,
     checked_drawing,
     checked_evidence,
@@ -195,7 +196,7 @@ def _view_entry_ok(entry: Any) -> bool:
         return False
 
 
-def _verification_ok(verification: Any, outcome: dict[str, Any]) -> bool:
+def _verification_ok(verification: Any, outcome: Decision) -> bool:
     """Whether `verification` is a candidate check's result, or None if unknown."""
     if outcome["status"] == "unknown":
         return verification is None

@@ -240,7 +240,7 @@ class SavedNotebook:
             if state == "drawing" and not polled.get("transient"):
                 return polled
 
-    def _saved_drawing(self, cell: int, line: int) -> dict[str, Any] | None:
+    def _saved_drawing(self, cell: int, line: int) -> Mapping[str, Any] | None:
         """Return the view's saved drawing as recorded, or None to draw it."""
         service = self._service
         text = service._text()

@@ -42,7 +42,7 @@ def _provider_failed(provider: ViewProvider, error: Exception) -> ProviderError:
     }
 
 
-def _drawing(result: dict[str, Any]) -> dict[str, Any]:
+def _drawing(result: Mapping[str, Any]) -> Mapping[str, Any]:
     """Check one view's payload as a drawing, saying if proofs were skipped."""
     if "payload" not in result:
         return result
@@ -83,7 +83,7 @@ def render_project_views(
         marker = provider.marker
     except Exception as error:
         return _provider_failed(provider, error)
-    results: list[dict[str, Any] | None] = []
+    results: list[Mapping[str, Any] | None] = []
     commands: list[tuple[int, str]] = []
     for line, kind, name, using in views:
         try:
@@ -91,7 +91,7 @@ def render_project_views(
             if not isinstance(command, str):
                 raise TypeError("the command must be text")
         except Exception as error:
-            results.append(dict(_provider_failed(provider, error)))
+            results.append(_provider_failed(provider, error))
             continue
         results.append(None)
         commands.append((line, command))

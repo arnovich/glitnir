@@ -218,7 +218,7 @@ class ViewDrawing:
         keys = view_keys(text, views)
         saved = {} if digest is None else saved_views(load_records(self._context.path))
 
-        def job_for(view: dict[str, Any]) -> _ViewJob | dict[str, Any]:
+        def job_for(view: dict[str, Any]) -> _ViewJob | Mapping[str, Any]:
             """Return a new job drawing `view`, or its current saved drawing."""
             at = view["line"]
             provider_sha256 = view_provider_hash(providers, view)
@@ -506,7 +506,7 @@ class ViewDrawing:
         *,
         compare_environment: bool = True,
         saved: dict[str, dict[str, Any]] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> Mapping[str, Any] | None:
         """Return the drawing saved for the directive `key` at `line`, if current.
 
         It is checked again (`checked_drawing`) before it is shown.
