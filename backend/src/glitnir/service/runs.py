@@ -21,8 +21,10 @@ from glitnir.lean.fingerprint import (
     header_words,
     unknown_git_note,
 )
+from glitnir.lean.limits import check_seconds
+from glitnir.lean.observer import TIMED_OUT
 from glitnir.lean.project import describe_project
-from glitnir.lean.project_checking import TIMED_OUT, check_candidate, check_seconds
+from glitnir.lean.project_checking import check_candidate
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.lean.provider_lean import provider_imports_error, run_provider_lean
 from glitnir.notebook.check_records import (

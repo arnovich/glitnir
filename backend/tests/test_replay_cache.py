@@ -531,6 +531,7 @@ def test_the_imports_replay_has_its_own_deadline(tmp_path, monkeypatch):
     import time
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.limits import check_seconds
 
     monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", "600000")
     slow = _replayed()
@@ -545,7 +546,7 @@ def test_the_imports_replay_has_its_own_deadline(tmp_path, monkeypatch):
     assert _check(tmp_path)["status"] == "checked_snapshot"
     finished = time.monotonic()
     deadlines = dict(zip(_modes(calls), _staged_check.deadlines[-2:]))
-    budget = checking.check_seconds()
+    budget = check_seconds()
     assert (
         started + checking.IMPORTS_REPLAY_SECONDS
         <= deadlines["imports-only"]
@@ -629,12 +630,12 @@ def test_a_fresh_fallback_is_reported_full(tmp_path, monkeypatch):
 
 def test_unknown_digest_means_no_key_and_full_replay(tmp_path, monkeypatch):
     """A module whose file the snapshot did not record is never keyed."""
-    from glitnir.lean import project_checking as checking
+    from glitnir.lean import replay
 
-    original = checking._module_files
+    original = replay.module_files
     monkeypatch.setattr(
-        checking,
-        "_module_files",
+        replay,
+        "module_files",
         lambda snapshot, isolated, name, loaded: (
             None if name == "Dep" else original(snapshot, isolated, name, loaded)
         ),
@@ -668,7 +669,7 @@ def test_an_unrequested_skip_fails_the_check(tmp_path, monkeypatch, reported):
     """A full replay that reports skipping its imports is refused."""
     from glitnir.lean import project_checking as checking
 
-    monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+    monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     _staged_check(tmp_path, monkeypatch, _replayed(mode_reported=reported))
     result = _check(tmp_path)
     assert result["status"] == "unavailable"
@@ -679,7 +680,7 @@ def test_a_report_without_a_closure_fails_the_check(tmp_path, monkeypatch):
     """Without the reporter's closure the replay cannot be compared; refuse."""
     from glitnir.lean import project_checking as checking
 
-    monkeypatch.setattr(checking, "_closure", lambda report, module: None)
+    monkeypatch.setattr(checking, "import_closure", lambda report, module: None)
     calls, _ = _staged_check(tmp_path, monkeypatch, _replayed())
     result = _check(tmp_path)
     assert result["status"] == "unavailable"
@@ -696,7 +697,7 @@ def test_toolchain_modules_must_come_from_the_toolchain(tmp_path, monkeypatch):
     calls, _ = _staged_check(tmp_path, monkeypatch, replay)
     from glitnir.lean import project_checking as checking
 
-    original = checking._closure
+    original = checking.import_closure
 
     def moved(report, module):
         closure = original(report, module)
@@ -705,7 +706,7 @@ def test_toolchain_modules_must_come_from_the_toolchain(tmp_path, monkeypatch):
             for name, path in closure
         ]
 
-    monkeypatch.setattr(checking, "_closure", moved)
+    monkeypatch.setattr(checking, "import_closure", moved)
     result = _check(tmp_path)
     assert result["status"] == "unavailable"
     assert "Init was loaded from outside the toolchain" in result["message"]
@@ -751,8 +752,8 @@ def test_module_files_require_links_to_the_recorded_stored_files(tmp_path):
     digest: a regular file, or a link to another stored file, is unknown.
     """
     from glitnir.lean.artifact_store import _blob_path as stored_path
-    from glitnir.lean.project_checking import _module_files
     from glitnir.lean.project_snapshot import ProjectSnapshot
+    from glitnir.lean.replay import module_files
 
     blobs = tmp_path / "store/blobs"
 
@@ -790,49 +791,45 @@ def test_module_files_require_links_to_the_recorded_stored_files(tmp_path):
             },
         }
     )
-    assert _module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) == {
+    assert module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) == {
         ".olean": "1" * 64,
         ".olean.server": "absent",
         ".olean.private": "absent",
         ".ir.sig": "absent",
         ".ir": "absent",
     }
-    assert _module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean"))
+    assert module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean"))
     # Loaded from elsewhere, under another name, or with an unrecorded part.
-    assert _module_files(snapshot, isolated, "Dep", str(tmp_path / "Dep.olean")) is None
-    assert (
-        _module_files(snapshot, isolated, "Init", str(isolated / "Dep.olean")) is None
-    )
+    assert module_files(snapshot, isolated, "Dep", str(tmp_path / "Dep.olean")) is None
+    assert module_files(snapshot, isolated, "Init", str(isolated / "Dep.olean")) is None
     # Lean 4.35 reads `.ir.sig` too, so an unrecorded one is unknown as well.
     for suffix in (".ir", ".ir.sig"):
         (lib / f"Init{suffix}").write_bytes(b"unrecorded")
-        assert (
-            _module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
-        )
+        assert module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
         (lib / f"Init{suffix}").unlink()
     # An entry linking to another stored file, or not a link at all.
     (inputs / "artifacts/Dep.olean").unlink()
     (inputs / "artifacts/Dep.olean").symlink_to(blob_path(blobs, "1" * 64))
-    assert _module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean")) is None
+    assert module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean")) is None
     (inputs / "artifacts/Dep.olean").unlink()
     (inputs / "artifacts/Dep.olean").write_bytes(b"2" * 64)
-    assert _module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean")) is None
+    assert module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean")) is None
     (inputs / "artifacts/Dep.olean").unlink()
     (inputs / "artifacts/Dep.olean").symlink_to(blob_path(blobs, "2" * 64))
     (lib / "Init.olean").unlink()
     (lib / "Init.olean").write_bytes(b"1" * 64)
-    assert _module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
+    assert module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
     (lib / "Init.olean").unlink()
     (lib / "Init.olean").symlink_to(blob_path(blobs, "1" * 64))
     # Without a store no entry is known.
     unstored = ProjectSnapshot(**{**snapshot.__dict__, "stores": {}})
-    assert _module_files(unstored, isolated, "Init", str(lib / "Init.olean")) is None
+    assert module_files(unstored, isolated, "Init", str(lib / "Init.olean")) is None
     # A recorded file that is missing, or an isolated copy that is not the link.
     del digests["toolchain/lib/lean/Init.olean"]
-    assert _module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
+    assert module_files(snapshot, isolated, "Init", str(lib / "Init.olean")) is None
     (isolated / "Dep.olean").unlink()
     (isolated / "Dep.olean").write_bytes(b"dep")
-    assert _module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean")) is None
+    assert module_files(snapshot, isolated, "Dep", str(isolated / "Dep.olean")) is None
 
 
 # ----- the replay's axioms decide statuses -------------------------------------
@@ -857,7 +854,7 @@ def test_statuses_come_from_the_replays_axioms(tmp_path, monkeypatch, cached):
     from glitnir.lean import project_checking as checking
 
     if not cached:
-        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+        monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     calls, _ = _staged_check(
         tmp_path, monkeypatch, _replayed(theorems=AGREED), reported=AGREED
     )
@@ -938,7 +935,7 @@ def test_malformed_replayed_axioms_fail_the_check(tmp_path, monkeypatch, theorem
     """Replayed theorems must be unique names with name/module axiom entries."""
     from glitnir.lean import project_checking as checking
 
-    monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+    monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     reported = [{"name": "plain", "axioms": []}]
 
     def replay(arguments, closure):

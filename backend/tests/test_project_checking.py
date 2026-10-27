@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from conftest import settle
+from conftest import EXAMPLES, claim_of, edits_of, example_entries, settle
 
 from glitnir.lean.project_snapshot import (
     SLOT_BUSY,
@@ -498,26 +498,6 @@ def test_snapshot_cancellation_and_global_limit(tmp_path, monkeypatch):
         list(snapshots._walk_files(tmp_path, threading.Event(), time.monotonic() + 10))
 
 
-def test_scratch_budget_counts_total_bytes_and_ignores_links(tmp_path, monkeypatch):
-    """Many individually small outputs cannot escape the aggregate scratch cap."""
-    from glitnir.lean import project_checking as checking
-
-    root = tmp_path / "stage"
-    root.mkdir()
-    secret = tmp_path / "outside"
-    secret.write_bytes(b"x" * 100)
-    (root / "link").symlink_to(secret)
-    monkeypatch.setattr(checking, "STAGE_BYTES", 10)
-    checking._check_stage(root)
-    (root / "one").write_bytes(b"x" * 6)
-    (root / "two").write_bytes(b"x" * 6)
-    with pytest.raises(SnapshotError, match="scratch byte limit"):
-        checking._check_stage(root)
-    monkeypatch.setattr(checking, "STAGE_ENTRIES", 1)
-    with pytest.raises(SnapshotError, match="scratch file limit"):
-        checking._check_stage(root)
-
-
 def test_output_limit_checks_size_after_child_seeks(tmp_path, monkeypatch):
     """A finished child cannot hide excess output by rewinding its descriptor."""
     import subprocess
@@ -525,6 +505,7 @@ def test_output_limit_checks_size_after_child_seeks(tmp_path, monkeypatch):
     import threading
     import time
 
+    from glitnir.lean import observer
     from glitnir.lean import project_checking as checking
     from glitnir.lean.project_snapshot import ProjectSnapshot
 
@@ -536,10 +517,10 @@ def test_output_limit_checks_size_after_child_seeks(tmp_path, monkeypatch):
         process.wait(timeout=10)
         return process
 
-    monkeypatch.setattr(checking.subprocess, "Popen", completed)
-    monkeypatch.setattr(checking, "OUTPUT_BYTES", 16)
+    monkeypatch.setattr(observer.subprocess, "Popen", completed)
+    monkeypatch.setattr(observer, "OUTPUT_BYTES", 16)
     monkeypatch.setattr(
-        checking,
+        observer,
         "confine",
         lambda *a, **kw: [
             sys.executable,
@@ -685,7 +666,7 @@ def test_live_replay_collects_the_axioms_that_decide_statuses(
         env={**os.environ, "LEAN_SYSROOT": str(_toolchain())},
     )
     if not cached:
-        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+        monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     original = checking.run_observer
     replays = []
 
@@ -788,7 +769,7 @@ def test_live_axioms_are_collected_after_replay_into_an_empty_environment(
     )
     _build(root)
     if not cached:
-        monkeypatch.setattr(checking, "_replay_identity", lambda *args: None)
+        monkeypatch.setattr(checking, "replay_identity", lambda *args: None)
     replays = _replays(monkeypatch)
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     result = checking.check_project(source, expected_sha256=digest)
@@ -846,7 +827,7 @@ def test_live_full_and_cached_replays_decide_alike_through_imported_inductives(
     replays = _replays(monkeypatch)
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     with monkeypatch.context() as uncached:
-        uncached.setattr(checking, "_replay_identity", lambda *args: None)
+        uncached.setattr(checking, "replay_identity", lambda *args: None)
         full = checking.check_project(source, expected_sha256=digest)
     cached = checking.check_project(source, expected_sha256=digest)
     assert [mode for mode, _ in replays] == ["full", "imports-cached"]
@@ -1850,6 +1831,7 @@ def test_running_project_stage_is_cancelled_and_reaped(tmp_path, monkeypatch):
     import threading
     import time
 
+    from glitnir.lean import observer
     from glitnir.lean import project_checking as checking
     from glitnir.lean.project_snapshot import ProjectSnapshot
 
@@ -1868,8 +1850,8 @@ def test_running_project_stage_is_cancelled_and_reaped(tmp_path, monkeypatch):
         assert kwargs["required"] is True
         return [sys.executable, "-c", "import time; time.sleep(30)"]
 
-    monkeypatch.setattr(checking.subprocess, "Popen", spawn)
-    monkeypatch.setattr(checking, "confine", command)
+    monkeypatch.setattr(observer.subprocess, "Popen", spawn)
+    monkeypatch.setattr(observer, "confine", command)
     with pytest.raises(SnapshotError, match="cancelled"):
         checking._run(
             snapshot,
@@ -1883,38 +1865,6 @@ def test_running_project_stage_is_cancelled_and_reaped(tmp_path, monkeypatch):
     assert children and children[0].poll() is not None
 
 
-def test_running_out_of_memory_names_the_limit_and_the_setting(tmp_path, monkeypatch):
-    """Lean's memory error becomes advice naming the limit and the setting."""
-    import threading
-    import time
-
-    from glitnir.lean import project_checking as checking
-
-    toolchain = tmp_path / "toolchain"
-    (toolchain / "bin").mkdir(parents=True)
-    lean = toolchain / "bin" / "lean"
-    lean.write_text(
-        "#!/bin/sh\n"
-        "echo \"excessive memory consumption detected at 'interpreter' "
-        '(potential solution: increase memory consumption threshold)" >&2\n'
-        "exit 1\n"
-    )
-    lean.chmod(0o755)
-    monkeypatch.setattr(checking, "confine", lambda command, **_options: command)
-    with pytest.raises(SnapshotError) as raised:
-        checking.run_observer(
-            toolchain,
-            ["lean", "-M6400", "A.lean"],
-            cwd=tmp_path,
-            readable=[],
-            writable=False,
-            cancel=threading.Event(),
-            deadline=time.monotonic() + 30,
-        )
-    assert str(raised.value).startswith("Lean reached its memory limit of 6400 MB.")
-    assert "glitnir.memoryLimitMb" in str(raised.value)
-
-
 @pytest.mark.parametrize(
     "configured, expected", [("", 600), ("120000", 120), ("3600000", 1800)]
 )
@@ -1926,41 +1876,12 @@ def test_check_timeout_uses_bounded_shared_setting(monkeypatch, configured, expe
     assert limits.check_seconds() == expected
 
 
-@pytest.mark.parametrize("newline", ["\n", "\r\n"])
-def test_line_range_counts_utf8_bytes(newline):
-    """Reader byte offsets map to the same 1-based lines for LF and CRLF files."""
-    from glitnir.lean.project_checking import line_range
-
-    raw = newline.join(["-- λ header", "theorem a : True := by", "  trivial", ""])
-    text = raw.replace("\r\n", "\n")
-    start = text.index("theorem a")
-    end = text.index("trivial") + len("trivial")
-    start_byte = len(text[:start].encode())
-    end_byte = len(text[:end].encode())
-    assert line_range(text, start_byte, end_byte) == (2, 3)
-
-
-def test_first_error_offset_reads_lean_positions():
-    """A positioned Lean error maps to a byte offset; other output does not."""
-    from glitnir.lean.project_checking import first_error_offset
-
-    text = "theorem a : True := True.intro\ntheorem \u03bbb : 1 = 2 := rfl\n"
-    stderr = (
-        "/tmp/x/Source.lean:2:22: error: type mismatch\n"
-        "/tmp/x/Source.lean:2:0: warning: unused\n"
-    )
-    offset = first_error_offset(stderr, text)
-    assert offset == len(
-        "theorem a : True := True.intro\ntheorem \u03bbb : 1 = 2 := ".encode()
-    )
-    assert first_error_offset("lean: out of memory\n", text) is None
-
-
 def test_check_reruns_once_on_the_prefix(tmp_path, monkeypatch):
     """A later failure withholds later claims; earlier claims are rechecked alone."""
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text("theorem a : True := True.intro\ndef bad : Nat := False\n")
@@ -1969,7 +1890,7 @@ def test_check_reruns_once_on_the_prefix(tmp_path, monkeypatch):
     def fake(source, text, **_):
         texts.append(text)
         if "bad" in text:
-            raise checking.CommandFailure("type mismatch", offset=text.index("def bad"))
+            raise CommandFailure("type mismatch", offset=text.index("def bad"))
         return {"status": "checked_snapshot", "theorems": [{"name": "a"}]}
 
     monkeypatch.setattr(checking, "_check_text", fake)
@@ -1986,12 +1907,13 @@ def test_failure_in_the_prefix_is_unavailable(tmp_path, monkeypatch):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text("def x : Nat := 1\ndef bad : Nat := False\n")
 
     def fake(source, text, **_):
-        raise checking.CommandFailure("still failing", offset=len(text) - 1)
+        raise CommandFailure("still failing", offset=len(text) - 1)
 
     monkeypatch.setattr(checking, "_check_text", fake)
     result = checking.check_project(
@@ -1999,35 +1921,6 @@ def test_failure_in_the_prefix_is_unavailable(tmp_path, monkeypatch):
     )
     assert result["status"] == "unavailable"
     assert result["theorems"] == []
-
-
-@pytest.mark.parametrize(
-    ("error", "expected"),
-    [
-        (
-            "lean did not complete successfully (exit 4).\n"
-            "unsupported example proof syntax",
-            "unsupported example proof syntax",
-        ),
-        (
-            "lean did not complete successfully (exit 3).\ntype mismatch\n  False\n"
-            "has type\n  Prop : Type\nbut is expected to have type\n  Nat : Type",
-            "type mismatch",
-        ),
-        (
-            "lean did not complete successfully (exit 1).\n"
-            "/tmp/x/Source.lean:2:23: error: The rfl tactic failed",
-            "The rfl tactic failed",
-        ),
-        ("lean did not complete successfully (exit 1).\n", ""),
-    ],
-)
-def test_failure_message_skips_the_exit_header(error, expected):
-    """The displayed message is the Lean diagnostic, not the exit-status header."""
-    from glitnir.lean.project_checking import failure_message
-
-    assert failure_message(error) == expected
-    assert len(failure_message("x" * 900)) == 500
 
 
 def _reader_accepted_kinds() -> set[str]:
@@ -2073,7 +1966,8 @@ def test_reader_accepts_print_axioms_and_no_other_hash_command():
 
 def test_reader_refuses_a_print_axioms_that_adds_a_declaration():
     """The reader compares constants after `#print axioms` and stops with exit 4."""
-    from glitnir.lean.project_checking import PROGRAMS, failure_message
+    from glitnir.lean.failures import failure_message
+    from glitnir.lean.project_checking import PROGRAMS
 
     source = (PROGRAMS / "ProjectRead.lean").read_text()
     guard = source.split("if printAxioms stx.getKind &&")[1].split("state := after")[0]
@@ -2090,7 +1984,8 @@ def test_reader_refuses_a_print_axioms_that_adds_a_declaration():
 
 def test_reader_failure_reads_the_written_offset(tmp_path):
     """A reader failure report yields a CommandFailure; bad reports do not."""
-    from glitnir.lean.project_checking import CommandFailure, _reader_failure
+    from glitnir.lean.failures import CommandFailure
+    from glitnir.lean.project_checking import _reader_failure
     from glitnir.lean.project_snapshot import SnapshotError
 
     report = tmp_path / "source-report.json"
@@ -2114,7 +2009,8 @@ def test_reader_failure_reads_the_written_offset(tmp_path):
 
 def test_candidate_failure_maps_to_the_owning_theorem():
     """A positioned compile error maps to its theorem's start, else is not mapped."""
-    from glitnir.lean.project_checking import CommandFailure, _candidate_failure
+    from glitnir.lean.failures import CommandFailure
+    from glitnir.lean.project_checking import _candidate_failure
     from glitnir.lean.project_snapshot import SnapshotError
 
     text = "theorem a : True := True.intro\ntheorem b : 1 = 2 := rfl\n"
@@ -2129,303 +2025,6 @@ def test_candidate_failure_maps_to_the_owning_theorem():
     outside = SnapshotError("S.lean:1:0: error: unknown")
     assert _candidate_failure(outside, text, entries[1:]) is None
     assert _candidate_failure(SnapshotError("no position"), text, entries) is None
-
-
-_EXAMPLES = (
-    "theorem a : True := True.intro\n"
-    "example : True := trivial\n"
-    "/-- doc -/\nexample (p : Prop) (h : p) : p := h\n"
-)
-
-
-def _example_entries(text: str, tag: str = "_glitnir_example_") -> list[dict]:
-    """Reader entries for `_EXAMPLES`, as `ProjectRead.lean` reports them."""
-    data = text.encode()
-    second = data.index(b"example")
-    doc = data.index(b"/-- doc")
-    third = data.index(b"example", doc)
-    return [
-        {"name": "a", "start": 0, "end": second - 1},
-        {
-            "name": f"_private.M.0.{tag}{second}",
-            "start": second,
-            "end": doc - 1,
-            "keyword": [second, second + 7],
-        },
-        {
-            "name": f"_private.M.0.{tag}{third}",
-            "start": doc,
-            "end": len(data) - 1,
-            "keyword": [third, third + 7],
-        },
-    ]
-
-
-def test_example_tag_never_occurs_in_the_source():
-    """Generated theorem names cannot be written, declared or used by the source."""
-    from glitnir.lean.project_checking import EXAMPLE_TAG, example_tag
-
-    assert example_tag("example : True := trivial") == EXAMPLE_TAG
-    text = f"def {EXAMPLE_TAG}1 : Nat := 1 -- _{EXAMPLE_TAG}\n"
-    tag = example_tag(text)
-    assert tag not in text and tag.endswith(EXAMPLE_TAG)
-
-
-def _edits(text, entries, unclaimed=(), tag="_glitnir_example_"):
-    """The edits `_example_edits` makes of `text` with the reader's report."""
-    from glitnir.lean.project_checking import _example_edits
-
-    edits, kept = _example_edits(text, entries, list(unclaimed), tag)
-    assert kept == list(unclaimed)
-    return edits
-
-
-def test_examples_are_rewritten_only_at_their_keywords():
-    """The compiled text differs only where `example` became the named theorem."""
-    from glitnir.lean.project_checking import _check_rewrite, _rewrite_examples
-
-    data = _EXAMPLES.encode()
-    entries = _example_entries(_EXAMPLES)
-    edits = _edits(_EXAMPLES, entries)
-    second, third = entries[1]["keyword"][0], entries[2]["keyword"][0]
-    assert edits == [
-        (second, f"private theorem _glitnir_example_{second}".encode()),
-        (third, f"private theorem _glitnir_example_{third}".encode()),
-    ]
-    compiled = _rewrite_examples(data, edits)
-    assert compiled.decode() == (
-        "theorem a : True := True.intro\n"
-        f"private theorem _glitnir_example_{second} : True := trivial\n"
-        "/-- doc -/\n"
-        f"private theorem _glitnir_example_{third} (p : Prop) (h : p) : p := h\n"
-    )
-    _check_rewrite(data, compiled, edits)
-    pairs = zip(_EXAMPLES.split("\n"), compiled.decode().split("\n"), strict=True)
-    for saved, built in pairs:
-        if saved.startswith("example"):
-            assert built.startswith("private theorem _glitnir_example_")
-            assert built.endswith(saved.removeprefix("example"))
-        else:
-            assert built == saved
-    assert _rewrite_examples(data, []) == data
-    _check_rewrite(data, data, [])
-
-
-@pytest.mark.parametrize(
-    "compiled",
-    [
-        lambda c: c.replace(b"True.intro", b"True.Intro"),
-        lambda c: c.replace(b"trivial", b"trivial\n"),
-        lambda c: c.replace(b"private theorem", b"private  theorem", 1),
-        lambda c: c + b"theorem b : True := trivial\n",
-        lambda c: c[:-1],
-    ],
-)
-def test_any_other_difference_in_the_compiled_text_fails(compiled):
-    """The checker refuses compiled text that differs anywhere but the keywords."""
-    from glitnir.lean.project_checking import _check_rewrite, _rewrite_examples
-    from glitnir.lean.project_snapshot import SnapshotError
-
-    data = _EXAMPLES.encode()
-    edits = _edits(_EXAMPLES, _example_entries(_EXAMPLES))
-    with pytest.raises(SnapshotError, match="differs from the saved source"):
-        _check_rewrite(data, compiled(_rewrite_examples(data, edits)), edits)
-    with pytest.raises(SnapshotError, match="differs from the saved source"):
-        _check_rewrite(data, _rewrite_examples(data, edits), [(0, b"theorem")])
-    with pytest.raises(SnapshotError, match="differs from the saved source"):
-        _check_rewrite(data, data.replace(b"example", b"exampl\n", 1), [(0, b"x\n")])
-
-
-def _malformed(entries):
-    """Ways a reader report could misdescribe the examples of `_EXAMPLES`."""
-    second = entries[1]["keyword"][0]
-    yield {**entries[1], "keyword": [second, second + 6]}
-    yield {**entries[1], "keyword": [second + 1, second + 8]}
-    yield {**entries[1], "keyword": [0, 7]}
-    yield {**entries[1], "keyword": (second, second + 7)}
-    yield {**entries[1], "keyword": [second, True]}
-    yield {**entries[1], "end": second + 3}
-    yield {**entries[1], "start": second + 1}
-    yield {**entries[1], "start": 0}  # `theorem a …` is not a comment
-    yield {**entries[1], "name": "_private.M.0._glitnir_example_0"}
-    yield {**entries[1], "name": f"_glitnir_example_{second}.extra"}
-
-
-@pytest.mark.parametrize("index", range(10))
-def test_malformed_example_reports_are_refused(index):
-    """Keyword spans must hold `example` inside their entry, under their name."""
-    from glitnir.lean.project_snapshot import SnapshotError
-
-    entries = _example_entries(_EXAMPLES)
-    entries[1] = list(_malformed(entries))[index]
-    with pytest.raises(SnapshotError, match="malformed|do not match"):
-        _edits(_EXAMPLES, entries)
-
-
-def _claim(text, keyword, start=None, tag="_glitnir_example_"):
-    """A reader entry claiming the `example` at byte offset `keyword`."""
-    end = text.encode().find(b"\n", keyword)
-    return {
-        "name": f"_private.M.0.{tag}{keyword}",
-        "start": keyword if start is None else start,
-        "end": end if end > 0 else len(text.encode()),
-        "keyword": [keyword, keyword + 7],
-    }
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "-- example : False := x\nexample : True := trivial\n",
-        "/- example : False := x -/\nexample : True := trivial\n",
-        "/-- example : False -/\nexample : True := trivial\n",
-        'def s : String := "example : False"\nexample : True := trivial\n',
-        "def «example» : Nat := 1\nexample : True := trivial\n",
-    ],
-)
-def test_an_example_span_outside_code_is_refused(text):
-    """A span on `example` text in a comment, string or name is not a keyword."""
-    from glitnir.lean.project_snapshot import SnapshotError
-
-    real = text.encode().rindex(b"example")
-    fake = text.encode().index(b"example")
-    assert _edits(text, [_claim(text, real)]) == [
-        (real, f"private theorem _glitnir_example_{real}".encode())
-    ]
-    with pytest.raises(SnapshotError, match="do not match|malformed"):
-        _edits(text, [_claim(text, fake), _claim(text, real)])
-    with pytest.raises(SnapshotError, match="do not match|malformed"):
-        _edits(text, [_claim(text, fake)])
-
-
-def test_the_reader_must_account_for_every_example():
-    """The reader can neither drop an example nor claim one twice.
-
-    An unaccounted keyword withholds from the end of the last reported command
-    before it, where the source can still be checked alone.
-    """
-    from glitnir.lean.project_checking import CommandFailure
-    from glitnir.lean.project_snapshot import SnapshotError
-
-    text = "example : True := trivial\nexample : Nat := 3\nexample := 3\n"
-    first, second, third = (
-        i for i in range(len(text)) if text.startswith("example", i)
-    )
-    plain = [
-        {"start": second, "end": third - 1, "keyword": [second, second + 7]},
-        {"start": third, "end": len(text) - 1, "keyword": [third, third + 7]},
-    ]
-    assert _edits(text, [_claim(text, first)], plain) == [
-        (0, b"private theorem _glitnir_example_0")
-    ]
-    for dropped in ([], plain[:1], plain[1:]):
-        missing = (plain[:1] if not dropped or dropped == plain[1:] else plain[1:])[0]
-        line = text.count("\n", 0, missing["start"]) + 1
-        with pytest.raises(CommandFailure, match=f"Line {line} has") as raised:
-            _edits(text, [_claim(text, first)], dropped)
-        # Withheld from after the last reported command before it.
-        ends = [first] + [p["start"] for p in dropped if p["start"] < missing["start"]]
-        assert raised.value.offset == text.index("\n", max(ends)) + 1
-    with pytest.raises(SnapshotError, match="do not match"):
-        _edits(text, [_claim(text, first)], plain + plain[:1])
-    with pytest.raises(CommandFailure) as raised:
-        _edits(text, [], plain)
-    assert raised.value.offset == 0  # nothing before it: unavailable
-    with pytest.raises(SnapshotError, match="malformed"):
-        _edits(text, [_claim(text, first)], [{"keyword": [second, second + 7]}])
-
-
-@pytest.mark.parametrize(
-    ("text", "ok"),
-    [
-        ("example : True := trivial\n", True),
-        ("example:True := trivial\n", True),
-        ("example (p : Prop) (h : p) : p := h\n", True),
-        ("example {p : Prop} (h : p) : p := h\n", True),
-        ("example [Inhabited Nat] : True := trivial\n", True),
-        ("example ⦃p : Prop⦄ (h : p) : p := h\n", True),
-        ("example\n  : True := trivial\n", True),
-        ("-- note\n/- a -/ /-- doc -/\nexample : True := trivial\n", True),
-        ("/-- one -/ /-- two -/\nexample : True := trivial\n", False),
-        ("/-! module -/\nexample : True := trivial\n", False),
-    ],
-)
-def test_a_claimed_keyword_starts_its_command(text, ok):
-    """Only whitespace, comments and one docstring precede a claimed keyword."""
-    from glitnir.lean.project_snapshot import SnapshotError
-
-    keyword = text.encode().index(b"example")
-    claim = _claim(text, keyword, start=0)
-    if ok:
-        assert _edits(text, [claim])[0][0] == keyword
-    else:
-        with pytest.raises(SnapshotError, match="malformed"):
-            _edits(text, [claim])
-
-
-@pytest.mark.parametrize(
-    ("text", "refused"),
-    [
-        ("@[simp] example : True := trivial\n", True),
-        ("@[instance]\nexample : Inhabited Nat := ⟨0⟩\n", True),
-        ("@[simp, aesop safe [constructors]] example : True := trivial\n", True),
-        ("/-- doc -/ @[simp] example : True := trivial\n", True),
-        ("private example : True := trivial\n", True),
-        ("protected example : True := trivial\n", True),
-        ("public example : True := trivial\n", True),
-        ("meta example : True := trivial\n", True),
-        ("noncomputable example : True := trivial\n", True),
-        ("unsafe example : True := trivial\n", True),
-        ("partial example : True := trivial\n", True),
-        ("nonrec example : True := trivial\n", True),
-        ("/-- doc -/\nexample : True := trivial\n", False),
-        ("variable [Inhabited Nat]\nexample : True := trivial\n", False),
-        ("def l : List Nat := [1, 2]\nexample : True := trivial\n", False),
-        ("def a : Array Nat := #[1]\nexample : True := trivial\n", False),
-        ("noncomputable section\nexample : True := trivial\n", False),
-        ("def x := Foo.private\nexample : True := trivial\n", False),
-    ],
-)
-def test_attributes_and_modifiers_are_refused_by_the_lexer(text, refused):
-    """A reader that hides an attribute or modifier cannot get the example checked.
-
-    The fake report starts the claim at its keyword, so only the trusted
-    lexer sees what precedes it.
-    """
-    from glitnir.lean.project_checking import CommandFailure
-
-    keyword = text.encode().index(b"example")
-    claim = _claim(text, keyword)
-    if refused:
-        with pytest.raises(CommandFailure, match="attributes or modifiers") as raised:
-            _edits(text, [claim])
-        assert raised.value.offset == keyword
-    else:
-        assert _edits(text, [claim])[0][0] == keyword
-
-
-@pytest.mark.parametrize("stray_first", [False, True])
-def test_the_earliest_of_several_example_failures_wins(stray_first):
-    """Stopping at the earliest reason leaves no other reason in the prefix."""
-    from glitnir.lean.project_checking import CommandFailure
-
-    attribute = "@[simp] example : True := trivial\n"
-    stray = "def n : Lean.Name := `example\n"
-    middle = stray + attribute if stray_first else attribute + stray
-    text = "theorem a : True := trivial\n" + middle
-    data = text.encode()
-    keyword = data.index(b"example : True")
-    theorem = {"name": "a", "start": 0, "end": text.index("\n")}
-    claim = _claim(text, keyword)  # a lying reader starts it at the keyword
-    with pytest.raises(CommandFailure) as raised:
-        _edits(text, [theorem, claim])
-    if stray_first:
-        assert raised.value.offset == data.index(b"def n")
-        assert "outside an example command" in str(raised.value)
-    else:
-        # Mid-line; `check_project` moves it back to the line's start.
-        assert raised.value.offset == keyword
-        assert "attributes or modifiers" in str(raised.value)
 
 
 @pytest.mark.parametrize(
@@ -2478,65 +2077,6 @@ def test_a_lying_reader_cannot_cut_inside_a_line(
         assert result["withheld"]["from_line"] == line
 
 
-def test_an_example_keyword_outside_a_command_withholds_from_before_it():
-    """A quoted `example` the reader cannot account for keeps earlier claims."""
-    from glitnir.lean.project_checking import CommandFailure
-
-    text = (
-        "theorem a : True := trivial\n"
-        "def n : Lean.Name := `example\n"
-        "example : True := trivial\n"
-    )
-    keyword = text.encode().rindex(b"example")
-    theorem = {"name": "a", "start": 0, "end": text.index("\n")}
-    with pytest.raises(CommandFailure, match="Line 2 has the `example`") as raised:
-        _edits(text, [theorem, _claim(text, keyword)])
-    assert raised.value.offset == text.index("def n")
-
-
-def test_an_unreadable_file_withholds_from_its_first_claimed_example():
-    """Where the lexer cannot follow Lean, examples are refused, not guessed."""
-    from glitnir.lean.project_checking import CommandFailure, _example_edits
-
-    text = 'def s : String := s!"{1}"\nexample : True := trivial\n'
-    keyword = text.encode().index(b"example")
-    with pytest.raises(CommandFailure, match="cannot read this file") as raised:
-        _edits(text, [_claim(text, keyword)])
-    assert raised.value.offset == keyword
-    plain = {"start": keyword, "end": len(text) - 1, "keyword": [keyword, keyword + 7]}
-    # Nothing is rewritten, and its non-claims are not recorded either: they
-    # were never reconciled with the lexer.
-    assert _example_edits(text, [], [plain], "_glitnir_example_") == ([], [])
-
-
-def test_examples_using_decl_name_are_refused():
-    """`decl_name%` reads the theorem's name, so such examples are not checked."""
-    from glitnir.lean.project_checking import CommandFailure
-
-    text = (
-        "theorem a : True := trivial\nexample : decl_name% ≠ `_example := by decide\n"
-    )
-    keyword = text.encode().index(b"example")
-    with pytest.raises(CommandFailure, match="decl_name%") as raised:
-        _edits(text, [_claim(text, keyword)])
-    assert raised.value.offset == keyword
-
-
-def test_compiled_positions_map_back_to_the_saved_source():
-    """Offsets after a rewritten keyword shift back; inside it, to the keyword."""
-    from glitnir.lean.project_checking import _original_offset, _rewrite_examples
-
-    data = _EXAMPLES.encode()
-    edits = _edits(_EXAMPLES, _example_entries(_EXAMPLES))
-    compiled = _rewrite_examples(data, edits)
-    for marker in (b"theorem a", b"True := trivial", b"/-- doc", b"(p : Prop)", b"h\n"):
-        assert _original_offset(compiled.index(marker), edits) == data.index(marker)
-    second = edits[0][0]
-    for inside in range(second, second + len(edits[0][1])):
-        assert _original_offset(inside, edits) == second
-    assert _original_offset(len(compiled), edits) == len(data)
-
-
 @pytest.mark.parametrize(
     ("message", "noted"),
     [("Unknown identifier `h`", True), ("The rfl tactic failed", False)],
@@ -2546,19 +2086,16 @@ def test_candidate_failure_in_an_example_maps_through_the_rewrite(message, noted
 
     The section-variable note is added only to an unknown identifier.
     """
-    from glitnir.lean.project_checking import (
-        EXAMPLE_NOTE,
-        CommandFailure,
-        _candidate_failure,
-        _rewrite_examples,
-    )
+    from glitnir.lean.examples import EXAMPLE_NOTE, rewrite_examples
+    from glitnir.lean.failures import CommandFailure
+    from glitnir.lean.project_checking import _candidate_failure
     from glitnir.lean.project_snapshot import SnapshotError
 
     text = "example : True := trivial\nexample : 1 = 2 := rfl\n"
     second = text.index("example : 1")
-    entries = [_claim(text, 0), _claim(text, second)]
-    edits = _edits(text, entries)
-    compiled = _rewrite_examples(text.encode(), edits).decode()
+    entries = [claim_of(text, 0), claim_of(text, second)]
+    edits = edits_of(text, entries)
+    compiled = rewrite_examples(text.encode(), edits).decode()
     # The column is past the end of the saved line, inside the compiled one.
     column = compiled.split("\n")[1].index("rfl")
     assert column > len(text.split("\n")[1])
@@ -2601,16 +2138,18 @@ def test_withheld_message_carries_the_example_note(tmp_path, monkeypatch):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.examples import EXAMPLE_NOTE
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text("theorem a : True := True.intro\nexample : 1 = 2 := rfl\n")
 
     def fake(source, text, **_):
         if "example" in text:
-            raise checking.CommandFailure(
+            raise CommandFailure(
                 "S.lean:2:19: error: rfl failed",
                 offset=text.index("example"),
-                note=checking.EXAMPLE_NOTE,
+                note=EXAMPLE_NOTE,
             )
         return {"status": "checked_snapshot", "theorems": [{"name": "a"}]}
 
@@ -2620,12 +2159,12 @@ def test_withheld_message_carries_the_example_note(tmp_path, monkeypatch):
     )
     assert result["withheld"] == {
         "from_line": 2,
-        "message": f"rfl failed ({checking.EXAMPLE_NOTE})",
+        "message": f"rfl failed ({EXAMPLE_NOTE})",
     }
 
 
 def _staged_examples(tmp_path, monkeypatch, extra=(), statements=(), uses=None):
-    """Check `_EXAMPLES` with stub stages; return the result and compiled texts.
+    """Check `EXAMPLES` with stub stages; return the result and compiled texts.
 
     The candidate's report adds the theorems named in ``extra``; the reader
     reports the printed statements ``statements`` for its first entries, and
@@ -2639,7 +2178,7 @@ def _staged_examples(tmp_path, monkeypatch, extra=(), statements=(), uses=None):
     calls = _fake_check_stages(tmp_path, monkeypatch)
     fake = checking.run_observer
     tag = "_glitnir_example_"
-    entries = _example_entries(_EXAMPLES, tag)
+    entries = example_entries(EXAMPLES, tag)
     for entry, statement in zip(entries, statements):
         entry["statement"] = statement
     names = [entry["name"] for entry in entries]
@@ -2649,7 +2188,7 @@ def _staged_examples(tmp_path, monkeypatch, extra=(), statements=(), uses=None):
         program = Path(arguments[3]).name if "--run" in arguments else None
         if program == "ProjectRead.lean":
             assert arguments[7] == tag
-            assert Path(arguments[4]).read_text() == _EXAMPLES
+            assert Path(arguments[4]).read_text() == EXAMPLES
             fake(toolchain, arguments, **options)
             Path(arguments[-1]).write_text(json.dumps({"declarations": entries}))
             return ""
@@ -2675,9 +2214,9 @@ def _staged_examples(tmp_path, monkeypatch, extra=(), statements=(), uses=None):
 
     monkeypatch.setattr(checking, "run_observer", run)
     source = tmp_path / "A.lean"
-    source.write_text(_EXAMPLES)
+    source.write_text(EXAMPLES)
     result = checking.check_project(
-        source, expected_sha256=hashlib.sha256(_EXAMPLES.encode()).hexdigest()
+        source, expected_sha256=hashlib.sha256(EXAMPLES.encode()).hexdigest()
     )
     return result, compiled, entries, calls
 
@@ -2694,7 +2233,7 @@ def test_a_check_compiles_examples_as_named_theorems(tmp_path, monkeypatch):
     tag = "_glitnir_example_"
     second, third = entries[1]["keyword"][0], entries[2]["keyword"][0]
     assert compiled == [
-        _EXAMPLES.replace("example : True", f"private theorem {tag}{second} : True")
+        EXAMPLES.replace("example : True", f"private theorem {tag}{second} : True")
         .replace("example (p", f"private theorem {tag}{third} (p")
         .encode()
     ]
@@ -2732,7 +2271,7 @@ def test_a_check_reports_the_claims_each_claim_uses(tmp_path, monkeypatch):
     A loose file has no other notebook modules, so a use of an imported
     theorem, or of a theorem of this module that is not a claim, is dropped.
     """
-    entries = _example_entries(_EXAMPLES)
+    entries = example_entries(EXAMPLES)
     first, second = entries[0]["name"], entries[1]["name"]
     reported = [
         {"name": first, "module": "GlitnirStandalone"},
@@ -2754,54 +2293,10 @@ def test_a_check_reports_the_claims_each_claim_uses(tmp_path, monkeypatch):
 )
 def test_a_malformed_uses_report_is_refused(tmp_path, monkeypatch, uses):
     """The module report is fixed code: malformed uses mean a broken check."""
-    second = _example_entries(_EXAMPLES)[1]["name"]
+    second = example_entries(EXAMPLES)[1]["name"]
     result, _, _, _ = _staged_examples(tmp_path, monkeypatch, uses={second: uses})
     assert result["status"] == "unavailable", result
     assert "report is malformed" in result["message"]
-
-
-def test_project_modules_are_the_ones_the_project_builds(tmp_path):
-    """Modules compiled in the project are notebooks; packages' are not."""
-    from glitnir.lean.project_checking import _project_modules
-
-    root = tmp_path / "project"
-    build = root / ".lake/build/lib/lean"
-    package = root / ".lake/packages/mathlib/.lake/build/lib/lean"
-    for directory in (build, package):
-        directory.mkdir(parents=True)
-    (build / "Sibling.olean").write_bytes(b"")
-    (package / "Mathlib.olean").write_bytes(b"")
-    outside = tmp_path / "toolchain/lib/lean/Init.olean"
-    outside.parent.mkdir(parents=True)
-    outside.write_bytes(b"")
-    setup = {
-        "importArts": {
-            "Sibling": [[".lake/build/lib/lean/Sibling.olean"]],
-            "Absolute": [[str(build / "Sibling.olean")]],
-            "Mathlib": [[".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean"]],
-            "Init": [[str(outside)]],
-        }
-    }
-    assert _project_modules(setup, root.resolve()) == {"Sibling", "Absolute"}
-    assert _project_modules(setup, None) == set()
-
-
-def test_claim_uses_keep_claims_of_this_and_other_notebooks():
-    """Of the theorems named, only claims here and other notebooks' count."""
-    from glitnir.lean.project_checking import _claim_uses
-
-    reported = [
-        {"name": "A.one", "module": "A"},
-        {"name": "A.one.eq_1", "module": "A"},
-        {"name": "B.two", "module": "B"},
-        {"name": "_private.B.0.hidden", "module": "B"},
-        {"name": "Nat.add_zero", "module": "Init.Core"},
-        {"name": "Mathlib.thing", "module": "Mathlib"},
-    ]
-    assert _claim_uses(reported, "A", {"A.one", "A.three"}, {"B"}) == [
-        {"module": "A", "name": "A.one", "in_notebook": True},
-        {"module": "B", "name": "B.two", "in_notebook": False},
-    ]
 
 
 def test_a_candidate_cannot_declare_a_reserved_name(tmp_path, monkeypatch):
@@ -2816,6 +2311,7 @@ def test_a_candidate_cannot_declare_a_reserved_name(tmp_path, monkeypatch):
 def test_a_check_without_examples_compiles_the_frozen_source(tmp_path, monkeypatch):
     """Files without examples compile exactly the frozen snapshot copy."""
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.examples import EXAMPLE_TAG
 
     calls = _fake_check_stages(tmp_path, monkeypatch)
     source = tmp_path / "A.lean"
@@ -2829,7 +2325,7 @@ def test_a_check_without_examples_compiles_the_frozen_source(tmp_path, monkeypat
     compile_call = next(c for c in calls if "-o" in c)
     assert Path(compile_call[-1]).parent.name == "snapshot"
     reader = next(c for c in calls if "--run" in c)
-    assert reader[7] == checking.EXAMPLE_TAG
+    assert reader[7] == EXAMPLE_TAG
 
 
 def test_live_loose_file_checks_and_records_proof_steps(tmp_path, project_toolchain):
@@ -3127,6 +2623,7 @@ def _partial(tmp_path, monkeypatch, text, through_line, fail_at=None):
     import hashlib
 
     from glitnir.lean import project_checking as checking
+    from glitnir.lean.failures import CommandFailure
 
     source = tmp_path / "A.lean"
     source.write_text(text)
@@ -3135,7 +2632,7 @@ def _partial(tmp_path, monkeypatch, text, through_line, fail_at=None):
     def fake(source, checked, *, rest=None, **_):
         asked.append((checked, rest))
         if fail_at is not None and len(asked) == 1:
-            raise checking.CommandFailure("S.lean:3:0: error: bad", offset=fail_at)
+            raise CommandFailure("S.lean:3:0: error: bad", offset=fail_at)
         return {
             "status": "checked_snapshot",
             "source_sha256": hashlib.sha256(checked.encode()).hexdigest(),
@@ -3332,7 +2829,7 @@ def test_uses_beyond_the_cap_are_marked_truncated(tmp_path, monkeypatch):
         {"module": "M", "name": f"x{i}", "in_notebook": True}
         for i in range(checking.MAX_USES + 1)
     ]
-    monkeypatch.setattr(checking, "_claim_uses", lambda *a: many)
+    monkeypatch.setattr(checking, "claim_uses", lambda *a: many)
     result, _, _, _ = _staged_examples(tmp_path, monkeypatch)
     assert all(len(t["uses"]) == checking.MAX_USES for t in result["theorems"])
     assert all(t["uses_truncated"] is True for t in result["theorems"])
