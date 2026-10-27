@@ -6,6 +6,7 @@ as the notebook itself. It shows the linked notebook's own saved results and
 runs nothing for it.
 """
 
+import ast
 import http.client
 import json
 import os
@@ -324,3 +325,48 @@ def test_the_source_size_limit_is_defined_once():
     assert MAX_SOURCE_BYTES == 16 * 1024 * 1024
     assert linked.MAX_SOURCE_BYTES is MAX_SOURCE_BYTES
     assert cli.MAX_SOURCE_BYTES is MAX_SOURCE_BYTES
+
+
+def _integer(node: ast.expr) -> int | None:
+    """The value of an integer literal such as ``16 * 1024**2``, else None."""
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Pow)):
+        left, right = _integer(node.left), _integer(node.right)
+        if left is not None and right is not None:
+            return left * right if isinstance(node.op, ast.Mult) else left**right
+    return None
+
+
+def test_every_16_mib_file_read_names_the_source_limit():
+    """A source read spells `MAX_SOURCE_BYTES`, never its own copy of 16 MiB.
+
+    Lean's output reports (`OUTPUT_BYTES`) and the records file
+    (`_MAX_RECORDS`) have limits of their own that are also 16 MiB.
+    """
+    import glitnir
+
+    other_limits = {"MAX_SOURCE_BYTES", "OUTPUT_BYTES", "_MAX_RECORDS"}
+    root = Path(glitnir.__file__).parent
+    copies = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        named = {
+            target.id
+            for node in tree.body
+            if isinstance(node, ast.Assign) and _integer(node.value) == MAX_SOURCE_BYTES
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        } - other_limits
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "read_regular"
+                and len(node.args) > 1
+            ):
+                size = node.args[1]
+                if _integer(size) == MAX_SOURCE_BYTES or (
+                    isinstance(size, ast.Name) and size.id in named
+                ):
+                    copies.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert copies == []

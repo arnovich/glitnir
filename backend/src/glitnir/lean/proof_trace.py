@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from glitnir.lean.artifacts import map_artifacts
 from glitnir.lean.awake import awake, noting_sleep
-from glitnir.lean.environment import MAX_TIMEOUT_MS
+from glitnir.lean.environment import MAX_SOURCE_BYTES, MAX_TIMEOUT_MS
 from glitnir.lean.limits import (
     SessionLimits,
     elaboration_timeout_ms,
@@ -198,7 +198,7 @@ def trace_file(
         message = lean_support(describe_project(source))["message"]
         if message is not None:
             raise SnapshotError(message)
-        saved = read_regular(source, 16 * 1024**2).decode().replace("\r\n", "\n")
+        saved = read_regular(source, MAX_SOURCE_BYTES).decode().replace("\r\n", "\n")
         if hashlib.sha256(saved.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
         with (
@@ -279,7 +279,7 @@ def trace_file(
             if cancellation.is_set():
                 raise SnapshotError("Proof observation cancelled.")
             if (
-                read_regular(source, 16 * 1024**2).decode().replace("\r\n", "\n")
+                read_regular(source, MAX_SOURCE_BYTES).decode().replace("\r\n", "\n")
                 != saved
             ):
                 raise SnapshotError("Saved source changed; refresh proof steps.")
