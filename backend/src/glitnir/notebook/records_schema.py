@@ -7,12 +7,15 @@ import hashlib
 import json
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Final, Literal, NotRequired, TypedDict
 
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.project_checking import MAX_USES
+from glitnir.lean.results import Axiom, Use, Verdict, Withheld
 from glitnir.providers.outcomes import (
     Decision,
+    Drawing,
+    Evidence,
     checked_decision,
     checked_drawing,
     checked_evidence,
@@ -40,9 +43,9 @@ _NON_CLAIM_KEYS: dict[str, type] = {
 }
 _EVIDENCE_KEYS = ("prefix_sha256", "fingerprint", "provider", "created")
 _VIEW_KEYS = (*_EVIDENCE_KEYS, "provider_sha256")
-_FAILURES = "evidence_failures"
-_DECISION_FAILURES = "decision_failures"
-_FAILURE_SECTIONS = (_FAILURES, _DECISION_FAILURES)
+_FAILURES: Final = "evidence_failures"
+_DECISION_FAILURES: Final = "decision_failures"
+_FAILURE_SECTIONS: Final = (_FAILURES, _DECISION_FAILURES)
 _FAILURE_KEYS = (*_EVIDENCE_KEYS, "kind", "message")
 #: What made a saved evidence run fail: Lean's own error for the directive, a
 #: provider crash, the provider's refusal, output that is not evidence, or the
@@ -63,6 +66,113 @@ _CREATED = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+00:00|Z)")
 MAX_MESSAGE = 2000
 # A checked statement's kernel form; a run saves a longer one shortened.
 MAX_TYPE = 20_000
+
+#: The result sections a records file may hold besides its claims.
+Section = Literal[
+    "evidence", "decisions", "views", "evidence_failures", "decision_failures"
+]
+#: The two sections of saved failed runs.
+FailureSection = Literal["evidence_failures", "decision_failures"]
+
+
+class Environment(TypedDict):
+    """The environment the records' check ran in, and the check's identity.
+
+    A check run remotely adds `execution`, the compute layer's description.
+    """
+
+    fingerprint: str
+    check: str
+    execution: NotRequired[dict[str, Any]]
+
+
+class ClaimRecord(TypedDict):
+    """One saved claim, as `check_records.py`'s docstring describes it."""
+
+    name: str
+    status: str
+    axioms: list[Axiom]
+    start_line: int
+    end_line: int
+    declaration_sha256: str
+    prefix_sha256: str
+    proposition_sha256: str
+    uses: NotRequired[list[Use]]
+    uses_truncated: NotRequired[Literal[True]]
+    example: NotRequired[Literal[True]]
+    statement: NotRequired[str]
+    statement_shortened: NotRequired[Literal[True]]
+    kernel_statement: NotRequired[str]
+    kernel_statement_shortened: NotRequired[Literal[True]]
+    fingerprint: NotRequired[str]
+
+
+class NonClaimRecord(TypedDict):
+    """A saved example that claims nothing, found again by its text."""
+
+    start_line: int
+    end_line: int
+    declaration_sha256: str
+    prefix_sha256: str
+
+
+class EvidenceEntry(TypedDict):
+    """Saved evidence for one directive: its origin and the checked snapshot."""
+
+    prefix_sha256: str
+    fingerprint: str
+    provider: str
+    created: str
+    snapshot: Evidence
+
+
+class DecisionEntry(TypedDict):
+    """A saved decision: the provider's outcome and the kernel's verdict."""
+
+    prefix_sha256: str
+    fingerprint: str
+    provider: str
+    created: str
+    outcome: Decision
+    verification: Verdict | None
+
+
+class ViewEntry(TypedDict):
+    """A saved drawing for one view directive, keyed by its provider's hash too."""
+
+    prefix_sha256: str
+    fingerprint: str
+    provider: str
+    provider_sha256: str
+    created: str
+    drawing: Drawing
+
+
+class FailureEntry(TypedDict):
+    """A saved failed evidence or decision run: the kind of failure and its message."""
+
+    prefix_sha256: str
+    fingerprint: str
+    provider: str
+    created: str
+    kind: str
+    message: str
+
+
+class Records(TypedDict):
+    """A `<Notebook>.glitnir.json` file, as `well_formed` accepts it."""
+
+    format: str
+    source_sha256: str
+    environment: Environment
+    withheld: Withheld | None
+    claims: list[ClaimRecord]
+    non_claims: NotRequired[list[NonClaimRecord]]
+    evidence: NotRequired[dict[str, EvidenceEntry]]
+    decisions: NotRequired[dict[str, DecisionEntry]]
+    views: NotRequired[dict[str, ViewEntry]]
+    evidence_failures: NotRequired[dict[str, FailureEntry]]
+    decision_failures: NotRequired[dict[str, FailureEntry]]
 
 
 def matches(saved: Any, fingerprint: str, compare_environment: bool) -> bool:
