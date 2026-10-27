@@ -2,11 +2,30 @@
 
 import json
 import threading
+from io import BytesIO
+from urllib.error import HTTPError
 
 import pytest
 
 from glitnir.compute.client import Client, Settings, result_from_job
 from glitnir.compute.protocol import make_request
+
+
+@pytest.mark.parametrize("method,body", [("GET", None), ("POST", {})])
+def test_transport_identifies_glitnir_to_api_gateways(method, body, monkeypatch):
+    """Gateways rejecting generic Python clients must receive a product identity."""
+    client = Client(Settings("https://tasks.example.test", "lab", "prepared", "secret"))
+
+    def gateway(request, timeout):
+        if request.get_header("User-agent") != "Glitnir":
+            raise HTTPError(request.full_url, 403, "Client blocked", {}, None)
+        assert request.get_header("Authorization") == "Bearer secret"
+        assert request.get_method() == method
+        assert timeout == 10
+        return BytesIO(b'{"state": "queued"}')
+
+    monkeypatch.setattr(client._opener, "open", gateway)
+    assert client.request(method, "/jobs", body) == {"state": "queued"}
 
 
 def test_submit_persists_request_before_network_and_retries_exactly(
