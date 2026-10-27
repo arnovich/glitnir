@@ -4,6 +4,7 @@ import json
 import secrets
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -35,7 +36,7 @@ NOTHING_DRAWING = "That view is not being drawn."
 UNKNOWN_JOB = "This drawing is no longer known; draw it again."
 
 
-def _timed_out(failure: dict[str, Any]) -> bool:
+def _timed_out(failure: Mapping[str, Any]) -> bool:
     """Whether a view run failed by reaching its time limit.
 
     Not when it only waited too long for another Lean run to end: that says
@@ -118,7 +119,7 @@ def _drawn_view(
     return (job.key[2], entry["kind"], entry["name"], tuple(entry["using"]))
 
 
-def _labelled(drawing: dict[str, Any], uncertain: bool) -> dict[str, Any]:
+def _labelled(drawing: Mapping[str, Any], uncertain: bool) -> Mapping[str, Any]:
     """Mark a drawing made or kept while the environment is not fully known."""
     if uncertain and "error" not in drawing:
         return {**drawing, "uncertain": True}
@@ -141,8 +142,8 @@ class ViewDrawing:
         # Drawn views by (source, stable environment, line); finished jobs'
         # answers by job id, for the polls that ask for them; the run drawing
         # views, if any, and its worker. All under `state_lock`.
-        self._drawings: dict[tuple[str, str, int], dict[str, Any]] = {}
-        self._finished_views: dict[str, tuple[dict[str, Any], bool]] = {}
+        self._drawings: dict[tuple[str, str, int], Mapping[str, Any]] = {}
+        self._finished_views: dict[str, tuple[Mapping[str, Any], bool]] = {}
         self._view_run: _ViewRun | None = None
         self._view_worker: threading.Thread | None = None
         # Keys of views whose run of several timed out, oldest first: each is
@@ -161,7 +162,7 @@ class ViewDrawing:
         if worker is not None:
             worker.join(timeout=max(0.0, deadline - time.monotonic()))
 
-    def view(self, cell: int, line: int) -> dict[str, Any]:
+    def view(self, cell: int, line: int) -> Mapping[str, Any]:
         """Report one listed directive's drawing, starting it if needed.
 
         Never waits for Lean. Views are drawn in a worker, one Lean run at a
@@ -320,7 +321,7 @@ class ViewDrawing:
         job = waited or next(iter(run.jobs.values()))
         return {"status": "queued", "message": VIEW_QUEUED, "job": job.id}
 
-    def view_job(self, job_id: str) -> dict[str, Any]:
+    def view_job(self, job_id: str) -> Mapping[str, Any]:
         """Answer a poll for one view job, without reading the notebook.
 
         While the job draws, its status and progress; once it has ended, its
@@ -355,7 +356,7 @@ class ViewDrawing:
         it timed out, its views are remembered, so that each is drawn alone
         when asked for again rather than in the same run.
         """
-        failure: dict[str, Any] = {"error": "View drawing failed."}
+        failure: Mapping[str, Any] = {"error": "View drawing failed."}
         try:
             whole = self._draw_together(run, members)
             if whole is not None:
@@ -380,7 +381,7 @@ class ViewDrawing:
 
     def _draw_together(
         self, run: _ViewRun, members: list[tuple[_ViewJob, dict[str, Any]]]
-    ) -> dict[str, Any] | None:
+    ) -> Mapping[str, Any] | None:
         """Draw every view of a run in one Lean run; return its whole failure."""
 
         def progress(message: str) -> None:
@@ -407,7 +408,7 @@ class ViewDrawing:
         self,
         run: _ViewRun,
         members: list[tuple[_ViewJob, dict[str, Any]]],
-        failure: dict[str, Any],
+        failure: Mapping[str, Any],
     ) -> bool:
         """Whether a run that failed as a whole draws its views again alone.
 
@@ -450,7 +451,7 @@ class ViewDrawing:
             drawing = {"error": f"View drawing failed: {error}"}
         self._finish_view(job, drawing)
 
-    def _finish_view(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
+    def _finish_view(self, job: _ViewJob, drawing: Mapping[str, Any]) -> None:
         """End a job with its drawing, then save the drawing if it is kept."""
         with self._context.state_lock:
             if job.ended:
@@ -460,7 +461,7 @@ class ViewDrawing:
                 return
         self._save_drawing(job, drawing)
 
-    def _end_view_job(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
+    def _end_view_job(self, job: _ViewJob, drawing: Mapping[str, Any]) -> None:
         """Keep a job's answer for its polls, once; hold `context.state_lock`.
 
         A stopped job answers that it was cancelled, whatever was drawn: its
@@ -487,7 +488,9 @@ class ViewDrawing:
         while len(self._timed_out) > MAX_CACHED_VIEWS:
             del self._timed_out[next(iter(self._timed_out))]
 
-    def _keep_drawing(self, key: tuple[str, str, int], drawing: dict[str, Any]) -> None:
+    def _keep_drawing(
+        self, key: tuple[str, str, int], drawing: Mapping[str, Any]
+    ) -> None:
         """Keep a drawing in memory, the oldest dropped; hold `context.state_lock`."""
         self._drawings[key] = drawing
         while len(self._drawings) > MAX_CACHED_VIEWS:
@@ -528,7 +531,7 @@ class ViewDrawing:
         drawing = checked_drawing(json.dumps(entry["drawing"]))
         return None if "error" in drawing else drawing
 
-    def _save_drawing(self, job: _ViewJob, drawing: dict[str, Any]) -> None:
+    def _save_drawing(self, job: _ViewJob, drawing: Mapping[str, Any]) -> None:
         """Save a finished drawing in the notebook's records, if it may be.
 
         Only a drawing made in a known environment, with a provider that could

@@ -8,6 +8,8 @@ explains each field is in `project_checking.check_project`'s docstring and in
 
 from typing import Any, Literal, NotRequired, TypedDict
 
+from glitnir.lean.prepared_packages import Resolution
+
 
 class Axiom(TypedDict):
     """One axiom a theorem depends on, as both helper programs report it."""
@@ -71,7 +73,7 @@ class Checked(TypedDict):
     theorems: list[Theorem]
     non_claims: list[NonClaim]
     snapshot_bytes: int
-    resolution: dict[str, Any] | None
+    resolution: Resolution | None
     replay: str
     message: str
 

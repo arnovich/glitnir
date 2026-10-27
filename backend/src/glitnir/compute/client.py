@@ -17,6 +17,7 @@ from typing import Any, Callable, cast
 
 from glitnir.compute.protocol import checker_digest, context_digest, make_request
 from glitnir.compute.telemetry import describe
+from glitnir.lean.fingerprint import RemoteIdentity
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.results import CheckOutcome
 
@@ -98,7 +99,7 @@ def execution_identity() -> dict[str, str] | None:
     }
 
 
-def remote_identity(source: Path) -> dict[str, Any] | None:
+def remote_identity(source: Path) -> RemoteIdentity | None:
     """Return the fields a fingerprint of `source` adds under remote execution.
 
     None for local execution. They go to `environment_fingerprint` as its

@@ -16,6 +16,7 @@ from glitnir.lean.limits import (
     memory_limit_mb,
 )
 from glitnir.lean.observer import OUTPUT_BYTES, run_observer
+from glitnir.lean.prepared_packages import Resolution
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import (
     TOOLCHAIN,
@@ -154,7 +155,7 @@ def _absolute_setup(setup: dict[str, Any], project: Path | None) -> dict[str, An
     return result
 
 
-def _check_configuration(project: Path | None, resolution: dict[str, Any]) -> None:
+def _check_configuration(project: Path | None, resolution: Resolution) -> None:
     """Reject changed inspected package configuration, without claiming immutability."""
     assert project is not None
     for item in resolution["inputs"]:

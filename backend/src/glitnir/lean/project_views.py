@@ -3,10 +3,11 @@
 import hashlib
 import json
 import threading
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
-from glitnir.lean.provider_lean import run_provider_batch
+from glitnir.lean.provider_lean import ProviderError, run_provider_batch
 from glitnir.providers import ViewProvider
 from glitnir.providers.outcomes import checked_drawing
 
@@ -35,7 +36,7 @@ def view_provider_sha256(
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def _provider_failed(provider: ViewProvider, error: Exception) -> dict[str, Any]:
+def _provider_failed(provider: ViewProvider, error: Exception) -> ProviderError:
     return {
         "error": f"Provider {provider.name} failed: {type(error).__name__}: {error}"
     }
@@ -60,7 +61,7 @@ def render_project_views(
     cancel: threading.Event,
     progress: Callable[[str], None] | None = None,
     environment_sha256: str | None = None,
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     """Draw several views of one provider in one sandboxed Lean run.
 
     `views` holds `(directive line, kind, name, using)`, lines ascending. As
@@ -90,7 +91,7 @@ def render_project_views(
             if not isinstance(command, str):
                 raise TypeError("the command must be text")
         except Exception as error:
-            results.append(_provider_failed(provider, error))
+            results.append(dict(_provider_failed(provider, error)))
             continue
         results.append(None)
         commands.append((line, command))

@@ -33,6 +33,7 @@ from glitnir.lean.failures import (
 from glitnir.lean.lexing import CommandBoundaries, command_boundaries
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.observer import MODULE_BYTES, OUTPUT_BYTES, run_observer
+from glitnir.lean.prepared_packages import Resolution
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import (
     TOOLCHAIN,
@@ -270,7 +271,7 @@ class _Environment:
 
     toolchain: Path
     setup: dict[str, Any]
-    resolution: dict[str, Any] | None
+    resolution: Resolution | None
     project_root: Path | None
     module: str
 

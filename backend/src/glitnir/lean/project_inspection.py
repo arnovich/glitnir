@@ -15,14 +15,19 @@ import threading
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict
 
 from glitnir.lean.artifacts import artifact_files, valid_artifacts
 from glitnir.lean.awake import awake
 from glitnir.lean.environment import MAX_SOURCE_BYTES, bind_to_parent, kill_and_reap
 from glitnir.lean.limits import check_seconds
-from glitnir.lean.prepared_packages import PROGRAM, validate_resolution
-from glitnir.lean.project import describe_project, read_regular
+from glitnir.lean.prepared_packages import PROGRAM, Resolution, validate_resolution
+from glitnir.lean.project import (
+    LakeProject,
+    ProjectDescription,
+    describe_project,
+    read_regular,
+)
 from glitnir.lean.sandbox import SandboxUnavailable, confine
 
 TOOLCHAIN = "leanprover/lean4:v4.35.0"
@@ -61,7 +66,41 @@ def supported_version() -> str:
     return _version(TOOLCHAIN)
 
 
-def lean_support(project: dict[str, Any]) -> dict[str, Any]:
+class LeanSupport(TypedDict):
+    """Whether Glitnir runs Lean for a project, and the one message saying why not."""
+
+    supported: bool
+    declared: str | None
+    toolchain: str
+    message: str | None
+
+
+class ResolvedInspection(TypedDict):
+    """A resolved module setup: Lake's setup for the saved file, and its resolution."""
+
+    status: Literal["resolved"]
+    message: str
+    source_sha256: str
+    project: LakeProject
+    toolchain_root: str
+    lake_version: str
+    setup: dict[str, Any]
+    resolution: Resolution
+
+
+class UnavailableInspection(TypedDict):
+    """An inspection that resolved nothing; `needs_build` when Lake wants a build."""
+
+    status: Literal["unavailable"]
+    message: str
+    needs_build: NotRequired[Literal[True]]
+
+
+#: What `inspect_project` returns.
+Inspection = ResolvedInspection | UnavailableInspection
+
+
+def lean_support(project: ProjectDescription) -> LeanSupport:
     """Decide whether Glitnir runs Lean for a `describe_project` description.
 
     A Lake project is supported when its `lean-toolchain` declares the
@@ -287,7 +326,7 @@ def inspect_project(
     cancel: threading.Event | None = None,
     timeout_seconds: float | None = None,
     imports: tuple[str, ...] = (),
-) -> dict[str, Any]:
+) -> Inspection:
     """Resolve prepared module setup on explicit request, without proof metadata.
 
     `timeout_seconds` bounds the whole inspection, every Lake run together;

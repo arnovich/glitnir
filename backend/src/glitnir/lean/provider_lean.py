@@ -6,8 +6,9 @@ import json
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NotRequired, TypedDict
 
 from glitnir.lean import fingerprint
 from glitnir.lean.awake import awake, noting_sleep
@@ -15,6 +16,7 @@ from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 from glitnir.lean.observer import OUTPUT_BYTES, TIMED_OUT, run_observer
+from glitnir.lean.prepared_packages import Resolution
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import MODULE_NAME, _toolchain, inspect_project
 from glitnir.lean.project_snapshot import (
@@ -64,16 +66,21 @@ _SetupKey = tuple[str, tuple[str, ...], tuple[str, ...], str]
 # states, is unchanged; `_check_configuration` still re-reads the Lake
 # configuration bytes before and after every run, and a mismatch drops the
 # entry. Project checks and decision candidate checks never use it.
-_SETUPS: OrderedDict[_SetupKey, tuple[dict[str, Any], dict[str, Any], Path]] = (
-    OrderedDict()
-)
+_SETUPS: OrderedDict[_SetupKey, tuple[dict[str, Any], Resolution, Path]] = OrderedDict()
 _SETUPS_LOCK = threading.Lock()
 
 # Failures that say nothing about the output: a later request may succeed.
 INTERRUPTED = ("cancelled.", "timed out.")
 
 
-def _failure(error: Exception) -> dict[str, Any]:
+class ProviderError(TypedDict):
+    """Why a provider's Lean did not run or draw; `transient` when a retry may."""
+
+    error: str
+    transient: NotRequired[bool]
+
+
+def _failure(error: Exception) -> ProviderError:
     """Report an error, marking a busy slot, cancellation or timeout transient."""
     message = str(error)
     if isinstance(error, SnapshotError) and (
@@ -88,7 +95,7 @@ def _available(module: str, setup: dict[str, Any]) -> bool:
     return module in setup["importArts"] or module.split(".")[0] in TOOLCHAIN_LIBRARIES
 
 
-def _invalid_import(imports: tuple[str, ...]) -> dict[str, Any] | None:
+def _invalid_import(imports: tuple[str, ...]) -> ProviderError | None:
     """Refuse a declared import that is not a module name, before it reaches Lean."""
     for module in imports:
         if not MODULE_NAME.fullmatch(module):
@@ -98,7 +105,7 @@ def _invalid_import(imports: tuple[str, ...]) -> dict[str, Any] | None:
 
 def _missing_import(
     imports: tuple[str, ...], setup: dict[str, Any], needs: str
-) -> dict[str, Any] | None:
+) -> ProviderError | None:
     """Name the first import the notebook's prepared setup cannot load."""
     for module in imports:
         if not _available(module, setup):
@@ -108,7 +115,7 @@ def _missing_import(
 
 def _unprovided(
     imports: tuple[str, ...], setup: dict[str, Any], needs: str
-) -> dict[str, Any] | None:
+) -> ProviderError | None:
     """Name the first provider module that no package of the project provides.
 
     `setup` was prepared with `imports` added to the notebook's own, so a
@@ -214,7 +221,7 @@ def _setup(
     needs: str,
     imports: tuple[str, ...] = (),
     environment_sha256: str | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], Path]:
+) -> tuple[dict[str, Any], Resolution, Path]:
     """Prepare the notebook's Lake environment exactly as project tracing does.
 
     With a valid `environment_sha256` the prepared setup is kept and handed
@@ -354,7 +361,7 @@ def _view_result(
 
 def _check_configuration_or_forget(
     project_root: Path,
-    resolution: dict[str, Any],
+    resolution: Resolution,
     source: Path,
     imports: tuple[str, ...],
     environment_sha256: str | None,
@@ -381,7 +388,7 @@ def run_provider_batch(
     progress: Callable[[str], None] | None = None,
     wait: bool = False,
     environment_sha256: str | None = None,
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     """Elaborate the notebook and several provider commands in one Lean run.
 
     `views` holds `(directive line, command)` pairs, lines ascending. Each
@@ -531,7 +538,7 @@ def run_provider_lean(
     progress: Callable[[str], None] | None = None,
     wait: bool = False,
     environment_sha256: str | None = None,
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     """Elaborate the notebook prefix and one provider command in the sandbox.
 
     Returns the one view's result from `run_provider_batch`: `{"payload":
@@ -573,7 +580,7 @@ def provider_imports_error(
     imports: tuple[str, ...],
     needs: str,
     cancel: threading.Event,
-) -> dict[str, Any] | None:
+) -> ProviderError | None:
     """Prepare the notebook's setup as a provider run does and check `imports`.
 
     For a provider whose own code runs outside Lean, but whose Lean output the
