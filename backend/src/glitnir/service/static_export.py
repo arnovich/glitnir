@@ -33,12 +33,15 @@ from types import TracebackType
 from typing import Any
 
 from glitnir.lean.fingerprint import direct_imports, header_imports
+from glitnir.lean.project import ProjectDescription
 from glitnir.notebook.directives import view_keys
 from glitnir.preview import assets
 from glitnir.preview.cards import provider_imports, view_provider_hash
 from glitnir.preview.editor import renderer_directory
 from glitnir.preview.snapshot import (
+    NeutralProject,
     PreviewState,
+    Snapshot,
     build_snapshot,
     cells,
     prose,
@@ -65,7 +68,9 @@ def _unfingerprinted(*_imports: str) -> str:
     return ""
 
 
-def _neutral_project(project: dict[str, Any], notebook: Path) -> dict[str, Any]:
+def _neutral_project(
+    project: ProjectDescription | NeutralProject, notebook: Path
+) -> NeutralProject:
     """Describe the project without local paths: its root relative to `notebook`."""
     root = project.get("root")
     if root is not None:
@@ -108,7 +113,7 @@ class SavedNotebook:
         """Stop any drawing in progress and wait briefly for it."""
         self._service.close()
 
-    def _recorded(self, text: str) -> dict[str, Any]:
+    def _recorded(self, text: str) -> Snapshot:
         return build_snapshot(
             self.path,
             text,
@@ -118,7 +123,7 @@ class SavedNotebook:
             compare_environment=False,
         )
 
-    def snapshot(self, *, run_prompts: bool = False) -> dict[str, Any]:
+    def snapshot(self, *, run_prompts: bool = False) -> Snapshot:
         """Return the renderer's snapshot of the saved source and saved results.
 
         Each saved claim, evidence run and decision keeps its saved status and

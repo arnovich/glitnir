@@ -18,7 +18,7 @@ import re
 import stat
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import NotRequired, TypedDict
 
 FOLDER = "assets"
 #: Image types served, by suffix.
@@ -107,13 +107,22 @@ def _locate(notebook_path: Path, reference: str) -> tuple[Path, Path]:
     return folder, target
 
 
-def statuses(notebook_path: Path, found: Iterable[str]) -> list[dict[str, Any]]:
+class AssetStatus(TypedDict):
+    """One image the prose references: found with its digest, or why it is not shown."""
+
+    path: str
+    status: str
+    sha256: NotRequired[str]
+    message: NotRequired[str]
+
+
+def statuses(notebook_path: Path, found: Iterable[str]) -> list[AssetStatus]:
     """Report each referenced image.
 
     Each entry has ``path`` and ``status``: ``ok`` with the file's ``sha256``,
     or ``missing``, ``invalid`` or ``too_large`` with a ``message``.
     """
-    report: list[dict[str, Any]] = []
+    report: list[AssetStatus] = []
     for reference in found:
         try:
             digest = _digest(*_locate(notebook_path, reference), reference)
