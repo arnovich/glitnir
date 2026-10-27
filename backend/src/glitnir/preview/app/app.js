@@ -875,7 +875,7 @@
     let action = '';
     if (!entry.error) {
       if (running && !staticPage) body = '<p class="small muted evidence-wait">Running in Lean and the provider…</p>';
-      else if (!snap && !failure) body = '<p class="small muted evidence-wait">Not run yet.</p>';
+      else if (!snap && !failure && !entry.run_error) body = '<p class="small muted evidence-wait">Not run yet.</p>';
     }
     if (snap && (!running || staticPage)) {
       try {
@@ -933,7 +933,7 @@
     let body = '';
     if (!entry.error) {
       if (running && !staticPage) body = '<p class="small muted evidence-wait">Running the provider; the project checker then checks what it proposes…</p>';
-      else if (!outcome && !failure) body = '<p class="small muted evidence-wait">Not run yet.</p>';
+      else if (!outcome && !failure && !entry.run_error) body = '<p class="small muted evidence-wait">Not run yet.</p>';
     }
     if (outcome && (!running || staticPage)) body = decisionOutcomeHTML(entry, note);
     if (staticPage && running) body = '<p class="small muted">A run was in progress at export time. Any outcome below is the previous saved one; its currency is not established here.</p>' + body;

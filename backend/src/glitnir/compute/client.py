@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from glitnir.compute.protocol import checker_digest, context_digest, make_request
+from glitnir.compute.telemetry import describe
 from glitnir.lean.limits import check_seconds, memory_limit_mb
 
 MAX_RESPONSE = 2_500_000
@@ -150,7 +151,12 @@ class Client:
         )
 
     def request(
-        self, method: str, path: str, body: dict[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        timeout_seconds: float = 10,
     ) -> Any:
         """Make a bounded request without echoing credentials or source in errors."""
         req = urllib.request.Request(
@@ -163,7 +169,7 @@ class Client:
             },
         )
         try:
-            with self._opener.open(req, timeout=10) as response:
+            with self._opener.open(req, timeout=timeout_seconds) as response:
                 data = response.read(MAX_RESPONSE + 1)
         except urllib.error.HTTPError as error:
             raise ValueError(
@@ -218,12 +224,7 @@ class Client:
                 raise ValueError("Taskvalet check cancelled")
             job = self.request("GET", f"/jobs/{identity}")
             state = job.get("state") if isinstance(job, dict) else None
-            phase = job.get("phase") if isinstance(job, dict) else None
-            detail = (
-                phase
-                if state == "running" and phase in {"preparing", "checking"}
-                else state
-            )
+            detail = describe(job) if isinstance(job, dict) else str(state)
             progress(f"Taskvalet job {identity}: {detail}")
             if state in {"completed", "cancelled", "timed_out", "interrupted"}:
                 assert isinstance(job, dict)

@@ -20,13 +20,24 @@ from glitnir.compute.protocol import (
     stage_project,
     validate_request,
 )
+from glitnir.compute.telemetry import (
+    MAX_MS,
+    native_observations,
+)
+from glitnir.compute.telemetry import observations as valid_observations
+from glitnir.compute.telemetry import supports
 from glitnir.lean.environment import kill_and_reap
 from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
 from glitnir.lean.project_checking import check_project
 
 
 def execute(
-    prepared: Path, request: dict[str, Any], scratch: Path, cancel: threading.Event
+    prepared: Path,
+    request: dict[str, Any],
+    scratch: Path,
+    cancel: threading.Event,
+    *,
+    observations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the existing sandboxed checker, preserving exact source/context bindings."""
     try:
@@ -35,13 +46,20 @@ def execute(
             raise ValueError("Worker checker implementation does not match the request")
         if cancel.is_set():
             raise ValueError("Computation cancelled")
+        staging_started = time.monotonic()
         staged = stage_project(prepared, request, scratch)
+        if observations is not None:
+            observations["staging_ms"] = round(
+                (time.monotonic() - staging_started) * 1000
+            )
         result = check_project(
             staged,
             expected_sha256=request["source_sha256"],
             cancel=cancel,
             through_line=request.get("through_line"),
         )
+        if observations is not None:
+            observations.update(native_observations(result))
         if cancel.is_set():
             raise ValueError("Computation cancelled")
         if (
@@ -178,9 +196,71 @@ class Worker:
             GLITNIR_MEMORY_LIMIT_MB=str(request["memory_mb"]),
         )
         phase = "preparing" if self.cache else "checking"
+        telemetry_enabled = supports(job)
+        telemetry_live = telemetry_enabled
+        started = time.monotonic()
+        checking_started = None if self.cache else started
+        cache_observation = "unknown" if self.cache else "prepared"
+        checker_observations: dict[str, Any] = {}
         heartbeat_at = 0.0
         budget_at = 0.0
         recipe = self.recipes.get(request["environment"])
+
+        def measurements() -> dict[str, Any]:
+            now = time.monotonic()
+            value: dict[str, Any] = {
+                "elapsed_ms": min(MAX_MS, max(0, round((now - started) * 1000))),
+                "preparation_ms": (
+                    min(
+                        MAX_MS,
+                        max(
+                            0,
+                            round(
+                                (
+                                    (
+                                        checking_started
+                                        if checking_started is not None
+                                        else now
+                                    )
+                                    - started
+                                )
+                                * 1000
+                            ),
+                        ),
+                    )
+                    if self.cache
+                    else 0
+                ),
+                "environment_cache": cache_observation,
+                **checker_observations,
+            }
+            if checking_started is not None:
+                value["checking_ms"] = min(
+                    MAX_MS, max(0, round((now - checking_started) * 1000))
+                )
+            return value
+
+        def remember(value: dict[str, Any]) -> None:
+            try:
+                save_receipt(directory / "worker-observations.json", value)
+            except (OSError, ValueError):
+                pass  # Optional measurements cannot discard a checker result.
+
+        def publish() -> None:
+            nonlocal telemetry_live
+            if not telemetry_live:
+                return
+            value = measurements()
+            remember(value)
+            try:
+                self.client.request(
+                    "POST",
+                    f"/jobs/{job['id']}/telemetry",
+                    {**binding, "observations": value},
+                    timeout_seconds=max(0.01, min(1.0, deadline - time.monotonic())),
+                )
+            except (OSError, ValueError):
+                telemetry_live = False
 
         def monitor() -> None:
             nonlocal heartbeat_at, budget_at
@@ -188,13 +268,17 @@ class Worker:
             if stop.is_set() or now >= deadline:
                 raise InterruptedError("Computation cancelled or deadline reached")
             if now >= heartbeat_at:
-                body = {**binding, **({"phase": phase} if self.cache else {})}
+                body = {
+                    **binding,
+                    **({"phase": phase} if self.cache or telemetry_enabled else {}),
+                }
                 state = self.client.request(
                     "POST", f"/jobs/{job['id']}/heartbeat", body
                 )
                 if state["state"] != "running":
                     raise InterruptedError("Computation lease is no longer running")
                 heartbeat_at = time.monotonic() + 10
+                publish()
             if now >= budget_at and self.cache and recipe and self.cache.active_entry:
                 self.cache.check_budget(self.cache.active_entry, recipe)
                 budget_at = now + 1
@@ -288,6 +372,13 @@ class Worker:
                         self.cache.prepare(recipe, run, monitor)
                     )
                     prepared, scratch = entry / "project", entry / "stage"
+                    reused = getattr(self.cache, "active_reused", None)
+                    cache_observation = (
+                        "hit"
+                        if reused is True
+                        else "miss" if reused is False else "unknown"
+                    )
+                    checking_started = time.monotonic()
                 assert prepared is not None
                 phase, heartbeat_at = "checking", 0.0
                 monitor()
@@ -310,18 +401,49 @@ class Worker:
                     "--scratch",
                     str(scratch),
                 ]
+                if telemetry_enabled:
+                    command.extend(
+                        ["--observations", str(directory / "checker-observations.json")]
+                    )
                 run(command, directory, environment)
                 if not output.is_file() or output.stat().st_size > 1_000_000:
                     raise ValueError("Worker exited without a bounded checker result")
                 result = json.loads(output.read_text())
+                measured = directory / "checker-observations.json"
+                try:
+                    if (
+                        telemetry_enabled
+                        and measured.is_file()
+                        and measured.stat().st_size <= 16_384
+                    ):
+                        value = valid_observations(json.loads(measured.read_text()))
+                        if value is not None:
+                            checker_observations.update(
+                                {
+                                    k: v
+                                    for k, v in value.items()
+                                    if k
+                                    in {
+                                        "staging_ms",
+                                        "native_stage_ms",
+                                        "imports_replay",
+                                    }
+                                }
+                            )
+                except (OSError, ValueError):
+                    pass
         except InterruptedError:
             return True
         except ValueError as error:
             result = {"status": "unavailable", "message": str(error), "theorems": []}
-        save_receipt(directory / "completion.json", {**binding, "result": result})
-        self.client.request(
-            "POST", f"/jobs/{job['id']}/complete", {**binding, "result": result}
-        )
+        completion = {**binding, "result": result}
+        if telemetry_enabled:
+            value = valid_observations(measurements())
+            if value is not None:
+                remember(value)
+                completion["observations"] = value
+        save_receipt(directory / "completion.json", completion)
+        self.client.request("POST", f"/jobs/{job['id']}/complete", completion)
         return True
 
     def run(self, stop: threading.Event) -> None:

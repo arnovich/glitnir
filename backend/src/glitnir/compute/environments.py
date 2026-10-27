@@ -258,6 +258,7 @@ class EnvironmentCache:
         )
         self.checker = checker_digest()
         self.active_entry: Path | None = None
+        self.active_reused: bool | None = None
         self.lock_fd: int | None = None
 
     def ready(self, recipes: Sequence[Recipe]) -> list[str]:
@@ -313,7 +314,9 @@ class EnvironmentCache:
                         "files"
                     ) != _inventory(entry / "project", monitor):
                         raise ValueError("Cached environment integrity check failed")
+                    self.active_reused = True
                 else:
+                    self.active_reused = False
                     temporary = Path(
                         tempfile.mkdtemp(prefix=".building-", dir=self.root)
                     )
@@ -337,6 +340,7 @@ class EnvironmentCache:
                 raise
             finally:
                 self.active_entry = None
+                self.active_reused = None
                 self.lock_fd = None
 
     def _build(

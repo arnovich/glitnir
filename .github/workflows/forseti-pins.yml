@@ -146,12 +146,50 @@ jobs:
           rm -f "$RUNNER_TEMP"/wheels/glitnir_forseti-*.whl
           uv build plugins/forseti --wheel --out-dir "$RUNNER_TEMP/wheels"
           uv pip install --python .venv/bin/python --no-deps --reinstall "$RUNNER_TEMP"/wheels/glitnir_forseti-*-py3-none-any.whl
+      # Each platform's toolchain digest covers only the Lean release's own files
+      # (closure.TOOLCHAIN_BINARIES), so it is computed from that platform's
+      # release archive, checked against the digest GitHub reports for it; no
+      # other runner is needed.
+      - name: Extract every supported platform's Lean toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          toolchain=$(jq -r .toolchain plugins/forseti/src/glitnir_forseti/lean-release.v1.json)
+          if ! [[ "$toolchain" =~ ^leanprover/lean4:v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::Not a Lean release toolchain: $toolchain"
+            exit 1
+          fi
+          version=${BASH_REMATCH[1]}
+          gh api "repos/leanprover/lean4/releases/tags/v$version" > "$RUNNER_TEMP/lean-release.json"
+          for entry in linux:Linux-x86_64:so linux_aarch64:Linux-aarch64:so \
+              darwin:Darwin-x86_64:dylib darwin_aarch64:Darwin-arm64:dylib; do
+            IFS=: read -r suffix platform library <<< "$entry"
+            asset="lean-$version-$suffix.tar.zst"
+            digest=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest' "$RUNNER_TEMP/lean-release.json")
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::The Lean v$version release reports no sha256 digest for $asset"
+              exit 1
+            fi
+            curl -fsSL "https://github.com/leanprover/lean4/releases/download/v$version/$asset" -o "$RUNNER_TEMP/$asset"
+            echo "${digest#sha256:}  $RUNNER_TEMP/$asset" | sha256sum --check
+            mkdir -p "$RUNNER_TEMP/toolchains/$platform"
+            tar --zstd -xf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/toolchains/$platform" \
+              --strip-components=1 --wildcards '*/bin/*' "*/lib/lean/*.$library"
+            rm "$RUNNER_TEMP/$asset"
+          done
       # Keeps every other platform's toolchain digest while the toolchain is
       # unchanged (closure.build_pin); for the same release it fails unless
-      # every closure is byte-identical to the committed pin's.
+      # every closure is byte-identical to the committed pin's. Each extracted
+      # toolchain's digest must equal the committed one for the same toolchain,
+      # and Linux-x86_64's the one observed in the elan install here.
       - name: Regenerate the replay pin
         id: replay
-        run: .venv/bin/python plugins/forseti/tools/pin_lean_replay.py "$RUNNER_TEMP/forseti-lean"
+        run: |
+          toolchains=()
+          for dir in "$RUNNER_TEMP"/toolchains/*; do
+            toolchains+=(--toolchain "$(basename "$dir")=$dir")
+          done
+          .venv/bin/python plugins/forseti/tools/pin_lean_replay.py "$RUNNER_TEMP/forseti-lean" "${toolchains[@]}"
       - name: Reinstall the plugin with the new replay pin
         run: |
           rm -f "$RUNNER_TEMP"/wheels/glitnir_forseti-*.whl
@@ -278,13 +316,6 @@ jobs:
             new=$(jq -c '.toolchain_binaries // {}' "$replay" 2> /dev/null || echo '{}')
             echo "- Per platform: $(jq -nr --argjson old "$old" --argjson new "$new" \
               '[($old + $new | keys[]) as $k | "\($k) \(if $old[$k] == null then "added" elif $new[$k] == null then "dropped" elif $old[$k] == $new[$k] then "unchanged" else "changed" end)"] | join(", ")')"
-            if [ -n "$after" ] && [ "$before" != "$after" ]; then
-              echo
-              echo "> [!WARNING]"
-              echo "> The toolchain changed, so only this platform's toolchain digest is pinned."
-              echo "> Replay on any other platform (macOS) reports the environment unknown until"
-              echo "> \`tools/pin_lean_replay.py\` is run there on this patch."
-            fi
             echo
             echo "### Changed files"
             echo

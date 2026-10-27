@@ -30,7 +30,9 @@ matching local backend are still required. Settings/credential changes close
 existing previews and cancel their work; reopen them to use the new configuration.
 
 Check and Check Through Line use Taskvalet. Proof exploration, views, evidence and
-decisions remain local in this first version. Progress shows the job state.
+decisions remain local in this first version. Progress shows the job state and,
+when the server supports it, queue time and reported worker preparation, checking
+and native replay time, plus environment/import cache observations.
 Saved results retain worker/job, checker, dependency-context and actual
 checked-environment identities. Dependency byte changes and destination changes
 invalidate remote freshness.
@@ -119,6 +121,51 @@ GLITNIR_TASKVALET_ENVIRONMENT and GLITNIR_TASKVALET_TOKEN.
 GLITNIR_TASKVALET_CA_FILE supplies a private CA bundle; verification is never
 disabled. The blocking notebook CLI also supports these variables when
 GLITNIR_EXECUTION_BACKEND=taskvalet.
+
+## Operational observations
+
+Updated servers advertise `taskvalet.compute-telemetry/v1` on job envelopes.
+Updated workers use this capability to publish optional measurements. Older
+servers and workers retain the original protocol; unavailable or malformed
+metadata leaves the ordinary job state visible.
+
+Use `status RECEIPT --summary` with the common options above for a readable
+summary. The default `status RECEIPT` still returns JSON, including server
+lifecycle timestamps and the last worker report. Neither form adds telemetry
+to saved notebook proof records or changes source/context fingerprints.
+
+Server timestamps distinguish submission, first lease, first **observed**
+preparing/checking heartbeat, terminal event and terminal observation. Expiry
+records the scheduled deadline or lost-lease time separately from the access
+that discovered it. Historical unknown times remain null. Queue duration uses
+server clocks only; negative or invalid clock differences are omitted.
+
+Worker durations use a monotonic clock. Preparation includes acquiring and
+validating/building a registered environment; checking includes subprocess
+startup, private staging, the native check and context revalidation. Child
+`staging_ms` and native `stage_ms` are subsets, not additional costs to sum;
+native stages may also overlap. A cache `hit` means the registered environment
+passed its reuse integrity checks. `prepared` means a fixed prepared input, not
+a measured hit. Import replay mode comes from the existing native checker and
+is separate from environment reuse.
+
+Worker observations are attributed assertions, not server-certified timings or
+proof. Live reports are cumulative and best effort; after cancellation or
+interruption they may stop before the work stops. A completed job from an updated
+worker stores its final report atomically with the original result. The journal
+replays that exact completion body after transport failure, without Lean.
+Telemetry never grants a theorem status or causes an automatic retry. This
+change provisions no workers and changes no running service.
+
+Validation of this telemetry change: the installed backend wheel passed 1,864
+backend tests with 94 optional/live skips. The prepared-worker native control
+separately checked a valid theorem and kept an admitted theorem unverified on
+Lean 4.35.0; its observations matched the existing native stages. An isolated
+cross-repository test ran the supervised worker through authenticated Taskvalet
+routes and preserved the exact result/metrics after completion retry and database
+restart. Black, isort, flake8 and mypy passed. Independent security/proof,
+reliability/compatibility and measurement/UX reviewers found no remaining issues.
+Linux CI and production rollout are separate.
 
 ## Failure and recovery
 

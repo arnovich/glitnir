@@ -1261,3 +1261,28 @@ def claim_of(text, keyword, start=None, tag="_glitnir_example_"):
         "end": end if end > 0 else len(text.encode()),
         "keyword": [keyword, keyword + 7],
     }
+
+
+@pytest.fixture
+def compute_telemetry():
+    """Server wall observations and separate monotonic worker measurements."""
+    return {
+        "format": "taskvalet.compute-telemetry/v1",
+        "timestamps": {
+            "submitted": 1000.0,
+            "leased": 1002.0,
+            "preparing_observed": 1003.0,
+            "checking_observed": 1005.0,
+            "terminal": 1010.0,
+            "terminal_observed": 1012.0,
+        },
+        "worker_observations": {
+            "elapsed_ms": 8000,
+            "preparation_ms": 3000,
+            "checking_ms": 5000,
+            "native_stage_ms": {"replay": 1200, "total": 4700},
+            "environment_cache": "hit",
+            "imports_replay": "cached",
+        },
+        "worker_observed_at": 1010.0,
+    }

@@ -14,6 +14,7 @@ from glitnir.compute.environments import EnvironmentCache, load_registry
 from glitnir.compute.handoff import prepare_handoff
 from glitnir.compute.lemma_bundle import load_bundle
 from glitnir.compute.protocol import make_request, validate_request
+from glitnir.compute.telemetry import describe
 from glitnir.compute.worker import Worker, execute, run_workers
 from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
 from glitnir.lean.project import read_regular
@@ -62,6 +63,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name in ("retry", "status", "result", "cancel"):
         command = commands.add_parser(name)
         command.add_argument("receipt", type=Path)
+        if name == "status":
+            command.add_argument(
+                "--summary",
+                action="store_true",
+                help="Show queue, worker and native replay timings",
+            )
     worker = commands.add_parser("worker")
     source = worker.add_mutually_exclusive_group(required=True)
     source.add_argument("--prepared", type=Path)
@@ -77,6 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     child = commands.add_parser("execute", help=argparse.SUPPRESS)
     for name in ("prepared", "request", "output", "scratch"):
         child.add_argument("--" + name, type=Path, required=True)
+    child.add_argument("--observations", type=Path)
     args = parser.parse_args(argv)
     if args.command == "prepare-handoff":
         try:
@@ -103,9 +111,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "execute":
             request = json.loads(args.request.read_text())
-            save_receipt(
-                args.output, execute(args.prepared, request, args.scratch, stop)
-            )
+            measured: dict = {}
+            if args.observations is not None:
+                result = execute(
+                    args.prepared, request, args.scratch, stop, observations=measured
+                )
+            else:
+                result = execute(args.prepared, request, args.scratch, stop)
+            save_receipt(args.output, result)
+            if args.observations is not None:
+                try:
+                    save_receipt(args.observations, measured)
+                except (OSError, ValueError):
+                    pass
             return 0
         recipes = (
             load_registry(args.registry)
@@ -237,7 +255,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 save_receipt(args.receipt, {**journal, "job": value})
                 if args.command == "result":
                     value = result_from_job(value, request)
-        print(json.dumps(value))
+        if args.command == "status" and args.summary:
+            print(f"Taskvalet job {value['id']}: {describe(value)}")
+        else:
+            print(json.dumps(value))
         return 0
     except (OSError, ValueError, KeyError) as error:
         print(f"error: {error}", file=sys.stderr)
