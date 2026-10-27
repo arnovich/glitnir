@@ -695,3 +695,46 @@ def test_map_of_an_unreadable_outline_exits_2(tmp_path: Path) -> None:
     path = tmp_path / "outline.json"
     path.write_text("{", encoding="utf-8")
     assert run("map", str(path)).returncode == 2
+
+
+SKILL = SCRIPT.parent.parent
+STRUCTURAL_WORDS = ("format", "duplicate", "unknown use", "cycle", "kind")
+
+
+def first_json_block(path: Path) -> str:
+    """Return the text of the first fenced `json` block in a Markdown file."""
+    text = path.read_text(encoding="utf-8")
+    start = text.index("```json\n") + len("```json\n")
+    return text[start : text.index("\n```", start)]
+
+
+def test_the_documented_example_outline_is_valid(tmp_path: Path) -> None:
+    example = json.loads(first_json_block(SKILL / "references/walkthrough-outline.md"))
+    assert not (tmp_path / example["project"]["root"]).exists()
+    result = run("check", str(write(tmp_path, example)))
+    assert result.returncode != 2, result.stderr
+    for line in result.stdout.splitlines():
+        assert not any(word in line for word in STRUCTURAL_WORDS), line
+        assert line.startswith("note: ") or "cannot be read" in line, line
+
+
+def documented_commands() -> list[list[str]]:
+    """Return the arguments of every helper command the skill documents."""
+    commands = []
+    for path in [SKILL / "SKILL.md", *sorted((SKILL / "references").glob("*.md"))]:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            _, found, rest = line.partition("python3 -B scripts/walkthrough.py ")
+            words = rest.split("`")[0].split()
+            if found and words:
+                commands.append(words)
+    return commands
+
+
+def test_every_documented_command_exists() -> None:
+    commands = documented_commands()
+    assert {words[0] for words in commands} == {"check", "map"}
+    for words in commands:
+        usage = run(words[0], "--help").stdout
+        for word in words[1:]:
+            if word.startswith("--"):
+                assert word in usage, (word, words)
