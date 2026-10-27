@@ -797,7 +797,7 @@ def _exists(path: Path) -> bool:
 
 def _digest(identity: dict[str, Any]) -> str:
     return hashlib.sha256(
-        b"glitnir.environment-fingerprint/v4\0"
+        b"glitnir.environment-fingerprint/v5\0"
         + json.dumps(identity, sort_keys=True).encode()
     ).hexdigest()
 

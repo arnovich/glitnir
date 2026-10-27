@@ -57,6 +57,10 @@ The repository has four parts:
   sections describe the behavior users see; AGENTS.md states the invariants
   that the replay cache and incremental replay must keep, and
   `ProjectReplay.lean` documents the argument.
+- **Replay inventory.** Prepared inspection asks Lake for the full private import
+  closure needed by reporting and kernel replay, including non-exported imports.
+  It preserves the saved source's module flag and visibility. Fingerprint v5
+  invalidates earlier saved results whose inventories could omit these inputs.
 - **Saved results.** A saved result is current while the environment
   fingerprint it was saved under (`glitnir/lean/fingerprint.py`) still matches.
   The fingerprint names no location, so saved results are portable across

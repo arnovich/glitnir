@@ -101,10 +101,14 @@ private def inspect (source : FilePath) (extra : List Name) : LoggerIO Json := d
   let build : BuildConfig := {noBuild := true}
   let setup ← ws.runBuild (cfg := build) do
     let path ← IO.FS.realPath source
-    let header? ← if extra.isEmpty then pure none else do
-      let header ← Lean.parseImports' (← IO.FS.readFile path) source.toString
-      pure (some (withImports header extra))
-    setupServerModule source.toString path header?
+    let header := withImports (← Lean.parseImports'
+      (← IO.FS.readFile path) source.toString) extra
+    -- Reporting and kernel replay load every import at the private level.
+    -- Lake's non-module inventory includes that complete transitive closure,
+    -- including private imports that a public module does not re-export.
+    -- Only resolution uses this mode: retain the actual source's module flag.
+    let job ← setupServerModule source.toString path (some {header with isModule := false})
+    job.mapM fun setup => pure {setup with isModule := header.isModule}
   return Json.mkObj [
     ("setup", toJson setup),
     ("resolution", Json.mkObj [

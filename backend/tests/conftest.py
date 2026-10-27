@@ -669,6 +669,42 @@ def recorded_replay_cache(fresh_replay_cache, project_toolchain, replay_records)
 
 
 @pytest.fixture
+def private_import_project(tmp_path, project_toolchain):
+    """Build a public module whose dependency has a non-exported private import."""
+    import subprocess
+
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    root = tmp_path / "private-import-project"
+    (root / "src/Boundary").mkdir(parents=True)
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (root / "lakefile.toml").write_text(
+        'name = "boundary"\n[[lean_lib]]\nname = "Boundary"\nsrcDir = "src"\n'
+    )
+    (root / "src/Boundary/Hidden.lean").write_text(
+        "module\n@[expose] public section\n" "axiom hiddenAxiom : False\n"
+    )
+    (root / "src/Boundary/Dependency.lean").write_text(
+        "module\nimport Boundary.Hidden\n@[expose] public section\n"
+        "theorem dependencyTrue : True := True.intro\n"
+        "theorem dependsOnHidden : False := hiddenAxiom\n"
+    )
+    (root / "src/Boundary.lean").write_text(
+        "module\npublic import Boundary.Dependency\n@[expose] public section\n"
+        "theorem result : True := dependencyTrue\n"
+    )
+    subprocess.run(
+        [str(project_toolchain / "bin/lake"), "--keep-toolchain", "build", "Boundary"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(project_toolchain)},
+    )
+    return root
+
+
+@pytest.fixture
 def project_snapshot_inputs(tmp_path):
     """Small inert files for input-capture tests; they are never executed."""
     root = tmp_path / "project"
