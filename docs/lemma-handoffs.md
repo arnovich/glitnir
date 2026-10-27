@@ -79,3 +79,95 @@ staging request is never sent to Taskvalet. Keep actual agent/job/model budgets 
 the existing campaign/host. An expired preparation requires an explicit new
 operator attempt with a distinct directory and budget; it cannot silently reset
 this journal or the consumer's existing proof-check allowance.
+
+## Prepare and serve with one operator command
+
+`handoff-worker` composes preparation, a real worker-style snapshot capture,
+registration and serial job execution. It accepts a bundle already fetched by a
+participant through Taskvalet's `lemma_fetch` tool or `valet participate
+lemma_fetch` command. Save its returned `bundle` member as `lemma.json`, rather
+than the entire fetch response. Transfer that validated bundle and the proposed
+consumer source to the compute host. Keep the participant's journal and credential on its
+own machine. The operator supplies a separate project-scoped compute-worker key,
+an installed checker matching the producer, a prepared base and all resource
+policy. Neither source nor bundle may select those settings. Use a distinct environment
+identifier for each concurrently served derived context; reusing the original
+worker's environment is refused. Scheduling selects environment/checker, so
+reusing another active context's name can waste a check on the wrong worker.
+
+Run the command as the same unprivileged OS user that will execute checks, inside
+an administrator-provided service with cgroup v2 limits, a hard service lifetime
+and a filesystem quota. For example, inside that service:
+
+```sh
+python -m glitnir.compute \
+  --server https://tasks.example.test --project lab --environment reuse-a \
+  --credential-file /etc/lab/compute-worker.json \
+  handoff-worker /srv/prepared/base lemma.json Next.lean \
+  --path Example/Next.lean --directory /srv/handoffs/reuse-a \
+  --timeout-seconds 180 --memory-mb 4096 --max-bytes 20000000000 \
+  --lifetime-seconds 1800
+```
+
+The key must have no group/other permissions (0400 or 0600); its parent must not
+be writable by untrusted processes. Use the inherited `ELAN_HOME` or the
+operator's original `HOME/.elan` for the preinstalled toolchain. The command
+redirects its process's `HOME` and temporary directory into the private session,
+so the worker's artifact/replay caches and scratch stay there too. This entry
+point changes process environment and must run as its own process, never as a
+model tool or in a threaded agent host. It does not install software, obtain
+credentials, create system services or change the permanent worker registry.
+
+The cgroup must have `MemoryMax <= --memory-mb`, swap disabled and finite
+`TasksMax <=128`, just as for preparation. Configure a hard `RuntimeMaxSec` and
+kill the whole service cgroup on stop; automatic restarts must not grant a fresh
+host budget. `--lifetime-seconds` is an additional cooperative session deadline,
+saved before preparation and never renewed by a retry. Network calls and Lake
+preparation can take time to unwind after cancellation; the host service is the
+hard wall-clock boundary. `--max-bytes` now covers the entire session's regular
+files, including preparation, capture, worker journals and caches. Monitoring is
+periodic, so an external filesystem quota supplies the hard instantaneous cap.
+Preparation uses its own deadline/disk monitor. Capture is checked against the
+session budget before and after; periodic session monitoring starts only after
+preparation and metadata inspection finish, to keep their process launches single
+threaded. The host quota and service lifetime cover these startup stages too.
+Reserve enough space for the full trusted toolchain snapshot, even for an
+Init-only project (several GiB on Linux). No kernel replay or proof-check
+submission is spent on capture preflight, and its temporary store is discarded.
+
+Before any registration, capture opens the staged source, toolchain and imported
+artifacts using the same descriptors as the native checker. Every directory
+ancestor must therefore be readable and traversable by the worker, including
+root-owned parents (0755 is suitable where disclosure of their names is allowed).
+A metadata-only `resolved` result does not establish this. The session itself
+must remain private, owned by the worker (0700), with no symlink ancestors.
+
+After capture and successful registration, the command writes private atomic
+`compute-profile.json` and `ready.json` files and prints one flushed
+`glitnir.handoff-worker/v1` receipt. The receipt includes the full original
+handoff provenance, profile, worker ID and absolute deadline. Transfer only the
+credential-free `compute-profile.json` to the consumer. It uses
+`taskvalet.compute-profile/v1`, with the exact server/project and six-field
+binding accepted by Taskvalet CLI `participate --compute-profile FILE` and
+`Participant.connect(..., compute_profile=Path(...))`. The profile selects
+execution policy; it grants no authority and requires the consumer's existing
+matching run and credential. Consumer submission remains asynchronous.
+
+The ready files are removed on normal stop or failure. After a crash they can be
+stale: verify the process/service and deadline before distributing a profile;
+a copied profile is not a liveness guarantee or an extra job allowance. Readiness
+means environment/capture and registration succeeded, never that a proof passed.
+Each consumer check still elaborates and independently kernel-replays its source
+and imports. Compute results remain evidence until explicitly published and
+reviewed under the existing shared-knowledge workflow.
+
+Restart only with the identical bundle, source, base, destination, paths and
+limits, using the same session directory. The session lock prevents overlapping
+operator processes; `session.json` retains its original deadline. Completed
+preparation is revalidated, capture runs again and a new worker registers for the
+remaining time. Changed inputs or an expired/corrupt journal fail without a new
+registration. The command preserves prior worker lease/completion journals under
+`worker/` and never resubmits or reruns an uncertain check. Use the existing
+`retry-completion` command with the original lease directory to recover a saved
+completion. The supervisor/operator remains responsible for credential expiry or
+revocation, assignment/job/model budgets and scoped final cleanup.

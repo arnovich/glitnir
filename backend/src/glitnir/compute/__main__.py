@@ -12,6 +12,7 @@ from pathlib import Path
 from glitnir.compute.client import Client, Settings, result_from_job, save_receipt
 from glitnir.compute.environments import EnvironmentCache, load_registry
 from glitnir.compute.handoff import prepare_handoff
+from glitnir.compute.handoff_worker import serve_handoff
 from glitnir.compute.lemma_bundle import load_bundle
 from glitnir.compute.protocol import make_request, validate_request
 from glitnir.compute.telemetry import describe
@@ -33,10 +34,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--credential-file", type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
-    handoff = commands.add_parser(
-        "prepare-handoff",
-        help="Build a lemma and preflight a worker copy; submits no job",
-    )
+    handoff_inputs = argparse.ArgumentParser(add_help=False)
+    handoff = handoff_inputs
     handoff.add_argument("prepared", type=Path)
     handoff.add_argument("bundle", type=Path)
     handoff.add_argument("candidate", type=Path)
@@ -54,6 +53,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         help="Aggregate disk ceiling for both private copies",
     )
+    commands.add_parser(
+        "prepare-handoff",
+        parents=[handoff_inputs],
+        help="Build a lemma and preflight a worker copy; submits no job",
+    )
+    service = commands.add_parser(
+        "handoff-worker",
+        parents=[handoff_inputs],
+        help="Prepare, capture, emit a consumer profile and serve a bounded worker",
+    )
+    service.add_argument("--lifetime-seconds", type=int, required=True)
     submit = commands.add_parser("submit")
     submit.add_argument("source", type=Path)
     submit.add_argument("--receipt", type=Path, required=True)
@@ -189,6 +199,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 os.environ.get("GLITNIR_TASKVALET_CA_FILE"),
             )
         )
+        if args.command == "handoff-worker":
+            serve_handoff(
+                client,
+                args.prepared,
+                load_bundle(args.bundle),
+                read_regular(args.candidate, 1_000_000).decode("utf-8"),
+                args.directory,
+                candidate_path=args.path,
+                timeout_seconds=args.timeout_seconds,
+                memory_mb=args.memory_mb,
+                max_bytes=args.max_bytes,
+                lifetime_seconds=args.lifetime_seconds,
+                stop=stop,
+                on_ready=lambda value: print(json.dumps(value), flush=True),
+            )
+            return 0
         if args.command == "retry-completion":
             journal = json.loads((args.journal / "lease.json").read_text())
             completion = json.loads((args.journal / "completion.json").read_text())
@@ -260,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(json.dumps(value))
         return 0
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, SandboxUnavailable) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     finally:
