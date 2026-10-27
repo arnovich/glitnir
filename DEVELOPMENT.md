@@ -58,8 +58,9 @@ The repository has four parts:
   `notebook/records_schema.py` (whose validators are pinned to the shapes by
   `tests/test_records_schema.py`), the directives in `notebook/directives.py`,
   and what the renderer receives in `preview/snapshot.py` and
-  `preview/cards.py`. Compute's wire protocol, provider output before its
-  validator and request bodies stay `dict[str, Any]`.
+  `preview/cards.py`. Compute's wire protocol, the helper programs' JSON in
+  `glitnir.lean` before its validators, provider output before its validator
+  and request bodies stay `dict[str, Any]`.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by

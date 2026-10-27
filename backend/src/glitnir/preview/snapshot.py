@@ -23,7 +23,7 @@ from glitnir.lean.fingerprint import (
     environment_fingerprint,
 )
 from glitnir.lean.lexing import code_tokens, scan
-from glitnir.lean.prepared_packages import Resolution
+from glitnir.lean.prepared_packages import Resolution, ResolutionPackage
 from glitnir.lean.project import ProjectDescription, describe_project, read_regular
 from glitnir.lean.project_inspection import LeanSupport, lean_support
 from glitnir.lean.project_snapshot import SLOT_BUSY, SLOT_WAIT_TIMED_OUT
@@ -112,7 +112,7 @@ class ResolutionSummary(TypedDict):
     """What the preview shows of a package resolution: its kind and packages."""
 
     kind: str | None
-    packages: list[Any]
+    packages: list[ResolutionPackage]
 
 
 class InspectionSummary(TypedDict):

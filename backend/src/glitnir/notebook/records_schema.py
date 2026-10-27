@@ -154,7 +154,14 @@ class FailureEntry(SavedEntry):
 
 
 class Records(TypedDict):
-    """A `<Notebook>.glitnir.json` file, as `well_formed` accepts it."""
+    """A `<Notebook>.glitnir.json` file, as its readers see it.
+
+    `well_formed` checks the environment's fingerprint, `withheld`, the claims,
+    the non-claims and the `evidence`, `decisions` and `views` entries;
+    `format`, `source_sha256` and `environment.check` are read as written. The
+    two failure sections are read leniently (`lenient_failures`), so their type
+    is of an entry it keeps, not of every entry a saved file may hold.
+    """
 
     format: str
     source_sha256: str
