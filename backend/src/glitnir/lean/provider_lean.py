@@ -12,6 +12,7 @@ from typing import Any, Callable
 from glitnir.lean import fingerprint
 from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.digest import fingerprint_ok
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.limits import memory_limit_mb
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import (
@@ -32,7 +33,6 @@ from glitnir.lean.sandbox import SandboxUnavailable
 from glitnir.lean.scratch import scratch_directory
 
 PROGRAM = Path(__file__).with_name("ViewElab.lean")
-SOURCE_BYTES = 16 * 1024**2
 NO_OUTPUT = {
     "view": "The provider printed no drawing.",
     "evidence": "The provider printed no evidence.",
@@ -174,7 +174,7 @@ def _provider_source(
 
 
 def _saved(source: Path) -> str:
-    return read_regular(source, SOURCE_BYTES).decode().replace("\r\n", "\n")
+    return read_regular(source, MAX_SOURCE_BYTES).decode().replace("\r\n", "\n")
 
 
 def _setup_key(

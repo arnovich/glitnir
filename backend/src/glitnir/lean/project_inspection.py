@@ -19,7 +19,7 @@ from typing import Any
 
 from glitnir.lean.artifacts import artifact_files, valid_artifacts
 from glitnir.lean.awake import awake
-from glitnir.lean.environment import bind_to_parent, kill_and_reap
+from glitnir.lean.environment import MAX_SOURCE_BYTES, bind_to_parent, kill_and_reap
 from glitnir.lean.limits import check_seconds
 from glitnir.lean.prepared_packages import PROGRAM, validate_resolution
 from glitnir.lean.project import describe_project, read_regular
@@ -100,7 +100,7 @@ class NeedsBuild(ValueError):
 
 def _source_digest(source: Path) -> str:
     """Use the same normalized saved-source binding as the source preview."""
-    text = read_regular(source, 16 * 1024 * 1024).decode("utf-8")
+    text = read_regular(source, MAX_SOURCE_BYTES).decode("utf-8")
     return hashlib.sha256(text.replace("\r\n", "\n").encode()).hexdigest()
 
 

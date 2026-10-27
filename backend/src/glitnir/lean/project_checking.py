@@ -21,6 +21,7 @@ from glitnir.lean.awake import awake, noting_sleep
 from glitnir.lean.axiom_report import REPORT_PROGRAM, REPORT_SHA256
 from glitnir.lean.environment import (
     LEAN_AXIOM_ALLOWLIST,
+    MAX_SOURCE_BYTES,
     bind_to_parent,
     kill_and_reap,
 )
@@ -1589,7 +1590,7 @@ def check_project(
             raise ValueError("Check through a positive line number.")
         source = source.absolute()
         _refuse_unsupported(source)
-        text = read_regular(source, 16 * 1024 * 1024).decode().replace("\r\n", "\n")
+        text = read_regular(source, MAX_SOURCE_BYTES).decode().replace("\r\n", "\n")
         if hashlib.sha256(text.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
         data = text.encode()
@@ -1809,7 +1810,7 @@ def check_candidate(
         _refuse_unsupported(source)
 
         def saved() -> str:
-            text = read_regular(source, 16 * 1024 * 1024).decode()
+            text = read_regular(source, MAX_SOURCE_BYTES).decode()
             text = text.replace("\r\n", "\n")
             if hashlib.sha256(text.encode()).hexdigest() != expected_sha256:
                 raise SnapshotError("Saved source changed; refresh and retry.")

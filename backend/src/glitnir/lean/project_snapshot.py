@@ -28,6 +28,7 @@ from typing import Any, BinaryIO, Callable, Iterator
 from glitnir.lean import artifact_store
 from glitnir.lean.artifact_store import ArtifactStore, StoreError
 from glitnir.lean.artifacts import map_artifacts
+from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.limits import check_seconds
 from glitnir.lean.project import read_regular
 
@@ -512,7 +513,7 @@ def _capture(
     saved = frozen / "Source.lean"
     # The preview and checker both use LF-normalized UTF-8 source.
     if text is None:
-        text = read_regular(source, 16 * 1024 * 1024).decode().replace("\r\n", "\n")
+        text = read_regular(source, MAX_SOURCE_BYTES).decode().replace("\r\n", "\n")
     if total + len(text.encode()) > MAX_SNAPSHOT_BYTES:
         raise SnapshotError("Project snapshot exceeds its byte limit.")
     saved.write_text(text)
