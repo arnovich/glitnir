@@ -29,6 +29,7 @@ from glitnir.compute.telemetry import supports
 from glitnir.lean.environment import kill_and_reap
 from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
 from glitnir.lean.project_checking import check_project
+from glitnir.lean.results import CheckOutcome
 
 
 def execute(
@@ -38,7 +39,7 @@ def execute(
     cancel: threading.Event,
     *,
     observations: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> CheckOutcome:
     """Run the existing sandboxed checker, preserving exact source/context bindings."""
     try:
         validate_request(request)

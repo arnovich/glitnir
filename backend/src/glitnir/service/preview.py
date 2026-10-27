@@ -3,6 +3,7 @@
 import hashlib
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
@@ -102,7 +103,7 @@ class SourcePreviewService:
         self._cancel = threading.Event()
         self._inspection_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._check: dict[str, Any] | None = None
+        self._check: Mapping[str, Any] | None = None
         self._check_cancel: threading.Event | None = None
         self._worker: threading.Thread | None = None
         self._inspection: dict[str, Any] | None = None
@@ -301,8 +302,8 @@ class SourcePreviewService:
             self._check_cancel.set()
 
     def _with_import_hint(
-        self, result: dict[str, Any], environment: dict[str, Any]
-    ) -> dict[str, Any]:
+        self, result: Mapping[str, Any], environment: dict[str, Any]
+    ) -> Mapping[str, Any]:
         """Explain unbuilt sibling imports, unless the check was cut short."""
         message = str(result.get("message", ""))
         if (
@@ -359,6 +360,7 @@ class SourcePreviewService:
                         )
                     )
 
+            result: Mapping[str, Any]
             if from_environment() is not None:
 
                 def remote_acquired(context_sha256: str) -> None:

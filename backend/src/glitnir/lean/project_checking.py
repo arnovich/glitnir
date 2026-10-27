@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Literal, Protocol
 
 from glitnir.lean import replay_cache
 from glitnir.lean.artifact_store import ArtifactStore
@@ -62,6 +62,15 @@ from glitnir.lean.reports import (
     declarations,
     import_closure,
     project_modules,
+)
+from glitnir.lean.results import (
+    Checked,
+    CheckOutcome,
+    CheckResult,
+    Theorem,
+    UnavailableResult,
+    Verdict,
+    Withheld,
 )
 from glitnir.lean.sandbox import SandboxUnavailable
 from glitnir.lean.scratch import scratch_directory
@@ -854,13 +863,13 @@ def _observe(
     compiled: _Compiled,
     reported: _Reported,
     replayed: _Replayed,
-) -> dict[str, Any]:
+) -> Checked:
     """Decide each claim's status from the replay's axioms and assemble the result."""
     # Statuses come from the replay's axioms alone; the module report's
     # must equal them.
     authority = replayed_axioms(replayed.replayed, declarations(reported.candidate)[1])
     claim_names = set(reported.spans)
-    observations = []
+    observations: list[Theorem] = []
     for theorem in reported.theorems:
         axioms = authority[theorem["name"]]
         standard = all(
@@ -871,7 +880,7 @@ def _observe(
             .is_file()
             for a in axioms
         )
-        status = (
+        status: Literal["checked", "admitted", "assumptions"] = (
             "admitted"
             if any(a["name"] == "sorryAx" for a in axioms)
             else "checked" if standard else "assumptions"
@@ -880,23 +889,23 @@ def _observe(
         uses = claim_uses(
             theorem.get("uses", []), environment.module, claim_names, reported.notebooks
         )
-        observations.append(
-            {
-                "name": theorem["name"],
-                "type": theorem["type"],
-                "statement": reported.printed.get(theorem["name"]),
-                "uses": uses[:MAX_USES],
-                **({"uses_truncated": True} if len(uses) > MAX_USES else {}),
-                "axioms": axioms,
-                "status": status,
-                "start_line": first,
-                "end_line": last,
-                "example": theorem["name"] in reported.examples,
-                "proposition_sha256": hashlib.sha256(
-                    (frozen.identity + "\0" + theorem["canonical"]).encode()
-                ).hexdigest(),
-            }
-        )
+        observation: Theorem = {
+            "name": theorem["name"],
+            "type": theorem["type"],
+            "statement": reported.printed.get(theorem["name"]),
+            "uses": uses[:MAX_USES],
+            "axioms": axioms,
+            "status": status,
+            "start_line": first,
+            "end_line": last,
+            "example": theorem["name"] in reported.examples,
+            "proposition_sha256": hashlib.sha256(
+                (frozen.identity + "\0" + theorem["canonical"]).encode()
+            ).hexdigest(),
+        }
+        if len(uses) > MAX_USES:
+            observation["uses_truncated"] = True
+        observations.append(observation)
     added_modules = replayed.added_modules
     return {
         "status": "checked_snapshot",
@@ -908,14 +917,11 @@ def _observe(
         # Examples that claim nothing: no type, or one that is not a
         # proposition. They are read as Lean reads them.
         "non_claims": [
-            dict(
-                zip(
-                    ("start_line", "end_line"),
-                    line_range(reported.text, item["start"], item["end"]),
-                    strict=True,
-                )
+            {"start_line": first, "end_line": last}
+            for first, last in (
+                line_range(reported.text, item["start"], item["end"])
+                for item in compiled.unclaimed
             )
-            for item in compiled.unclaimed
         ],
         "snapshot_bytes": frozen.snapshot.bytes,
         "resolution": environment.resolution,
@@ -953,7 +959,7 @@ def _check_text(
     rest: str | None = None,
     acquired: Callable[[], None] = lambda: None,
     stages: StageTimes | None = None,
-) -> dict[str, Any]:
+) -> Checked:
     """Check one LF-normalised source text under a private project snapshot.
 
     ``text`` may be a prefix of the saved file whose digest is ``saved_sha256``;
@@ -1027,7 +1033,7 @@ def _command_end(boundaries: CommandBoundaries, line: int) -> int:
     return line if boundaries.ends_at(line) else boundaries.last_end_before(line)
 
 
-def _within(result: dict[str, Any], line: int) -> dict[str, Any]:
+def _within(result: Checked, line: int) -> Checked:
     """Return ``result`` when every claim it checked ends by ``line``.
 
     A prefix check through ``line`` cannot have checked a claim below it; the
@@ -1049,7 +1055,7 @@ def check_project(
     progress: Callable[[str], None] = lambda _: None,
     through_line: int | None = None,
     acquired: Callable[[], None] = lambda: None,
-) -> dict[str, Any]:
+) -> CheckOutcome:
     """Check a saved file; on a later failure, check only the commands before it.
 
     ``acquired`` is called each time the check holds the Lean slot, before it
@@ -1126,9 +1132,14 @@ def check_project(
                 checked_lines,
             )
             if not requested:
-                return {**result, "withheld": None, "stage_ms": stages.summary()}
+                whole: CheckResult = {
+                    **result,
+                    "withheld": None,
+                    "stage_ms": stages.summary(),
+                }
+                return whole
             last = requested["through_line"]
-            return {
+            through: CheckResult = {
                 **result,
                 "stage_ms": stages.summary(),
                 "source_sha256": expected_sha256,
@@ -1138,6 +1149,7 @@ def check_project(
                     "through_line": last,
                 },
             }
+            return through
         except CommandFailure as failure:
             prefix_data = checked.encode()
             if failure.offset <= 0 or failure.offset >= len(prefix_data):
@@ -1168,14 +1180,18 @@ def check_project(
                 message = f"{message} ({failure.note})" if message else failure.note
             if line + 1 != failed:
                 message = f"line {failed}: {message}" if message else f"line {failed}"
-            return {
+            withheld: Withheld = {"from_line": line + 1, "message": message}
+            if requested:
+                withheld["through_line"] = requested["through_line"]
+            before_failure: CheckResult = {
                 **result,
                 "stage_ms": stages.summary(),
                 "source_sha256": expected_sha256,
-                "withheld": {"from_line": line + 1, "message": message, **requested},
+                "withheld": withheld,
             }
+            return before_failure
     except (OSError, ValueError, RecursionError, SandboxUnavailable) as error:
-        unavailable: dict[str, Any] = {
+        unavailable: UnavailableResult = {
             "status": "unavailable",
             "message": str(error),
             "theorems": [],
@@ -1197,7 +1213,7 @@ def check_candidate(
     theorem: str,
     cancel: threading.Event,
     stage_ms: dict[str, int] | None = None,
-) -> dict[str, Any]:
+) -> Verdict:
     """Check the saved file through `insert_after_line` followed by `block`.
 
     This is the only proof authority for a decision. The candidate text is
@@ -1245,7 +1261,7 @@ def check_candidate(
                 stages=stages,
             )
         except CommandFailure as failure:
-            verdict: dict[str, Any] = {
+            verdict: Verdict = {
                 "status": "rejected",
                 "message": failure_location(failure, text, insert_after_line),
                 "axioms": [],

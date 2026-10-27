@@ -58,7 +58,7 @@ NOTICE = (
 class PreviewState:
     """What a running preview adds to its saved notebook: all empty by default."""
 
-    check: dict[str, Any] | None = None
+    check: Mapping[str, Any] | None = None
     inspection: dict[str, Any] | None = None
     running: str | None = None
     run_errors: Mapping[str, str] = field(default_factory=dict)
@@ -113,7 +113,7 @@ def cut_short(message: str) -> bool:
     )
 
 
-def _failed_fresh_check(observation: dict[str, Any] | None, sha256: str) -> bool:
+def _failed_fresh_check(observation: Mapping[str, Any] | None, sha256: str) -> bool:
     """Whether the latest check of this exact text was unavailable, not cut short."""
     if observation is None or observation.get("status") != "unavailable":
         return False

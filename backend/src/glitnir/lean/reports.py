@@ -5,6 +5,7 @@ from typing import Any
 
 from glitnir.lean.artifacts import olean_path
 from glitnir.lean.project_snapshot import SnapshotError
+from glitnir.lean.results import Use
 
 
 def declarations(
@@ -85,17 +86,18 @@ def claim_uses(
     module: str,
     claims: set[str],
     notebooks: set[str],
-) -> list[dict[str, Any]]:
+) -> list[Use]:
     """Return the claims a theorem uses, from the theorems it names directly.
 
     Display only: what the module report says a theorem's type and value name,
     kept when it is a claim of this notebook (`claims`, in `module`) or a
     theorem of another notebook of the project (a module in `notebooks`).
     """
-    found: list[dict[str, Any]] = []
+    found: list[Use] = []
     seen: set[tuple[str, str]] = set()
     for use in reported:
         name, owner = use["name"], use["module"]
+        entry: Use
         if owner == module:
             entry = {"module": owner, "name": name, "in_notebook": True}
             if name not in claims:

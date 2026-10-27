@@ -254,7 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raise ValueError("Server job does not match this receipt")
                 save_receipt(args.receipt, {**journal, "job": value})
                 if args.command == "result":
-                    value = result_from_job(value, request)
+                    value = dict(result_from_job(value, request))
         if args.command == "status" and args.summary:
             print(f"Taskvalet job {value['id']}: {describe(value)}")
         else:

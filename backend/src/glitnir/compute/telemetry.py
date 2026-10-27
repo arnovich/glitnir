@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from typing import Any
 
 FORMAT = "taskvalet.compute-telemetry/v1"
@@ -58,7 +59,7 @@ def observations(value: Any) -> dict[str, Any] | None:
     return dict(value)
 
 
-def native_observations(result: dict[str, Any]) -> dict[str, Any]:
+def native_observations(result: Mapping[str, Any]) -> dict[str, Any]:
     """Copy only the checker's existing timing and replay-mode observations."""
     value: dict[str, Any] = {}
     stages = {"native_stage_ms": result.get("stage_ms")}
