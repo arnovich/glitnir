@@ -48,7 +48,11 @@ from glitnir.notebook.check_records import (
     with_evidence_failure,
     without_decision,
 )
-from glitnir.notebook.directives import decision_directives, evidence_directives
+from glitnir.notebook.directives import (
+    DecisionDirective,
+    decision_directives,
+    evidence_directives,
+)
 from glitnir.preview.cards import (
     decision_cards,
     decision_request,
@@ -766,7 +770,7 @@ class DirectiveRuns:
 
     def _decision_directive(
         self, sha256: str, line: int
-    ) -> tuple[str, dict[str, Any], frozenset[str]]:
+    ) -> tuple[str, DecisionDirective, frozenset[str]]:
         """Return the saved text, its decision directive at `line` and all keys."""
         text = self._context.text()
         if _sha256(text) != sha256:

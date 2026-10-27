@@ -21,7 +21,7 @@ from glitnir.notebook.check_records import (
     view_status,
     with_view,
 )
-from glitnir.notebook.directives import starts_command, view_keys
+from glitnir.notebook.directives import ViewDirective, starts_command, view_keys
 from glitnir.preview.cards import provider_imports, view_provider_hash
 from glitnir.providers import ViewProvider
 from glitnir.providers.outcomes import Drawing, checked_drawing
@@ -219,7 +219,7 @@ class ViewDrawing:
         keys = view_keys(text, views)
         saved = {} if digest is None else saved_views(load_records(self._context.path))
 
-        def job_for(view: dict[str, Any]) -> _ViewJob | Mapping[str, Any]:
+        def job_for(view: ViewDirective) -> _ViewJob | Mapping[str, Any]:
             """Return a new job drawing `view`, or its current saved drawing."""
             at = view["line"]
             provider_sha256 = view_provider_hash(providers, view)
