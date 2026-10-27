@@ -7,7 +7,7 @@
     currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, icon, images,
     inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
-    proofSections, readingFolds, recorded, reduced, refresh, renderDiagramDialog, renderDoc, renderInspector,
+    proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
     renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI,
     showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = W;
   // ----- chrome -----------------------------------------------------------------------

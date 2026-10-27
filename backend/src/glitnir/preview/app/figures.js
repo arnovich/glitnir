@@ -2,8 +2,8 @@
 (() => {
   'use strict';
   const W = window.glitnirWorkbench;
-  const {$, API, HOST, LABEL, UI, claim, claims, esc, fetch, icon, leanOff, leanVersion, linkedPath, load,
-    post, projectMode, recorded, refresh} = W;
+  const {$, API, HOST, LABEL, UI, claim, esc, fetch, icon, leanOff, leanVersion, linkedPath, post,
+    projectMode, recorded, refresh} = W;
   // Defined by a later file; bound when it loads.
   const leanOf = (...a) => W.leanOf(...a);
   const lineLinkHTML = (...a) => W.lineLinkHTML(...a);

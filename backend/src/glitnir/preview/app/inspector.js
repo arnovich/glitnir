@@ -5,7 +5,7 @@
   const {$, API, UI, cellEntries, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
     currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, icon, inlineHTML,
     leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
-    useChipsHTML, when} = W;
+    useChipsHTML} = W;
   // Defined by a later file; bound when it loads.
   const render = (...a) => W.render(...a);
   // ----- inspector ------------------------------------------------------------------

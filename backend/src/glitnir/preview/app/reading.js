@@ -5,7 +5,7 @@
   const {$, DECLARATION, HOST, UI, checking, claim, decisionHTML, directiveNotes, esc, evidenceHTML, icon,
     inlineHTML, leanCellHTML, leanHTML, linkedPath, markdown, needsDecider, needsProvider, nonClaimsHTML,
     projectCardsHTML, projectClaimHTML, projectEvidence, refresh, showNotebookAt, sourceDirectivesHTML,
-    statusOf, summariesOf, title, toneOf, useHTML, viewHTML, when, withheldBannerHTML} = W;
+    statusOf, summariesOf, title, toneOf, useHTML, viewHTML, withheldBannerHTML} = W;
   // Defined by a later file; bound when it loads.
   const refutationHTML = (...a) => W.refutationHTML(...a);
   const render = (...a) => W.render(...a);

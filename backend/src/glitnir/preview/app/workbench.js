@@ -24,12 +24,10 @@
   const renderChrome = (...a) => W.renderChrome(...a);
   const renderConnection = (...a) => W.renderConnection(...a);
   const revealSection = (...a) => W.revealSection(...a);
-  const select = (...a) => W.select(...a);
   const sourceFoldHTML = (...a) => W.sourceFoldHTML(...a);
   const title = (...a) => W.title(...a);
   const trimmed = (...a) => W.trimmed(...a);
   const unevenQuotes = (...a) => W.unevenQuotes(...a);
-  const when = (...a) => W.when(...a);
   // VS Code uses the same renderer with a restricted, host-owned transport.
   const HOST = window.glitnirHost;
   const fetch = window.glitnirHost ? window.glitnirHost.fetch : window.fetch.bind(window);

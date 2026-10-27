@@ -48,6 +48,24 @@ test('the files share names only through the namespace', () => {
     }
   }
   assert.ok(published.size > 100, 'the namespace carries the shared names');
+  // The lists are exact: every shared name a file uses it takes or stubs, and it takes nothing it does not use.
+  // A file reaching a name it did not take would get the window's global instead (`fetch` past the editor host).
+  const strip = text => text.replace(/^\s*\/\/.*$/gm, '').replace(/^  const \{[\s\S]*?\} = W;/m, '')
+    .replace(/^  const [\w$]+ = \(\.\.\.a\) => W\.[\w$]+\(\.\.\.a\);$/gm, '').replace(/^  Object\.assign\(W, \{[\s\S]*?\}\);/m, '');
+  const uses = (text, item) => new RegExp(`(?<![\\w$.'"\`-])${item.replace(/\$/g, '\\$')}(?![\\w$'"\`-])`).test(text);
+  for (const [name, text] of sources) {
+    const taken = new Set([...names((text.match(/^  const \{([\s\S]*?)\} = W;/m) || [, ''])[1]),
+      ...[...text.matchAll(/^  const [\w$]+ = \(\.\.\.a\) => W\.([\w$]+)\(\.\.\.a\);/gm)].map(match => match[1])]);
+    const body = strip(text);
+    const problems = [];
+    for (const [item, owner] of published) {
+      if (owner === name) continue;
+      const used = uses(body, item);
+      if (used && !taken.has(item)) problems.push(`${name} uses ${item} without taking it from the namespace`);
+      if (!used && taken.has(item)) problems.push(`${name} takes ${item} but never uses it`);
+    }
+    assert.deepEqual(problems, []);
+  }
 });
 
 test('the webview rewrites every local tag and inserts the host scripts first', () => {
