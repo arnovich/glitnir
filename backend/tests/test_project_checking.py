@@ -2221,6 +2221,51 @@ def _staged_examples(tmp_path, monkeypatch, extra=(), statements=(), uses=None):
     return result, compiled, entries, calls
 
 
+def test_an_unreadable_file_with_only_unclaimed_examples_reports_no_non_claims(
+    tmp_path, monkeypatch
+):
+    """Examples claiming nothing are reported only when the lexer read the file.
+
+    The reader may list an example that claims nothing; the result's
+    `non_claims` are what the example check kept, which is nothing when the
+    lexer could not read the file exactly.
+    """
+    import hashlib
+    import json
+
+    from glitnir.lean import project_checking as checking
+    from glitnir.lean.lexing import code_tokens
+
+    text = 'def s := "{"\nexample : Nat := 1\n'
+    assert code_tokens(text) is None
+    keyword = text.index("example")
+    _fake_check_stages(tmp_path, monkeypatch)
+    fake = checking.run_observer
+
+    def run(toolchain, arguments, **options):
+        if "--run" in arguments and Path(arguments[3]).name == "ProjectRead.lean":
+            fake(toolchain, arguments, **options)
+            example = {
+                "start": keyword,
+                "end": len(text) - 1,
+                "keyword": [keyword, keyword + len("example")],
+            }
+            Path(arguments[-1]).write_text(
+                json.dumps({"declarations": [], "examples": [example]})
+            )
+            return ""
+        return fake(toolchain, arguments, **options)
+
+    monkeypatch.setattr(checking, "run_observer", run)
+    source = tmp_path / "A.lean"
+    source.write_text(text)
+    result = checking.check_project(
+        source, expected_sha256=hashlib.sha256(text.encode()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert result["non_claims"] == []
+
+
 def test_a_check_compiles_examples_as_named_theorems(tmp_path, monkeypatch):
     """The reader names each example; only the compiled copy is rewritten.
 
