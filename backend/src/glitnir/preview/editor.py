@@ -28,7 +28,8 @@ def renderer_directory() -> Path:
     """Return the directory holding the packaged renderer (`app/`).
 
     This is the supported way for a gallery to locate the renderer's assets
-    (`app.js`, the stylesheets, `katex/`); do not reach for private names.
+    (`index.html` and the scripts it lists, the stylesheets, `katex/`); do not
+    reach for private names.
     """
     return _APP
 
