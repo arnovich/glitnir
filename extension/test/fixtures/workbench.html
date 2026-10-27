@@ -1,0 +1,692 @@
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">Demo notebook</h1>
+    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"><li class="outline-level-2"><button type="button" data-act="scroll" data-id="notebook-heading-1-0">Facts</button></li><li><button type="button" data-act="goto" data-id="Demo.k_pos" aria-current="true" title="Demo.k_pos"><span class="o-claim">k_<wbr>pos</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li><li><button type="button" data-act="goto" data-id="Demo.floor" aria-current="false" title="Demo.floor"><span class="o-claim">floor</span><span class="dot" data-tone="amber" title="Contains sorry · out of date"></span></button></li></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="Demo.k_pos"><span class="dot" data-tone="green"></span> k_pos</button><button type="button" data-act="goto" data-id="Demo.floor"><span class="dot" data-tone="amber"></span> floor</button></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">1 saved result is out of date. Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></div><div class="cell source-context"><pre><span class="kw">import</span> Mathlib</pre><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></div></div><details class="proof-section" data-fold-key="section:[&quot;Facts&quot;]"><summary class="cell cellwrap" data-index="1" data-fragment="0"><h2 id="notebook-heading-1-0" data-heading="Facts" data-section-fold="true" class="section-title">Facts</h2><span class="section-summary">Summary of the facts.</span><div class="section-tools"><span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="2" data-end="6" aria-label="Show lines 2–6 in Source" title="Show in Source">L2–6</a></span></div><span class="section-statuses" aria-label="Claim observations in this section, including subsections"><span class="pill" data-tone="green">1 Kernel checked</span> <span class="pill" data-tone="amber">1 Contains sorry</span> <span class="pill" data-tone="amber">1 Out of date</span></span></summary><div class="proof-section-body"><div class="cellwrap" data-index="2" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L7" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="7" data-end="10" aria-label="Show lines 7–10 in Source" title="Show in Source">L7–10</a></span></div><div class="cell source-context"><pre><span class="kw">namespace</span> Demo</pre><span class="source-controls"><a class="lines source-link" href="#source-L7" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="7" data-end="7" aria-label="Show lines 7–7 in Source" title="Show in Source">L7–7</a></span></div><section class="cell reading-card card-definition definition compact-definition">
+      <h3 class="card-header def-head "><span class="def-kind">Definition</span> <dfn><code>k</code></dfn> <span class="card-signature"><code>: ℝ</code></span>  <span class="source-controls"><a class="lines source-link" href="#source-L9" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="9" data-end="10" aria-label="Show lines 9–10 in Source" title="Show in Source">L9–10</a></span><span class="card-description def-body">The rate.</span></h3>
+      <div class="card-body"><p class="def-namespace">Namespace <code>Demo</code></p>
+      
+      
+      <div class="formal-expression"><span class="formal-line math typeset" data-tex="\frac{1}{2}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mn>1</mn><mn>2</mn></mfrac></mrow><annotation encoding="application/x-tex">\frac{1}{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1.1901em; vertical-align: -0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.8451em;"><span class="" style="top: -2.655em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">2</span></span></span></span><span class="" style="top: -3.23em;"><span class="pstrut" style="height: 3em;"></span><span class="frac-line" style="border-bottom-width: 0.04em;"></span></span><span class="" style="top: -3.394em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.345em;"><span class=""></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+      </div>
+      <div class="card-source"><details class="def-lean" data-fold-key="definition:/-- The rate. -/
+noncomputable def k : ℝ := 1 / 2"><summary class="small muted">Lean source · 2 lines</summary><pre><span class="cm">/-- The rate. -/</span>
+<span class="kw">noncomputable</span> <span class="kw">def</span> k : ℝ := 1 / 2</pre></details><details class="def-lean definition-details" data-fold-key="definition-details:/-- The rate. -/
+noncomputable def k : ℝ := 1 / 2"><summary>Details</summary><div class="formal-field"><div class="field-label">Declaration context</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="\text{noncomputable}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>noncomputable</mtext></mrow><annotation encoding="application/x-tex">\text{noncomputable}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.8889em; vertical-align: -0.1944em;"></span><span class="mord text"><span class="mord">noncomputable</span></span></span></span></span></span></div></div></details></div>
+    </section></div><div class="cellwrap" data-index="3" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></div><section class="cell project-claim" id="cell-Demo.k_pos" data-claim="Demo.k_pos">
+      <article class="claim card-proposition" data-tone="green" data-selected="true" aria-label="Theorem k_pos">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>k_pos</code></dfn>  <span class="pill" data-tone="green">Kernel checked</span> <span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></h3>
+        <p class="def-namespace">Namespace <code>Demo</code></p>
+        <div class="doc-line"><p>The rate is <span class="math typeset" data-tex="k > 0"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">k &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.7335em; vertical-align: -0.0391em;"></span><span style="margin-right: 0.0315em;" class="mord mathnormal">k</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">0</span></span></span></span></span>, so it is damped.</p></div>
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="0\;<\;\text{k}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn>  <mo>&lt;</mo>  <mtext>k</mtext></mrow><annotation encoding="application/x-tex">0\;&lt;\;\text{k}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6835em; vertical-align: -0.0391em;"></span><span class="mord">0</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord text"><span class="mord">k</span></span></span></span></span></span></div></div></div>
+        
+        
+        <p class="small muted claim-axioms">Assumptions: propext, Classical.choice</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:Demo.k_pos:/-- The rate is $k > 0$, so it is damped. -/
+theorem k_pos : 0 < k := by
+  unfold k
+  norm_num"><summary class="small muted">Lean source &amp; proof · 4 lines</summary><pre><span class="cm">/-- The rate is $k &gt; 0$, so it is damped. -/</span>
+<span class="kw">theorem</span> k_pos : 0 &lt; k := <span class="kw">by</span>
+  unfold k
+  norm_num</pre></details></div>
+        
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="Demo.k_pos" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–14 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–14 only; later claims are not rechecked</span></div>
+      </article></section></div><div class="cellwrap" data-index="4" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L15" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="15" data-end="17" aria-label="Show lines 15–17 in Source" title="Show in Source">L15–17</a></span></div><section class="cell project-claim" id="cell-Demo.floor" data-claim="Demo.floor">
+      <article class="claim card-proposition" data-tone="amber" data-selected="false" aria-label="Theorem floor">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>floor</code></dfn>  <span class="pill" data-tone="amber">Contains sorry</span><span class="pill" data-tone="amber">Out of date</span> <span class="source-controls"><a class="lines source-link" href="#source-L15" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="15" data-end="17" aria-label="Show lines 15–17 in Source" title="Show in Source">L15–17</a></span></h3>
+        <p class="def-namespace">Namespace <code>Demo</code></p>
+        <div class="doc-line"><p>Unproved.</p></div>
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="(\text{x}\;:\;\mathbb{R} )\;:\;0\;\le \;\text{x}\;\text{\textasciicircum{}}\;2"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mtext>x</mtext>  <mo>:</mo>  <mi mathvariant="double-struck">R</mi><mo stretchy="false">)</mo>  <mo>:</mo>  <mn>0</mn>  <mo>≤</mo>  <mtext>x</mtext>  <mrow><mtext>^</mtext><mrow></mrow></mrow>  <mn>2</mn></mrow><annotation encoding="application/x-tex">(\text{x}\;:\;\mathbb{R} )\;:\;0\;\le \;\text{x}\;\text{\textasciicircum{}}\;2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">(</span><span class="mord text"><span class="mord">x</span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathbb">R</span><span class="mclose">)</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.7804em; vertical-align: -0.136em;"></span><span class="mord">0</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord text"><span class="mord">x</span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mord text"><span class="mord">^</span><span class="mord"></span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mord">2</span></span></span></span></span></div></div></div>
+        
+        <p class="card-notice claim-notice">Unfinished: the statement’s proof contains a placeholder.</p>
+        <p class="small muted claim-axioms">Assumptions: sorryAx</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:Demo.floor:/-- Unproved. -/
+theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
+  sorry"><summary class="small muted">Lean source &amp; proof · 3 lines</summary><pre><span class="cm">/-- Unproved. -/</span>
+<span class="kw">theorem</span> floor (x : ℝ) : 0 ≤ x ^ 2 := <span class="kw">by</span>
+  sorry</pre></details></div>
+        <div class="note-line" data-tone="amber"><svg class="ic"><use href="#i-branch"></use></svg><span>Out of date: the saved source above this claim or its environment changed since it was checked. Check the saved file to update it.</span></div>
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="Demo.floor" data-line="17" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–17 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–17 only; later claims are not rechecked</span></div>
+      </article></section></div><div class="cellwrap" data-index="5" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L18" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="18" data-end="18" aria-label="Show lines 18–18 in Source" title="Show in Source">L18–18</a></span></div><div class="cell source-context"><pre><span class="kw">end</span> Demo</pre><span class="source-controls"><a class="lines source-link" href="#source-L18" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="18" data-end="18" aria-label="Show lines 18–18 in Source" title="Show in Source">L18–18</a></span></div></div></div></details></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">k_pos</b><span class="small muted" id="insp-sub">theorem · kernel checked</span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><div class="focus"><div class="row"><span class="pill" data-tone="green">Kernel checked</span></div><div class="eq"><p>The rate is <span class="math typeset" data-tex="k > 0"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">k &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.7335em; vertical-align: -0.0391em;"></span><span style="margin-right: 0.0315em;" class="mord mathnormal">k</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">0</span></span></span></span></span>, so it is damped.</p></div>
+        <dl><dt>name</dt><dd>Demo.k_pos</dd><dt>lines</dt><dd><span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></dd><dt>result</dt><dd>current</dd><dt>uses</dt><dd class="insp-uses"><span class="muted">not recorded by this check</span></dd></dl></div>
+      
+      <div class="insp-section insp-check"><button type="button" class="secondary" data-act="check-through" data-id="Demo.k_pos" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–14 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through this claim</button><span class="small muted"><kbd>r</kbd> · compiles and kernel-replays lines 1–14 of the saved file; later claims are not rechecked. <b>Check saved file</b> checks all of it.</span></div>
+      <div class="insp-section"><h5>Assumptions from the last check</h5><p class="small muted axiom-module">Init.Core</p><div class="axioms"><code>propext</code></div><p class="small muted axiom-module">Init.Prelude</p><div class="axioms"><code>Classical.choice</code></div></div>
+      <div class="insp-section goal-section"><h5>Proof goals</h5><button type="button" class="secondary" data-act="goal" data-id="Demo.k_pos">Inspect proof goals</button><p class="small muted goal-caption">Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.</p></div></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+<script src="/katex/katex.min.js"></script>
+<script src="/export.js"></script>
+<script src="/circuits.js"></script>
+<script src="/cards.js"></script>
+<!-- host scripts -->
+<script src="/app.js"></script>
+
+
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="false">Document</button>
+        <button type="button" data-mode="source" aria-pressed="true">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">Demo notebook</h1>
+    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"><li class="outline-level-2"><button type="button" data-act="scroll" data-id="notebook-heading-1-0">Facts</button></li><li><button type="button" data-act="goto" data-id="Demo.k_pos" aria-current="true" title="Demo.k_pos"><span class="o-claim">k_<wbr>pos</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li><li><button type="button" data-act="goto" data-id="Demo.floor" aria-current="false" title="Demo.floor"><span class="o-claim">floor</span><span class="dot" data-tone="amber" title="Contains sorry · out of date"></span></button></li></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="Demo.k_pos"><span class="dot" data-tone="green"></span> k_pos</button><button type="button" data-act="goto" data-id="Demo.floor"><span class="dot" data-tone="amber"></span> floor</button></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">1 saved result is out of date. Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc" hidden=""><div class="cellwrap" data-index="0" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></div><div class="cell source-context"><pre><span class="kw">import</span> Mathlib</pre><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></div></div><details class="proof-section" data-fold-key="section:[&quot;Facts&quot;]"><summary class="cell cellwrap" data-index="1" data-fragment="0"><h2 id="notebook-heading-1-0" data-heading="Facts" data-section-fold="true" class="section-title">Facts</h2><span class="section-summary">Summary of the facts.</span><div class="section-tools"><span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="2" data-end="6" aria-label="Show lines 2–6 in Source" title="Show in Source">L2–6</a></span></div><span class="section-statuses" aria-label="Claim observations in this section, including subsections"><span class="pill" data-tone="green">1 Kernel checked</span> <span class="pill" data-tone="amber">1 Contains sorry</span> <span class="pill" data-tone="amber">1 Out of date</span></span></summary><div class="proof-section-body"><div class="cellwrap" data-index="2" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L7" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="7" data-end="10" aria-label="Show lines 7–10 in Source" title="Show in Source">L7–10</a></span></div><div class="cell source-context"><pre><span class="kw">namespace</span> Demo</pre><span class="source-controls"><a class="lines source-link" href="#source-L7" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="7" data-end="7" aria-label="Show lines 7–7 in Source" title="Show in Source">L7–7</a></span></div><section class="cell reading-card card-definition definition compact-definition">
+      <h3 class="card-header def-head "><span class="def-kind">Definition</span> <dfn><code>k</code></dfn> <span class="card-signature"><code>: ℝ</code></span>  <span class="source-controls"><a class="lines source-link" href="#source-L9" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="9" data-end="10" aria-label="Show lines 9–10 in Source" title="Show in Source">L9–10</a></span><span class="card-description def-body">The rate.</span></h3>
+      <div class="card-body"><p class="def-namespace">Namespace <code>Demo</code></p>
+      
+      
+      <div class="formal-expression"><span class="formal-line math typeset" data-tex="\frac{1}{2}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mn>1</mn><mn>2</mn></mfrac></mrow><annotation encoding="application/x-tex">\frac{1}{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1.1901em; vertical-align: -0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.8451em;"><span class="" style="top: -2.655em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">2</span></span></span></span><span class="" style="top: -3.23em;"><span class="pstrut" style="height: 3em;"></span><span class="frac-line" style="border-bottom-width: 0.04em;"></span></span><span class="" style="top: -3.394em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.345em;"><span class=""></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+      </div>
+      <div class="card-source"><details class="def-lean" data-fold-key="definition:/-- The rate. -/
+noncomputable def k : ℝ := 1 / 2"><summary class="small muted">Lean source · 2 lines</summary><pre><span class="cm">/-- The rate. -/</span>
+<span class="kw">noncomputable</span> <span class="kw">def</span> k : ℝ := 1 / 2</pre></details><details class="def-lean definition-details" data-fold-key="definition-details:/-- The rate. -/
+noncomputable def k : ℝ := 1 / 2"><summary>Details</summary><div class="formal-field"><div class="field-label">Declaration context</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="\text{noncomputable}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>noncomputable</mtext></mrow><annotation encoding="application/x-tex">\text{noncomputable}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.8889em; vertical-align: -0.1944em;"></span><span class="mord text"><span class="mord">noncomputable</span></span></span></span></span></span></div></div></details></div>
+    </section></div><div class="cellwrap" data-index="3" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></div><section class="cell project-claim" id="cell-Demo.k_pos" data-claim="Demo.k_pos">
+      <article class="claim card-proposition" data-tone="green" data-selected="true" aria-label="Theorem k_pos">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>k_pos</code></dfn>  <span class="pill" data-tone="green">Kernel checked</span> <span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></h3>
+        <p class="def-namespace">Namespace <code>Demo</code></p>
+        <div class="doc-line"><p>The rate is <span class="math typeset" data-tex="k > 0"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">k &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.7335em; vertical-align: -0.0391em;"></span><span style="margin-right: 0.0315em;" class="mord mathnormal">k</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">0</span></span></span></span></span>, so it is damped.</p></div>
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="0\;<\;\text{k}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn>  <mo>&lt;</mo>  <mtext>k</mtext></mrow><annotation encoding="application/x-tex">0\;&lt;\;\text{k}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6835em; vertical-align: -0.0391em;"></span><span class="mord">0</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord text"><span class="mord">k</span></span></span></span></span></span></div></div></div>
+        
+        
+        <p class="small muted claim-axioms">Assumptions: propext, Classical.choice</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:Demo.k_pos:/-- The rate is $k > 0$, so it is damped. -/
+theorem k_pos : 0 < k := by
+  unfold k
+  norm_num"><summary class="small muted">Lean source &amp; proof · 4 lines</summary><pre><span class="cm">/-- The rate is $k &gt; 0$, so it is damped. -/</span>
+<span class="kw">theorem</span> k_pos : 0 &lt; k := <span class="kw">by</span>
+  unfold k
+  norm_num</pre></details></div>
+        
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="Demo.k_pos" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–14 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–14 only; later claims are not rechecked</span></div>
+      </article></section></div><div class="cellwrap" data-index="4" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L15" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="15" data-end="17" aria-label="Show lines 15–17 in Source" title="Show in Source">L15–17</a></span></div><section class="cell project-claim" id="cell-Demo.floor" data-claim="Demo.floor">
+      <article class="claim card-proposition" data-tone="amber" data-selected="false" aria-label="Theorem floor">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>floor</code></dfn>  <span class="pill" data-tone="amber">Contains sorry</span><span class="pill" data-tone="amber">Out of date</span> <span class="source-controls"><a class="lines source-link" href="#source-L15" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="15" data-end="17" aria-label="Show lines 15–17 in Source" title="Show in Source">L15–17</a></span></h3>
+        <p class="def-namespace">Namespace <code>Demo</code></p>
+        <div class="doc-line"><p>Unproved.</p></div>
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="(\text{x}\;:\;\mathbb{R} )\;:\;0\;\le \;\text{x}\;\text{\textasciicircum{}}\;2"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mtext>x</mtext>  <mo>:</mo>  <mi mathvariant="double-struck">R</mi><mo stretchy="false">)</mo>  <mo>:</mo>  <mn>0</mn>  <mo>≤</mo>  <mtext>x</mtext>  <mrow><mtext>^</mtext><mrow></mrow></mrow>  <mn>2</mn></mrow><annotation encoding="application/x-tex">(\text{x}\;:\;\mathbb{R} )\;:\;0\;\le \;\text{x}\;\text{\textasciicircum{}}\;2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">(</span><span class="mord text"><span class="mord">x</span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathbb">R</span><span class="mclose">)</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.7804em; vertical-align: -0.136em;"></span><span class="mord">0</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord text"><span class="mord">x</span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mord text"><span class="mord">^</span><span class="mord"></span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mord">2</span></span></span></span></span></div></div></div>
+        
+        <p class="card-notice claim-notice">Unfinished: the statement’s proof contains a placeholder.</p>
+        <p class="small muted claim-axioms">Assumptions: sorryAx</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:Demo.floor:/-- Unproved. -/
+theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
+  sorry"><summary class="small muted">Lean source &amp; proof · 3 lines</summary><pre><span class="cm">/-- Unproved. -/</span>
+<span class="kw">theorem</span> floor (x : ℝ) : 0 ≤ x ^ 2 := <span class="kw">by</span>
+  sorry</pre></details></div>
+        <div class="note-line" data-tone="amber"><svg class="ic"><use href="#i-branch"></use></svg><span>Out of date: the saved source above this claim or its environment changed since it was checked. Check the saved file to update it.</span></div>
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="Demo.floor" data-line="17" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–17 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–17 only; later claims are not rechecked</span></div>
+      </article></section></div><div class="cellwrap" data-index="5" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L18" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="18" data-end="18" aria-label="Show lines 18–18 in Source" title="Show in Source">L18–18</a></span></div><div class="cell source-context"><pre><span class="kw">end</span> Demo</pre><span class="source-controls"><a class="lines source-link" href="#source-L18" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="18" data-end="18" aria-label="Show lines 18–18 in Source" title="Show in Source">L18–18</a></span></div></div></div></details></div>
+        <div id="source"><p><button type="button" class="secondary" data-act="document-return" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">← Back to Document</button></p><p class="source-note">Demo.lean as it is on disk · source preview; the gutter marks saved results · use Check saved file to check it · click a line number to show its place in Document.</p>
+      <div class="source"><table><tbody><tr id="source-L1" tabindex="-1" data-source-line="1" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="1" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 1 in Document">1</a></td><td><span class="kw">import</span> Mathlib</td></tr><tr id="source-L2" tabindex="-1" data-source-line="2" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="2" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 2 in Document">2</a></td><td>/-!</td></tr><tr id="source-L3" tabindex="-1" data-source-line="3" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="3" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 3 in Document">3</a></td><td># Demo notebook</td></tr><tr id="source-L4" tabindex="-1" data-source-line="4" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="4" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 4 in Document">4</a></td><td>## Facts {fold}</td></tr><tr id="source-L5" tabindex="-1" data-source-line="5" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="5" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 5 in Document">5</a></td><td>Summary of the facts.</td></tr><tr id="source-L6" tabindex="-1" data-source-line="6" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="6" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 6 in Document">6</a></td><td>-/</td></tr><tr id="source-L7" tabindex="-1" data-source-line="7" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="7" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 7 in Document">7</a></td><td><span class="kw">namespace</span> Demo</td></tr><tr id="source-L8" tabindex="-1" data-source-line="8" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="8" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 8 in Document">8</a></td><td> </td></tr><tr id="source-L9" tabindex="-1" data-source-line="9" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="9" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 9 in Document">9</a></td><td><span class="cm">/-- The rate. -/</span></td></tr><tr id="source-L10" tabindex="-1" data-source-line="10" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="10" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 10 in Document">10</a></td><td><span class="kw">noncomputable</span> <span class="kw">def</span> k : ℝ := 1 / 2</td></tr><tr id="source-L11" tabindex="-1" data-source-line="11" data-line-target="false" data-claim="Demo.k_pos" data-tone="green" data-selected="true"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="11" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 11 in Document">11</a></td><td><span class="cm">/-- The rate is $k &gt; 0$, so it is damped. -/</span></td></tr><tr id="source-L12" tabindex="-1" data-source-line="12" data-line-target="false" data-claim="Demo.k_pos" data-tone="green" data-selected="true"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="12" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 12 in Document">12</a></td><td><span class="kw">theorem</span> k_pos : 0 &lt; k := <span class="kw">by</span></td></tr><tr id="source-L13" tabindex="-1" data-source-line="13" data-line-target="false" data-claim="Demo.k_pos" data-tone="green" data-selected="true"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="13" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 13 in Document">13</a></td><td>  unfold k</td></tr><tr id="source-L14" tabindex="-1" data-source-line="14" data-line-target="false" data-claim="Demo.k_pos" data-tone="green" data-selected="true"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 14 in Document">14</a></td><td>  norm_num</td></tr><tr id="source-L15" tabindex="-1" data-source-line="15" data-line-target="false" data-claim="Demo.floor" data-tone="amber" data-selected="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="15" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 15 in Document">15</a></td><td><span class="cm">/-- Unproved. -/</span></td></tr><tr id="source-L16" tabindex="-1" data-source-line="16" data-line-target="false" data-claim="Demo.floor" data-tone="amber" data-selected="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="16" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 16 in Document">16</a></td><td><span class="kw">theorem</span> floor (x : ℝ) : 0 ≤ x ^ 2 := <span class="kw">by</span></td></tr><tr id="source-L17" tabindex="-1" data-source-line="17" data-line-target="false" data-claim="Demo.floor" data-tone="amber" data-selected="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="17" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 17 in Document">17</a></td><td>  sorry</td></tr><tr id="source-L18" tabindex="-1" data-source-line="18" data-line-target="false"><td class="gut"></td><td class="ln"><a href="#doc" data-act="document-line" data-line="18" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" aria-label="Show line 18 in Document">18</a></td><td><span class="kw">end</span> Demo</td></tr></tbody></table></div></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">k_pos</b><span class="small muted" id="insp-sub">theorem · kernel checked</span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><div class="focus"><div class="row"><span class="pill" data-tone="green">Kernel checked</span></div><div class="eq"><p>The rate is <span class="math typeset" data-tex="k > 0"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">k &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.7335em; vertical-align: -0.0391em;"></span><span style="margin-right: 0.0315em;" class="mord mathnormal">k</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">0</span></span></span></span></span>, so it is damped.</p></div>
+        <dl><dt>name</dt><dd>Demo.k_pos</dd><dt>lines</dt><dd><span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></dd><dt>result</dt><dd>current</dd><dt>uses</dt><dd class="insp-uses"><span class="muted">not recorded by this check</span></dd></dl></div>
+      
+      <div class="insp-section insp-check"><button type="button" class="secondary" data-act="check-through" data-id="Demo.k_pos" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–14 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through this claim</button><span class="small muted"><kbd>r</kbd> · compiles and kernel-replays lines 1–14 of the saved file; later claims are not rechecked. <b>Check saved file</b> checks all of it.</span></div>
+      <div class="insp-section"><h5>Assumptions from the last check</h5><p class="small muted axiom-module">Init.Core</p><div class="axioms"><code>propext</code></div><p class="small muted axiom-module">Init.Prelude</p><div class="axioms"><code>Classical.choice</code></div></div>
+      <div class="insp-section goal-section"><h5>Proof goals</h5><button type="button" class="secondary" data-act="goal" data-id="Demo.k_pos">Inspect proof goals</button><p class="small muted goal-caption">Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.</p></div></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+<script src="/katex/katex.min.js"></script>
+<script src="/export.js"></script>
+<script src="/circuits.js"></script>
+<script src="/cards.js"></script>
+<!-- host scripts -->
+<script src="/app.js"></script>
+
+
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">Demo notebook</h1>
+    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"><li class="outline-level-2"><button type="button" data-act="scroll" data-id="notebook-heading-1-0">Facts</button></li><li><button type="button" data-act="goto" data-id="Demo.k_pos" aria-current="true" title="Demo.k_pos"><span class="o-claim">k_<wbr>pos</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li><li><button type="button" data-act="goto" data-id="Demo.floor" aria-current="false" title="Demo.floor"><span class="o-claim">floor</span><span class="dot" data-tone="amber" title="Contains sorry"></span></button></li></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="Demo.k_pos"><span class="dot" data-tone="green"></span> k_pos</button><button type="button" data-act="goto" data-id="Demo.floor"><span class="dot" data-tone="amber"></span> floor</button></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></div><div class="cell source-context"><pre><span class="kw">import</span> Mathlib</pre><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></div></div><details class="proof-section" data-fold-key="section:[&quot;Facts&quot;]"><summary class="cell cellwrap" data-index="1" data-fragment="0"><h2 id="notebook-heading-1-0" data-heading="Facts" data-section-fold="true" class="section-title">Facts</h2><span class="section-summary">Summary of the facts.</span><div class="section-tools"><span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="2" data-end="6" aria-label="Show lines 2–6 in Source" title="Show in Source">L2–6</a></span></div><span class="section-statuses" aria-label="Claim observations in this section, including subsections"><span class="pill" data-tone="green">1 Kernel checked</span> <span class="pill" data-tone="amber">1 Contains sorry</span></span></summary><div class="proof-section-body"><div class="cellwrap" data-index="2" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L7" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="7" data-end="10" aria-label="Show lines 7–10 in Source" title="Show in Source">L7–10</a></span></div><div class="cell source-context"><pre><span class="kw">namespace</span> Demo</pre><span class="source-controls"><a class="lines source-link" href="#source-L7" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="7" data-end="7" aria-label="Show lines 7–7 in Source" title="Show in Source">L7–7</a></span></div><section class="cell reading-card card-definition definition compact-definition">
+      <h3 class="card-header def-head "><span class="def-kind">Definition</span> <dfn><code>k</code></dfn> <span class="card-signature"><code>: ℝ</code></span>  <span class="source-controls"><a class="lines source-link" href="#source-L9" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="9" data-end="10" aria-label="Show lines 9–10 in Source" title="Show in Source">L9–10</a></span><span class="card-description def-body">The rate.</span></h3>
+      <div class="card-body"><p class="def-namespace">Namespace <code>Demo</code></p>
+      
+      
+      <div class="formal-expression"><span class="formal-line math typeset" data-tex="\frac{1}{2}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mn>1</mn><mn>2</mn></mfrac></mrow><annotation encoding="application/x-tex">\frac{1}{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1.1901em; vertical-align: -0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.8451em;"><span class="" style="top: -2.655em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">2</span></span></span></span><span class="" style="top: -3.23em;"><span class="pstrut" style="height: 3em;"></span><span class="frac-line" style="border-bottom-width: 0.04em;"></span></span><span class="" style="top: -3.394em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.345em;"><span class=""></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+      </div>
+      <div class="card-source"><details class="def-lean" data-fold-key="definition:/-- The rate. -/
+noncomputable def k : ℝ := 1 / 2"><summary class="small muted">Lean source · 2 lines</summary><pre><span class="cm">/-- The rate. -/</span>
+<span class="kw">noncomputable</span> <span class="kw">def</span> k : ℝ := 1 / 2</pre></details><details class="def-lean definition-details" data-fold-key="definition-details:/-- The rate. -/
+noncomputable def k : ℝ := 1 / 2"><summary>Details</summary><div class="formal-field"><div class="field-label">Declaration context</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="\text{noncomputable}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>noncomputable</mtext></mrow><annotation encoding="application/x-tex">\text{noncomputable}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.8889em; vertical-align: -0.1944em;"></span><span class="mord text"><span class="mord">noncomputable</span></span></span></span></span></span></div></div></details></div>
+    </section></div><div class="cellwrap" data-index="3" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></div><section class="cell project-claim" id="cell-Demo.k_pos" data-claim="Demo.k_pos">
+      <article class="claim card-proposition" data-tone="green" data-selected="true" aria-label="Theorem k_pos">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>k_pos</code></dfn>  <span class="pill" data-tone="green">Kernel checked</span> <span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></h3>
+        <p class="def-namespace">Namespace <code>Demo</code></p>
+        <div class="doc-line"><p>The rate is <span class="math typeset" data-tex="k > 0"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">k &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.7335em; vertical-align: -0.0391em;"></span><span style="margin-right: 0.0315em;" class="mord mathnormal">k</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">0</span></span></span></span></span>, so it is damped.</p></div>
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="0\;<\;\text{k}"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn>  <mo>&lt;</mo>  <mtext>k</mtext></mrow><annotation encoding="application/x-tex">0\;&lt;\;\text{k}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6835em; vertical-align: -0.0391em;"></span><span class="mord">0</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord text"><span class="mord">k</span></span></span></span></span></span></div></div></div>
+        
+        
+        <p class="small muted claim-axioms">Assumptions: propext, Classical.choice</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:Demo.k_pos:/-- The rate is $k > 0$, so it is damped. -/
+theorem k_pos : 0 < k := by
+  unfold k
+  norm_num"><summary class="small muted">Lean source &amp; proof · 4 lines</summary><pre><span class="cm">/-- The rate is $k &gt; 0$, so it is damped. -/</span>
+<span class="kw">theorem</span> k_pos : 0 &lt; k := <span class="kw">by</span>
+  unfold k
+  norm_num</pre></details></div>
+        
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="Demo.k_pos" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–14 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–14 only; later claims are not rechecked</span></div>
+      </article></section></div><div class="cellwrap" data-index="4" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L15" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="15" data-end="17" aria-label="Show lines 15–17 in Source" title="Show in Source">L15–17</a></span></div><section class="cell project-claim" id="cell-Demo.floor" data-claim="Demo.floor">
+      <article class="claim card-proposition" data-tone="amber" data-selected="false" aria-label="Theorem floor">
+        <h3 class="card-header def-head claim-head"><span class="def-kind">Theorem</span> <dfn><code>floor</code></dfn>  <span class="pill" data-tone="amber">Contains sorry</span> <span class="source-controls"><a class="lines source-link" href="#source-L15" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="15" data-end="17" aria-label="Show lines 15–17 in Source" title="Show in Source">L15–17</a></span></h3>
+        <p class="def-namespace">Namespace <code>Demo</code></p>
+        <div class="doc-line"><p>Unproved.</p></div>
+        <div class="claim-statement"><div class="formal-field"><div class="field-label">Statement</div><div class="formal-expression"><span class="formal-line math typeset" data-tex="(\text{x}\;:\;\mathbb{R} )\;:\;0\;\le \;\text{x}\;\text{\textasciicircum{}}\;2"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mtext>x</mtext>  <mo>:</mo>  <mi mathvariant="double-struck">R</mi><mo stretchy="false">)</mo>  <mo>:</mo>  <mn>0</mn>  <mo>≤</mo>  <mtext>x</mtext>  <mrow><mtext>^</mtext><mrow></mrow></mrow>  <mn>2</mn></mrow><annotation encoding="application/x-tex">(\text{x}\;:\;\mathbb{R} )\;:\;0\;\le \;\text{x}\;\text{\textasciicircum{}}\;2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">(</span><span class="mord text"><span class="mord">x</span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathbb">R</span><span class="mclose">)</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.7804em; vertical-align: -0.136em;"></span><span class="mord">0</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord text"><span class="mord">x</span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mord text"><span class="mord">^</span><span class="mord"></span></span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mord">2</span></span></span></span></span></div></div></div>
+        
+        <p class="card-notice claim-notice">Unfinished: the statement’s proof contains a placeholder.</p>
+        <p class="small muted claim-axioms">Assumptions: sorryAx</p>
+        <div class="card-source"><details class="def-lean" data-fold-key="claim:Demo.floor:/-- Unproved. -/
+theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
+  sorry"><summary class="small muted">Lean source &amp; proof · 3 lines</summary><pre><span class="cm">/-- Unproved. -/</span>
+<span class="kw">theorem</span> floor (x : ℝ) : 0 ≤ x ^ 2 := <span class="kw">by</span>
+  sorry</pre></details></div>
+        
+        <div class="claim-actions"><button type="button" class="secondary" data-act="check-through" data-id="Demo.floor" data-line="17" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–17 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through here</button><span class="small muted">Lines 1–17 only; later claims are not rechecked</span></div>
+      </article></section></div><div class="cellwrap" data-index="5" data-fragment="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L18" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="18" data-end="18" aria-label="Show lines 18–18 in Source" title="Show in Source">L18–18</a></span></div><div class="cell source-context"><pre><span class="kw">end</span> Demo</pre><span class="source-controls"><a class="lines source-link" href="#source-L18" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="18" data-end="18" aria-label="Show lines 18–18 in Source" title="Show in Source">L18–18</a></span></div></div></div></details></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">k_pos</b><span class="small muted" id="insp-sub">theorem · kernel checked</span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><div class="focus"><div class="row"><span class="pill" data-tone="green">Kernel checked</span></div><div class="eq"><p>The rate is <span class="math typeset" data-tex="k > 0"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">k &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.7335em; vertical-align: -0.0391em;"></span><span style="margin-right: 0.0315em;" class="mord mathnormal">k</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">0</span></span></span></span></span>, so it is damped.</p></div>
+        <dl><dt>name</dt><dd>Demo.k_pos</dd><dt>lines</dt><dd><span class="source-controls"><a class="lines source-link" href="#source-L11" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="11" data-end="14" aria-label="Show lines 11–14 in Source" title="Show in Source">L11–14</a></span></dd><dt>result</dt><dd>current</dd><dt>uses</dt><dd class="insp-uses"><span class="muted">not recorded by this check</span></dd></dl></div>
+      
+      <div class="insp-section insp-check"><button type="button" class="secondary" data-act="check-through" data-id="Demo.k_pos" data-line="14" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" title="Compile and kernel-replay lines 1–14 of the saved file"><svg class="ic"><use href="#i-replay"></use></svg>Check through this claim</button><span class="small muted"><kbd>r</kbd> · compiles and kernel-replays lines 1–14 of the saved file; later claims are not rechecked. <b>Check saved file</b> checks all of it.</span></div>
+      <div class="insp-section"><h5>Assumptions from the last check</h5><p class="small muted axiom-module">Init.Core</p><div class="axioms"><code>propext</code></div><p class="small muted axiom-module">Init.Prelude</p><div class="axioms"><code>Classical.choice</code></div></div>
+      <div class="insp-section goal-section"><h5>Proof goals</h5><button type="button" class="secondary" data-act="goal" data-id="Demo.k_pos">Inspect proof goals</button><p class="small muted goal-caption">Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.</p></div></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+<script src="/katex/katex.min.js"></script>
+<script src="/export.js"></script>
+<script src="/circuits.js"></script>
+<script src="/cards.js"></script>
+<!-- host scripts -->
+<script src="/app.js"></script>
+
+
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">E.lean</h1>
+    <div class="subline" id="subline"></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="2" aria-label="Show lines 1–2 in Source" title="Show in Source">L1–2</a></span></div><section class="cell reading-card card-definition definition compact-definition">
+      <h3 class="card-header def-head "><span class="def-kind">Definition</span> <dfn><code>M</code></dfn>   <span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></h3>
+      <div class="card-body">
+      
+      
+      <div class="formal-expression"><span class="formal-line math typeset" data-tex="1"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn></mrow><annotation encoding="application/x-tex">1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">1</span></span></span></span></span></div>
+      </div>
+      <div class="card-source"><details class="def-lean" data-fold-key="definition:def M := 1"><summary class="small muted">Lean source · 1 line</summary><pre><span class="kw">def</span> M := 1</pre></details></div>
+    </section><section data-document-start="2" data-document-end="2" class="cell box evidence"><div class="box-head"><span class="tag">Evidence · not proof</span><span class="small">simulate <code>M</code> · demo</span><span class="evidence-state"><span class="pill" data-tone="green">Current</span><span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="2" data-end="2" aria-label="Show lines 2–2 in Source" title="Show in Source">L2–2</a></span></span></div><div class="evidence-charts"><div class="pane"><svg class="draw" viewBox="0 0 640 170" role="img" aria-label="Evidence series over time"><g stroke="var(--border)" fill="none"><path d="M50 12V140H626"></path></g><path d="M50.0,76.0L338.0,44.0L626.0,12.0" fill="none" stroke="var(--violet)" stroke-width="2"></path><path d="M50.0,76.0L338.0,108.0L626.0,140.0" fill="none" stroke="var(--blue)" stroke-width="2"></path><g fill="var(--muted)" font-size="11" font-family="var(--sans)"><text x="44" y="16" text-anchor="end">1.00</text><text x="44" y="144" text-anchor="end">-1.00</text><text x="50" y="158">0.00</text><text x="626" y="158" text-anchor="end">1.00</text></g><text x="58" y="12" fill="var(--violet)" font-size="11">x</text><text x="153" y="12" fill="var(--blue)" font-size="11">y</text></svg></div></div><table class="evidence-provenance"><tbody><tr><th scope="row">solver</th><td>rk4</td></tr><tr><th scope="row">step</th><td>1/2</td></tr></tbody></table><div class="claim-actions"><button type="button" class="secondary" data-act="evidence-run" data-line="2" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><svg class="ic"><use href="#i-replay"></use></svg>Run again</button><span class="small muted">Evidence never changes a claim's status.</span></div></section></div></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">No saved results</b><span class="small muted" id="insp-sub"></span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><p class="small muted">No claim of this file has a saved result. Check the saved file to see each claim's status here.</p></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+<script src="/katex/katex.min.js"></script>
+<script src="/export.js"></script>
+<script src="/circuits.js"></script>
+<script src="/cards.js"></script>
+<!-- host scripts -->
+<script src="/app.js"></script>
+
+
+
+<!-- next -->
+<div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="mark">∀</span>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
+    </div>
+    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
+    <div class="bar-right">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Document</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      </div>
+      <details class="history" id="history">
+        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
+        <div class="history-panel" id="history-panel">
+          <section id="git-history" hidden=""></section>
+          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
+    </div>
+  </header>
+
+  <div class="live-bar" aria-label="Live saved-file updates">
+    <span class="live-label">Live · saved files</span>
+    <span id="live-status" role="status">Waiting for saved edits</span>
+    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  </div>
+
+  <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
+
+  <div class="heading">
+    <div class="location" id="location">Notebook</div>
+    <h1 id="title">E.lean</h1>
+    <div class="subline" id="subline"></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <nav class="rail" aria-label="Notebook outline">
+      <h4 class="label">Contents</h4>
+      <ol id="outline"></ol>
+      <h4 class="label" id="graph-label" hidden="">Claim graph</h4>
+      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
+      <p class="small muted" id="graph-note" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</p>
+      <dl class="keys" id="key-hints" aria-label="Keyboard shortcuts"><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>claims</dd><dt><kbd>s</kbd></dt><dd>document / source</dd><dt><kbd>i</kbd></dt><dd>inspector</dd><dt><kbd>r</kbd></dt><dd>check through claim</dd><dt><kbd>?</kbd></dt><dd>all shortcuts</dd></dl>
+    </nav>
+
+    <main class="document">
+      <div class="doc-inner">
+        <div class="chips-row" id="chips-row" aria-label="Claims"></div>
+        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
+        <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
+        <div class="banner info" id="project-inspection" role="status" hidden=""></div>
+        <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
+        <div class="banner error" id="load-error" hidden=""></div>
+        <div id="doc"><div class="cellwrap" data-index="0"><div class="cell-tools"><span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="2" aria-label="Show lines 1–2 in Source" title="Show in Source">L1–2</a></span></div><section class="cell reading-card card-definition definition compact-definition">
+      <h3 class="card-header def-head "><span class="def-kind">Definition</span> <dfn><code>M</code></dfn>   <span class="source-controls"><a class="lines source-link" href="#source-L1" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="1" data-end="1" aria-label="Show lines 1–1 in Source" title="Show in Source">L1–1</a></span></h3>
+      <div class="card-body">
+      
+      
+      <div class="formal-expression"><span class="formal-line math typeset" data-tex="1"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn></mrow><annotation encoding="application/x-tex">1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord">1</span></span></span></span></span></div>
+      </div>
+      <div class="card-source"><details class="def-lean" data-fold-key="definition:def M := 1"><summary class="small muted">Lean source · 1 line</summary><pre><span class="kw">def</span> M := 1</pre></details></div>
+    </section><section data-document-start="2" data-document-end="2" class="cell box decision"><div class="box-head"><span class="tag">Decision</span><span class="small"><code>band</code> · entailment · demo</span><span class="evidence-state"><span class="pill" data-tone="blue">Candidate</span><span class="source-controls"><a class="lines source-link" href="#source-L2" data-act="source-lines" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-start="2" data-end="2" aria-label="Show lines 2–2 in Source" title="Show in Source">L2–2</a></span></span></div><pre class="decision-goal">entailment x : x &gt; 0 |- x &gt;= 0</pre><p class="decision-claim">The provider proposed a proof, theorem <code>band</code>: linear arithmetic.</p><div class="note-line" data-tone="muted"><svg class="ic"><use href="#i-branch"></use></svg><span>The kernel checked <code>band</code> after the saved source through this directive. Nothing is written until it is accepted.</span></div><div class="decision-field"><div class="field-label">Kernel statement</div><pre class="decision-type">∀ (x : Real), GT.gt x 0 → GE.ge x 0</pre></div><p class="small muted decision-axioms">Assumptions: <code>propext</code>, <code>Classical.choice</code></p><table class="decision-stages"><thead><tr><th scope="col">Stage</th><th scope="col">Outcome</th><th scope="col">Detail</th></tr></thead><tbody><tr><td>search</td><td>found</td><td>linarith</td></tr><tr><td>replay</td><td>ok</td><td></td></tr></tbody></table><div class="decision-field"><div class="field-label">Lean block to insert after the directive</div><pre class="decision-block">theorem band : ∀ x : ℝ, x &gt; 0 → x ≥ 0 := by
+  intro x h
+  linarith</pre></div><div class="claim-actions"><button type="button" class="secondary" data-act="decision-run" data-line="2" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><svg class="ic"><use href="#i-replay"></use></svg>Run again</button><button type="button" class="secondary" data-act="decision-discard" data-line="2" data-sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Discard</button><span class="small muted">Accept it from the editor's preview.</span><span class="small muted">A provider proposes; only the kernel check makes a candidate.</span></div></section></div></div>
+        <div id="source" hidden=""></div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Claim inspector">
+      <div class="insp-head">
+        <span class="avatar">F</span>
+        <div class="who"><b id="insp-title">No saved results</b><span class="small muted" id="insp-sub"></span></div>
+        <button type="button" class="ghost" id="panel-hide" aria-label="Hide inspector"><svg class="ic"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="insp-scroll" id="insp" aria-live="polite"><p class="small muted">No claim of this file has a saved result. Check the saved file to see each claim's status here.</p></div>
+    </aside>
+  </div>
+
+  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
+</div>
+
+<div class="overlay" id="keys" hidden="">
+  <div class="dialog keys-dialog" role="dialog" aria-modal="true" aria-labelledby="keys-title" aria-describedby="keys-intro">
+    <h3 id="keys-title">Keyboard shortcuts</h3>
+    <p class="keys-intro" id="keys-intro">Single keys work while the notebook has focus, outside text fields. Moving never starts a check.</p>
+    <div class="keys-groups" id="keys-groups"><section class="keys-group"><h4 class="label">Navigate</h4><dl><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous claim</dd></dl></section><section class="keys-group"><h4 class="label">View</h4><dl><dt><kbd>s</kbd></dt><dd>Switch between document and Lean source</dd><dt><kbd>i</kbd></dt><dd>Show or hide the claim inspector</dd></dl></section><section class="keys-group"><h4 class="label">Check and edit</h4><dl><dt><kbd>r</kbd></dt><dd>Check the saved file through the selected claim</dd></dl></section><section class="keys-group"><h4 class="label">General</h4><dl><dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd><dt><kbd>Esc</kbd></dt><dd>Close this dialog or the History panel</dd></dl></section></div>
+    <div class="keys-foot" id="keys-foot"><button type="button" class="secondary" id="keys-close">Close</button></div>
+  </div>
+</div>
+
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11.2 6"></path></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"></path></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"></path></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+</svg>
+<script src="/katex/katex.min.js"></script>
+<script src="/export.js"></script>
+<script src="/circuits.js"></script>
+<script src="/cards.js"></script>
+<!-- host scripts -->
+<script src="/app.js"></script>
+
+

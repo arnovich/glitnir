@@ -1,8 +1,20 @@
 const assert = require('node:assert/strict');
-const {readFileSync} = require('node:fs');
+const {readFileSync, writeFileSync} = require('node:fs');
 const path = require('node:path');
 const {test} = require('node:test');
 const {JSDOM} = require('jsdom');
+
+// The page's script tags are the one list of renderer scripts, in load order;
+// the editor host inserts its own two at the marker, as the webview does.
+function rendererScripts(media, {katex = false, bridge = false} = {}) {
+  const html = readFileSync(path.join(media, 'index.html'), 'utf8');
+  const scripts = [];
+  for (const match of html.matchAll(/<!-- host scripts -->|<script src="\/([^"]+)"><\/script>/g)) {
+    if (match[1] === undefined) { if (bridge) scripts.push('bridge.js', 'review.js'); }
+    else if (katex || !match[1].startsWith('katex/')) scripts.push(match[1]);
+  }
+  return scripts;
+}
 
 test('the shared renderer loads through the bridge and keeps unsaved checks off the wire', async () => {
   const media = path.resolve(__dirname, '../../dist/media');
@@ -32,11 +44,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, ...reply}})));
   }});
   try {
-    window.eval(readFileSync(path.join(media, 'bridge.js'), 'utf8'));
-    window.eval(readFileSync(path.join(media, 'review.js'), 'utf8'));
-    window.eval(readFileSync(path.join(media, 'circuits.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'cards.js'), 'utf8'));
-    window.eval(readFileSync(path.join(media, 'app.js'), 'utf8'));
+    for (const name of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, name), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.equal(window.document.getElementById('title').textContent, 'Example');
     assert.match(window.document.getElementById('doc').textContent, /A saved notebook/);
@@ -72,7 +80,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
 });
 
 // Loads the packaged renderer over a fixed snapshot and waits for it to draw.
-async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onAsset, browser = false} = {}) {
+async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onAsset, onWindow, browser = false} = {}) {
   const media = path.resolve(__dirname, '../../dist/media');
   const html = readFileSync(path.join(media, 'index.html'), 'utf8').replace('<body>', '<body><div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden></button>');
   const dom = new JSDOM(html, {runScripts: 'outside-only', url: 'https://preview.invalid/'});
@@ -114,13 +122,9 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
     const json = message.path === '/api/notebook' ? snapshot : message.path.startsWith('/api/proof/') ? onProof?.(message) || {} : message.path === '/api/export/styles' ? {css: '.static-notebook{color:black}'} : message.path.startsWith('/api/view?') || message.path.startsWith('/api/view/job?') ? onView?.(message.path) || {} : {queued: []};
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: structuredClone(json)}})));
   }});
-  if (katex) window.eval(readFileSync(path.join(media, 'katex/katex.min.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'export.js'), 'utf8'));
   if (browser) window.fetch = async (url, options) => typeof browser === 'function' ? browser(url, options, window) : {ok: true, json: async () => snapshot};
-  else { window.eval(readFileSync(path.join(media, 'bridge.js'), 'utf8')); window.eval(readFileSync(path.join(media, 'review.js'), 'utf8')); }
-  window.eval(readFileSync(path.join(media, 'circuits.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'cards.js'), 'utf8'));
-  window.eval(readFileSync(path.join(media, 'app.js'), 'utf8'));
+  onWindow?.(window);
+  for (const name of rendererScripts(media, {katex, bridge: !browser})) window.eval(readFileSync(path.join(media, name), 'utf8'));
   await new Promise(resolve => setTimeout(resolve, 60));
   return window;
 }
@@ -4102,4 +4106,33 @@ test('the evidence and decision run handlers are inert on an unsupported project
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.deepEqual(messages.filter(m => /^\/api\/(evidence|decide)\//.test(m.path || '')), []);
   } finally { window.close(); }
+});
+
+test('the rendered workbench is pinned by a fixture', async () => {
+  // The clock and scrolling are the only things a render could depend on besides its snapshot.
+  const fixed = window => {
+    window.Date.prototype.toLocaleTimeString = function () { return this.toISOString().slice(11, 19); };
+    window.HTMLElement.prototype.scrollIntoView = () => {};
+  };
+  const renders = async () => {
+    const parts = [];
+    for (const [snapshot, act] of [
+      [projectNotebook({current: false}), d => d.querySelector('[data-mode="source"]').click()],
+      [projectNotebook(), null],
+      [evidenceSnapshot(EVIDENCE_TEXT, [evidenceEntry({status: 'current', snapshot: evidenceBody()})]), null],
+      [decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'candidate', outcome: decisionOutcome(), verification: checkedVerification()})]), null],
+    ]) {
+      const window = await renderSnapshot(snapshot, {browser: true, katex: true, onWindow: fixed});
+      try {
+        parts.push(window.document.body.innerHTML);
+        if (act) { act(window.document); parts.push(window.document.body.innerHTML); }
+      } finally { window.close(); }
+    }
+    return parts.join('\n<!-- next -->\n');
+  };
+  const html = await renders();
+  assert.equal(await renders(), html, 'rendering is deterministic');
+  const fixture = path.join(__dirname, 'fixtures', 'workbench.html');
+  if (process.env.UPDATE_FIXTURES) writeFileSync(fixture, html);
+  assert.equal(html, readFileSync(fixture, 'utf8'), 'the rendered page differs from extension/test/fixtures/workbench.html; set UPDATE_FIXTURES=1 only for a deliberate renderer change');
 });
