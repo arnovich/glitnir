@@ -562,6 +562,63 @@ def test_the_imports_replay_has_its_own_deadline(tmp_path, monkeypatch):
     assert deadlines["imports-cached"] >= earlier[0] + 0.2
 
 
+def test_the_module_replay_extends_the_original_deadline_by_the_import_replay_alone(
+    tmp_path, monkeypatch
+):
+    """The module replay's deadline is capture's plus the import replay's time only.
+
+    The clock here moves when the fakes say so: 50 s during the reader and
+    100 s during the one-time import replay, plus a millisecond per reading.
+    The reader, compile and reports share the deadline taken at capture; the
+    module replay gets that deadline plus the 100 s, not a fresh budget taken
+    after the reader's 50 s were spent.
+    """
+    import time
+
+    from glitnir.lean import project_checking as checking
+    from glitnir.lean.limits import check_seconds
+
+    monkeypatch.setenv("GLITNIR_ELABORATION_TIMEOUT_MS", "600000")
+    clock = [1000.0]
+
+    def monotonic():
+        clock[0] += 0.001
+        return clock[0]
+
+    monkeypatch.setattr(time, "monotonic", monotonic)
+    replayed = _replayed()
+
+    def replay(arguments, closure):
+        if arguments[-1] == "imports-only":
+            clock[0] += 100.0
+        return replayed(arguments, closure)
+
+    calls, _ = _staged_check(tmp_path, monkeypatch, replay)
+    staged = checking.run_observer
+
+    def run(toolchain, arguments, **options):
+        if "--run" in arguments and Path(arguments[3]).name == "ProjectRead.lean":
+            clock[0] += 50.0
+        return staged(toolchain, arguments, **options)
+
+    monkeypatch.setattr(checking, "run_observer", run)
+    assert _check(tmp_path)["status"] == "checked_snapshot"
+    budget = check_seconds()
+    deadlines = _staged_check.deadlines
+    assert len(deadlines) == 6 and len(set(deadlines[:4])) == 1
+    at_capture = deadlines[0] - budget
+    assert abs(at_capture - 1000.0) < 1.0
+    by_mode = dict(zip(_modes(calls), deadlines[4:]))
+    assert (
+        abs(
+            by_mode["imports-only"]
+            - (at_capture + 50.0 + checking.IMPORTS_REPLAY_SECONDS)
+        )
+        < 1.0
+    )
+    assert abs(by_mode["imports-cached"] - (deadlines[0] + 100.0)) < 1.0
+
+
 @pytest.mark.parametrize("failure", ["Project check timed out.", "cancelled"])
 def test_a_failed_imports_replay_fails_the_check_and_records_nothing(
     tmp_path, monkeypatch, failure
