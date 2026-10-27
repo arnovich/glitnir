@@ -424,12 +424,53 @@ def test_a_matching_claim_passes(tmp_path: Path) -> None:
 def test_a_multi_line_claim_header_passes(tmp_path: Path) -> None:
     data = lean_outline(
         make_project(tmp_path),
-        entry(name="A.B.two", line=3, type="(n : Nat) : n = n"),
+        entry(name="A.three", line=6, type=": 1 = 1"),
     )
-    data["nodes"][0]["claim"] = "w_two"
-    text = "theorem w_two (n : Nat) :\n    n = n := by\n  exact A.B.two\n"
+    data["nodes"][0]["claim"] = "w_three"
+    text = "theorem w_three :\n    1 = 1 := by\n  exact A.three\n"
     result = notebook_run(tmp_path, data, text)
     assert result.returncode == 0 and result.stdout == "", result.stdout
+
+
+def binder_run(tmp_path: Path, binder: str) -> str:
+    """Check a claim citing a theorem whose header starts with the binder."""
+    (tmp_path / "proj").mkdir()
+    header = f"{binder} : n = n"
+    (tmp_path / "proj/B.lean").write_text(
+        f"theorem t {header} := rfl\n", encoding="utf-8"
+    )
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-q", "-m", "b")
+    data = lean_outline(
+        git(tmp_path, "rev-parse", "HEAD"),
+        entry(name="t", file="B.lean", line=1, type=header),
+    )
+    data["nodes"][0]["claim"] = "c"
+    text = f"theorem c {header} := by\n  exact t\n"
+    return str(notebook_run(tmp_path, data, text).stdout)
+
+
+@pytest.mark.parametrize("binder", ["(n : Nat)", "⦃n : Nat⦄"])
+def test_a_claim_citing_explicit_arguments_is_an_error(
+    tmp_path: Path, binder: str
+) -> None:
+    out = binder_run(tmp_path, binder)
+    assert "claim c cites t, which takes explicit arguments" in out, out
+
+
+@pytest.mark.parametrize("binder", ["{n : Nat}", "{n : Nat} [inst : Inhabited Nat]"])
+def test_implicit_and_instance_binders_are_allowed(tmp_path: Path, binder: str) -> None:
+    out = binder_run(tmp_path, binder)
+    assert out == "", out
+
+
+def test_explicit_binders_are_found_only_before_the_type() -> None:
+    explicit = load_script().takes_explicit_arguments
+    assert explicit("(n : Nat) : n = n")
+    assert explicit("{m : Nat} ⦃n : Nat⦄ : n = m")
+    assert not explicit(": ∀ (n : Nat), n = n")
+    assert not explicit("{f : (n : Nat) → Nat} [inst : Inhabited Nat] : f = f")
 
 
 def test_same_statement_resolves_namespaces() -> None:
@@ -738,3 +779,53 @@ def test_every_documented_command_exists() -> None:
         for word in words[1:]:
             if word.startswith("--"):
                 assert word in usage, (word, words)
+
+
+def split_outline(commit: str) -> dict[str, Any]:
+    """Return an outline whose three nodes claim ca, cb and cc from `A.B.one`."""
+    data = lean_outline(commit)
+    data["nodes"] = [node(i, claim=f"c{i}", lean=[entry()]) for i in "abc"]
+    return data
+
+
+def claim_text(*names: str) -> str:
+    """Return notebook text restating `A.B.one` under each name."""
+    return "".join(f"theorem {n} : True := by\n  exact A.B.one\n" for n in names)
+
+
+def notebooks_run(tmp_path: Path, data: dict[str, Any], *texts: str) -> Any:
+    """Run `check` with one `--notebook` per text."""
+    args = ["check", str(write(tmp_path, data))]
+    for index, text in enumerate(texts):
+        part = tmp_path / f"Part{index}.lean"
+        part.write_text(text, encoding="utf-8")
+        args += ["--notebook", str(part)]
+    return run(*args)
+
+
+def test_claims_may_be_split_across_notebooks(tmp_path: Path) -> None:
+    data = split_outline(make_project(tmp_path))
+    both = notebooks_run(tmp_path, data, claim_text("ca", "cb"), claim_text("cc"))
+    assert both.returncode == 0 and both.stdout == "", both.stdout
+    one = notebooks_run(tmp_path, data, claim_text("ca"), claim_text("cc"))
+    assert one.returncode == 1 and "claim cb is not in" in one.stdout
+    assert "ca" not in one.stdout and "cc" not in one.stdout
+
+
+def test_a_claim_in_two_notebooks_is_an_error(tmp_path: Path) -> None:
+    data = split_outline(make_project(tmp_path))
+    result = notebooks_run(
+        tmp_path, data, claim_text("ca", "cb"), claim_text("cb", "cc")
+    )
+    assert result.returncode == 1
+    assert "claim cb is in both" in result.stdout
+    assert "Part0.lean" in result.stdout and "Part1.lean" in result.stdout
+
+
+def test_each_notebook_must_not_define_or_open(tmp_path: Path) -> None:
+    data = split_outline(make_project(tmp_path))
+    result = notebooks_run(
+        tmp_path, data, claim_text("ca", "cb"), "open Real\n" + claim_text("cc")
+    )
+    assert result.returncode == 1
+    assert "Part1.lean" in result.stdout and "line 1: open" in result.stdout

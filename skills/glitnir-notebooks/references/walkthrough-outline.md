@@ -99,8 +99,8 @@ on that line, so an unnamed `instance` cannot be listed.
 ## `claim`
 
 The name exactly as written after `theorem` in the notebook, without the
-notebook's namespace. Each node has at most one claim and each claim belongs to
-one node. The claim restates one of the node's `lean` entries;
+notebook's namespace. Each node has at most one claim, each claim belongs to
+one node, and it appears in exactly one of the walkthrough's files. The claim restates one of the node's `lean` entries;
 [walkthroughs.md](walkthroughs.md) gives its shape and what can be restated.
 
 ## `figures`

@@ -65,7 +65,8 @@ give it absolute paths:
   note is not an error.
 - `python3 -B scripts/walkthrough.py check OUTLINE --notebook FILE` also checks
   the notebook's claims (below), once the outline and its Lean entries have
-  no errors.
+  no errors. For a walkthrough in several files, repeat `--notebook` once per
+  file in one run: together the files must hold each node's claim exactly once.
 - `python3 -B scripts/walkthrough.py map OUTLINE` writes `assets/map.svg` and
   `map.html` beside the outline; `--out DIR` writes them elsewhere. Its links
   open this machine's files. `--links public` links to `repository` at `commit`
@@ -103,10 +104,12 @@ so that the preview shows the claim as a claim card. The node's `claim` is
   own declared type.
 - A theorem that depends on section `variable`s cannot be compared, and a claim
   citing it is an error. Explain it in prose and cite it by name.
-- A theorem whose header has explicit `( )` or strict-implicit `⦃ ⦄` binders
-  cannot be restated: `exact` does not supply those arguments, so the claim
-  would not compile. Explain it in prose. Implicit `{ }` and instance `[ ]`
-  binders are fine.
+- A theorem whose header binds explicit `( )` or strict-implicit `⦃ ⦄`
+  arguments before the colon that starts its type cannot be restated: `exact`
+  does not supply those arguments, so the claim would not compile, and a claim
+  citing it is an error. Explain it in prose and cite it by name. Implicit
+  `{ }` and instance `[ ]` binders are fine, and so is a `∀ (n : ℕ), …` after
+  the colon.
 
 The notebook defines and opens nothing. It contains only imports, prose,
 comments and docstrings, `namespace`, `section` and `end`, `#print axioms`, and
@@ -169,8 +172,9 @@ Import only the modules the claims need. Say plainly where the project's final
 theorem does not follow the paper's route.
 
 *Check:* `python3 -B scripts/walkthrough.py check OUTLINE --notebook NOTEBOOK`
-exits 0 for each notebook file, and the preview shows the prose, and the claims
-as cards, rather than the whole file as source.
+exits 0, with one `--notebook` for each file of the walkthrough in the same run,
+and the preview shows the prose, and the claims as cards, rather than the whole
+file as source.
 
 ### 5. Add figures
 
@@ -184,7 +188,7 @@ matches the statement it illustrates.
 ### 6. Validate and report
 
 1. Run `check --notebook` as in step 4.
-2. Compile with `lake env lean Walkthrough.lean` from the walkthrough's folder
+2. Compile each file with `lake env lean <file>` from the walkthrough's folder
    only when the original is built and the user has agreed (see below).
    Otherwise report compilation as not run.
 3. Run a Glitnir check, as SKILL.md describes, when the walkthrough's toolchain
@@ -211,9 +215,12 @@ path = "../formal-proofs/odd-sums"  # the original, relative to this folder
 
 [[lean_lib]]
 name = "Walkthrough"
+roots = ["Walkthrough"]             # one module per notebook file
 ```
 
-Copy the original's `lean-toolchain` beside it. Running Lake here may fetch the
+For a walkthrough in several files, list each file's module in `roots`, such
+as `roots = ["Walkthrough", "Appendices"]` for `Walkthrough.lean` and
+`Appendices.lean`. Copy the original's `lean-toolchain` beside it. Running Lake here may fetch the
 original's dependencies again and build the original: ask first, as for any
 build.
 

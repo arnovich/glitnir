@@ -6,11 +6,13 @@ declarations that formalize them. This helper verifies such an outline.
 
 Run it with the standard library only, without writing bytecode:
 
-    python3 -B walkthrough.py check OUTLINE [--notebook FILE]
+    python3 -B walkthrough.py check OUTLINE [--notebook FILE ...]
     python3 -B walkthrough.py map OUTLINE [--out DIR] [--links local|public]
 
-`map` draws the outline's dependency graph and a clickable detail page, and
-refuses to draw an outline that `check` reports errors for.
+`check --notebook` may be repeated, once per file of a walkthrough split into
+parts. `map` draws the outline's dependency graph and a clickable detail page,
+and refuses an outline with structural errors; it does not compare the Lean
+entries, which only `check` does.
 
 Exit status: 0 when no problem is an error, 1 when any is, 2 for an
 unreadable outline or a usage error.
@@ -505,47 +507,61 @@ def _claims_in(text: str) -> list[tuple[str, str, str]]:
 
 
 def check_notebook(
-    outline: dict[str, Any], base: Path, notebook: Path
+    outline: dict[str, Any], base: Path, notebooks: Sequence[Path]
 ) -> list[Problem]:
-    """Compare the notebook's claims with the outline and the project."""
-    try:
-        text = notebook.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return [_error(f"notebook {notebook} cannot be read")]
+    """Compare the claims of the notebook files with the outline and the project.
+
+    A walkthrough may be split into several files: together they must hold each
+    node's claim exactly once.
+    """
     root = _project_root(outline, base)
     nodes = {
         str(item["claim"]): item
         for item in outline.get("nodes", [])
         if isinstance(item.get("claim"), str)
     }
-    problems = _forbidden_in(text)
-    written: set[str] = set()
-    for name, header, tail in _claims_in(text):
-        written.add(name)
-        exact = _EXACT_RE.fullmatch(tail)
-        if not exact:
-            problems.append(_error(f"claim {name} is not 'by exact <project theorem>'"))
+    problems: list[Problem] = []
+    written: dict[str, Path] = {}
+    for notebook in notebooks:
+        try:
+            text = notebook.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            problems.append(_error(f"notebook {notebook} cannot be read"))
             continue
-        item = nodes.get(name)
-        if item is None:
-            problems.append(_error(f"claim {name} is not a claim of any node"))
-            continue
-        target = exact.group("target")
-        entries = [e for e in item.get("lean", []) if e.get("name") == target]
-        if not entries:
-            problems.append(
-                _error(
-                    f"claim {name}: {target} is not a lean name of node {item['id']}"
+        problems.extend(_forbidden_in(text, notebook))
+        for name, header, tail in _claims_in(text):
+            if name in written:
+                problems.append(
+                    _error(f"claim {name} is in both {written[name]} and {notebook}")
                 )
-            )
-            continue
-        problems.extend(_compare_claim(root, name, header, target, entries[0]))
+                continue
+            written[name] = notebook
+            problems.extend(_check_claim(root, nodes, name, header, tail))
     for claim, item in nodes.items():
         if claim not in written:
             problems.append(
-                _error(f"node {item['id']}: claim {claim} is not in the notebook")
+                _error(f"node {item['id']}: claim {claim} is not in any notebook")
             )
     return problems
+
+
+def _check_claim(
+    root: Path, nodes: dict[str, dict[str, Any]], name: str, header: str, tail: str
+) -> list[Problem]:
+    """Check one claim's shape, its node and its statement."""
+    exact = _EXACT_RE.fullmatch(tail)
+    if not exact:
+        return [_error(f"claim {name} is not 'by exact <project theorem>'")]
+    item = nodes.get(name)
+    if item is None:
+        return [_error(f"claim {name} is not a claim of any node")]
+    target = exact.group("target")
+    entries = [e for e in item.get("lean", []) if e.get("name") == target]
+    if not entries:
+        return [
+            _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
+        ]
+    return _compare_claim(root, name, header, target, entries[0])
 
 
 _FORBIDDEN_WORDS = frozenset(
@@ -559,8 +575,8 @@ _PREFIX_RE = re.compile(
 )
 
 
-def _forbidden_in(text: str) -> list[Problem]:
-    """Report each column-0 command that defines or opens something."""
+def _forbidden_in(text: str, notebook: Path) -> list[Problem]:
+    """Report each column-0 command of the notebook that defines or opens."""
     problems: list[Problem] = []
     in_comment = False
     for number, line in enumerate(text.splitlines(), start=1):
@@ -575,10 +591,29 @@ def _forbidden_in(text: str) -> list[Problem]:
             problems.append(
                 _error(
                     f"walkthrough must not define or open anything: "
-                    f"line {number}: {words[0]}"
+                    f"line {number}: {words[0]} in {notebook}"
                 )
             )
     return problems
+
+
+def takes_explicit_arguments(header: str) -> bool:
+    """Tell whether a header binds `( )` or `⦃ ⦄` arguments before its type.
+
+    `exact P` supplies implicit `{ }` and instance `[ ]` arguments, but not
+    these, so a claim restating such a header would not compile.
+    """
+    depth = 0
+    for char in header:
+        if depth == 0 and char in "(⦃":
+            return True
+        if depth == 0 and char == ":":
+            return False
+        if char in _OPENERS + "⦃":
+            depth += 1
+        elif char in _CLOSERS + "⦄":
+            depth -= 1
+    return False
 
 
 def _compare_claim(
@@ -597,6 +632,13 @@ def _compare_claim(
             _error(
                 f"claim {claim} cites {target}, which depends on section "
                 "variables; restate it in prose instead"
+            )
+        ]
+    if any(takes_explicit_arguments(d.type) for d in found):
+        return [
+            _error(
+                f"claim {claim} cites {target}, which takes explicit arguments; "
+                "explain it in prose instead"
             )
         ]
     if any(same_statement(header, d.type, d.namespaces) for d in found):
@@ -976,7 +1018,12 @@ def _build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="check an outline")
     check.add_argument("outline", type=Path)
-    check.add_argument("--notebook", type=Path, help="notebook to compare")
+    check.add_argument(
+        "--notebook",
+        type=Path,
+        action="append",
+        help="notebook file to compare; repeat it for every file of the walkthrough",
+    )
     draw = commands.add_parser("map", help="draw the outline's map")
     draw.add_argument("outline", type=Path)
     draw.add_argument("--out", type=Path, help="folder to write (default: outline's)")
