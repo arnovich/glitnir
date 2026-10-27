@@ -895,6 +895,7 @@ def _observe(
             "type": theorem["type"],
             "statement": reported.printed.get(theorem["name"]),
             "uses": uses[:MAX_USES],
+            "uses_truncated": True,
             "axioms": axioms,
             "status": status,
             "start_line": first,
@@ -904,8 +905,9 @@ def _observe(
                 (frozen.identity + "\0" + theorem["canonical"]).encode()
             ).hexdigest(),
         }
-        if len(uses) > MAX_USES:
-            observation["uses_truncated"] = True
+        if len(uses) <= MAX_USES:
+            # Set in the literal so it keeps its place after `uses` when printed.
+            del observation["uses_truncated"]
         observations.append(observation)
     added_modules = replayed.added_modules
     return {

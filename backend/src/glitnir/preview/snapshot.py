@@ -62,7 +62,7 @@ from glitnir.preview.cards import (
     with_saved_decisions,
     with_saved_evidence,
 )
-from glitnir.preview.linked import LEAN_NAME, sibling_references
+from glitnir.preview.linked import LEAN_NAME, Reference, sibling_references
 from glitnir.providers import Providers
 
 NOTICE = (
@@ -196,7 +196,7 @@ class Snapshot(TypedDict):
     directive_providers: DirectiveProviders
     directive_unavailable: DirectiveUnavailable
     links: list[Any]
-    references: list[dict[str, str]]
+    references: list[Reference]
     revisions: list[Any]
     assets: list[AssetStatus]
 

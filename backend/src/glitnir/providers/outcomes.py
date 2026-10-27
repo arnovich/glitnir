@@ -9,14 +9,14 @@ from typing import Any, Literal, NotRequired, TypedDict, cast, overload
 MAX_SVG_BYTES = 1_000_000
 
 
-class Drawing(TypedDict, total=False):
+class Drawing(TypedDict):
     """A checked drawing: its SVG and, from a diagram report, its structured parts."""
 
     svg: str
-    graph: Any
-    model: Any
-    detail: Any
-    contracts: Any
+    graph: NotRequired[Any]
+    model: NotRequired[Any]
+    detail: NotRequired[Any]
+    contracts: NotRequired[Any]
 
 
 class DrawingError(TypedDict):
