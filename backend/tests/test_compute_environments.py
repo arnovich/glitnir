@@ -117,32 +117,34 @@ def test_source_symlinks_are_not_materialized(tmp_path):
     assert (root / "artifact").read_bytes() == (root / "data").read_bytes()
 
 
-@pytest.mark.parametrize("during", ["enumeration", "size"])
-def test_budget_scan_tolerates_disappearing_download_files(
-    tmp_path, monkeypatch, during
-):
-    """A cache download may rename its part file at either stat boundary."""
-    from pathlib import Path
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_budget_scan_tolerates_disappearing_download_files(tmp_path, monkeypatch, kind):
+    """Download files and directories can disappear after enumeration."""
+    import os
+    import shutil
     from types import SimpleNamespace
 
     cache = EnvironmentCache(tmp_path / "cache")
     entry = cache.root / ".building-test"
     entry.mkdir()
     temporary = entry / "download.part"
-    temporary.write_bytes(b"partial")
+    if kind == "file":
+        temporary.write_bytes(b"partial")
+    else:
+        temporary.mkdir()
+        (temporary / "large").write_bytes(b"partial")
     (entry / "persistent").write_bytes(b"x")
-    original = Path.lstat
-    calls = 0
+    original = os.stat
 
-    def stat(path):
-        nonlocal calls
-        if path == temporary:
-            calls += 1
-            if calls == (1 if during == "enumeration" else 2):
+    def stat(path, *args, **kwargs):
+        if path == temporary.name and kwargs.get("dir_fd") is not None:
+            if kind == "file":
                 temporary.unlink()
-        return original(path)
+            else:
+                shutil.rmtree(temporary)
+        return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "lstat", stat)
+    monkeypatch.setattr(os, "stat", stat)
     cache.check_budget(entry, SimpleNamespace(max_bytes=1))
 
 
@@ -168,20 +170,20 @@ def test_inventory_still_refuses_a_disappearing_prepared_file(tmp_path, monkeypa
 
 def test_budget_scan_does_not_hide_permission_errors(tmp_path, monkeypatch):
     """Only vanished entries are expected while trusted build tools are writing."""
-    from pathlib import Path
+    import os
     from types import SimpleNamespace
 
     cache = EnvironmentCache(tmp_path / "cache")
     source = cache.root / "protected"
     source.write_bytes(b"x")
-    original = Path.lstat
+    original = os.stat
 
-    def stat(path):
-        if path == source:
+    def stat(path, *args, **kwargs):
+        if path == source.name and kwargs.get("dir_fd") is not None:
             raise PermissionError("Unreadable build file")
-        return original(path)
+        return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "lstat", stat)
+    monkeypatch.setattr(os, "stat", stat)
     with pytest.raises(PermissionError):
         cache.check_budget(cache.root, SimpleNamespace(max_bytes=100))
 

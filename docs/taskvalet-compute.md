@@ -315,3 +315,26 @@ The job's memory setting bounds the native checker, not every trusted build tool
 Disk and output ceilings are monitored and can overshoot between polls; use a
 filesystem quota when a hard disk ceiling is required. Worker journals and the
 native artifact/replay caches have separate retention/budgets.
+
+Live registered-entry scans keep one combined `max_bytes` ceiling across the
+prepared project, private candidate stage, build HOME and all remaining entry
+data. Each of those four trees has a separate 200,000-item traversal bound,
+including directories; nested names do not reset a tree's count. This permits a
+Mathlib project and its staging copy to fit independently without exempting either
+copy from the byte budget. Hardlinked files count by their logical size at every
+path, as before. Directories deeper than 128 levels, non-regular files and
+unreadable paths fail; directory links are never followed. Paths that disappear
+during a live download may be omitted from that sample. Immutable inventories
+still use their strict existing traversal and content checks.
+
+Scans stream entries and check lease/deadline/stop state at least every 256
+visited items, with at most 800,000 items across the four scopes. Filesystem calls
+can still block: this is a sampled size ceiling, not a hard filesystem quota or
+wall-clock latency guarantee. The next periodic scan is scheduled one second
+after the previous scan finishes. Full scans also run at preparation boundaries.
+
+Updating this accounting code changes the installed checker identity and recipe
+cache keys. The first job under that new identity must prepare a new entry;
+only a subsequent integrity-verified reuse reports `environment_cache=hit`.
+Fixed prepared mode continues to report `prepared` and does not gain registered
+mode's disk accounting. Import replay cache observations remain separate.

@@ -280,8 +280,8 @@ class Worker:
                 heartbeat_at = time.monotonic() + 10
                 publish()
             if now >= budget_at and self.cache and recipe and self.cache.active_entry:
-                self.cache.check_budget(self.cache.active_entry, recipe)
-                budget_at = now + 1
+                self.cache.check_budget(self.cache.active_entry, recipe, monitor)
+                budget_at = time.monotonic() + 1
 
         def run(
             command: list[str], cwd: Path, execution_env: dict[str, str] | None = None
