@@ -13,7 +13,7 @@ import stat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal, NotRequired, TypedDict
 
 from glitnir.compute.client import remote_identity
 from glitnir.lean.environment import MAX_SOURCE_BYTES
@@ -23,9 +23,11 @@ from glitnir.lean.fingerprint import (
     environment_fingerprint,
 )
 from glitnir.lean.lexing import code_tokens, scan
-from glitnir.lean.project import describe_project, read_regular
-from glitnir.lean.project_inspection import lean_support
+from glitnir.lean.prepared_packages import Resolution
+from glitnir.lean.project import ProjectDescription, describe_project, read_regular
+from glitnir.lean.project_inspection import LeanSupport, lean_support
 from glitnir.lean.project_snapshot import SLOT_BUSY, SLOT_WAIT_TIMED_OUT
+from glitnir.lean.results import NonClaim, StageMs, Theorem, Withheld
 from glitnir.notebook.check_records import (
     ClaimView,
     NonClaimView,
@@ -34,6 +36,7 @@ from glitnir.notebook.check_records import (
     non_claim_views,
 )
 from glitnir.notebook.directives import (
+    ViewDirective,
     decision_directives,
     evidence_directives,
     view_directives,
@@ -46,7 +49,10 @@ from glitnir.notebook.document import (
 )
 from glitnir.notebook.records_schema import Records
 from glitnir.preview import assets
+from glitnir.preview.assets import AssetStatus
 from glitnir.preview.cards import (
+    DecisionCard,
+    EvidenceCard,
     decision_cards,
     environment_digest,
     evidence_cards,
@@ -56,7 +62,7 @@ from glitnir.preview.cards import (
     with_saved_decisions,
     with_saved_evidence,
 )
-from glitnir.preview.linked import LEAN_NAME, sibling_references
+from glitnir.preview.linked import LEAN_NAME, Reference, sibling_references
 from glitnir.providers import Providers
 
 NOTICE = (
@@ -65,12 +71,142 @@ NOTICE = (
 )
 
 
+class Cell(TypedDict):
+    """One cell of the saved text: prose with its markdown, or source; numbered."""
+
+    kind: Literal["prose", "source"]
+    start: int
+    end: int
+    text: str
+    markdown: NotRequired[str]
+    id: NotRequired[str]
+    index: NotRequired[int]
+    claim: NotRequired[str]
+
+
+class CheckState(TypedDict):
+    """What the service knows of its project check: running, unavailable, or the result.
+
+    A finished check carries the result's own keys besides these, and
+    `through_line` says how far the check covered the file.
+    """
+
+    status: Literal["running", "unavailable", "checked_snapshot"]
+    source_sha256: str
+    through_line: int | None
+    message: str
+    theorems: list[Theorem]
+    environment_sha256: NotRequired[str]
+    toolchain: NotRequired[str]
+    module: NotRequired[str]
+    non_claims: NotRequired[list[NonClaim]]
+    snapshot_bytes: NotRequired[int]
+    resolution: NotRequired[Resolution | None]
+    replay: NotRequired[str]
+    withheld: NotRequired[Withheld | None]
+    stage_ms: NotRequired[StageMs]
+    execution: NotRequired[dict[str, Any]]
+
+
+class ResolutionSummary(TypedDict):
+    """What the preview shows of a package resolution: its kind and packages."""
+
+    kind: str | None
+    packages: list[Any]
+
+
+class InspectionSummary(TypedDict):
+    """What the preview shows of an inspection; never the setup itself."""
+
+    status: str
+    source_sha256: str
+    message: str
+    resolution: NotRequired[ResolutionSummary]
+
+
+class WithheldView(TypedDict):
+    """Where the saved check stopped, flagged stale when saved for other text."""
+
+    from_line: int
+    message: str
+    through_line: NotRequired[int]
+    stale: NotRequired[Literal[True]]
+
+
+class LinkedInfo(TypedDict):
+    """How a linked notebook's snapshot was reached, and whether it was compared."""
+
+    path: str
+    file: str
+    compared: bool
+
+
+class NeutralProject(TypedDict):
+    """A recorded snapshot's project: kind, root and toolchain, without local paths."""
+
+    kind: Literal["lake", "loose"]
+    root: str | None
+    toolchain: str | None
+
+
+class PreviewInfo(TypedDict):
+    """The snapshot's header: mode, notice, the check and inspection, the project."""
+
+    mode: str
+    notice: str
+    check: CheckState | None
+    inspection: InspectionSummary | None
+    project: ProjectDescription | NeutralProject
+    lean: LeanSupport
+    linked: NotRequired[LinkedInfo]
+    recorded: NotRequired[Literal[True]]
+
+
+class DirectiveProviders(TypedDict):
+    """The evidence verbs and decision kinds installed providers offer."""
+
+    evidence: list[str]
+    decide: list[str]
+
+
+class DirectiveUnavailable(TypedDict):
+    """Of those, the words that cannot run yet, with what is missing."""
+
+    evidence: dict[str, str]
+    decide: dict[str, str]
+
+
+class Snapshot(TypedDict):
+    """What the renderer shows for one saved notebook (`GET /api/notebook`)."""
+
+    file: str
+    sha256: str
+    preview: PreviewInfo
+    cells: list[Cell]
+    claims: list[Any]
+    project_claims: list[ClaimView]
+    project_non_claims: list[NonClaimView]
+    project_withheld: WithheldView | None
+    checking: list[Any]
+    check_errors: dict[str, str]
+    reading: bool
+    views: list[ViewDirective]
+    evidence: list[EvidenceCard]
+    decisions: list[DecisionCard]
+    directive_providers: DirectiveProviders
+    directive_unavailable: DirectiveUnavailable
+    links: list[Any]
+    references: list[Reference]
+    revisions: list[Any]
+    assets: list[AssetStatus]
+
+
 @dataclass(frozen=True)
 class PreviewState:
     """What a running preview adds to its saved notebook: all empty by default."""
 
-    check: Mapping[str, Any] | None = None
-    inspection: dict[str, Any] | None = None
+    check: CheckState | None = None
+    inspection: InspectionSummary | None = None
     running: str | None = None
     run_errors: Mapping[str, str] = field(default_factory=dict)
     #: Keys whose last run error was also saved as the card's failure.
@@ -83,7 +219,7 @@ def read_source(path: Path) -> str:
     return text.replace("\r\n", "\n")
 
 
-def _source_cell(start: int, end: int, lines: list[str]) -> dict[str, Any]:
+def _source_cell(start: int, end: int, lines: list[str]) -> Cell:
     return {
         "kind": "source",
         "start": start,
@@ -93,10 +229,10 @@ def _source_cell(start: int, end: int, lines: list[str]) -> dict[str, Any]:
 
 
 def _split_at_claims(
-    cells: list[dict[str, Any]], claims: Sequence[Mapping[str, Any]], lines: list[str]
-) -> list[dict[str, Any]]:
+    cells: list[Cell], claims: Sequence[ClaimView], lines: list[str]
+) -> list[Cell]:
     """Give each claim's lines their own source cell, keeping all text."""
-    result: list[dict[str, Any]] = []
+    result: list[Cell] = []
     for cell in cells:
         if cell["kind"] != "source":
             result.append(cell)
@@ -124,7 +260,7 @@ def cut_short(message: str) -> bool:
     )
 
 
-def _failed_fresh_check(observation: Mapping[str, Any] | None, sha256: str) -> bool:
+def _failed_fresh_check(observation: CheckState | None, sha256: str) -> bool:
     """Whether the latest check of this exact text was unavailable, not cut short."""
     if observation is None or observation.get("status") != "unavailable":
         return False
@@ -133,14 +269,14 @@ def _failed_fresh_check(observation: Mapping[str, Any] | None, sha256: str) -> b
     return not cut_short(str(observation.get("message") or ""))
 
 
-def _withheld(records: Records | None, sha256: str) -> Mapping[str, Any] | None:
+def _withheld(records: Records | None, sha256: str) -> WithheldView | None:
     """Return where the saved check stopped, flagged stale for other text."""
     withheld = records.get("withheld") if records else None
     if not isinstance(withheld, dict):
         return None
     if records is not None and records.get("source_sha256") != sha256:
         return {**withheld, "stale": True}
-    return withheld
+    return {**withheld}
 
 
 def _module_link(directory: Path, module: str) -> str | None:
@@ -184,7 +320,7 @@ def _with_use_links(claims: list[ClaimView], notebook: Path) -> None:
                 use["path"] = link
 
 
-def uncompared(snapshot: dict[str, Any]) -> dict[str, Any]:
+def uncompared(snapshot: Snapshot) -> Snapshot:
     """Mark saved results that were not compared with any environment.
 
     Their status is the saved one; whether it is still current is unknown,
@@ -229,10 +365,10 @@ def _confirmed_prose(lines: list[str], start: int, end: int) -> bool:
     return code_tokens("".join(lines[start:end])) == []
 
 
-def cells(text: str) -> list[dict[str, Any]]:
+def cells(text: str) -> list[Cell]:
     """Split saved text into prose and source cells, keeping all of it."""
     lines = _lines(text)
-    cells: list[dict[str, Any]] = []
+    cells: list[Cell] = []
     try:
         notebook = parse_notebook(text)
         cursor = 0
@@ -291,16 +427,17 @@ def cells(text: str) -> list[dict[str, Any]]:
     return cells
 
 
-def prose(cells: list[dict[str, Any]]) -> list[str]:
+def prose(cells: list[Cell]) -> list[str]:
     """Return the markdown of each prose cell."""
     return [cell["markdown"] for cell in cells if cell["kind"] == "prose"]
 
 
-def indexed_cells(text: str) -> list[dict[str, Any]]:
+def indexed_cells(text: str) -> list[Cell]:
     """Split `text` into cells numbered as the snapshot numbers them."""
     entries = cells(text)
     for index, entry in enumerate(entries):
-        entry.update(id=f"cell-{index}", index=index)
+        entry["id"] = f"cell-{index}"
+        entry["index"] = index
     return entries
 
 
@@ -363,7 +500,7 @@ def build_snapshot(
     providers: Callable[[], Providers],
     *,
     compare_environment: bool = True,
-) -> dict[str, Any]:
+) -> Snapshot:
     """Build the snapshot of `text`; `fingerprint` is called only if needed.
 
     Without `compare_environment` (only `static_export.SavedNotebook`),
@@ -409,7 +546,8 @@ def build_snapshot(
     if project_claims:
         entries = _split_at_claims(entries, project_claims, lines)
     for index, entry in enumerate(entries):
-        entry.update(id=f"cell-{index}", index=index)
+        entry["id"] = f"cell-{index}"
+        entry["index"] = index
     views = view_directives(entries, text)
     evidence = evidence_directives(entries, text)
     decisions = decision_directives(entries, text)

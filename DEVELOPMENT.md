@@ -52,6 +52,14 @@ The repository has four parts:
   as theorems (`examples`), what the report and replay programs said
   (`reports`, `replay`) and a decision block's text and verdict (`candidate`)
   are its own modules.
+  Each dictionary that crosses a layer is a declared `TypedDict`, defined where
+  it is produced: the checker's result in `lean/results.py`, validated
+  provider output in `providers/outcomes.py`, the records file in
+  `notebook/records_schema.py` (whose validators are pinned to the shapes by
+  `tests/test_records_schema.py`), the directives in `notebook/directives.py`,
+  and what the renderer receives in `preview/snapshot.py` and
+  `preview/cards.py`. Compute's wire protocol, provider output before its
+  validator and request bodies stay `dict[str, Any]`.
 - **Providers.** Optional features come from packages registered under the
   `glitnir.providers` entry-point group, against the interfaces in
   `backend/src/glitnir/providers/__init__.py`, with their output validated by

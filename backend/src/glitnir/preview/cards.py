@@ -10,10 +10,11 @@ A provider's outcome is untrusted; `providers.outcomes` is all of it the
 preview and the saved records ever see.
 """
 
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict, TypeVar
 
 from glitnir.lean.fingerprint import Fingerprint
 from glitnir.lean.project_views import view_provider_sha256
+from glitnir.lean.results import Verdict
 from glitnir.notebook.check_records import (
     decision_failure_status,
     decision_status,
@@ -36,7 +37,12 @@ from glitnir.providers import (
     EvidenceRequest,
     Providers,
 )
-from glitnir.providers.outcomes import checked_decision, checked_evidence
+from glitnir.providers.outcomes import (
+    Decision,
+    Evidence,
+    checked_decision,
+    checked_evidence,
+)
 
 
 def provider_failure(
@@ -83,15 +89,66 @@ def _parse_error(provider: EvidenceProvider, directive: EvidenceDirective) -> st
     return evidence_request(provider, directive)[1]
 
 
+class ShownFailure(TypedDict):
+    """A saved failed run as a card shows it; `earlier` once a later run error shows."""
+
+    kind: str
+    message: str
+    created: str
+    status: str
+    earlier: NotRequired[Literal[True]]
+
+
+class EvidenceCard(TypedDict):
+    """An evidence directive as shown: its provider, errors and saved result."""
+
+    cell: int
+    line: int
+    verb: str
+    target: str
+    key: str
+    provider: str | None
+    error: str
+    unavailable: str | None
+    status: str
+    run_error: str | None
+    snapshot: Evidence | None
+    failure: ShownFailure | None
+
+
+class DecisionCard(TypedDict):
+    """A decision directive as shown: its provider, errors and saved outcome."""
+
+    cell: int
+    line: int
+    end_line: int
+    name: str
+    kind: str
+    goal: str
+    key: str
+    provider: str | None
+    error: str
+    unavailable: str | None
+    missing_imports: list[str]
+    status: str
+    run_error: str | None
+    outcome: Decision | None
+    verification: Verdict | None
+    failure: ShownFailure | None
+
+
+_Card = TypeVar("_Card", EvidenceCard, DecisionCard)
+
+
 def evidence_cards(
     directives: list[EvidenceDirective], providers: Providers
-) -> list[dict[str, Any]]:
+) -> list[EvidenceCard]:
     """Give each directive its provider and errors; nothing runs or computes."""
     notes = "".join(
         f" (Provider {name} failed to load: {reason})"
         for name, reason in providers.errors.items()
     )
-    cards: list[dict[str, Any]] = []
+    cards: list[EvidenceCard] = []
     for directive in directives:
         provider = providers.evidence.get(directive["verb"])
         error, unavailable = directive["error"], None
@@ -139,13 +196,13 @@ def decision_request(
 
 def decision_cards(
     directives: list[DecisionDirective], providers: Providers
-) -> list[dict[str, Any]]:
+) -> list[DecisionCard]:
     """Give each directive its provider and errors; nothing runs or decides."""
     notes = "".join(
         f" (Provider {name} failed to load: {reason})"
         for name, reason in providers.errors.items()
     )
-    cards: list[dict[str, Any]] = []
+    cards: list[DecisionCard] = []
     for directive in directives:
         provider = providers.decisions.get(directive["kind"])
         error, unavailable = directive["error"], None
@@ -220,13 +277,13 @@ def provider_imports(provider: Any) -> tuple[str, ...]:
 
 
 def with_saved_evidence(
-    cards: list[dict[str, Any]],
+    cards: list[EvidenceCard],
     records: Records | None,
     text: str,
     fingerprint: Fingerprint,
     providers: Providers | None = None,
     compare_environment: bool = True,
-) -> list[dict[str, Any]]:
+) -> list[EvidenceCard]:
     """Show each card's saved snapshot and failure; nothing is recomputed.
 
     A run's environment includes its provider's modules, so each card is
@@ -276,14 +333,14 @@ def with_saved_evidence(
 
 
 def _shown_failure(
-    card: dict[str, Any],
+    card: EvidenceCard | DecisionCard,
     failure: FailureEntry,
     status: str,
     compare_environment: bool,
     *,
     shown: bool,
     current: bool,
-) -> dict[str, Any] | None:
+) -> ShownFailure | None:
     """Return a card's saved failure as shown, or None when it is hidden.
 
     `status` is the failure's own currency; `shown` says the card shows a
@@ -306,12 +363,12 @@ def _shown_failure(
 
 
 def with_saved_decisions(
-    cards: list[dict[str, Any]],
+    cards: list[DecisionCard],
     records: Records | None,
     text: str,
     fingerprint: Fingerprint,
     compare_environment: bool = True,
-) -> list[dict[str, Any]]:
+) -> list[DecisionCard]:
     """Show each card's saved outcome, failure and status; nothing is decided.
 
     Without `compare_environment` no fingerprint is taken, as for evidence. A
@@ -379,11 +436,11 @@ def unavailable_words(providers: Providers | None, section: str) -> dict[str, st
 
 
 def with_runs(
-    cards: list[dict[str, Any]],
+    cards: list[_Card],
     running: str | None,
     run_errors: dict[str, str],
     saved: frozenset[str] = frozenset(),
-) -> list[dict[str, Any]]:
+) -> list[_Card]:
     """Mark the card being run and show each card's last run error.
 
     A run error that this session also saved as the card's failure (its key

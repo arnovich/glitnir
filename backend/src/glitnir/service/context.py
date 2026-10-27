@@ -4,10 +4,10 @@ import hashlib
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from glitnir.lean.fingerprint import Fingerprint
-from glitnir.preview.snapshot import Fingerprints
+from glitnir.preview.snapshot import Fingerprints, Snapshot
 from glitnir.providers import Providers
 
 CLOSED = "This preview is closed."
@@ -40,5 +40,5 @@ class PreviewContext:
     providers: Callable[[], Providers]
     text: Callable[[], str]
     fingerprint: Callable[[str], Fingerprints]
-    snapshot: Callable[[str, Fingerprint], dict[str, Any]]
+    snapshot: Callable[[str, Fingerprint], Snapshot]
     unsupported: Callable[[], str | None]

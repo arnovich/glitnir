@@ -2878,3 +2878,8 @@ def test_uses_beyond_the_cap_are_marked_truncated(tmp_path, monkeypatch):
     result, _, _, _ = _staged_examples(tmp_path, monkeypatch)
     assert all(len(t["uses"]) == checking.MAX_USES for t in result["theorems"])
     assert all(t["uses_truncated"] is True for t in result["theorems"])
+    # The flag follows the uses it describes in the printed JSON, as before.
+    assert all(
+        list(t).index("uses_truncated") == list(t).index("uses") + 1
+        for t in result["theorems"]
+    )

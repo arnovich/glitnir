@@ -7,7 +7,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Literal, TypedDict, cast
 
 from glitnir.lean.project_snapshot import SLOT_WAIT_TIMED_OUT, SnapshotError
 from glitnir.lean.project_views import render_project_views
@@ -108,13 +108,21 @@ class _ViewRun:
     sha256: str
 
 
-def _drawing_answer(job: _ViewJob) -> dict[str, Any]:
+class ViewAnswer(TypedDict):
+    """The answer for a view not drawn yet: queued or drawing, and its job."""
+
+    status: Literal["drawing", "queued"]
+    message: str
+    job: str
+
+
+def _drawing_answer(job: _ViewJob) -> ViewAnswer:
     """Answer for a view still being drawn: its progress and its job."""
     return {"status": "drawing", "message": job.message, "job": job.id}
 
 
 def _drawn_view(
-    job: _ViewJob, entry: dict[str, Any]
+    job: _ViewJob, entry: ViewDirective
 ) -> tuple[int, str, str, tuple[str, ...]]:
     """Name the view `render_project_views` draws for `job`, listed as `entry`."""
     return (job.key[2], entry["kind"], entry["name"], tuple(entry["using"]))
@@ -301,7 +309,7 @@ class ViewDrawing:
                 return {"error": f"View drawing could not start: {error}"}
             return _drawing_answer(asked)
 
-    def _answer_during_run(self, key: tuple[str, str, int]) -> dict[str, Any] | None:
+    def _answer_during_run(self, key: tuple[str, str, int]) -> ViewAnswer | None:
         """Answer for the view `key` while a run draws, or None.
 
         Hold `context.state_lock`.
@@ -346,7 +354,7 @@ class ViewDrawing:
             job.cancel.set()
 
     def _draw_views(
-        self, run: _ViewRun, members: list[tuple[_ViewJob, dict[str, Any]]]
+        self, run: _ViewRun, members: list[tuple[_ViewJob, ViewDirective]]
     ) -> None:
         """Draw a run's views; always end every one of its jobs, then the run.
 
@@ -381,7 +389,7 @@ class ViewDrawing:
                 self._view_run = None
 
     def _draw_together(
-        self, run: _ViewRun, members: list[tuple[_ViewJob, dict[str, Any]]]
+        self, run: _ViewRun, members: list[tuple[_ViewJob, ViewDirective]]
     ) -> Mapping[str, Any] | None:
         """Draw every view of a run in one Lean run; return its whole failure."""
 
@@ -408,7 +416,7 @@ class ViewDrawing:
     def _retries(
         self,
         run: _ViewRun,
-        members: list[tuple[_ViewJob, dict[str, Any]]],
+        members: list[tuple[_ViewJob, ViewDirective]],
         failure: Mapping[str, Any],
     ) -> bool:
         """Whether a run that failed as a whole draws its views again alone.
@@ -424,7 +432,7 @@ class ViewDrawing:
             and not message.endswith(INTERRUPTED)
         )
 
-    def _draw_alone(self, run: _ViewRun, job: _ViewJob, entry: dict[str, Any]) -> None:
+    def _draw_alone(self, run: _ViewRun, job: _ViewJob, entry: ViewDirective) -> None:
         """Draw one view of a failed run in a Lean run of its own, if still wanted.
 
         Its own Stop stops that run.

@@ -9,6 +9,7 @@ import re
 import stat
 import unicodedata
 from pathlib import Path
+from typing import TypedDict
 
 from glitnir.lean.environment import MAX_SOURCE_BYTES
 from glitnir.lean.project import describe_project
@@ -37,7 +38,14 @@ def unbuilt_sibling_imports(path: Path, imports: dict[str, str | None]) -> list[
     ]
 
 
-def sibling_references(path: Path) -> list[dict[str, str]]:
+class Reference(TypedDict):
+    """A sibling notebook that prose links may open: its module and file name."""
+
+    module: str
+    file: str
+
+
+def sibling_references(path: Path) -> list[Reference]:
     """List sibling notebooks that prose links may open, never following links."""
     siblings = sorted(
         candidate

@@ -9,6 +9,7 @@ grants proof, so reading too much costs at most a card that fails.
 
 import hashlib
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 
 from glitnir.lean.lexing import command_boundaries, only_comments, scan
@@ -107,7 +108,7 @@ def directive_lines(text: str, candidates: list[int]) -> set[int]:
 
 
 def evidence_directives(
-    cells: list[dict[str, Any]], text: str
+    cells: Sequence[Mapping[str, Any]], text: str
 ) -> list[EvidenceDirective]:
     """Find evidence directives in the source cells of `text`, in file order."""
     lines = text.split("\n")
@@ -186,7 +187,7 @@ def _read_decision(head: str, continuations: list[str]) -> tuple[str, str, str, 
 
 
 def decision_directives(
-    cells: list[dict[str, Any]], text: str
+    cells: Sequence[Mapping[str, Any]], text: str
 ) -> list[DecisionDirective]:
     """Find decision directives in the source cells of `text`, in file order."""
     lines = text.split("\n")
@@ -246,7 +247,9 @@ def decision_directives(
     return found
 
 
-def view_directives(cells: list[dict[str, Any]], source: str) -> list[ViewDirective]:
+def view_directives(
+    cells: Sequence[Mapping[str, Any]], source: str
+) -> list[ViewDirective]:
     """Find `-- @view <kind> <name> [using a, b]` lines in source cells.
 
     As for evidence and decisions, only lines Lean reads as comment lines of

@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from glitnir.compute.client import remote_identity
 from glitnir.lean.awake import awake
@@ -267,6 +267,14 @@ class _DecisionJob:
     keep: frozenset[str]
     provider: DecisionProvider
     request: DecisionRequest
+
+
+class Candidate(TypedDict):
+    """The block the editor may insert for a decision, and where it goes."""
+
+    sha256: str
+    insert_after_line: int
+    block: str
 
 
 class DirectiveRuns:
@@ -725,7 +733,7 @@ class DirectiveRuns:
             self._run_errors.pop(directive["key"], None)
         return str(directive["key"])
 
-    def decision_candidate(self, key: str) -> dict[str, Any]:
+    def decision_candidate(self, key: str) -> Candidate:
         """Return the checked block the editor may insert for the decision `key`.
 
         The backend never writes the notebook: the editor inserts `block` right
@@ -762,10 +770,13 @@ class DirectiveRuns:
             or verification["status"] != "checked"
         ):
             raise SnapshotError(NOT_ACCEPTABLE[status])
+        outcome = checked_decision(entry["outcome"])
+        if outcome["status"] == "unknown":  # a candidate is never unknown
+            raise SnapshotError(NOT_ACCEPTABLE[status])
         return {
             "sha256": _sha256(text),
             "insert_after_line": end_line,
-            "block": checked_decision(entry["outcome"])["block"],
+            "block": outcome["block"],
         }
 
     def _decision_directive(

@@ -35,8 +35,11 @@ from glitnir.preview.linked import (
     unbuilt_sibling_imports,
 )
 from glitnir.preview.snapshot import (
+    CheckState,
     Fingerprints,
+    InspectionSummary,
     PreviewState,
+    Snapshot,
     build_snapshot,
     cells,
     cut_short,
@@ -47,7 +50,7 @@ from glitnir.preview.snapshot import (
 from glitnir.providers import Providers, load_providers
 from glitnir.service.context import CLOSED, PreviewContext
 from glitnir.service.proof_steps import ProofSteps
-from glitnir.service.runs import DirectiveRuns
+from glitnir.service.runs import Candidate, DirectiveRuns
 from glitnir.service.views import ViewDrawing
 
 # How long closing waits for every worker together before giving up on them.
@@ -59,14 +62,14 @@ NOTHING_CHECKING = "No check is running."
 INSPECTION_CANCELLED = "Project inspection cancelled."
 
 
-def _inspection_summary(result: Inspection, sha256: str) -> dict[str, Any]:
+def _inspection_summary(result: Inspection, sha256: str) -> InspectionSummary:
     """Keep what the preview shows of an inspection; never the setup itself.
 
     The setup lists every module of the import closure (megabytes with
     Mathlib) and the resolution the bytes of each configuration file it read,
     so only the message and the packages are kept for the snapshot.
     """
-    summary: dict[str, Any] = {
+    summary: InspectionSummary = {
         "status": str(result.get("status", "unavailable")),
         "source_sha256": sha256,
         "message": str(result.get("message", "")),
@@ -78,6 +81,13 @@ def _inspection_summary(result: Inspection, sha256: str) -> dict[str, Any]:
             "packages": resolution.get("packages", []),
         }
     return summary
+
+
+def _check_state(sha256: str, covered: int | None, result: CheckOutcome) -> CheckState:
+    """Return the service's view of a finished check: the result, lines covered."""
+    if result["status"] == "checked_snapshot":
+        return {"source_sha256": sha256, "through_line": covered, **result}
+    return {"source_sha256": sha256, "through_line": covered, **result}
 
 
 class SourcePreviewService:
@@ -105,10 +115,10 @@ class SourcePreviewService:
         self._cancel = threading.Event()
         self._inspection_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._check: Mapping[str, Any] | None = None
+        self._check: CheckState | None = None
         self._check_cancel: threading.Event | None = None
         self._worker: threading.Thread | None = None
-        self._inspection: dict[str, Any] | None = None
+        self._inspection: InspectionSummary | None = None
         self._inspection_worker: threading.Thread | None = None
         self._inspection_cancel: threading.Event | None = None
         self._providers_lock = threading.Lock()
@@ -430,11 +440,7 @@ class SourcePreviewService:
             else:
                 covered = through_line
             with self._state_lock:
-                self._check = {
-                    "source_sha256": sha256,
-                    "through_line": covered,
-                    **result,
-                }
+                self._check = _check_state(sha256, covered, result)
         except Exception as error:
             # A background failure must always unblock the editor controls.
             with self._state_lock:
@@ -457,14 +463,14 @@ class SourcePreviewService:
         """Compute each environment fingerprint of `text` at most once."""
         return Fingerprints(self.path, text)
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self) -> Snapshot:
         """Preserve all source, using prose cells only when parsing is lossless."""
         text = self._text()
         return self._snapshot(text, self._fingerprint(text))
 
     def _snapshot(
         self, text: str, fingerprint: Fingerprint, *, compare_environment: bool = True
-    ) -> dict[str, Any]:
+    ) -> Snapshot:
         """Build the snapshot of `text` from this service's current state."""
         with self._state_lock:
             running, run_errors, saved_failures = self._runs.state()
@@ -484,7 +490,7 @@ class SourcePreviewService:
             compare_environment=compare_environment,
         )
 
-    def linked(self, link: str) -> dict[str, Any]:
+    def linked(self, link: str) -> Snapshot:
         """Return a read-only snapshot of another notebook of this project.
 
         The snapshot shows the linked notebook's saved source and its own
@@ -552,6 +558,6 @@ class SourcePreviewService:
         """Remove a saved decision (`DirectiveRuns.discard_decision`)."""
         return self._runs.discard_decision(sha256, line)
 
-    def decision_candidate(self, key: str) -> dict[str, Any]:
+    def decision_candidate(self, key: str) -> Candidate:
         """Return a decision's block to insert (`DirectiveRuns.decision_candidate`)."""
         return self._runs.decision_candidate(key)

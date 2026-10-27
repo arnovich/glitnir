@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from glitnir import providers
-from glitnir.providers.outcomes import checked_drawing
+from glitnir.providers.outcomes import Drawing, checked_drawing
 
 
 def _provider(name, kinds):
@@ -345,3 +345,9 @@ def test_outcomes_module_owns_provider_output_validation() -> None:
     with pytest.raises(ValueError, match="status must be"):
         outcomes.checked_decision({"status": "nonsense"})
     assert outcomes.MAX_SAMPLES > 0 and outcomes.MAX_BLOCK_BYTES > 0
+
+
+def test_drawing_requires_its_svg() -> None:
+    """A checked drawing always has its SVG; the diagram parts are optional."""
+    assert set(Drawing.__required_keys__) == {"svg"}
+    assert set(Drawing.__optional_keys__) == {"graph", "model", "detail", "contracts"}

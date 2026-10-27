@@ -187,7 +187,7 @@ class ClaimView(TypedDict):
     end_line: int
     status: str
     axioms: list[Axiom]
-    current: bool
+    current: bool | None
     uses: NotRequired[list[UseView]]
     uses_truncated: NotRequired[Literal[True]]
     not_rechecked: NotRequired[Literal[True]]

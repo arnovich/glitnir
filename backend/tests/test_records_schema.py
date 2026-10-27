@@ -17,6 +17,20 @@ def test_claim_record_keys_match_the_validator():
         assert annotation is kind or getattr(annotation, "__origin__", None) is kind
 
 
+def test_claim_record_optional_keys_match_the_validator():
+    """The keys `well_formed` checks by name when present are the optional keys."""
+    assert set(schema.ClaimRecord.__optional_keys__) == {
+        "example",
+        "statement",
+        "statement_shortened",
+        "kernel_statement",
+        "kernel_statement_shortened",
+        "uses",
+        "uses_truncated",
+        "fingerprint",
+    }
+
+
 def test_non_claim_record_keys_match_the_validator():
     assert set(schema._NON_CLAIM_KEYS) == _keys(schema.NonClaimRecord)
     for key, kind in schema._NON_CLAIM_KEYS.items():
@@ -25,20 +39,34 @@ def test_non_claim_record_keys_match_the_validator():
 
 def test_evidence_entry_keys_match_the_validator():
     assert {*schema._EVIDENCE_KEYS, "snapshot"} == _keys(schema.EvidenceEntry)
+    assert all(
+        schema.EvidenceEntry.__annotations__[key] is str
+        for key in schema._EVIDENCE_KEYS
+    )
 
 
 def test_view_entry_keys_match_the_validator():
     assert {*schema._VIEW_KEYS, "drawing"} == _keys(schema.ViewEntry)
+    assert all(
+        schema.ViewEntry.__annotations__[key] is str for key in schema._VIEW_KEYS
+    )
 
 
 def test_decision_entry_keys_match_the_validator():
     assert {*schema._EVIDENCE_KEYS, "outcome", "verification"} == _keys(
         schema.DecisionEntry
     )
+    assert all(
+        schema.DecisionEntry.__annotations__[key] is str
+        for key in schema._EVIDENCE_KEYS
+    )
 
 
 def test_failure_entry_keys_match_the_validator():
     assert set(schema._FAILURE_KEYS) == _keys(schema.FailureEntry)
+    assert all(
+        schema.FailureEntry.__annotations__[key] is str for key in schema._FAILURE_KEYS
+    )
 
 
 def test_verification_keys_match_the_verdict():
