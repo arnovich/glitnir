@@ -166,6 +166,7 @@ class Client:
             headers={
                 "Authorization": "Bearer " + self.settings.token,
                 "Content-Type": "application/json",
+                "User-Agent": "Glitnir",
             },
         )
         try:

@@ -225,8 +225,11 @@ def test_a_dirty_dependency_still_changes_a_portable_fingerprint(tmp_path):
     assert dirty["sha256"] != one["sha256"]
 
 
-def test_a_result_saved_under_a_v3_fingerprint_reads_as_out_of_date(tmp_path):
-    """Version 3 hashed whole traces; its digests match nothing now."""
+@pytest.mark.parametrize("version", ["v3", "v4"])
+def test_a_result_saved_under_an_older_fingerprint_reads_as_out_of_date(
+    tmp_path, version
+):
+    """Whole traces and public-only inventories do not match current inputs."""
     from glitnir.notebook.check_records import claim_views, records_from_check
 
     source = _copied_project(tmp_path)
@@ -235,8 +238,8 @@ def test_a_result_saved_under_a_v3_fingerprint_reads_as_out_of_date(tmp_path):
         key: found[key]
         for key in ("toolchain", "files", "packages", "imports", "sources", "checker")
     }
-    v3 = hashlib.sha256(
-        b"glitnir.environment-fingerprint/v3\0"
+    previous = hashlib.sha256(
+        f"glitnir.environment-fingerprint/{version}\0".encode()
         + json.dumps(identity, sort_keys=True).encode()
     ).hexdigest()
     text = "theorem t : True := True.intro\n"
@@ -256,8 +259,8 @@ def test_a_result_saved_under_a_v3_fingerprint_reads_as_out_of_date(tmp_path):
             }
         ],
     }
-    records = records_from_check(text, result, v3)
-    assert [v["current"] for v in claim_views(text, records, v3)] == [True]
+    records = records_from_check(text, result, previous)
+    assert [v["current"] for v in claim_views(text, records, previous)] == [True]
     [view] = claim_views(text, records, found["sha256"])
     assert view["current"] is False
 
@@ -1210,10 +1213,11 @@ def test_live_fingerprint_is_portable_across_checkouts(
     assert current() is False
 
 
-# Saved results hold only this digest, so these values must never change: a change
-# marks every saved result out of date. They are of `_project`'s layout.
-_LOCAL_PIN = "f24b2f9807f144760f067465693cd9ba06d64920defc8047d3bf182c1424b8b7"
-_REMOTE_PIN = "b9f1dd6cb92a5eaef4218005653a6cd2d65c8a67188b3247bcadad11fb6fd187"
+# Saved results hold only this digest. These are deliberately repinned for v5's
+# full private replay inventory: v4 and earlier results become out of date once.
+# Within v5 these values must not change. They are of `_project`'s layout.
+_LOCAL_PIN = "281d2b08237e72b1b0b2d3a69cf57ccccf9fd1136ea3e0f03f6871ae2eb98f48"
+_REMOTE_PIN = "4d2a81edae6df390059e3a593479b3294bc32a6b01681032607891189546f98f"
 
 
 def test_local_fingerprint_value_is_pinned(tmp_path, monkeypatch):

@@ -8,6 +8,61 @@ from glitnir.lean.artifacts import artifact_files
 from glitnir.lean.prepared_packages import validate_resolution
 
 
+def test_live_public_import_keeps_private_replay_closure(private_import_project):
+    """Public compilation needs fewer artifacts than private-level kernel replay."""
+    from glitnir.lean.project_inspection import inspect_project
+
+    report = inspect_project(private_import_project / "src/Boundary.lean")
+    assert report["status"] == "resolved", report
+    assert report["setup"]["isModule"] is True
+    imports = report["setup"]["importArts"]
+    for module in ("Boundary.Dependency", "Boundary.Hidden"):
+        assert module in imports
+        assert {suffix for _, suffix in artifact_files(imports[module])} >= {
+            ".olean",
+            ".olean.server",
+            ".olean.private",
+        }
+
+
+def test_live_public_import_snapshot_preserves_visibility(private_import_project):
+    """Full replay inputs do not expose a dependency's unexported axiom to source."""
+    from glitnir.lean.project_checking import check_project
+
+    source = private_import_project / "src/Boundary.lean"
+    report = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert report["status"] == "checked_snapshot", report
+    assert [(t["name"], t["status"], t["axioms"]) for t in report["theorems"]] == [
+        ("result", "checked", [])
+    ]
+    original = source.read_text()
+    source.write_text(
+        original.replace("True := dependencyTrue", "False := dependsOnHidden")
+    )
+    assumed = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert assumed["status"] == "checked_snapshot", assumed
+    [theorem] = assumed["theorems"]
+    assert theorem["status"] != "checked", assumed
+    assert theorem["axioms"] == [{"name": "hiddenAxiom", "module": "Boundary.Hidden"}]
+    source.write_text(
+        original.replace("True := dependencyTrue", "False := hiddenAxiom")
+    )
+    rejected = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    # Glitnir checks the header prefix and withholds the failing command.
+    # A checked prefix must never be mistaken for a checked target theorem.
+    assert rejected["status"] == "checked_snapshot", rejected
+    assert rejected["theorems"] == [], rejected
+    assert rejected["withheld"]["from_line"] == 4, rejected
+    assert "Unknown identifier" in rejected["withheld"]["message"], rejected
+    assert "hiddenAxiom" in rejected["withheld"]["message"], rejected
+
+
 def test_resolution_binds_inputs_and_absence(tmp_path):
     """An absent override and captured manifest bytes are both part of identity."""
     manifest = tmp_path / "manifest.json"
