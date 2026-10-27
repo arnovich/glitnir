@@ -14,10 +14,12 @@ unreadable outline or a usage error.
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 NODE_KINDS = (
@@ -190,9 +192,209 @@ def check_outline(outline: dict[str, Any]) -> list[Problem]:
     return problems
 
 
-Check = Callable[[dict[str, Any]], list[Problem]]
-# Later checks (declarations, notebook) are appended here.
-CHECKS: list[Check] = [check_outline]
+_DECL_RE = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)*"
+    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe)\s+)*"
+    r"(?:theorem|lemma|def|abbrev|structure|class|inductive|instance|opaque|axiom)"
+    r"\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
+)
+_NAMESPACE_RE = re.compile(r"^namespace\s+(\S+)")
+_SECTION_RE = re.compile(r"^section(?:\s+(\S+))?\s*$")
+_END_RE = re.compile(r"^end(?:\s+(\S+))?\s*$")
+_OPEN_RE = re.compile(r"^open\s+([^\n]*)")
+_OPENERS = "([{⟨"
+_CLOSERS = ")]}⟩"
+_GIT_TIMEOUT_SECONDS = 30
+
+
+@dataclass(frozen=True)
+class Declaration:
+    """A Lean declaration found by scanning source text."""
+
+    name: str
+    file: str
+    line: int
+    type: str
+    namespaces: tuple[str, ...]
+
+
+def _collapse(text: str) -> str:
+    """Collapse every run of whitespace to a single space."""
+    return " ".join(text.split())
+
+
+def _header(first_rest: str, following: list[str]) -> str:
+    """Return the header text up to the top-level `:=` or `where`."""
+    depth = 0
+    out: list[str] = []
+    lines = [first_rest, *following]
+    for index, line in enumerate(lines):
+        line = line.split("--", 1)[0]
+        if index and line.lstrip().startswith("|"):
+            break
+        position = 0
+        while position < len(line):
+            char = line[position]
+            if char in _OPENERS:
+                depth += 1
+            elif char in _CLOSERS:
+                depth -= 1
+            elif depth <= 0 and line.startswith(":=", position):
+                return _collapse("".join(out) + line[:position])
+            elif (
+                depth <= 0
+                and line.startswith("where", position)
+                and (position == 0 or not (line[position - 1].isalnum()))
+                and line[position + 5 :][:1] in ("", " ", "\t")
+            ):
+                return _collapse("".join(out) + line[:position])
+            position += 1
+        out.append(line + " ")
+    return _collapse("".join(out))
+
+
+def _continuation(lines: list[str], start: int) -> list[str]:
+    """Return the indented lines directly after line `start`."""
+    rest: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.strip() and not line[0].isspace():
+            break
+        rest.append(line)
+    return rest
+
+
+def declarations(root: Path, file: str) -> list[Declaration]:
+    """Return the declarations at column 0 of a Lean file, in order."""
+    lines = (root / file).read_text(encoding="utf-8").splitlines()
+    frames: list[tuple[str, tuple[str, ...]]] = []
+    opened: list[str] = []
+    found: list[Declaration] = []
+    in_comment = False
+    for index, line in enumerate(lines):
+        if in_comment:
+            in_comment = "-/" not in line
+            continue
+        if line.startswith("/-"):
+            in_comment = "-/" not in line
+            continue
+        match = _NAMESPACE_RE.match(line)
+        if match:
+            frames.extend(("namespace", (part,)) for part in match.group(1).split("."))
+            continue
+        match = _SECTION_RE.match(line)
+        if match:
+            frames.append(("section", ()))
+            continue
+        match = _END_RE.match(line)
+        if match:
+            for _ in range((match.group(1) or "x").count(".") + 1):
+                if frames:
+                    frames.pop()
+            continue
+        match = _OPEN_RE.match(line)
+        if match:
+            opened.extend(w for w in match.group(1).split() if w != "in")
+            continue
+        match = _DECL_RE.match(line)
+        if not match:
+            continue
+        parts = [part for _, names in frames for part in names]
+        prefixes = tuple(".".join(parts[: i + 1]) for i in range(len(parts)))
+        name = match.group("name").rstrip(".")
+        if name.startswith("_root_."):
+            full = name[len("_root_.") :]
+        else:
+            full = ".".join([*parts, name])
+        header = _header(match.group("rest"), _continuation(lines, index))
+        found.append(
+            Declaration(full, file, index + 1, header, prefixes + tuple(opened))
+        )
+    return found
+
+
+def _lean_entries(outline: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Return each node's well-formed lean entries with the node's id."""
+    entries: list[tuple[str, dict[str, Any]]] = []
+    for item in outline.get("nodes", []):
+        for lean in item.get("lean", []):
+            if all(key in lean for key in _LEAN_KEYS):
+                entries.append((str(item.get("id")), lean))
+    return entries
+
+
+def _project_root(outline: dict[str, Any], base: Path) -> Path:
+    """Return the Lean project folder, which `project.root` gives relative to base."""
+    return base / str(outline["project"]["root"])
+
+
+def check_lean_entries(outline: dict[str, Any], base: Path) -> list[Problem]:
+    """Compare each node's `lean` entries with the project's source text."""
+    root = _project_root(outline, base)
+    scanned: dict[str, list[Declaration] | None] = {}
+    problems: list[Problem] = []
+    for node_id, lean in _lean_entries(outline):
+        file, name = str(lean["file"]), str(lean["name"])
+        where = f"node {node_id}: {name}"
+        if file not in scanned:
+            try:
+                scanned[file] = declarations(root, file)
+            except (OSError, UnicodeDecodeError):
+                scanned[file] = None
+        found = scanned[file]
+        if found is None:
+            problems.append(_error(f"{where}: file {file} cannot be read"))
+            continue
+        matches = [d for d in found if d.name == name]
+        if not matches:
+            problems.append(_error(f"{where}: no declaration with this name in {file}"))
+            continue
+        match = next((d for d in matches if d.line == lean["line"]), matches[0])
+        if match.line != lean["line"]:
+            problems.append(
+                _error(
+                    f"{where}: listed at line {lean['line']}, now at line {match.line}"
+                )
+            )
+        if _collapse(str(lean["type"])) != match.type:
+            problems.append(
+                _error(
+                    f"{where}: type is {match.type!r} in {file}, "
+                    f"outline says {_collapse(str(lean['type']))!r}"
+                )
+            )
+    return problems
+
+
+def _git(root: Path, *args: str) -> str | None:
+    """Return git's output for the project folder, or None if it cannot run."""
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def check_commit(outline: dict[str, Any], base: Path) -> list[Problem]:
+    """Note how far the project has moved since the outline's commit."""
+    root = _project_root(outline, base)
+    recorded = str(outline["project"]["commit"])
+    latest = _git(root, "log", "-1", "--format=%H", "--", ".")
+    if not latest:
+        return [
+            Problem("note", "project commit not checked: git cannot read the project")
+        ]
+    if latest.startswith(recorded) or recorded.startswith(latest):
+        return []
+    count = _git(root, "rev-list", "--count", f"{recorded}..HEAD", "--", ".")
+    if count is None:
+        return [Problem("note", f"commit {recorded} is not in the project's history")]
+    return [Problem("note", f"project moved {count} commits since {recorded}")]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -216,7 +418,10 @@ def main(argv: list[str] | None = None) -> int:
     except OutlineError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    problems = [p for check in CHECKS for p in check(outline)]
+    problems = check_outline(outline)
+    if not any(p.level == "error" for p in problems):
+        base = args.outline.parent
+        problems += check_lean_entries(outline, base) + check_commit(outline, base)
     for problem in problems:
         print(f"{problem.level}: {problem.message}")
     return 1 if any(p.level == "error" for p in problems) else 0
