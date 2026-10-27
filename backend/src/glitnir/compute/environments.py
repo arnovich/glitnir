@@ -118,7 +118,7 @@ def load_registry(path: Path) -> list[Recipe]:
     return recipes
 
 
-def _files(root: Path) -> Iterator[Path]:
+def _files(root: Path, *, missing_ok: bool = False) -> Iterator[Path]:
     count = 0
     for parent, directories, files in os.walk(root, followlinks=False):
         for name in sorted([*directories, *files]):
@@ -126,7 +126,12 @@ def _files(root: Path) -> Iterator[Path]:
             if count > 200000:
                 raise ValueError("Environment exceeds traversal budget")
             path = Path(parent) / name
-            mode = path.lstat().st_mode
+            try:
+                mode = path.lstat().st_mode
+            except FileNotFoundError:
+                if missing_ok:
+                    continue
+                raise
             if stat.S_ISREG(mode) or stat.S_ISLNK(mode):
                 yield path
             elif not stat.S_ISDIR(mode):
@@ -271,7 +276,16 @@ class EnvironmentCache:
 
     def check_budget(self, entry: Path, recipe: Recipe) -> None:
         """Count entry data, including Git objects and private candidate stages."""
-        if sum(p.lstat().st_size for p in _files(entry)) > recipe.max_bytes:
+        # Live build/download tools atomically rename temporary files. Only this
+        # sampled size scan tolerates disappearances; immutable inventories stay
+        # strict, and all other filesystem errors still fail the preparation.
+        size = 0
+        for path in _files(entry, missing_ok=True):
+            try:
+                size += path.lstat().st_size
+            except FileNotFoundError:
+                continue
+        if size > recipe.max_bytes:
             raise ValueError("Environment exceeds its disk budget")
 
     @contextmanager

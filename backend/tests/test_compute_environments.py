@@ -117,6 +117,75 @@ def test_source_symlinks_are_not_materialized(tmp_path):
     assert (root / "artifact").read_bytes() == (root / "data").read_bytes()
 
 
+@pytest.mark.parametrize("during", ["enumeration", "size"])
+def test_budget_scan_tolerates_disappearing_download_files(
+    tmp_path, monkeypatch, during
+):
+    """A cache download may rename its part file at either stat boundary."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    cache = EnvironmentCache(tmp_path / "cache")
+    entry = cache.root / ".building-test"
+    entry.mkdir()
+    temporary = entry / "download.part"
+    temporary.write_bytes(b"partial")
+    (entry / "persistent").write_bytes(b"x")
+    original = Path.lstat
+    calls = 0
+
+    def stat(path):
+        nonlocal calls
+        if path == temporary:
+            calls += 1
+            if calls == (1 if during == "enumeration" else 2):
+                temporary.unlink()
+        return original(path)
+
+    monkeypatch.setattr(Path, "lstat", stat)
+    cache.check_budget(entry, SimpleNamespace(max_bytes=1))
+
+
+def test_inventory_still_refuses_a_disappearing_prepared_file(tmp_path, monkeypatch):
+    """Immutable reuse/inventory checks must retain their fail-closed behavior."""
+    from pathlib import Path
+
+    from glitnir.compute.environments import _inventory
+
+    source = tmp_path / "Example.lean"
+    source.write_text("def original := 1\n")
+    original = Path.lstat
+
+    def stat(path):
+        if path == source:
+            source.unlink()
+        return original(path)
+
+    monkeypatch.setattr(Path, "lstat", stat)
+    with pytest.raises(FileNotFoundError):
+        _inventory(tmp_path, lambda: None)
+
+
+def test_budget_scan_does_not_hide_permission_errors(tmp_path, monkeypatch):
+    """Only vanished entries are expected while trusted build tools are writing."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    cache = EnvironmentCache(tmp_path / "cache")
+    source = cache.root / "protected"
+    source.write_bytes(b"x")
+    original = Path.lstat
+
+    def stat(path):
+        if path == source:
+            raise PermissionError("Unreadable build file")
+        return original(path)
+
+    monkeypatch.setattr(Path, "lstat", stat)
+    with pytest.raises(PermissionError):
+        cache.check_budget(cache.root, SimpleNamespace(max_bytes=100))
+
+
 def test_live_switching_preserves_each_projects_propositions(
     registered_repositories, project_toolchain, monkeypatch, tmp_path
 ):
