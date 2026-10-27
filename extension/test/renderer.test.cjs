@@ -4123,9 +4123,11 @@ test('the rendered workbench is pinned by a fixture', async () => {
       [decisionSnapshot(DECISION_TEXT, [servedDecision({status: 'candidate', outcome: decisionOutcome(), verification: checkedVerification()})]), null],
     ]) {
       const window = await renderSnapshot(snapshot, {browser: true, katex: true, onWindow: fixed});
+      // What the page shows, not how it is loaded: its own script tags are not pinned.
+      const shown = () => window.document.body.innerHTML.replace(/<script src="\/[^"]*"><\/script>\n?|<!-- host scripts -->\n?/g, '');
       try {
-        parts.push(window.document.body.innerHTML);
-        if (act) { act(window.document); parts.push(window.document.body.innerHTML); }
+        parts.push(shown());
+        if (act) { act(window.document); parts.push(shown()); }
       } finally { window.close(); }
     }
     return parts.join('\n<!-- next -->\n');
