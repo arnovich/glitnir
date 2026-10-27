@@ -6,13 +6,17 @@ Nothing here reads or writes a file.
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, Final, Literal, NotRequired, TypedDict, TypeGuard
 
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.project_checking import MAX_USES
+from glitnir.lean.results import Axiom, Use, Verdict, Withheld
 from glitnir.providers.outcomes import (
     Decision,
+    Drawing,
+    Evidence,
     checked_decision,
     checked_drawing,
     checked_evidence,
@@ -40,9 +44,9 @@ _NON_CLAIM_KEYS: dict[str, type] = {
 }
 _EVIDENCE_KEYS = ("prefix_sha256", "fingerprint", "provider", "created")
 _VIEW_KEYS = (*_EVIDENCE_KEYS, "provider_sha256")
-_FAILURES = "evidence_failures"
-_DECISION_FAILURES = "decision_failures"
-_FAILURE_SECTIONS = (_FAILURES, _DECISION_FAILURES)
+_FAILURES: Final = "evidence_failures"
+_DECISION_FAILURES: Final = "decision_failures"
+_FAILURE_SECTIONS: Final = (_FAILURES, _DECISION_FAILURES)
 _FAILURE_KEYS = (*_EVIDENCE_KEYS, "kind", "message")
 #: What made a saved evidence run fail: Lean's own error for the directive, a
 #: provider crash, the provider's refusal, output that is not evidence, or the
@@ -63,6 +67,106 @@ _CREATED = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+00:00|Z)")
 MAX_MESSAGE = 2000
 # A checked statement's kernel form; a run saves a longer one shortened.
 MAX_TYPE = 20_000
+
+#: The result sections a records file may hold besides its claims.
+Section = Literal[
+    "evidence", "decisions", "views", "evidence_failures", "decision_failures"
+]
+#: The two sections of saved failed runs.
+FailureSection = Literal["evidence_failures", "decision_failures"]
+
+
+class Environment(TypedDict):
+    """The environment the records' check ran in, and the check's identity.
+
+    A check run remotely adds `execution`, the compute layer's description.
+    """
+
+    fingerprint: str
+    check: str
+    execution: NotRequired[dict[str, Any]]
+
+
+class ClaimRecord(TypedDict):
+    """One saved claim, as `check_records.py`'s docstring describes it."""
+
+    name: str
+    status: str
+    axioms: list[Axiom]
+    start_line: int
+    end_line: int
+    declaration_sha256: str
+    prefix_sha256: str
+    proposition_sha256: str
+    uses: NotRequired[list[Use]]
+    uses_truncated: NotRequired[Literal[True]]
+    example: NotRequired[Literal[True]]
+    statement: NotRequired[str]
+    statement_shortened: NotRequired[Literal[True]]
+    kernel_statement: NotRequired[str]
+    kernel_statement_shortened: NotRequired[Literal[True]]
+    fingerprint: NotRequired[str]
+
+
+class NonClaimRecord(TypedDict):
+    """A saved example that claims nothing, found again by its text."""
+
+    start_line: int
+    end_line: int
+    declaration_sha256: str
+    prefix_sha256: str
+
+
+class SavedEntry(TypedDict):
+    """What every saved run records: source prefix, environment, provider, time."""
+
+    prefix_sha256: str
+    fingerprint: str
+    provider: str
+    created: str
+
+
+class EvidenceEntry(SavedEntry):
+    """Saved evidence for one directive: its origin and the checked snapshot."""
+
+    snapshot: Evidence
+
+
+class DecisionEntry(SavedEntry):
+    """A saved decision: the provider's outcome and the kernel's verdict."""
+
+    outcome: Decision
+    verification: Verdict | None
+
+
+class ViewEntry(SavedEntry):
+    """A saved drawing for one view directive, keyed by its provider's hash too."""
+
+    provider_sha256: str
+    drawing: Drawing
+
+
+class FailureEntry(SavedEntry):
+    """A saved failed evidence or decision run: the kind of failure and its message."""
+
+    kind: str
+    message: str
+
+
+class Records(TypedDict):
+    """A `<Notebook>.glitnir.json` file, as `well_formed` accepts it."""
+
+    format: str
+    source_sha256: str
+    environment: Environment
+    withheld: Withheld | None
+    claims: list[ClaimRecord]
+    non_claims: NotRequired[list[NonClaimRecord]]
+    evidence: NotRequired[dict[str, EvidenceEntry]]
+    decisions: NotRequired[dict[str, DecisionEntry]]
+    views: NotRequired[dict[str, ViewEntry]]
+    evidence_failures: NotRequired[dict[str, FailureEntry]]
+    decision_failures: NotRequired[dict[str, FailureEntry]]
 
 
 def matches(saved: Any, fingerprint: str, compare_environment: bool) -> bool:
@@ -133,8 +237,8 @@ def _before(created: str, other: str) -> bool:
 
 
 def lenient_failures(
-    records: dict[str, Any] | None, section: str = _FAILURES
-) -> dict[str, dict[str, Any]]:
+    records: Records | None, section: FailureSection = _FAILURES
+) -> dict[str, FailureEntry]:
     """Return the saved failures still worth showing; malformed ones are dropped.
 
     `section` is `evidence_failures` or `decision_failures`. A section that is
@@ -146,13 +250,14 @@ def lenient_failures(
     failures = records.get(section, {})
     if not isinstance(failures, dict):
         return {}
-    succeeded, success_ok = (
-        ("evidence", _evidence_entry_ok)
-        if section == _FAILURES
-        else ("decisions", _decision_entry_ok)
-    )
+    succeeded: Literal["evidence", "decisions"]
+    success_ok: Callable[[Any], bool]
+    if section == _FAILURES:
+        succeeded, success_ok = "evidence", _evidence_entry_ok
+    else:
+        succeeded, success_ok = "decisions", _decision_entry_ok
     successes = records.get(succeeded, {})
-    kept = {}
+    kept: dict[str, FailureEntry] = {}
     for key, entry in failures.items():
         if not _failure_entry_ok(entry, section):
             continue
@@ -160,16 +265,17 @@ def lenient_failures(
         if isinstance(saved, dict) and success_ok(saved):
             if _before(entry["created"], saved["created"]):
                 continue
-        kept[key] = dict(entry)
+        kept[key] = entry.copy()
     return kept
 
 
-def with_lenient_failures(records: dict[str, Any]) -> dict[str, Any]:
+def with_lenient_failures(records: Records) -> Records:
     """Return ``records`` with only the failures `lenient_failures` keeps."""
     for section in _FAILURE_SECTIONS:
         if section in records:
             failures = lenient_failures(records, section)
-            records = {k: v for k, v in records.items() if k != section}
+            records = records.copy()
+            del records[section]
             if failures:
                 records[section] = failures
     return records
@@ -286,7 +392,7 @@ def _withheld_ok(withheld: Any) -> bool:
     return type(through) is int and 1 <= through and from_line <= through + 1
 
 
-def well_formed(records: dict[str, Any]) -> bool:
+def well_formed(records: dict[str, Any]) -> TypeGuard[Records]:
     """Check the shape that ``claim_views`` relies on; anything else is unknown."""
     environment = records.get("environment")
     if not isinstance(environment, dict) or not isinstance(

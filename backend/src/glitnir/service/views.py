@@ -7,12 +7,13 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from glitnir.lean.project_snapshot import SLOT_WAIT_TIMED_OUT, SnapshotError
 from glitnir.lean.project_views import render_project_views
 from glitnir.lean.provider_lean import INTERRUPTED
 from glitnir.notebook.check_records import (
+    ViewEntry,
     evidence_prefix_sha256,
     load_records,
     save_records,
@@ -20,10 +21,10 @@ from glitnir.notebook.check_records import (
     view_status,
     with_view,
 )
-from glitnir.notebook.directives import starts_command, view_keys
+from glitnir.notebook.directives import ViewDirective, starts_command, view_keys
 from glitnir.preview.cards import provider_imports, view_provider_hash
 from glitnir.providers import ViewProvider
-from glitnir.providers.outcomes import checked_drawing
+from glitnir.providers.outcomes import Drawing, checked_drawing
 from glitnir.service.context import CLOSED, PreviewContext, _sha256
 
 MAX_CACHED_VIEWS = 64
@@ -218,7 +219,7 @@ class ViewDrawing:
         keys = view_keys(text, views)
         saved = {} if digest is None else saved_views(load_records(self._context.path))
 
-        def job_for(view: dict[str, Any]) -> _ViewJob | Mapping[str, Any]:
+        def job_for(view: ViewDirective) -> _ViewJob | Mapping[str, Any]:
             """Return a new job drawing `view`, or its current saved drawing."""
             at = view["line"]
             provider_sha256 = view_provider_hash(providers, view)
@@ -505,7 +506,7 @@ class ViewDrawing:
         provider_sha256: str,
         *,
         compare_environment: bool = True,
-        saved: dict[str, dict[str, Any]] | None = None,
+        saved: dict[str, ViewEntry] | None = None,
     ) -> Mapping[str, Any] | None:
         """Return the drawing saved for the directive `key` at `line`, if current.
 
@@ -543,13 +544,17 @@ class ViewDrawing:
         record = job.record
         if record is None or job.environment_sha256 is None:
             return
-        entry = {
+        entry: ViewEntry = {
             "prefix_sha256": evidence_prefix_sha256(record.text, job.key[2]),
             "fingerprint": job.environment_sha256,
             "provider": record.provider,
             "provider_sha256": record.provider_sha256,
             "created": datetime.now(UTC).isoformat(timespec="seconds"),
-            "drawing": {k: v for k, v in drawing.items() if k not in _TRANSIENT},
+            # checked_drawing's result without its transient labels; with_view
+            # validates the entry, drawing included, before anything is saved.
+            "drawing": cast(
+                Drawing, {k: v for k, v in drawing.items() if k not in _TRANSIENT}
+            ),
         }
         with self._context.records_lock:
             try:

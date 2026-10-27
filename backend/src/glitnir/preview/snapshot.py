@@ -10,7 +10,7 @@ notebook calls it with an empty one.
 import hashlib
 import os
 import stat
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -26,7 +26,13 @@ from glitnir.lean.lexing import code_tokens, scan
 from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_inspection import lean_support
 from glitnir.lean.project_snapshot import SLOT_BUSY, SLOT_WAIT_TIMED_OUT
-from glitnir.notebook.check_records import claim_views, load_records, non_claim_views
+from glitnir.notebook.check_records import (
+    ClaimView,
+    NonClaimView,
+    claim_views,
+    load_records,
+    non_claim_views,
+)
 from glitnir.notebook.directives import (
     decision_directives,
     evidence_directives,
@@ -38,6 +44,7 @@ from glitnir.notebook.document import (
     parse_notebook,
     split_lines,
 )
+from glitnir.notebook.records_schema import Records
 from glitnir.preview import assets
 from glitnir.preview.cards import (
     decision_cards,
@@ -86,7 +93,7 @@ def _source_cell(start: int, end: int, lines: list[str]) -> dict[str, Any]:
 
 
 def _split_at_claims(
-    cells: list[dict[str, Any]], claims: list[dict[str, Any]], lines: list[str]
+    cells: list[dict[str, Any]], claims: Sequence[Mapping[str, Any]], lines: list[str]
 ) -> list[dict[str, Any]]:
     """Give each claim's lines their own source cell, keeping all text."""
     result: list[dict[str, Any]] = []
@@ -126,7 +133,7 @@ def _failed_fresh_check(observation: Mapping[str, Any] | None, sha256: str) -> b
     return not cut_short(str(observation.get("message") or ""))
 
 
-def _withheld(records: dict[str, Any] | None, sha256: str) -> dict[str, Any] | None:
+def _withheld(records: Records | None, sha256: str) -> Mapping[str, Any] | None:
     """Return where the saved check stopped, flagged stale for other text."""
     withheld = records.get("withheld") if records else None
     if not isinstance(withheld, dict):
@@ -159,7 +166,7 @@ def _module_link(directory: Path, module: str) -> str | None:
     return "/".join(relative)
 
 
-def _with_use_links(claims: list[dict[str, Any]], notebook: Path) -> None:
+def _with_use_links(claims: list[ClaimView], notebook: Path) -> None:
     """Link each use of another notebook's claim to that notebook, if readable.
 
     The link is relative to ``notebook``, as `/api/linked` reads it; a use
@@ -371,8 +378,8 @@ def build_snapshot(
     running, run_errors = state.running, dict(state.run_errors)
     saved_failures = state.saved_failures
     records = load_records(path)
-    project_claims: list[dict[str, Any]] = []
-    project_non_claims: list[dict[str, int]] = []
+    project_claims: list[ClaimView] = []
+    project_non_claims: list[NonClaimView] = []
     if records is not None:
         try:
             # A failed fingerprint is '', which matches nothing: the saved

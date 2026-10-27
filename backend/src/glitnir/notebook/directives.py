@@ -9,9 +9,46 @@ grants proof, so reading too much costs at most a card that fails.
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, TypedDict
 
 from glitnir.lean.lexing import command_boundaries, only_comments, scan
+
+
+class EvidenceDirective(TypedDict):
+    """An `-- @evidence <verb> <target> [options]` line, or a malformed one."""
+
+    cell: int
+    line: int
+    verb: str
+    target: str
+    options: str
+    key: str
+    error: str
+
+
+class DecisionDirective(TypedDict):
+    """An `-- @decide` directive with its continuation lines, or a malformed one."""
+
+    cell: int
+    line: int
+    end_line: int
+    name: str
+    kind: str
+    goal: str
+    key: str
+    error: str
+
+
+class ViewDirective(TypedDict):
+    """An `-- @view <kind> <name> [using a, b]` line, or a malformed one."""
+
+    cell: int
+    line: int
+    kind: str
+    name: str
+    using: list[str]
+    error: str
+
 
 _EVIDENCE_DIRECTIVE = re.compile(r"--\s*@evidence\s+(\w+)\s+(\S+)(?:\s+(.*?))?\s*")
 _EVIDENCE_START = re.compile(r"\s*--\s*@evidence\b")
@@ -69,7 +106,9 @@ def directive_lines(text: str, candidates: list[int]) -> set[int]:
     }
 
 
-def evidence_directives(cells: list[dict[str, Any]], text: str) -> list[dict[str, Any]]:
+def evidence_directives(
+    cells: list[dict[str, Any]], text: str
+) -> list[EvidenceDirective]:
     """Find evidence directives in the source cells of `text`, in file order."""
     lines = text.split("\n")
     candidates = [
@@ -80,7 +119,7 @@ def evidence_directives(cells: list[dict[str, Any]], text: str) -> list[dict[str
     if not candidates:
         return []
     readable = directive_lines(text, candidates)
-    found: list[dict[str, Any]] = []
+    found: list[EvidenceDirective] = []
     seen: dict[str, int] = {}
     for cell in cells:
         if cell["kind"] != "source":
@@ -146,7 +185,9 @@ def _read_decision(head: str, continuations: list[str]) -> tuple[str, str, str, 
     return name, kind, goal, "" if _DECISION_NAME.fullmatch(name) else BAD_NAME
 
 
-def decision_directives(cells: list[dict[str, Any]], text: str) -> list[dict[str, Any]]:
+def decision_directives(
+    cells: list[dict[str, Any]], text: str
+) -> list[DecisionDirective]:
     """Find decision directives in the source cells of `text`, in file order."""
     lines = text.split("\n")
     if not any(_DECISION_START.match(line) for line in lines):
@@ -161,7 +202,7 @@ def decision_directives(cells: list[dict[str, Any]], text: str) -> list[dict[str
             if _DECISION_CONTINUATION.fullmatch(line):
                 candidates.append(index)
     readable = directive_lines(text, candidates)
-    found: list[dict[str, Any]] = []
+    found: list[DecisionDirective] = []
     seen: dict[str, int] = {}
     named: set[str] = set()
     for cell in cells:
@@ -205,7 +246,7 @@ def decision_directives(cells: list[dict[str, Any]], text: str) -> list[dict[str
     return found
 
 
-def view_directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
+def view_directives(cells: list[dict[str, Any]], source: str) -> list[ViewDirective]:
     """Find `-- @view <kind> <name> [using a, b]` lines in source cells.
 
     As for evidence and decisions, only lines Lean reads as comment lines of
@@ -219,7 +260,7 @@ def view_directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, 
     if not candidates:
         return []
     readable = directive_lines(source, candidates)
-    found: list[dict[str, Any]] = []
+    found: list[ViewDirective] = []
     for cell in cells:
         if cell["kind"] != "source":
             continue
@@ -265,7 +306,7 @@ def view_directives(cells: list[dict[str, Any]], source: str) -> list[dict[str, 
     return found
 
 
-def view_keys(text: str, views: list[dict[str, Any]]) -> dict[int, str]:
+def view_keys(text: str, views: list[ViewDirective]) -> dict[int, str]:
     """Map each listed view directive's line to its saved-drawing key.
 
     As for evidence, the key is the directive's line text and its index among

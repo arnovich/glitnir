@@ -19,6 +19,7 @@ from glitnir.lean.project import describe_project, read_regular
 from glitnir.lean.project_checking import check_project, through_line_end
 from glitnir.lean.project_inspection import Inspection, inspect_project, lean_support
 from glitnir.lean.project_snapshot import SnapshotError
+from glitnir.lean.results import CheckOutcome, with_message
 from glitnir.notebook.check_records import (
     load_records,
     records_from_check,
@@ -303,8 +304,8 @@ class SourcePreviewService:
             self._check_cancel.set()
 
     def _with_import_hint(
-        self, result: Mapping[str, Any], environment: FingerprintRecord
-    ) -> Mapping[str, Any]:
+        self, result: CheckOutcome, environment: FingerprintRecord
+    ) -> CheckOutcome:
         """Explain unbuilt sibling imports, unless the check was cut short."""
         message = str(result.get("message", ""))
         if (
@@ -324,7 +325,7 @@ class SourcePreviewService:
             )
         else:
             hint = "Imports of other notebooks need a Lake project; see the README."
-        return {**result, "message": " ".join(filter(None, [message, hint]))}
+        return with_message(result, " ".join(filter(None, [message, hint])))
 
     def _work(
         self,
@@ -361,7 +362,7 @@ class SourcePreviewService:
                         )
                     )
 
-            result: Mapping[str, Any]
+            result: CheckOutcome
             if from_environment() is not None:
 
                 def remote_acquired(context_sha256: str) -> None:
@@ -393,8 +394,8 @@ class SourcePreviewService:
             if result.get("status") == "unavailable":
                 result = self._with_import_hint(result, environment)
             if (
-                result.get("status") == "checked_snapshot"
-                and result.get("source_sha256") == sha256
+                result["status"] == "checked_snapshot"
+                and result["source_sha256"] == sha256
                 and hashlib.sha256(
                     text.replace("\r\n", "\n").encode("utf-8")
                 ).hexdigest()
@@ -408,20 +409,20 @@ class SourcePreviewService:
                         )
                         save_records(self.path, records)
                     if unknown:
-                        result = {
-                            **result,
-                            "message": f"{result.get('message', '')} "
-                            f"{unknown}".strip(),
-                        }
+                        result = with_message(
+                            result, f"{result.get('message', '')} {unknown}".strip()
+                        )
                 except (OSError, ValueError) as error:
-                    result = {
-                        **result,
-                        "message": f"{result.get('message', '')} "
+                    result = with_message(
+                        result,
+                        f"{result.get('message', '')} "
                         f"Results could not be saved: {error}.".strip(),
-                    }
+                    )
             # The lines a finished check covered (a cut inside a command moves
             # back); for a check that could not run, the lines asked for.
-            withheld = result.get("withheld")
+            withheld = (
+                result["withheld"] if result["status"] == "checked_snapshot" else None
+            )
             if isinstance(withheld, dict):
                 covered = withheld.get("through_line")
             elif result.get("status") == "checked_snapshot":

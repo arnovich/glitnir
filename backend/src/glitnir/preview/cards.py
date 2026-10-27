@@ -23,6 +23,12 @@ from glitnir.notebook.check_records import (
     saved_evidence,
     saved_evidence_failures,
 )
+from glitnir.notebook.directives import (
+    DecisionDirective,
+    EvidenceDirective,
+    ViewDirective,
+)
+from glitnir.notebook.records_schema import FailureEntry, Records
 from glitnir.providers import (
     DecisionProvider,
     DecisionRequest,
@@ -56,7 +62,7 @@ def provider_unavailable(
 
 
 def evidence_request(
-    provider: EvidenceProvider, directive: dict[str, Any]
+    provider: EvidenceProvider, directive: EvidenceDirective
 ) -> tuple[EvidenceRequest | None, str]:
     """Return the provider's request for a directive, or why it rejects it."""
     try:
@@ -72,13 +78,13 @@ def evidence_request(
     return request, ""
 
 
-def _parse_error(provider: EvidenceProvider, directive: dict[str, Any]) -> str:
+def _parse_error(provider: EvidenceProvider, directive: EvidenceDirective) -> str:
     """Return why the provider rejects the directive, or "" if it accepts it."""
     return evidence_request(provider, directive)[1]
 
 
 def evidence_cards(
-    directives: list[dict[str, Any]], providers: Providers
+    directives: list[EvidenceDirective], providers: Providers
 ) -> list[dict[str, Any]]:
     """Give each directive its provider and errors; nothing runs or computes."""
     notes = "".join(
@@ -115,7 +121,7 @@ def evidence_cards(
 
 
 def decision_request(
-    provider: DecisionProvider, directive: dict[str, Any]
+    provider: DecisionProvider, directive: DecisionDirective
 ) -> tuple[DecisionRequest | None, str]:
     """Return the provider's request for a directive, or why it rejects it."""
     try:
@@ -132,7 +138,7 @@ def decision_request(
 
 
 def decision_cards(
-    directives: list[dict[str, Any]], providers: Providers
+    directives: list[DecisionDirective], providers: Providers
 ) -> list[dict[str, Any]]:
     """Give each directive its provider and errors; nothing runs or decides."""
     notes = "".join(
@@ -168,16 +174,14 @@ def decision_cards(
     return cards
 
 
-def view_provider_hash(providers: Providers, view: dict[str, Any]) -> str | None:
+def view_provider_hash(providers: Providers, view: ViewDirective) -> str | None:
     """Hash what the listed `view`'s provider adds to draw it, or None."""
     return view_provider_sha256(
         providers.views[view["kind"]], view["kind"], view["name"], tuple(view["using"])
     )
 
 
-def view_cards(
-    views: list[dict[str, Any]], providers: Providers
-) -> list[dict[str, Any]]:
+def view_cards(views: list[ViewDirective], providers: Providers) -> list[ViewDirective]:
     """Report the view kinds no installed provider draws."""
     notes = "".join(
         f" (Provider {name} failed to load: {reason})"
@@ -217,7 +221,7 @@ def provider_imports(provider: Any) -> tuple[str, ...]:
 
 def with_saved_evidence(
     cards: list[dict[str, Any]],
-    records: dict[str, Any] | None,
+    records: Records | None,
     text: str,
     fingerprint: Fingerprint,
     providers: Providers | None = None,
@@ -273,7 +277,7 @@ def with_saved_evidence(
 
 def _shown_failure(
     card: dict[str, Any],
-    failure: dict[str, Any],
+    failure: FailureEntry,
     status: str,
     compare_environment: bool,
     *,
@@ -303,7 +307,7 @@ def _shown_failure(
 
 def with_saved_decisions(
     cards: list[dict[str, Any]],
-    records: dict[str, Any] | None,
+    records: Records | None,
     text: str,
     fingerprint: Fingerprint,
     compare_environment: bool = True,
