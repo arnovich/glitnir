@@ -50,7 +50,7 @@ from glitnir.preview.snapshot import (
 from glitnir.providers import Providers, load_providers
 from glitnir.service.context import CLOSED, PreviewContext
 from glitnir.service.proof_steps import ProofSteps
-from glitnir.service.runs import DirectiveRuns
+from glitnir.service.runs import Candidate, DirectiveRuns
 from glitnir.service.views import ViewDrawing
 
 # How long closing waits for every worker together before giving up on them.
@@ -558,6 +558,6 @@ class SourcePreviewService:
         """Remove a saved decision (`DirectiveRuns.discard_decision`)."""
         return self._runs.discard_decision(sha256, line)
 
-    def decision_candidate(self, key: str) -> dict[str, Any]:
+    def decision_candidate(self, key: str) -> Candidate:
         """Return a decision's block to insert (`DirectiveRuns.decision_candidate`)."""
         return self._runs.decision_candidate(key)
