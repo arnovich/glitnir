@@ -7,12 +7,17 @@ declarations that formalize them. This helper verifies such an outline.
 Run it with the standard library only, without writing bytecode:
 
     python3 -B walkthrough.py check OUTLINE [--notebook FILE]
+    python3 -B walkthrough.py map OUTLINE [--out DIR] [--links local|public]
+
+`map` draws the outline's dependency graph and a clickable detail page, and
+refuses to draw an outline that `check` reports errors for.
 
 Exit status: 0 when no problem is an error, 1 when any is, 2 for an
 unreadable outline or a usage error.
 """
 
 import argparse
+import html
 import json
 import re
 import subprocess
@@ -604,6 +609,367 @@ def _compare_claim(
     ]
 
 
+KIND_COLOUR = {
+    "definition": ("#e8eef7", "#5b7bb0"),
+    "lemma": ("#e3f4ef", "#2f8f74"),
+    "proposition": ("#efe8f8", "#7a52b3"),
+    "theorem": ("#fdeee2", "#c96a1b"),
+    "corollary": ("#fdf5dc", "#b38a12"),
+    "algorithm": ("#e6f4e1", "#4f9a35"),
+    "appendix": ("#f1f1f1", "#8a8a8a"),
+}
+_KATEX = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/"
+
+
+def _esc(value: Any) -> str:
+    """Escape any outline value for HTML text or a quoted attribute."""
+    return html.escape(str(value), quote=True)
+
+
+def direct_uses(nodes: Sequence[dict[str, Any]]) -> dict[str, list[str]]:
+    """Drop each use that is reachable through another use of the same node."""
+    uses = {
+        n["id"]: [u for u in n.get("uses", []) if isinstance(u, str)] for n in nodes
+    }
+
+    def reach(start: str) -> set[str]:
+        seen: set[str] = set()
+        todo = [u for u in uses.get(start, []) if u in uses]
+        while todo:
+            current = todo.pop()
+            if current not in seen:
+                seen.add(current)
+                todo.extend(u for u in uses[current] if u in uses)
+        return seen
+
+    reached = {i: reach(i) for i in uses}
+    result: dict[str, list[str]] = {}
+    for i, own in uses.items():
+        known = [u for u in own if u in uses]
+        result[i] = [
+            u for u in known if not any(u in reached[v] for v in known if v != u)
+        ]
+    return result
+
+
+def _layers(nodes: Sequence[dict[str, Any]]) -> dict[str, int]:
+    """Return the longest path from a node with no uses; those sit at 0."""
+    uses = {n["id"]: [u for u in _used_ids(n.get("uses")) if u] for n in nodes}
+    depth: dict[str, int] = {}
+
+    def visit(i: str) -> int:
+        if i not in depth:
+            depth[i] = 1 + max((visit(u) for u in uses[i] if u in uses), default=-1)
+        return depth[i]
+
+    for i in uses:
+        visit(i)
+    return depth
+
+
+def _positions(
+    nodes: Sequence[dict[str, Any]], width: int, row: int, top: int
+) -> dict[str, tuple[float, float]]:
+    """Place each node: one row per layer, barycentre order within a row."""
+    depth = _layers(nodes)
+    uses = {n["id"]: _used_ids(n.get("uses")) for n in nodes}
+    users: dict[str, list[str]] = {i: [] for i in uses}
+    for i, used in uses.items():
+        for u in used:
+            if u in users:
+                users[u].append(i)
+    rows: dict[int, list[str]] = {}
+    for i, d in depth.items():
+        rows.setdefault(d, []).append(i)
+    top_layer = max(rows, default=0)
+    for _ in range(6):
+        for d in sorted(rows):
+            below = {i: k for k, i in enumerate(rows.get(d - 1, []))}
+            above = {i: k for k, i in enumerate(rows.get(d + 1, []))}
+
+            def key(i: str) -> float:
+                ref = [below[u] for u in uses[i] if u in below]
+                ref += [above[u] for u in users[i] if u in above]
+                return sum(ref) / len(ref) if ref else 0.0
+
+            rows[d].sort(key=key)
+    pos: dict[str, tuple[float, float]] = {}
+    for d, ids in rows.items():
+        gap = width / (len(ids) + 1)
+        for k, i in enumerate(ids):
+            pos[i] = (gap * (k + 1), top + (top_layer - d) * row)
+    return pos
+
+
+def _short(label: str, limit: int = 20) -> str:
+    """Shorten a label to fit a box."""
+    return label if len(label) <= limit else label[: limit - 1] + "…"
+
+
+def map_svg(outline: dict[str, Any]) -> str:
+    """Draw the nodes as a dependency graph, statements on top of their uses."""
+    nodes = [n for n in outline["nodes"] if isinstance(n, dict)]
+    row, top, box_w, box_h = 92, 110, 150, 46
+    layers = _layers(nodes)
+    widest = max(
+        (list(layers.values()).count(d) for d in set(layers.values())), default=1
+    )
+    width = max(1180, widest * (box_w + 24))
+    height = top + row * (max(layers.values(), default=0) + 1) + 20
+    pos = _positions(nodes, width, row, top)
+    direct = direct_uses(nodes)
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        'font-family="Helvetica, Arial, sans-serif">',
+        '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
+        'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        '<path d="M0,0 L10,5 L0,10 z" fill="#9aa3ad"/></marker></defs>',
+        f'<rect width="{width}" height="{height}" rx="14" fill="#ffffff"/>',
+        '<text x="24" y="36" font-size="20" font-weight="700" fill="#222">'
+        f'{_esc(outline.get("title", ""))}</text>',
+        '<text x="24" y="56" font-size="13" fill="#555">An arrow runs from a '
+        "statement to each statement whose proof uses it directly. "
+        "Read from the top down.</text>",
+    ]
+    for n in nodes:
+        x2, y2 = pos[n["id"]]
+        for u in direct[n["id"]]:
+            x1, y1 = pos[u]
+            start, end = y1 - box_h / 2, y2 + box_h / 2
+            mid = (start + end) / 2
+            dashed = ' stroke-dasharray="5 4"' if n.get("kind") == "appendix" else ""
+            out.append(
+                f'<path d="M{x1:.0f},{start:.0f} C{x1:.0f},{mid:.0f} '
+                f'{x2:.0f},{mid:.0f} {x2:.0f},{end + 6:.0f}" fill="none" '
+                f'stroke="#9aa3ad" stroke-width="1.4"{dashed} '
+                'marker-end="url(#arrow)"/>'
+            )
+    for n in nodes:
+        x, y = pos[n["id"]]
+        fill, stroke = KIND_COLOUR.get(str(n.get("kind")), ("#f1f1f1", "#8a8a8a"))
+        sub = " · ".join(str(p) for p in (n.get("section"), n.get("kind")) if p)
+        out.append(
+            f'<g data-id="{_esc(n["id"])}"><title>{_esc(n.get("label", ""))}</title>'
+            f'<rect x="{x - box_w / 2:.0f}" y="{y - box_h / 2:.0f}" width="{box_w}" '
+            f'height="{box_h}" rx="9" fill="{fill}" stroke="{stroke}" '
+            'stroke-width="1.6"/>'
+            f'<text x="{x:.0f}" y="{y - 3:.0f}" font-size="13" font-weight="700" '
+            f'text-anchor="middle" fill="#222">{_esc(_short(str(n.get("label", ""))))}'
+            f'</text><text x="{x:.0f}" y="{y + 14:.0f}" font-size="11" '
+            f'text-anchor="middle" fill="{stroke}">{_esc(_short(sub, 26))}</text></g>'
+        )
+    for k, (name, (fill, stroke)) in enumerate(reversed(KIND_COLOUR.items())):
+        x = width - 24 - (k + 1) * 104
+        out.append(
+            f'<rect x="{x}" y="70" width="14" height="14" rx="3" fill="{fill}" '
+            f'stroke="{stroke}"/><text x="{x + 20}" y="82" font-size="12" '
+            f'fill="#444">{name}</text>'
+        )
+    out.append("</svg>")
+    return "\n".join(out)
+
+
+def _first_page(pages: Any) -> str | None:
+    """Return the first page number in a node's `pages`, if it has one."""
+    found = re.search(r"\d+", str(pages)) if pages is not None else None
+    return found.group(0) if found else None
+
+
+def _paper_target(outline: dict[str, Any], base: Path, links: str) -> str | None:
+    """Return the paper's location for the chosen links, if it has one."""
+    paper = next(
+        (
+            s
+            for s in outline.get("sources", [])
+            if isinstance(s, dict) and s.get("kind") == "paper"
+        ),
+        None,
+    )
+    if paper is None:
+        return None
+    if links == "public":
+        url = paper.get("url")
+        return url if isinstance(url, str) and url else None
+    path = paper.get("path")
+    return (base / path).resolve().as_uri() if isinstance(path, str) else None
+
+
+def _lean_href(outline: dict[str, Any], base: Path, links: str, lean: Any) -> str:
+    """Return the link for one Lean entry, or "" if it cannot be built."""
+    file, line = str(lean["file"]), lean["line"]
+    project = outline["project"]
+    if links == "local":
+        root = _project_root(outline, base).resolve()
+        return f"vscode://file{root}/{file}:{line}"
+    repository = project.get("repository")
+    if not isinstance(repository, str) or not repository:
+        return ""
+    folder = str(project.get("path") or "").strip("/")
+    where = f"{folder}/{file}" if folder else file
+    return f"{repository.rstrip('/')}/blob/{project['commit']}/{where}#L{line}"
+
+
+def _page_data(
+    outline: dict[str, Any], base: Path, links: Literal["local", "public"]
+) -> dict[str, Any]:
+    """Return what the page script needs: the nodes with their links built."""
+    paper = _paper_target(outline, base, links)
+    nodes = []
+    for n in outline["nodes"]:
+        page = _first_page(n.get("pages"))
+        href = paper
+        if href and page and href.lower().endswith(".pdf"):
+            href = f"{href}#page={page}"
+        nodes.append(
+            {
+                "id": n["id"],
+                "label": n.get("label", ""),
+                "kind": n.get("kind", ""),
+                "section": n.get("section", ""),
+                "pages": n.get("pages", ""),
+                "statement": n.get("statement", ""),
+                "idea": n.get("idea", ""),
+                "uses": _used_ids(n.get("uses")),
+                "paper": href or "",
+                "lean": [
+                    {
+                        "name": lean.get("name", ""),
+                        "file": lean["file"],
+                        "line": lean["line"],
+                        "note": lean.get("note", ""),
+                        "href": _lean_href(outline, base, links, lean),
+                    }
+                    for lean in n.get("lean", [])
+                ],
+            }
+        )
+    return {"nodes": nodes}
+
+
+_PAGE_STYLE = """
+:root { --bg:#f6f7f9; --panel:#fff; --ink:#1f2328; --muted:#5b636d;
+  --line:#dde1e6; --code:#f0f2f4; --link:#2457a6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#16181b; --panel:#1f2328;
+  --ink:#e6e8ea; --muted:#9aa3ad; --line:#363b42; --code:#2a2f35;
+  --link:#7aa7e8; } }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 Helvetica, Arial, sans-serif; }
+main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);
+  gap:16px; padding:16px; max-width:1500px; margin:auto; }
+@media (max-width: 900px) { main { grid-template-columns:1fr; } }
+#map svg { width:100%; height:auto; }
+#map [data-id] { cursor:pointer; }
+#map [data-id]:hover rect { filter:brightness(0.95); }
+#map .chosen rect { stroke-width:4; }
+aside { background:var(--panel); border:1px solid var(--line);
+  border-radius:12px; padding:18px 20px; align-self:start;
+  position:sticky; top:16px; }
+h1 { font-size:20px; margin:0 0 4px; }
+h2 { font-size:14px; margin:18px 0 6px; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.04em; }
+.meta, .note { color:var(--muted); font-size:13px; }
+ul { padding-left:18px; } li { margin:6px 0; }
+code { font-size:12.5px; background:var(--code); padding:1px 4px;
+  border-radius:4px; }
+a { color:var(--link); }
+"""
+
+_PAGE_SCRIPT = """
+const DATA = JSON.parse(document.getElementById('walkthrough-data').textContent);
+const byId = Object.fromEntries(DATA.nodes.map(n => [n.id, n]));
+const esc = s => String(s).replace(/[&<>"']/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function show(id) {
+  const n = byId[id];
+  document.querySelectorAll('#map .chosen')
+    .forEach(g => g.classList.remove('chosen'));
+  document.querySelectorAll('#map [data-id]').forEach(g => {
+    if (g.dataset.id === id) g.classList.add('chosen');
+  });
+  const users = DATA.nodes.filter(m => m.uses.includes(id));
+  const link = i => byId[i]
+    ? `<a href="#" data-go="${esc(i)}">${esc(byId[i].label)}</a>` : esc(i);
+  const where = [n.section, n.kind].filter(Boolean).map(esc).join(' · ');
+  const paper = n.paper && n.pages !== ''
+    ? ` · <a href="${esc(n.paper)}">paper p. ${esc(n.pages)}</a>` : '';
+  const lean = n.lean.map(l => {
+    const spot = `${esc(l.file)}:${esc(l.line)}`;
+    const at = l.href ? `<a href="${esc(l.href)}">${spot}</a>` : spot;
+    const note = l.note ? `<div class="note">${esc(l.note)}</div>` : '';
+    return `<li><code>${esc(l.name)}</code><br>${at}${note}</li>`;
+  }).join('');
+  const detail = document.getElementById('detail');
+  detail.innerHTML = `<h1>${esc(n.label)}</h1>
+    <div class="meta">${where}${paper}</div>
+    <h2>Statement</h2><p>${esc(n.statement)}</p>
+    <h2>Idea</h2><p>${esc(n.idea)}</p>
+    <h2>Uses</h2><p>${n.uses.map(link).join(', ') || 'nothing above it'}</p>
+    <h2>Used by</h2><p>${users.map(m => link(m.id)).join(', ')
+      || 'nothing: it is a final result'}</p>
+    <h2>In Lean</h2><ul>${lean || '<li>No Lean entry.</li>'}</ul>`;
+  if (window.renderMathInElement) {
+    renderMathInElement(detail, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '$', right: '$', display: false}]});
+  }
+}
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]');
+  if (go) { e.preventDefault(); show(go.dataset.go); return; }
+  const box = e.target.closest('#map [data-id]');
+  if (box) show(box.dataset.id);
+});
+"""
+
+
+def _json_for_script(data: Any) -> str:
+    """Serialise data for a script element, so it cannot end the element."""
+    text = json.dumps(data, ensure_ascii=False)
+    return text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
+
+
+def map_html(
+    outline: dict[str, Any], base: Path, links: Literal["local", "public"]
+) -> str:
+    """Return the page: the map and a detail panel for the chosen node."""
+    title = _esc(outline.get("title", ""))
+    overview = outline.get("overview")
+    intro = f'<p class="meta">{_esc(overview)}</p>' if overview else ""
+    data = _json_for_script(_page_data(outline, base, links))
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<link rel="stylesheet" href="{_KATEX}katex.min.css">
+<script defer src="{_KATEX}katex.min.js"></script>
+<script defer src="{_KATEX}contrib/auto-render.min.js"></script>
+<style>{_PAGE_STYLE}</style></head><body>
+<main>
+<section id="map">{map_svg(outline)}</section>
+<aside id="detail"><h1>Pick a statement</h1>{intro}
+<p class="meta">Click any box in the map to see what it says, the idea of its
+proof, where it is in the paper and which Lean declarations formalize it.</p>
+</aside>
+</main>
+<script type="application/json" id="walkthrough-data">{data}</script>
+<script>{_PAGE_SCRIPT}</script></body></html>
+"""
+
+
+def write_map(
+    outline: dict[str, Any],
+    base: Path,
+    out: Path,
+    links: Literal["local", "public"],
+) -> tuple[Path, Path]:
+    """Write `assets/map.svg` and `map.html` under out; return their paths."""
+    svg_path, html_path = out / "assets" / "map.svg", out / "map.html"
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+    svg_path.write_text(map_svg(outline), encoding="utf-8")
+    html_path.write_text(map_html(outline, base, links), encoding="utf-8")
+    return svg_path, html_path
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Return the command-line parser."""
     parser = argparse.ArgumentParser(prog="walkthrough.py", description=__doc__)
@@ -611,7 +977,31 @@ def _build_parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check", help="check an outline")
     check.add_argument("outline", type=Path)
     check.add_argument("--notebook", type=Path, help="notebook to compare")
+    draw = commands.add_parser("map", help="draw the outline's map")
+    draw.add_argument("outline", type=Path)
+    draw.add_argument("--out", type=Path, help="folder to write (default: outline's)")
+    draw.add_argument(
+        "--links",
+        choices=("local", "public"),
+        default="local",
+        help="link to this machine's files or to public addresses",
+    )
     return parser
+
+
+def _run_map(
+    args: argparse.Namespace, outline: dict[str, Any], problems: list[Problem]
+) -> int:
+    """Draw the map unless the outline has errors; return the exit status."""
+    for problem in problems:
+        print(f"{problem.level}: {problem.message}")
+    if any(p.level == "error" for p in problems):
+        return 1
+    base = args.outline.parent
+    out = args.out if args.out is not None else base
+    for path in write_map(outline, base, out, args.links):
+        print(path)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -626,6 +1016,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
     problems = check_outline(outline)
+    if args.command == "map":
+        return _run_map(args, outline, problems)
     if not any(p.level == "error" for p in problems):
         base = args.outline.parent
         problems += check_lean_entries(outline, base) + check_commit(outline, base)

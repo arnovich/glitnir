@@ -561,3 +561,137 @@ def test_a_plain_notebook_passes(tmp_path: Path) -> None:
     )
     result = notebook_run(tmp_path, data, text)
     assert result.returncode == 0 and result.stdout == "", result.stdout
+
+
+def test_direct_uses_drops_a_use_reached_through_another() -> None:
+    nodes = [node("a"), node("b", uses=["a"]), node("c", uses=["a", "b"])]
+    assert load_script().direct_uses(nodes) == {"c": ["b"], "b": ["a"], "a": []}
+
+
+def test_map_svg_has_a_group_per_node_and_an_edge_per_direct_use() -> None:
+    nodes = [node("a"), node("b", uses=["a"]), node("c", uses=["a", "b"])]
+    svg = load_script().map_svg(outline(nodes=nodes))
+    assert svg.count("<g data-id=") == 3
+    for node_id in "abc":
+        assert f'<g data-id="{node_id}"' in svg
+    assert svg.count("<path d=") == 2 + 1  # two edges and the arrow head
+
+
+def test_map_svg_escapes_outline_text() -> None:
+    data = outline(title="T <b> & co", nodes=[node("a", label="L <i>")])
+    svg = load_script().map_svg(data)
+    assert "<b>" not in svg and "<i>" not in svg
+    assert "T &lt;b&gt; &amp; co" in svg
+
+
+def map_page(tmp_path: Path, data: dict[str, Any], links: str = "local") -> str:
+    """Run `map` on the outline and return the page it wrote."""
+    result = run("map", str(write(tmp_path, data)), "--links", links)
+    assert result.returncode == 0, result.stdout + result.stderr
+    return (tmp_path / "map.html").read_text(encoding="utf-8")
+
+
+def test_map_html_escapes_outline_text(tmp_path: Path) -> None:
+    text = 'x < y & "z" </script>'
+    page = map_page(tmp_path, outline(nodes=[node("a", statement=text)]))
+    assert text not in page and "x < y" not in page
+    assert page.count("<script type=") == 1
+    # The three scripts are the two KaTeX ones, the data and the page code.
+    assert page.count("</script>") == page.count("<script")
+    start = page.index('<script type="application/json"')
+    data = page[start : page.index("</script>", start)]
+    assert "<" not in data[data.index(">") + 1 :]
+    raw = data[data.index(">") + 1 :]
+    assert json.loads(raw)["nodes"][0]["statement"] == text
+
+
+def test_map_html_loads_only_katex_from_cdnjs(tmp_path: Path) -> None:
+    page = map_page(tmp_path, outline())
+    base = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/"
+    assert base + "katex.min.css" in page
+    assert base + "katex.min.js" in page
+    assert base + "contrib/auto-render.min.js" in page
+    assert page.count("https://") == 3
+
+
+def link_outline(tmp_path: Path) -> dict[str, Any]:
+    """Return an outline with a Lean entry, a paper and public coordinates."""
+    entry_ = {"name": "X", "file": "eth/X.lean", "line": 3, "type": ": True"}
+    data = outline(nodes=[node("a", pages="12-14", lean=[entry_])])
+    data["project"].update(
+        {
+            "root": "proj",
+            "commit": "abc1234",
+            "repository": "https://github.com/o/r",
+            "path": "sub",
+        }
+    )
+    data["sources"] = [
+        {"kind": "paper", "path": "Paper.PDF", "url": "https://example.org/p.pdf"}
+    ]
+    return data
+
+
+def test_local_links_use_vscode_and_file(tmp_path: Path) -> None:
+    page = map_page(tmp_path, link_outline(tmp_path))
+    root = (tmp_path / "proj").resolve()
+    assert f"vscode://file{root}/eth/X.lean:3" in page
+    assert (tmp_path / "Paper.PDF").resolve().as_uri() + "#page=12" in page
+
+
+def test_public_links_hold_no_local_path(tmp_path: Path) -> None:
+    page = map_page(tmp_path, link_outline(tmp_path), "public")
+    assert str(tmp_path) not in page
+    assert "vscode://" not in page and "file://" not in page
+    assert "https://github.com/o/r/blob/abc1234/sub/eth/X.lean#L3" in page
+    assert "https://example.org/p.pdf#page=12" in page
+
+
+def test_public_links_are_omitted_when_they_cannot_be_built(tmp_path: Path) -> None:
+    data = link_outline(tmp_path)
+    del data["project"]["repository"]
+    data["sources"] = [{"kind": "paper", "path": "paper.pdf"}]
+    page = map_page(tmp_path, data, "public")
+    assert "/blob/" not in page and "#L3" not in page
+    assert "paper.pdf" not in page
+
+
+def test_page_links_need_a_pdf_and_pages(tmp_path: Path) -> None:
+    data = link_outline(tmp_path)
+    data["sources"] = [{"kind": "paper", "url": "https://example.org/p.html"}]
+    page = map_page(tmp_path, data, "public")
+    assert "https://example.org/p.html" in page and "#page=" not in page
+
+
+def test_map_writes_both_files_under_out_and_nothing_elsewhere(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "in"
+    folder.mkdir()
+    path = write(folder, outline())
+    out = tmp_path / "out"
+    before = snapshot_tree(folder)
+    result = run("map", str(path), "--out", str(out))
+    assert result.returncode == 0, result.stdout
+    assert snapshot_tree(folder) == before
+    assert sorted(snapshot_tree(out)) == ["assets/map.svg", "map.html"]
+    assert str(out / "map.html") in result.stdout
+    assert str(out / "assets/map.svg") in result.stdout
+
+
+def test_map_defaults_to_the_outlines_folder(tmp_path: Path) -> None:
+    map_page(tmp_path, outline())
+    assert (tmp_path / "assets/map.svg").is_file()
+
+
+def test_map_refuses_an_outline_with_errors(tmp_path: Path) -> None:
+    data = outline(nodes=[node("a", uses=["zz"])])
+    result = run("map", str(write(tmp_path, data)))
+    assert result.returncode == 1 and "unknown use zz" in result.stdout
+    assert not (tmp_path / "map.html").exists()
+
+
+def test_map_of_an_unreadable_outline_exits_2(tmp_path: Path) -> None:
+    path = tmp_path / "outline.json"
+    path.write_text("{", encoding="utf-8")
+    assert run("map", str(path)).returncode == 2
