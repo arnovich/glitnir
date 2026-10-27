@@ -49,7 +49,7 @@ def outline(**overrides: Any) -> dict[str, Any]:
         "title": "A paper",
         "project": {
             "root": ".",
-            "commit": "abc123",
+            "commit": "abc1234",
             "toolchain": "leanprover/lean4:v4.35.0",
             "trusted": False,
         },
@@ -307,7 +307,7 @@ def test_project_outside_git_gives_a_note(tmp_path: Path) -> None:
             "-B",
             str(SCRIPT),
             "check",
-            str(write(tmp_path, lean_outline("abc", entry()))),
+            str(write(tmp_path, lean_outline("abc1234", entry()))),
         ],
         capture_output=True,
         text=True,
@@ -316,3 +316,63 @@ def test_project_outside_git_gives_a_note(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert result.stdout.startswith("note: ") and "git" in result.stdout
+
+
+def names_in(tmp_path: Path, source: str) -> dict[str, tuple[str, ...]]:
+    """Scan the source text and return each declaration's name and namespaces."""
+    (tmp_path / "F.lean").write_text(source, encoding="utf-8")
+    found = load_script().declarations(tmp_path, "F.lean")
+    return {d.name: d.namespaces for d in found}
+
+
+def test_module_modifiers_and_attribute_lines_are_scanned(tmp_path: Path) -> None:
+    source = (
+        "public theorem t : True := trivial\n"
+        "@[expose] public def q : Nat := 1\n"
+        "@[simp]\n"
+        "theorem s : True := trivial\n"
+        "scoped instance : Inhabited Nat := ⟨0⟩\n"
+        "local instance i : Inhabited Nat := ⟨0⟩\n"
+    )
+    assert list(names_in(tmp_path, source)) == ["t", "q", "s", "i"]
+
+
+@pytest.mark.parametrize(
+    "opener",
+    ["section", "noncomputable section", "public section", "@[expose] public section"],
+)
+def test_sections_close_only_themselves(tmp_path: Path, opener: str) -> None:
+    source = (
+        f"namespace Foo\n{opener}\ndef a : Nat := 1\nend\ndef b : Nat := 1\nend Foo\n"
+    )
+    assert list(names_in(tmp_path, source)) == ["Foo.a", "Foo.b"]
+
+
+def test_mutual_blocks_close_only_themselves(tmp_path: Path) -> None:
+    source = "namespace N\nmutual\ndef a : Nat := 1\nend\ndef b : Nat := 1\nend N\n"
+    assert list(names_in(tmp_path, source)) == ["N.a", "N.b"]
+
+
+def test_dotted_section_names_pop_one_frame(tmp_path: Path) -> None:
+    source = "namespace N\nsection A.B\nend A.B\ndef g : Nat := 1\nend N\n"
+    assert list(names_in(tmp_path, source)) == ["N.g"]
+
+
+def test_namespace_ends_by_full_or_last_component(tmp_path: Path) -> None:
+    full = "namespace A.B\nend A.B\ndef x : Nat := 1\n"
+    last = "namespace A.B\nend B\ndef x : Nat := 1\n"
+    assert list(names_in(tmp_path, full)) == ["x"]
+    assert list(names_in(tmp_path, last)) == ["A.x"]
+
+
+@pytest.mark.parametrize("commit", ["--output=x", "", "ABCDEF1", "abc12", "g" * 8])
+def test_a_bad_project_commit_is_rejected_without_running_git(
+    tmp_path: Path, commit: str
+) -> None:
+    make_project(tmp_path)
+    before = snapshot_tree(tmp_path / "proj")
+    result = run("check", str(write(tmp_path, lean_outline(commit, entry()))))
+    assert result.returncode == 1
+    assert "7 to 40 lowercase hex characters" in result.stdout
+    assert snapshot_tree(tmp_path / "proj") == before
+    assert not list(tmp_path.glob("**/*..HEAD"))

@@ -78,7 +78,15 @@ def _check_project(project: Any) -> list[Problem]:
     """Check the `project` object."""
     if not isinstance(project, dict):
         return [_error("project: must be an object")]
-    return _missing("project", project, _PROJECT_KEYS)
+    problems = _missing("project", project, _PROJECT_KEYS)
+    commit = project.get("commit")
+    if "commit" in project and not (
+        isinstance(commit, str) and _COMMIT_RE.fullmatch(commit)
+    ):
+        problems.append(
+            _error("project commit must be 7 to 40 lowercase hex characters")
+        )
+    return problems
 
 
 def _check_sources(sources: Any) -> list[Problem]:
@@ -194,12 +202,17 @@ def check_outline(outline: dict[str, Any]) -> list[Problem]:
 
 _DECL_RE = re.compile(
     r"^(?:@\[[^\]]*\]\s*)*"
-    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe)\s+)*"
+    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
+    r"|public|scoped|local)\s+)*"
     r"(?:theorem|lemma|def|abbrev|structure|class|inductive|instance|opaque|axiom)"
     r"\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
 )
 _NAMESPACE_RE = re.compile(r"^namespace\s+(\S+)")
-_SECTION_RE = re.compile(r"^section(?:\s+(\S+))?\s*$")
+_SECTION_RE = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)*(?:(?:public|noncomputable|private)\s+)*section\b"
+)
+_MUTUAL_RE = re.compile(r"^mutual\b")
+_COMMIT_RE = re.compile(r"[0-9a-f]{7,40}")
 _END_RE = re.compile(r"^end(?:\s+(\S+))?\s*$")
 _OPEN_RE = re.compile(r"^open\s+([^\n]*)")
 _OPENERS = "([{⟨"
@@ -285,11 +298,16 @@ def declarations(root: Path, file: str) -> list[Declaration]:
         if match:
             frames.append(("section", ()))
             continue
+        if _MUTUAL_RE.match(line):
+            frames.append(("mutual", ()))
+            continue
         match = _END_RE.match(line)
         if match:
-            for _ in range((match.group(1) or "x").count(".") + 1):
-                if frames:
-                    frames.pop()
+            if frames and frames[-1][0] == "namespace":
+                closing = (match.group(1) or "x").count(".") + 1
+            else:
+                closing = 1
+            del frames[max(len(frames) - closing, 0) :]
             continue
         match = _OPEN_RE.match(line)
         if match:
@@ -384,6 +402,8 @@ def check_commit(outline: dict[str, Any], base: Path) -> list[Problem]:
     """Note how far the project has moved since the outline's commit."""
     root = _project_root(outline, base)
     recorded = str(outline["project"]["commit"])
+    if not _COMMIT_RE.fullmatch(recorded):
+        return [Problem("note", "project commit not checked: not a commit hash")]
     latest = _git(root, "log", "-1", "--format=%H", "--", ".")
     if not latest:
         return [
