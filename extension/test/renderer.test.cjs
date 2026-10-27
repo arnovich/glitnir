@@ -1808,7 +1808,7 @@ test('project source preview reads Lean as cards, with source navigation and an 
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
   }});
   try {
-    for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+    for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 80));
     const doc = window.document.getElementById('doc');
     assert.equal(doc.querySelector('.definition dfn').textContent, 't');
@@ -1932,7 +1932,7 @@ test('project prose links open sibling notebooks only', async () => {
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
   }});
   try {
-    for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+    for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 80));
     const links = [...window.document.querySelectorAll('#doc a.notebook-reference')];
     assert.equal(links.length, 1);
@@ -1977,7 +1977,7 @@ test('project claim cards show saved status and out-of-date results', async () =
     queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
   }});
   try {
-    for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+    for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 80));
     const cards = [...window.document.querySelectorAll('#doc .project-claim')];
     assert.equal(cards.length, 5);
@@ -2059,7 +2059,7 @@ test('project source cells show provider views under the cell', async () => {
       queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
     }});
     try {
-      for (const file of ['bridge.js', 'review.js', 'circuits.js', 'cards.js', 'export.js', 'app.js']) window.eval(readFileSync(path.join(media, file), 'utf8'));
+      for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
       await new Promise(resolve => setTimeout(resolve, 120));
       const doc = window.document.getElementById('doc');
       const view = doc.querySelector('.view-cell');

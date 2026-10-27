@@ -21,7 +21,7 @@ def test_renderer_export_is_complete_and_matches_runtime(tmp_path: Path) -> None
     assert exported["apiVersion"] == 2
     assert len(exported["rendererSha256"]) == 64
     assert json.loads((target / "editor-runtime.json").read_text()) == exported
-    for name in ("index.html", "app.js", "cards.js", "katex/LICENSE"):
+    for name in ("index.html", "workbench.js", "cards.js", "katex/LICENSE"):
         assert (target / name).is_file()
     assert list((target / "katex/fonts").glob("*.woff2"))
 
@@ -68,5 +68,5 @@ def test_renderer_directory_locates_the_assets_a_gallery_needs() -> None:
     """The public accessor points at the packaged renderer, not a copy."""
     directory = renderer_directory()
     assert directory == editor._APP
-    for name in ("index.html", "app.js", "app.css", "katex/katex.min.css"):
+    for name in ("index.html", "workbench.js", "app.css", "katex/katex.min.css"):
         assert (directory / name).is_file()

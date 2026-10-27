@@ -92,6 +92,6 @@ test('the packaged VS Code page gives the export script a local URI and script n
     assert.ok(page.window.document.querySelector('link[href="https://resource.invalid/circuits.css"]'));
     assert.equal(cards.src, 'https://resource.invalid/cards.js');
     assert.ok(page.window.document.querySelector('link[href="https://resource.invalid/cards.css"]'));
-    assert.ok([...page.window.document.scripts].indexOf(cards) < [...page.window.document.scripts].findIndex(el => el.src.endsWith('/app.js')));
+    assert.ok([...page.window.document.scripts].indexOf(cards) < [...page.window.document.scripts].findIndex(el => el.src.endsWith('/workbench.js')));
   } finally { page.window.close(); }
 });
