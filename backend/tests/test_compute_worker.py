@@ -70,12 +70,34 @@ def test_live_prepared_worker_reuses_build_and_preserves_admitted_status(
     source = prepared_lean_project / "src/Example.lean"
     request = make_request(source, "prepared", 600, 4096)
     stage = tmp_path / "worker-stage"
-    result = execute(prepared_lean_project, request, stage, threading.Event())
+    observations = {}
+    result = execute(
+        prepared_lean_project,
+        request,
+        stage,
+        threading.Event(),
+        observations=observations,
+    )
+    assert observations["native_stage_ms"] == result["stage_ms"]
+    assert observations["imports_replay"] in {"full", "cached", "incremental"}
+    assert observations["staging_ms"] >= 0
+    assert "observations" not in result and "telemetry" not in result
     assert result["status"] == "checked_snapshot", result
     assert result["theorems"][0]["status"] == "checked"
     source.write_text("import Example.Helper\ntheorem result : False := by sorry\n")
     request = make_request(source, "prepared", 600, 4096)
-    result = execute(prepared_lean_project, request, stage, threading.Event())
+    observations = {}
+    result = execute(
+        prepared_lean_project,
+        request,
+        stage,
+        threading.Event(),
+        observations=observations,
+    )
+    assert observations["native_stage_ms"] == result["stage_ms"]
+    assert observations["imports_replay"] in {"full", "cached", "incremental"}
+    assert observations["staging_ms"] >= 0
+    assert "observations" not in result and "telemetry" not in result
     assert result["status"] == "checked_snapshot", result
     assert result["theorems"][0]["status"] != "checked"
 
