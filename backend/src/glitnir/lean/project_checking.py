@@ -7,9 +7,8 @@ import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from glitnir.lean import replay_cache
 from glitnir.lean.artifact_store import ArtifactStore
@@ -234,6 +233,14 @@ def _refuse_unsupported(source: Path) -> None:
         raise SnapshotError(message)
 
 
+class _Runner(Protocol):
+    """Run one Lean stage under the check's snapshot, cancel event and deadline."""
+
+    def __call__(
+        self, arguments: list[str], *, cwd: Path, readable: list[Path], writable: bool
+    ) -> str: ...
+
+
 @dataclass(frozen=True)
 class _Check:
     """What one check was asked: fixed for the whole call."""
@@ -277,7 +284,7 @@ class _Frozen:
     continuation: list[str]
     builds: dict[str, Path]
     relative: Path
-    run: Callable[..., str]
+    run: _Runner
 
 
 @dataclass(frozen=True)
@@ -291,9 +298,8 @@ class _Read:
 
 @dataclass(frozen=True)
 class _Compiled:
-    """Phase 4, `_compile`: the examples' edits, and the examples claiming nothing."""
+    """Phase 4, `_compile`: the examples claiming nothing, as the rewrite kept them."""
 
-    edits: list[tuple[int, bytes]]
     unclaimed: list[dict[str, Any]]
 
 
@@ -395,7 +401,21 @@ def _capture(
         rest_path = root / "programs" / "rest.lean"
         rest_path.write_text(check.rest)
         continuation = [str(rest_path)]
-    run = partial(_run, snapshot, cancel=check.cancel, deadline=deadline)
+
+    def run(
+        arguments: list[str], *, cwd: Path, readable: list[Path], writable: bool
+    ) -> str:
+        """Run one stage over the snapshot, within the check's deadline."""
+        return _run(
+            snapshot,
+            arguments,
+            cwd=cwd,
+            readable=readable,
+            writable=writable,
+            cancel=check.cancel,
+            deadline=deadline,
+        )
+
     builds = {key: root / key for key in ("reference", "candidate")}
     relative = module_path(environment.module)
     for directory in builds.values():
@@ -510,7 +530,7 @@ def _compile(check: _Check, frozen: _Frozen, read: _Read) -> _Compiled:
         if failure is not None:
             raise failure from error
         raise
-    return _Compiled(edits=edits, unclaimed=unclaimed)
+    return _Compiled(unclaimed=unclaimed)
 
 
 @dataclass(frozen=True)
@@ -655,12 +675,24 @@ def _replay_imports(
     replay could not replay them, the module replay replays everything.
     """
     if identity is None:
-        return _ImportsReplay("full", False, 0, False, frozen.deadline)
+        return _ImportsReplay(
+            mode="full",
+            replayed_now=False,
+            added_modules=0,
+            incremental=False,
+            deadline=frozen.deadline,
+        )
     replay_key, context, digested = identity
     if cache is not None and replay_cache.contains(
         cache, replay_key, context=context, modules=digested
     ):
-        return _ImportsReplay("imports-cached", False, 0, False, frozen.deadline)
+        return _ImportsReplay(
+            mode="imports-cached",
+            replayed_now=False,
+            added_modules=0,
+            incremental=False,
+            deadline=frozen.deadline,
+        )
     base = (
         replay_cache.find_base(cache, context=context, modules=digested)
         if cache is not None
