@@ -44,8 +44,10 @@ from glitnir.preview.snapshot import (
     Snapshot,
     build_snapshot,
     cells,
+    fallback_notice,
     prose,
     read_source,
+    split_cells,
 )
 from glitnir.service.preview import SourcePreviewService
 
@@ -131,11 +133,12 @@ class SavedNotebook:
         since it was saved is out of date, one saved under no known
         environment is out of date too, and every other one is shown as
         recorded. ``preview.recorded`` is True and ``preview.notice`` is
-        `RECORDED_NOTICE`. A claim's ``current`` and an evidence card's
-        ``"current"`` status mean "recorded for this source"; the renderer
-        words them so. ``preview.project`` names the project's kind and
-        declared toolchain, and its root relative to the notebook's directory,
-        so the snapshot holds no local absolute path of it.
+        `RECORDED_NOTICE`, with why the source is shown whole if it is. A
+        claim's ``current`` and an evidence card's ``"current"`` status mean
+        "recorded for this source"; the renderer words them so.
+        ``preview.project`` names the project's kind and declared toolchain,
+        and its root relative to the notebook's directory, so the snapshot
+        holds no local absolute path of it.
 
         Args:
             run_prompts: Keep what running a provider would need (an
@@ -149,10 +152,11 @@ class SavedNotebook:
             The snapshot, in the shape ``GET /api/notebook`` serves. Its
             ``sha256`` is the saved source's SHA-256, with CRLF read as LF.
         """
-        snapshot = self._recorded(read_source(self.path))
+        text = read_source(self.path)
+        snapshot = self._recorded(text)
         preview = snapshot["preview"]
         preview["recorded"] = True
-        preview["notice"] = RECORDED_NOTICE
+        preview["notice"] = fallback_notice(RECORDED_NOTICE, split_cells(text)[1])
         preview["project"] = _neutral_project(preview["project"], self.path)
         if not run_prompts:
             for card in [*snapshot["evidence"], *snapshot["decisions"]]:

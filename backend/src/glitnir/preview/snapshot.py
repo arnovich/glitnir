@@ -367,8 +367,19 @@ def _confirmed_prose(lines: list[str], start: int, end: int) -> bool:
 
 def cells(text: str) -> list[Cell]:
     """Split saved text into prose and source cells, keeping all of it."""
+    return split_cells(text)[0]
+
+
+def split_cells(text: str) -> tuple[list[Cell], str | None]:
+    """Split saved text as `cells` does, with why it is shown whole if it is.
+
+    Returns:
+        The cells, and None, or the parser's reason (``line N: …``) when the
+        text could not be split and is one source cell.
+    """
     lines = _lines(text)
     cells: list[Cell] = []
+    reason = None
     try:
         notebook = parse_notebook(text)
         cursor = 0
@@ -377,7 +388,10 @@ def cells(text: str) -> list[Cell]:
             # The line parser does not read strings. Keep the entire file raw
             # unless Lean's own tokenizer reads each prose block as one.
             if cell.kind is CellKind.PROSE and not _confirmed_prose(lines, start, end):
-                raise NotebookError("unconfirmed lexical boundary")
+                raise NotebookError(
+                    f"line {start + 1}: Lean does not read this prose block "
+                    "as one comment"
+                )
             if start > cursor:
                 cells.append(
                     {
@@ -411,8 +425,8 @@ def cells(text: str) -> list[Cell]:
                     "text": "".join(lines[cursor:]),
                 }
             )
-    except NotebookError:
-        cells = []
+    except NotebookError as error:
+        cells, reason = [], str(error)
     if not cells and text:
         cells = [
             {
@@ -424,7 +438,14 @@ def cells(text: str) -> list[Cell]:
                 "text": text,
             }
         ]
-    return cells
+    return cells, reason
+
+
+def fallback_notice(notice: str, reason: str | None) -> str:
+    """Add to `notice` why the source is shown whole, if `split_cells` said so."""
+    if reason is None:
+        return notice
+    return f"{notice} The file is shown as source, without its prose: {reason}."
 
 
 def prose(cells: list[Cell]) -> list[str]:
@@ -509,7 +530,7 @@ def build_snapshot(
     directive needs them.
     """
     lines = _lines(text)
-    entries = cells(text)
+    entries, fallback = split_cells(text)
     sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
     observation, inspection = state.check, state.inspection
     running, run_errors = state.running, dict(state.run_errors)
@@ -559,7 +580,7 @@ def build_snapshot(
         "sha256": sha256,
         "preview": {
             "mode": "project",
-            "notice": NOTICE,
+            "notice": fallback_notice(NOTICE, fallback),
             "check": observation,
             "inspection": inspection,
             "project": project,
