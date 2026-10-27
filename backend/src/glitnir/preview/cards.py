@@ -23,6 +23,7 @@ from glitnir.notebook.check_records import (
     saved_evidence,
     saved_evidence_failures,
 )
+from glitnir.notebook.records_schema import FailureEntry, Records
 from glitnir.providers import (
     DecisionProvider,
     DecisionRequest,
@@ -217,7 +218,7 @@ def provider_imports(provider: Any) -> tuple[str, ...]:
 
 def with_saved_evidence(
     cards: list[dict[str, Any]],
-    records: dict[str, Any] | None,
+    records: Records | None,
     text: str,
     fingerprint: Fingerprint,
     providers: Providers | None = None,
@@ -273,7 +274,7 @@ def with_saved_evidence(
 
 def _shown_failure(
     card: dict[str, Any],
-    failure: dict[str, Any],
+    failure: FailureEntry,
     status: str,
     compare_environment: bool,
     *,
@@ -303,7 +304,7 @@ def _shown_failure(
 
 def with_saved_decisions(
     cards: list[dict[str, Any]],
-    records: dict[str, Any] | None,
+    records: Records | None,
     text: str,
     fingerprint: Fingerprint,
     compare_environment: bool = True,

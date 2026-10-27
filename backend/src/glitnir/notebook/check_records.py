@@ -108,14 +108,15 @@ import copy
 import json
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Final, Iterable, Literal, NotRequired, TypedDict, TypeVar
 
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
+from glitnir.lean.results import Axiom, CheckResult, Use
 from glitnir.notebook.records_schema import DECISION_FAILURE_KINDS  # noqa: F401
 from glitnir.notebook.records_schema import EVIDENCE_FAILURE_KINDS  # noqa: F401
 from glitnir.notebook.records_schema import (
@@ -126,6 +127,16 @@ from glitnir.notebook.records_schema import (
     FORMAT_V1,
     MAX_MESSAGE,
     MAX_TYPE,
+    ClaimRecord,
+    DecisionEntry,
+    EvidenceEntry,
+    FailureEntry,
+    FailureSection,
+    NonClaimRecord,
+    Records,
+    SavedEntry,
+    Section,
+    ViewEntry,
     _decision_entry_ok,
     _evidence_entry_ok,
     _failure_entry_ok,
@@ -145,24 +156,64 @@ RESULTS_TOO_LARGE = (
     "the results file would exceed 16 MiB; nothing saved before was dropped"
 )
 # Saved results that a check carries over but neither makes nor judges.
-_RESULT_SECTIONS = (
+_RESULT_SECTIONS: Final[tuple[Section, ...]] = (
     "evidence",
     "decisions",
     "views",
     "evidence_failures",
     "decision_failures",
 )
+_RESULT_SUCCESSES: Final[tuple[Literal["evidence", "decisions", "views"], ...]] = (
+    "evidence",
+    "decisions",
+    "views",
+)
 #: The largest the saved drawings may be together, serialised as saved.
 MAX_VIEWS_BYTES = 4 * 1024 * 1024
 DecisionStatus = Literal["accepted", "stale", "unknown", "rejected", "candidate"]
+
+
+class UseView(Use):
+    """A use as shown: the snapshot adds `path` when the used notebook is readable."""
+
+    path: NotRequired[str]
+
+
+class ClaimView(TypedDict):
+    """A saved claim located in the current text, marked current or stale."""
+
+    name: str
+    start_line: int
+    end_line: int
+    status: str
+    axioms: list[Axiom]
+    current: bool
+    uses: NotRequired[list[UseView]]
+    uses_truncated: NotRequired[Literal[True]]
+    not_rechecked: NotRequired[Literal[True]]
+    example: NotRequired[Literal[True]]
+    statement: NotRequired[str]
+    statement_shortened: NotRequired[Literal[True]]
+    kernel_statement: NotRequired[str]
+    kernel_statement_shortened: NotRequired[Literal[True]]
+
+
+class NonClaimView(TypedDict):
+    """A saved example that claims nothing, located in the current text."""
+
+    start_line: int
+    end_line: int
+
+
+_Located = TypeVar("_Located", ClaimRecord, NonClaimRecord)
 UNKNOWN_FINGERPRINT = (
     "the environment fingerprint is unknown, so no result can be saved for it"
 )
 
 
 def _without_failure(
-    records: dict[str, Any] | None, section: str, key: str, keep: Iterable[str]
-) -> dict[str, Any] | None:
+    records: Records | None, section: FailureSection, key: str, keep: Iterable[str]
+) -> Records | None:
     """Drop the failure saved under ``key`` in ``section``, and gone directives'."""
     if records is None or section not in records:
         return records
@@ -170,7 +221,8 @@ def _without_failure(
     failures = {
         k: v for k, v in lenient_failures(records, section).items() if k in wanted
     }
-    records = {k: v for k, v in records.items() if k != section}
+    records = records.copy()
+    del records[section]
     if failures:
         records[section] = failures
     return records
@@ -186,7 +238,7 @@ def records_path(notebook: Path) -> Path:
     return notebook.with_suffix(SUFFIX)
 
 
-def load_records(notebook: Path) -> dict[str, Any] | None:
+def load_records(notebook: Path) -> Records | None:
     """Read saved records, or None when missing, unreadable or another format."""
     try:
         loaded = json.loads(read_regular(records_path(notebook), _MAX_RECORDS))
@@ -238,17 +290,17 @@ def _upgraded(records: dict[str, Any]) -> dict[str, Any] | None:
     return {**records, "format": FORMAT, "claims": upgraded}
 
 
-def _serialised(records: dict[str, Any]) -> str:
+def _serialised(records: Mapping[str, Any]) -> str:
     """Return the exact text ``save_records`` writes, so size checks match."""
     return json.dumps(records, indent=2, sort_keys=True) + "\n"
 
 
-def _too_large(records: dict[str, Any]) -> bool:
+def _too_large(records: Records) -> bool:
     """Whether ``records`` would be too large to load again once saved."""
     return len(_serialised(records).encode("utf-8")) > _MAX_RECORDS
 
 
-def _fitted(records: dict[str, Any]) -> dict[str, Any]:
+def _fitted(records: Records) -> Records:
     """Return ``records``, without saved drawings and failures if too large.
 
     Drawings are a cache, drawn again when asked for, so they never stop what
@@ -256,13 +308,16 @@ def _fitted(records: dict[str, Any]) -> dict[str, Any]:
     only say that a run failed, so they go next: evidence failures, then
     decision failures.
     """
-    for section in ("views", *_FAILURE_SECTIONS):
+    droppable: tuple[Literal["views", "evidence_failures", "decision_failures"], ...]
+    droppable = ("views", *_FAILURE_SECTIONS)
+    for section in droppable:
         if section in records and _too_large(records):
-            records = {k: v for k, v in records.items() if k != section}
+            records = records.copy()
+            del records[section]
     return records
 
 
-def save_records(notebook: Path, records: dict[str, Any]) -> None:
+def save_records(notebook: Path, records: Records) -> None:
     """Write records atomically next to the notebook."""
     target = records_path(notebook)
     handle, temporary = tempfile.mkstemp(
@@ -281,10 +336,10 @@ def save_records(notebook: Path, records: dict[str, Any]) -> None:
 
 def records_from_check(
     text: str,
-    result: Mapping[str, Any],
+    result: CheckResult,
     fingerprint: str,
-    previous: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    previous: Records | None = None,
+) -> Records:
     """Build records from a completed check of ``text``.
 
     Saved evidence, decisions, drawings and failed evidence and decision runs
@@ -301,10 +356,10 @@ def records_from_check(
     if not fingerprint_ok(fingerprint):
         raise ValueError(UNKNOWN_FINGERPRINT)
     lines = _normal(text).split("\n")
-    claims = []
+    claims: list[ClaimRecord] = []
     for theorem in result["theorems"]:
         first, last = theorem["start_line"], theorem["end_line"]
-        claim = {
+        claim: ClaimRecord = {
             "name": theorem["name"],
             "status": theorem["status"],
             "axioms": theorem["axioms"],
@@ -315,7 +370,7 @@ def records_from_check(
             "proposition_sha256": theorem["proposition_sha256"],
         }
         if isinstance(theorem.get("uses"), list):
-            claim["uses"] = [dict(use) for use in theorem["uses"][:MAX_USES]]
+            claim["uses"] = [use.copy() for use in theorem["uses"][:MAX_USES]]
             if theorem.get("uses_truncated") is True or (
                 len(theorem["uses"]) > MAX_USES
             ):
@@ -324,17 +379,18 @@ def records_from_check(
             # Its name is the checker's, and moves with the example's offset;
             # the claim is found again by its text like any other.
             claim["example"] = True
-            statements = (
-                ("statement", theorem.get("statement")),
-                ("kernel_statement", theorem.get("type")),
-            )
-            for key, statement in statements:
-                if isinstance(statement, str):
-                    claim[key] = _shortened(statement)
-                    if len(statement) > MAX_TYPE:
-                        claim[f"{key}_shortened"] = True
+            statement = theorem.get("statement")
+            if isinstance(statement, str):
+                claim["statement"] = _shortened(statement)
+                if len(statement) > MAX_TYPE:
+                    claim["statement_shortened"] = True
+            kernel = theorem.get("type")
+            if isinstance(kernel, str):
+                claim["kernel_statement"] = _shortened(kernel)
+                if len(kernel) > MAX_TYPE:
+                    claim["kernel_statement_shortened"] = True
         claims.append(claim)
-    non_claims = [
+    non_claims: list[NonClaimRecord] = [
         {
             "start_line": item["start_line"],
             "end_line": item["end_line"],
@@ -357,7 +413,7 @@ def records_from_check(
                 for item, first, _ in _located(previous.get("non_claims", []), lines)
                 if first >= withheld["from_line"]
             ]
-    records: dict[str, Any] = {
+    records: Records = {
         "format": FORMAT,
         "source_sha256": result["source_sha256"],
         "environment": {
@@ -371,15 +427,15 @@ def records_from_check(
         records["environment"]["execution"] = dict(result["execution"])
     if non_claims:
         records["non_claims"] = non_claims
-    kept = dict(records)
-    for section in _RESULT_SECTIONS:
-        saved = (
-            lenient_failures(previous, section)
-            if section in _FAILURE_SECTIONS
-            else _saved(previous, section)
-        )
+    kept = records.copy()
+    for section in _RESULT_SUCCESSES:
+        saved = _saved(previous, section)
         if saved:
             kept[section] = saved
+    for failures in _FAILURE_SECTIONS:
+        lenient = lenient_failures(previous, failures)
+        if lenient:
+            kept[failures] = lenient
     kept = _fitted(kept)
     if _too_large(kept):
         raise ValueError(RESULTS_TOO_LARGE)
@@ -387,15 +443,15 @@ def records_from_check(
 
 
 def _not_rechecked(
-    previous: dict[str, Any], lines: list[str], from_line: int
-) -> list[dict[str, Any]]:
+    previous: Records, lines: list[str], from_line: int
+) -> list[ClaimRecord]:
     """Return the saved claims from ``from_line`` on, as they were saved.
 
     Each keeps its result and hashes unchanged, at its place in ``lines``, and
     the fingerprint of the environment it was checked in.
     """
     environment = previous["environment"]["fingerprint"]
-    kept = []
+    kept: list[ClaimRecord] = []
     for claim, first, last in _located(previous["claims"], lines):
         if first >= from_line:
             kept.append(
@@ -410,8 +466,8 @@ def _not_rechecked(
 
 
 def _located(
-    items: list[dict[str, Any]], lines: list[str]
-) -> list[tuple[dict[str, Any], int, int]]:
+    items: Sequence[_Located], lines: list[str]
+) -> list[tuple[_Located, int, int]]:
     """Find saved items by their exact text, in order: (item, first, last line)."""
     found = []
     searched_from = 0
@@ -428,11 +484,11 @@ def _located(
 
 def claim_views(
     text: str,
-    records: dict[str, Any] | None,
+    records: Records | None,
     fingerprint: str,
     *,
     compare_environment: bool = True,
-) -> list[dict[str, Any]]:
+) -> list[ClaimView]:
     """Locate saved claims in the current text and mark each current or stale.
 
     A claim saved under a fingerprint that is not a digest is never current.
@@ -445,7 +501,7 @@ def claim_views(
     normal = _normal(text)
     lines = normal.split("\n")
     boundaries = command_boundaries(normal)
-    views = []
+    views: list[ClaimView] = []
     located = _located(records["claims"], lines)
     for position, (claim, first, last) in enumerate(located):
         # A claim the last check did not recheck keeps its own environment.
@@ -463,7 +519,7 @@ def claim_views(
             following = [later for _, later, _ in located[position + 1 :]]
             limit = following[0] - 1 if following else len(lines)
             last = max(last, min(boundaries.end_from(last) or last, limit))
-        view = {
+        view: ClaimView = {
             "name": claim["name"],
             "start_line": first,
             "end_line": last,
@@ -472,29 +528,32 @@ def claim_views(
             "current": current,
         }
         if "uses" in claim:
-            view["uses"] = [dict(use) for use in claim["uses"]]
+            view["uses"] = [{**use} for use in claim["uses"]]
             if claim.get("uses_truncated") is True:
                 view["uses_truncated"] = True
         if "fingerprint" in claim:
             view["not_rechecked"] = True
         if claim.get("example") is True:
             view["example"] = True
-            for key in ("statement", "kernel_statement"):
-                if key in claim:
-                    view[key] = claim[key]
-                if claim.get(f"{key}_shortened") is True:
-                    view[f"{key}_shortened"] = True
+            if "statement" in claim:
+                view["statement"] = claim["statement"]
+            if claim.get("statement_shortened") is True:
+                view["statement_shortened"] = True
+            if "kernel_statement" in claim:
+                view["kernel_statement"] = claim["kernel_statement"]
+            if claim.get("kernel_statement_shortened") is True:
+                view["kernel_statement_shortened"] = True
         views.append(view)
     return views
 
 
 def non_claim_views(
     text: str,
-    records: dict[str, Any] | None,
+    records: Records | None,
     fingerprint: str,
     *,
     compare_environment: bool = True,
-) -> list[dict[str, int]]:
+) -> list[NonClaimView]:
     """Locate the saved examples that claim nothing, while still current.
 
     ``compare_environment`` is as in `claim_views`.
@@ -514,30 +573,30 @@ def non_claim_views(
     ]
 
 
-def _saved(records: dict[str, Any] | None, section: str) -> dict[str, dict[str, Any]]:
+def _saved(records: Records | None, section: Section) -> dict[str, Any]:
     if records is None:
         return {}
     return dict(records.get(section, {}))
 
 
-def saved_evidence(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+def saved_evidence(records: Records | None) -> dict[str, EvidenceEntry]:
     """Return the saved evidence by directive key; none when there are no records."""
     return _saved(records, "evidence")
 
 
-def saved_decisions(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+def saved_decisions(records: Records | None) -> dict[str, DecisionEntry]:
     """Return the saved decisions by directive key; none when there are no records."""
     return _saved(records, "decisions")
 
 
-def saved_views(records: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+def saved_views(records: Records | None) -> dict[str, ViewEntry]:
     """Return the saved drawings by directive key; none when there are no records."""
     return _saved(records, "views")
 
 
 def saved_evidence_failures(
-    records: dict[str, Any] | None,
-) -> dict[str, dict[str, Any]]:
+    records: Records | None,
+) -> dict[str, FailureEntry]:
     """Return the saved failed evidence runs by directive key, read leniently.
 
     Malformed failures, failures of kinds this version does not know and
@@ -547,8 +606,8 @@ def saved_evidence_failures(
 
 
 def saved_decision_failures(
-    records: dict[str, Any] | None,
-) -> dict[str, dict[str, Any]]:
+    records: Records | None,
+) -> dict[str, FailureEntry]:
     """Return the saved failed decision runs by directive key, read leniently.
 
     As for `saved_evidence_failures`, with failures saved before their
@@ -558,7 +617,7 @@ def saved_decision_failures(
 
 
 def _refuse_unreadable(
-    records: dict[str, Any] | None, notebook: Path | None, action: str
+    records: Records | None, notebook: Path | None, action: str
 ) -> None:
     """Refuse to replace a records file that exists but could not be read."""
     if records is None and notebook is not None:
@@ -571,14 +630,14 @@ def _refuse_unreadable(
 
 
 def _with_entry(
-    records: dict[str, Any] | None,
-    section: str,
+    records: Records | None,
+    section: Section,
     key: str,
-    entry: dict[str, Any],
+    entry: Mapping[str, Any],
     keep: Iterable[str],
     notebook: Path | None,
     advice: str,
-) -> dict[str, Any]:
+) -> Records:
     """Save ``entry`` under ``key`` in ``section``, pruning keys not kept.
 
     Saving anything but a drawing drops the saved drawings, then the saved
@@ -589,7 +648,9 @@ def _with_entry(
     wanted = {*keep, key}
     if records is not None:
         records = with_lenient_failures(records)
-    entries = {k: v for k, v in _saved(records, section).items() if k in wanted}
+    entries: dict[str, Any] = {
+        k: v for k, v in _saved(records, section).items() if k in wanted
+    }
     # A copy, so later changes to the caller's entry never reach the records.
     entries[key] = copy.deepcopy(entry)
     if records is None:
@@ -600,7 +661,8 @@ def _with_entry(
             "withheld": None,
             "claims": [],
         }
-    result = {**records, section: entries}
+    result = records.copy()
+    result[section] = entries
     if section != "views":
         result = _fitted(result)
     if _too_large(result):
@@ -614,12 +676,12 @@ def _with_entry(
 
 
 def with_evidence(
-    records: dict[str, Any] | None,
+    records: Records | None,
     key: str,
-    entry: dict[str, Any],
+    entry: EvidenceEntry,
     keep: Iterable[str],
     notebook: Path | None = None,
-) -> dict[str, Any]:
+) -> Records:
     """Return ``records`` with ``entry`` saved under ``key``.
 
     Evidence for keys that are neither ``key`` nor in ``keep`` (the keys of the
@@ -652,12 +714,12 @@ def with_evidence(
 
 
 def with_evidence_failure(
-    records: dict[str, Any] | None,
+    records: Records | None,
     key: str,
-    entry: dict[str, Any],
+    entry: FailureEntry,
     keep: Iterable[str],
     notebook: Path | None = None,
-) -> dict[str, Any]:
+) -> Records:
     """Return ``records`` with the failed run ``entry`` saved under ``key``.
 
     Like ``with_evidence``: failures for keys that are neither ``key`` nor in
@@ -677,12 +739,12 @@ def with_evidence_failure(
 
 
 def with_decision_failure(
-    records: dict[str, Any] | None,
+    records: Records | None,
     key: str,
-    entry: dict[str, Any],
+    entry: FailureEntry,
     keep: Iterable[str],
     notebook: Path | None = None,
-) -> dict[str, Any]:
+) -> Records:
     """Return ``records`` with the failed decision run ``entry`` saved under ``key``.
 
     Like ``with_evidence_failure``, for the decision directive ``key``: the
@@ -696,13 +758,13 @@ def with_decision_failure(
 
 
 def _with_failure(
-    records: dict[str, Any] | None,
-    section: str,
+    records: Records | None,
+    section: FailureSection,
     key: str,
-    entry: dict[str, Any],
+    entry: FailureEntry,
     keep: Iterable[str],
     notebook: Path | None,
-) -> dict[str, Any]:
+) -> Records:
     """Save a failed run in ``section``, refused if it would drop saved failures.
 
     Making room by dropping either failure section would lose failures saved
@@ -732,12 +794,12 @@ def _with_failure(
 
 
 def with_decision(
-    records: dict[str, Any] | None,
+    records: Records | None,
     key: str,
-    entry: dict[str, Any],
+    entry: DecisionEntry,
     keep: Iterable[str],
     notebook: Path | None = None,
-) -> dict[str, Any]:
+) -> Records:
     """Return ``records`` with the decision ``entry`` saved under ``key``.
 
     Like ``with_evidence``: decisions for keys that are neither ``key`` nor in
@@ -768,12 +830,12 @@ def with_decision(
 
 
 def with_view(
-    records: dict[str, Any] | None,
+    records: Records | None,
     key: str,
-    entry: dict[str, Any],
+    entry: ViewEntry,
     keep: Iterable[str],
     notebook: Path | None = None,
-) -> dict[str, Any]:
+) -> Records:
     """Return ``records`` with the drawing ``entry`` saved under ``key``.
 
     Like ``with_evidence``: drawings for keys that are neither ``key`` nor in
@@ -810,8 +872,8 @@ def with_view(
 
 
 def without_decision(
-    records: dict[str, Any] | None, key: str, notebook: Path | None = None
-) -> dict[str, Any]:
+    records: Records | None, key: str, notebook: Path | None = None
+) -> Records:
     """Return ``records`` without the decision saved under ``key``.
 
     The failure saved for ``key``, if any, goes too: Discard clears the card.
@@ -825,7 +887,8 @@ def without_decision(
     if records is None or key not in decisions:
         raise ValueError("No decision is saved for this directive.")
     del decisions[key]
-    result = {k: v for k, v in records.items() if k != "decisions"}
+    result = records.copy()
+    result.pop("decisions", None)
     if decisions:
         result["decisions"] = decisions
     failures = saved_decision_failures(result)
@@ -847,7 +910,7 @@ def decision_prefix_sha256(text: str, end_line: int) -> str:
 
 
 def evidence_status(
-    entry: dict[str, Any],
+    entry: SavedEntry,
     text: str,
     line: int,
     fingerprint: str,
@@ -866,7 +929,7 @@ def evidence_status(
 
 
 def decision_failure_status(
-    entry: dict[str, Any],
+    entry: FailureEntry,
     text: str,
     end_line: int,
     fingerprint: str,
@@ -885,7 +948,7 @@ def decision_failure_status(
 
 
 def view_status(
-    entry: dict[str, Any],
+    entry: ViewEntry,
     text: str,
     line: int,
     fingerprint: str,
@@ -919,7 +982,7 @@ def _block_follows(text: str, end_line: int, block: str) -> bool:
 
 
 def decision_status(
-    entry: dict[str, Any],
+    entry: DecisionEntry,
     text: str,
     end_line: int,
     fingerprint: str,
@@ -934,10 +997,12 @@ def decision_status(
     is as in `claim_views`.
     """
     outcome, verification = entry["outcome"], entry["verification"]
+    block = outcome["block"]
     if (
         verification is not None
         and verification["status"] == "checked"
-        and _block_follows(text, end_line, outcome["block"])
+        and block is not None
+        and _block_follows(text, end_line, block)
     ):
         return "accepted"
     if not matches(entry["fingerprint"], fingerprint, compare_environment) or entry[
@@ -946,6 +1011,6 @@ def decision_status(
         return "stale"
     if outcome["status"] == "unknown":
         return "unknown"
-    if verification["status"] == "rejected":
+    if verification is not None and verification["status"] == "rejected":
         return "rejected"
     return "candidate"

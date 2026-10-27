@@ -6,8 +6,9 @@ Nothing here reads or writes a file.
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Final, Literal, NotRequired, TypedDict
+from typing import Any, Final, Literal, NotRequired, TypedDict, TypeGuard
 
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.project_checking import MAX_USES
@@ -116,45 +117,38 @@ class NonClaimRecord(TypedDict):
     prefix_sha256: str
 
 
-class EvidenceEntry(TypedDict):
-    """Saved evidence for one directive: its origin and the checked snapshot."""
+class SavedEntry(TypedDict):
+    """What every saved run records: source prefix, environment, provider, time."""
 
     prefix_sha256: str
     fingerprint: str
     provider: str
     created: str
+
+
+class EvidenceEntry(SavedEntry):
+    """Saved evidence for one directive: its origin and the checked snapshot."""
+
     snapshot: Evidence
 
 
-class DecisionEntry(TypedDict):
+class DecisionEntry(SavedEntry):
     """A saved decision: the provider's outcome and the kernel's verdict."""
 
-    prefix_sha256: str
-    fingerprint: str
-    provider: str
-    created: str
     outcome: Decision
     verification: Verdict | None
 
 
-class ViewEntry(TypedDict):
+class ViewEntry(SavedEntry):
     """A saved drawing for one view directive, keyed by its provider's hash too."""
 
-    prefix_sha256: str
-    fingerprint: str
-    provider: str
     provider_sha256: str
-    created: str
     drawing: Drawing
 
 
-class FailureEntry(TypedDict):
+class FailureEntry(SavedEntry):
     """A saved failed evidence or decision run: the kind of failure and its message."""
 
-    prefix_sha256: str
-    fingerprint: str
-    provider: str
-    created: str
     kind: str
     message: str
 
@@ -243,8 +237,8 @@ def _before(created: str, other: str) -> bool:
 
 
 def lenient_failures(
-    records: dict[str, Any] | None, section: str = _FAILURES
-) -> dict[str, dict[str, Any]]:
+    records: Records | None, section: FailureSection = _FAILURES
+) -> dict[str, FailureEntry]:
     """Return the saved failures still worth showing; malformed ones are dropped.
 
     `section` is `evidence_failures` or `decision_failures`. A section that is
@@ -256,13 +250,14 @@ def lenient_failures(
     failures = records.get(section, {})
     if not isinstance(failures, dict):
         return {}
-    succeeded, success_ok = (
-        ("evidence", _evidence_entry_ok)
-        if section == _FAILURES
-        else ("decisions", _decision_entry_ok)
-    )
+    succeeded: Literal["evidence", "decisions"]
+    success_ok: Callable[[Any], bool]
+    if section == _FAILURES:
+        succeeded, success_ok = "evidence", _evidence_entry_ok
+    else:
+        succeeded, success_ok = "decisions", _decision_entry_ok
     successes = records.get(succeeded, {})
-    kept = {}
+    kept: dict[str, FailureEntry] = {}
     for key, entry in failures.items():
         if not _failure_entry_ok(entry, section):
             continue
@@ -270,16 +265,17 @@ def lenient_failures(
         if isinstance(saved, dict) and success_ok(saved):
             if _before(entry["created"], saved["created"]):
                 continue
-        kept[key] = dict(entry)
+        kept[key] = entry.copy()
     return kept
 
 
-def with_lenient_failures(records: dict[str, Any]) -> dict[str, Any]:
+def with_lenient_failures(records: Records) -> Records:
     """Return ``records`` with only the failures `lenient_failures` keeps."""
     for section in _FAILURE_SECTIONS:
         if section in records:
             failures = lenient_failures(records, section)
-            records = {k: v for k, v in records.items() if k != section}
+            records = records.copy()
+            del records[section]
             if failures:
                 records[section] = failures
     return records
@@ -396,7 +392,7 @@ def _withheld_ok(withheld: Any) -> bool:
     return type(through) is int and 1 <= through and from_line <= through + 1
 
 
-def well_formed(records: dict[str, Any]) -> bool:
+def well_formed(records: dict[str, Any]) -> TypeGuard[Records]:
     """Check the shape that ``claim_views`` relies on; anything else is unknown."""
     environment = records.get("environment")
     if not isinstance(environment, dict) or not isinstance(

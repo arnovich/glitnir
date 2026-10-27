@@ -28,9 +28,13 @@ from glitnir.lean.project import describe_project
 from glitnir.lean.project_checking import check_candidate
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.lean.provider_lean import provider_imports_error, run_provider_lean
+from glitnir.lean.results import Verdict
 from glitnir.notebook.check_records import (
     MAX_MESSAGE,
     MAX_TYPE,
+    DecisionEntry,
+    EvidenceEntry,
+    FailureEntry,
     decision_prefix_sha256,
     decision_status,
     evidence_prefix_sha256,
@@ -537,7 +541,7 @@ class DirectiveRuns:
         except ValueError as failure:
             invalid = f"Provider {provider.name} returned invalid evidence: {failure}"
             return invalid, ("invalid", invalid)
-        entry = {
+        entry: EvidenceEntry = {
             "prefix_sha256": evidence_prefix_sha256(job.text, job.line),
             "fingerprint": fingerprint,
             "provider": provider.name,
@@ -623,7 +627,7 @@ class DirectiveRuns:
             return _not_saved(run, kind, "the environment is unknown")
         if _names_local_path(message, self._context.path):
             return _not_saved(run, kind, "its message names a local path")
-        entry = {
+        entry: FailureEntry = {
             "prefix_sha256": prefix,
             "fingerprint": environment["sha256"],
             "provider": job.provider.name,
@@ -748,7 +752,11 @@ class DirectiveRuns:
             entry, text, end_line, environment_digest(self._context.fingerprint(text))
         )
         verification = entry["verification"]
-        if status != "candidate" or verification["status"] != "checked":
+        if (
+            status != "candidate"
+            or verification is None
+            or verification["status"] != "checked"
+        ):
             raise SnapshotError(NOT_ACCEPTABLE[status])
         return {
             "sha256": _sha256(text),
@@ -875,7 +883,7 @@ class DirectiveRuns:
                 f"Provider {provider.name} returned an invalid decision: {failure}"
             )
             return invalid, ("invalid", invalid)
-        verification: dict[str, Any] | None = None
+        verification: Verdict | None = None
         if outcome["status"] != "unknown":
             expected = expected_theorem(job.name, outcome["status"])
             if outcome["theorem"].split(".")[-1] != expected:
@@ -912,7 +920,7 @@ class DirectiveRuns:
                 "message": verdict["message"][:MAX_MESSAGE],
                 "type": kind,
             }
-        entry = {
+        entry: DecisionEntry = {
             "prefix_sha256": decision_prefix_sha256(job.text, job.end_line),
             "fingerprint": fingerprint,
             "provider": provider.name,

@@ -2321,3 +2321,33 @@ def test_records_schema_validates_what_load_records_accepts(tmp_path: Path) -> N
     assert loaded is not None
     assert records_schema.well_formed(loaded)
     assert not records_schema.well_formed({**loaded, "claims": "not a list"})
+
+
+def test_dropping_sections_never_modifies_the_argument(monkeypatch):
+    """The helpers that drop a section return new records and leave theirs alone."""
+    from glitnir.notebook.records_schema import with_lenient_failures
+
+    records = with_decision(None, DECISION_KEY, _decision(), [DECISION_KEY])
+    records = with_view(records, "view", _view(), ["view"])
+    records = with_evidence_failure(records, KEY, _failure(), [KEY])
+    records = with_decision_failure(records, "failed", _decision_failure(), ["failed"])
+    sections = {"decisions", "views", "evidence_failures", "decision_failures"}
+    assert sections <= set(records)
+    before = copy.deepcopy(records)
+    with monkeypatch.context() as patched:
+        patched.setattr(check_records, "_MAX_RECORDS", 10)
+        assert "views" not in check_records._fitted(records)
+    assert "decisions" not in without_decision(records, DECISION_KEY)
+    assert "evidence_failures" not in check_records._without_failure(
+        records, "evidence_failures", KEY, []
+    )
+    assert with_lenient_failures(records) == records
+    assert records == before
+
+
+def test_records_from_check_accepts_theorems_without_optional_keys():
+    """Theorems with only the required keys save claims without the optional ones."""
+    records = records_from_check(NOTEBOOK, _result(("A.t", 2)), FP)
+    (claim,) = records["claims"]
+    optional = {"uses", "uses_truncated", "example", "statement", "kernel_statement"}
+    assert not optional & set(claim)
