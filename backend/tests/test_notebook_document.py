@@ -30,10 +30,43 @@ def test_claims_without_docstrings_and_lemma_keyword_are_found() -> None:
 
 
 @pytest.mark.parametrize(
+    "theorem",
+    [
+        "theorem t : True := trivial",
+        "theorem t : True :=\n  trivial",
+        "theorem t :\n    True :=\n  trivial",
+        "theorem t : True := by trivial",
+        "/-- Proved by a term. -/\ntheorem t : True := trivial",
+        "theorem t : Nat → True\n  | _ => trivial",
+    ],
+)
+def test_a_theorem_proved_otherwise_is_ordinary_lean(theorem: str) -> None:
+    """Only a tactic block after `:= by` makes a claim cell; Lean reads the rest."""
+    text = (
+        f"/-! # Title -/\n\n{theorem}\n\n/-! More -/\n\n"
+        "theorem u : True := by\n  trivial\n"
+    )
+    notebook = parse_notebook(text)
+    assert [c.name for c in notebook.claims] == ["u"]
+    kinds = [cell.kind for cell in notebook.cells]
+    assert kinds == [CellKind.PROSE, CellKind.LEAN, CellKind.PROSE, CellKind.CLAIM]
+    assert notebook.cells[1].text == theorem
+
+
+def test_term_and_tactic_claims_mix() -> None:
+    notebook = parse_notebook(
+        "theorem a : True := by\n  trivial\n"
+        "theorem b : True := trivial\n"
+        "theorem c : True := by\n  trivial\n"
+    )
+    assert [c.name for c in notebook.claims] == ["a", "c"]
+    assert notebook.cells[1].kind is CellKind.LEAN
+    assert notebook.cells[1].text == "theorem b : True := trivial"
+
+
+@pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("theorem t : True := trivial\n", "tactic block"),
-        ("theorem t :\n  True\n", "tactic block"),
         ("/-! prose never closed\n", "not closed"),
         ("/-- doc never closed\n", "not closed"),
         ("theorem t : True := by\n\ndef x := 1\n", "has no proof"),

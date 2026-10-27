@@ -149,6 +149,42 @@ def test_prose_needs_lean_comment_boundaries(
     assert [c["markdown"] for c in cells if c["kind"] == "prose"] == prose
 
 
+def test_prose_survives_a_term_proof(tmp_path: Path) -> None:
+    """A claim proved by a term keeps the notebook's prose and plain notice."""
+    text = (
+        "/-! # Walkthrough -/\n\ntheorem a : True := trivial\n\n"
+        "/-! ## Step {fold}\n\nSummary.\n-/\n\ntheorem b : True :=\n  trivial\n"
+    )
+    path = tmp_path / "A.lean"
+    path.write_text(text)
+    snapshot = SourcePreviewService(path).snapshot()
+    assert [c["markdown"] for c in snapshot["cells"] if c["kind"] == "prose"] == [
+        "# Walkthrough",
+        "## Step {fold}\n\nSummary.",
+    ]
+    assert snapshot["preview"]["notice"] == preview_snapshot.NOTICE
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ("/-! never closed\ntheorem t : True := trivial\n", "line 1: prose block"),
+        ('def s : String := "\n/-! not prose -/\n"\n', "line 2"),
+    ],
+)
+def test_a_whole_source_fallback_says_why(
+    tmp_path: Path, text: str, reason: str
+) -> None:
+    """When prose cannot be separated, the notice names the line and reason."""
+    path = tmp_path / "A.lean"
+    path.write_text(text)
+    snapshot = SourcePreviewService(path).snapshot()
+    assert [c["kind"] for c in snapshot["cells"]] == ["source"]
+    notice = snapshot["preview"]["notice"]
+    assert notice.startswith(preview_snapshot.NOTICE)
+    assert "shown as source" in notice and reason in notice
+
+
 @pytest.mark.parametrize("separator", ["\u2028", "\r", "\v", "\x85"])
 @pytest.mark.parametrize("proof", ["by\n  trivial", "True.intro"])
 def test_only_lf_ends_source_lines(tmp_path: Path, separator: str, proof: str) -> None:
