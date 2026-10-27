@@ -236,12 +236,31 @@ def test_declarations_are_found_with_headers_and_namespaces(tmp_path: Path) -> N
     assert found["A.four"].namespaces == ()
 
 
-def test_opened_namespaces_are_recorded(tmp_path: Path) -> None:
+def test_opened_namespaces_are_not_recorded(tmp_path: Path) -> None:
     (tmp_path / "F.lean").write_text(
-        "open Foo Bar.Baz\ndef x : Nat := 1\n", encoding="utf-8"
+        "open Real Complex\nnamespace P\ndef x : Nat := 1\nend P\n", encoding="utf-8"
     )
     (found,) = load_script().declarations(tmp_path, "F.lean")
-    assert found.namespaces == ("Foo", "Bar.Baz")
+    assert found.namespaces == ("P",)
+
+
+def test_open_namespaces_do_not_license_a_prefix() -> None:
+    same = load_script().same_statement
+    assert not same(": Real.exp x = 1", ": exp x = 1", ())
+    assert same(": Printed.GroupingLemma", ": GroupingLemma", ("Printed",))
+
+
+def test_variables_are_tracked_per_scope(tmp_path: Path) -> None:
+    source = (
+        "namespace A\nvariable (n : Int)\ntheorem t : n = n := rfl\nend A\n"
+        "section\nvariable (m : Int)\nend\ntheorem u : True := trivial\n"
+        "variable (k : Int)\ntheorem v : True := trivial\n"
+    )
+    (tmp_path / "F.lean").write_text(source, encoding="utf-8")
+    found = {
+        d.name: d.variables for d in load_script().declarations(tmp_path, "F.lean")
+    }
+    assert found == {"A.t": True, "u": False, "v": True}
 
 
 def test_matching_entries_pass(tmp_path: Path) -> None:
@@ -482,3 +501,63 @@ def test_notebook_is_skipped_after_earlier_errors(tmp_path: Path) -> None:
     data["nodes"][0]["lean"][0]["type"] = ": False"
     result = notebook_run(tmp_path, data, "import X\n")
     assert result.returncode == 1 and "w_one" not in result.stdout
+
+
+def test_a_claim_citing_a_declaration_with_variables_is_an_error(
+    tmp_path: Path,
+) -> None:
+    commit = make_project(tmp_path)
+    (tmp_path / "proj/V.lean").write_text(
+        "namespace A\nvariable (n : Int)\ntheorem t : n = n := rfl\nend A\n"
+        "section\nvariable (m : Int)\nend\ntheorem u : True := trivial\n",
+        encoding="utf-8",
+    )
+    git(tmp_path, "add", "proj/V.lean")
+    git(tmp_path, "commit", "-q", "-m", "v")
+    data = lean_outline(
+        commit,
+        entry(name="A.t", file="V.lean", line=3, type=": n = n"),
+        entry(name="u", file="V.lean", line=8, type=": True"),
+    )
+    data["nodes"][0]["claim"] = "c"
+    data["nodes"].append(node("b", claim="d", lean=[data["nodes"][0]["lean"][1]]))
+    data["nodes"][0]["lean"] = data["nodes"][0]["lean"][:1]
+    text = (
+        "variable (n : Nat)\ntheorem c : n = n := by\n  exact A.t\n"
+        "theorem d : True := by\n  exact u\n"
+    )
+    out = notebook_run(tmp_path, data, text).stdout
+    assert "claim c cites A.t, which depends on section variables" in out
+    assert "claim d" not in out
+
+
+@pytest.mark.parametrize(
+    "line, word",
+    [
+        ("open Real", "open"),
+        ("variable (n : Nat)", "variable"),
+        ("def x := 1", "def"),
+        ("@[simp] def x := 1", "def"),
+        ("private noncomputable def x := 1", "def"),
+        ("set_option autoImplicit true", "set_option"),
+        ('local notation "x" => 1', "local"),
+    ],
+)
+def test_the_notebook_must_not_define_or_open(
+    tmp_path: Path, line: str, word: str
+) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = f"import X\n{line}\ntheorem w_one : True := by\n  exact A.B.one\n"
+    out = notebook_run(tmp_path, data, text).stdout
+    assert f"walkthrough must not define or open anything: line 2: {word}" in out
+
+
+def test_a_plain_notebook_passes(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = (
+        "import Mathlib\n/-! prose\ndef not_code := 1\n-/\n-- open Real\n"
+        "/-- doc -/\nnamespace N\ntheorem w_one : True := by\n  exact A.B.one\n"
+        "end N\n#print axioms w_one\n"
+    )
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 0 and result.stdout == "", result.stdout

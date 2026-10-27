@@ -214,7 +214,7 @@ _SECTION_RE = re.compile(
 _MUTUAL_RE = re.compile(r"^mutual\b")
 _COMMIT_RE = re.compile(r"[0-9a-f]{7,40}")
 _END_RE = re.compile(r"^end(?:\s+(\S+))?\s*$")
-_OPEN_RE = re.compile(r"^open\s+([^\n]*)")
+_VARIABLE_RE = re.compile(r"^variable\b")
 _OPENERS = "([{⟨"
 _CLOSERS = ")]}⟩"
 _GIT_TIMEOUT_SECONDS = 30
@@ -228,7 +228,8 @@ class Declaration:
     file: str
     line: int
     type: str
-    namespaces: tuple[str, ...]
+    namespaces: tuple[str, ...]  # enclosing namespace prefixes only, never opens
+    variables: bool = False  # a `variable` command is in force at the declaration
 
 
 def _collapse(text: str) -> str:
@@ -291,7 +292,8 @@ def declarations(root: Path, file: str) -> list[Declaration]:
     """Return the declarations at column 0 of a Lean file, in order."""
     lines = (root / file).read_text(encoding="utf-8").splitlines()
     frames: list[tuple[str, tuple[str, ...]]] = []
-    opened: list[str] = []
+    scoped_vars: list[bool] = []
+    file_vars = False
     found: list[Declaration] = []
     in_comment = False
     for index, line in enumerate(lines):
@@ -303,14 +305,18 @@ def declarations(root: Path, file: str) -> list[Declaration]:
             continue
         match = _NAMESPACE_RE.match(line)
         if match:
-            frames.extend(("namespace", (part,)) for part in match.group(1).split("."))
+            for part in match.group(1).split("."):
+                frames.append(("namespace", (part,)))
+                scoped_vars.append(False)
             continue
         match = _SECTION_RE.match(line)
         if match:
             frames.append(("section", ()))
+            scoped_vars.append(False)
             continue
         if _MUTUAL_RE.match(line):
             frames.append(("mutual", ()))
+            scoped_vars.append(False)
             continue
         match = _END_RE.match(line)
         if match:
@@ -318,11 +324,15 @@ def declarations(root: Path, file: str) -> list[Declaration]:
                 closing = (match.group(1) or "x").count(".") + 1
             else:
                 closing = 1
-            del frames[max(len(frames) - closing, 0) :]
+            keep = max(len(frames) - closing, 0)
+            del frames[keep:]
+            del scoped_vars[keep:]
             continue
-        match = _OPEN_RE.match(line)
-        if match:
-            opened.extend(w for w in match.group(1).split() if w != "in")
+        if _VARIABLE_RE.match(line):
+            if scoped_vars:
+                scoped_vars[-1] = True
+            else:
+                file_vars = True
             continue
         match = _DECL_RE.match(line)
         if not match:
@@ -336,7 +346,9 @@ def declarations(root: Path, file: str) -> list[Declaration]:
             full = ".".join([*parts, name])
         header = _header(match.group("rest"), _continuation(lines, index))
         found.append(
-            Declaration(full, file, index + 1, header, prefixes + tuple(opened))
+            Declaration(
+                full, file, index + 1, header, prefixes, file_vars or any(scoped_vars)
+            )
         )
     return found
 
@@ -450,7 +462,7 @@ def same_statement(written: str, declared: str, namespaces: Sequence[str]) -> bo
     """Tell whether a written header restates the declared one.
 
     The headers match token by token. A declared name may be written in full,
-    or with any of the enclosing or opened namespaces as its prefix.
+    or with any of the enclosing namespaces as its prefix.
     """
     left, right = _tokens(written), _tokens(declared)
     if len(left) != len(right):
@@ -501,7 +513,7 @@ def check_notebook(
         for item in outline.get("nodes", [])
         if isinstance(item.get("claim"), str)
     }
-    problems: list[Problem] = []
+    problems = _forbidden_in(text)
     written: set[str] = set()
     for name, header, tail in _claims_in(text):
         written.add(name)
@@ -531,6 +543,39 @@ def check_notebook(
     return problems
 
 
+_FORBIDDEN_WORDS = frozenset(
+    "open variable universe def abbrev notation infix infixl infixr prefix postfix"
+    " macro syntax axiom instance opaque structure class inductive attribute"
+    " set_option local scoped".split()
+)
+_PREFIX_RE = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)*"
+    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe|public)\s+)*"
+)
+
+
+def _forbidden_in(text: str) -> list[Problem]:
+    """Report each column-0 command that defines or opens something."""
+    problems: list[Problem] = []
+    in_comment = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if in_comment:
+            in_comment = "-/" not in line
+            continue
+        if line.startswith("/-"):
+            in_comment = "-/" not in line
+            continue
+        words = line[_PREFIX_RE.match(line).end() :].split()  # type: ignore[union-attr]
+        if words and words[0] in _FORBIDDEN_WORDS:
+            problems.append(
+                _error(
+                    f"walkthrough must not define or open anything: "
+                    f"line {number}: {words[0]}"
+                )
+            )
+    return problems
+
+
 def _compare_claim(
     root: Path, claim: str, header: str, target: str, entry: dict[str, Any]
 ) -> list[Problem]:
@@ -542,6 +587,13 @@ def _compare_claim(
         return [_error(f"claim {claim}: file {file} cannot be read")]
     if not found:
         return [_error(f"claim {claim}: no declaration {target} in {file}")]
+    if any(d.variables for d in found):
+        return [
+            _error(
+                f"claim {claim} cites {target}, which depends on section "
+                "variables; restate it in prose instead"
+            )
+        ]
     if any(same_statement(header, d.type, d.namespaces) for d in found):
         return []
     return [
