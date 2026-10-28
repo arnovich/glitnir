@@ -4152,3 +4152,76 @@ test('the rendered workbench is pinned by a fixture', async () => {
   if (process.env.UPDATE_FIXTURES) writeFileSync(fixture, html);
   assert.equal(html, readFileSync(fixture, 'utf8'), 'the rendered page differs from extension/test/fixtures/workbench.html; set UPDATE_FIXTURES=1 only for a deliberate renderer change');
 });
+
+for (const browser of [false, true]) {
+  test(`the import header is one collapsed exact-source block (${browser ? 'browser' : 'editor'})`, async () => {
+    const snapshot = projectNotebook();
+    const header = 'import Mathlib\nimport Demo.Basic\n\nopen scoped BigOperators\nopen Nat\n';
+    snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 8, text: header + 'namespace Demo\ndef x := 1\nend Demo\n'}];
+    snapshot.project_claims = [];
+    const window = await renderSnapshot(snapshot, {browser, katex: true});
+    try {
+      const d = window.document;
+      window.HTMLElement.prototype.scrollIntoView = () => {};
+      const fold = d.querySelector('#doc details.import-header');
+      assert.ok(fold);
+      assert.equal(fold.open, false);
+      assert.match(fold.querySelector('summary').textContent, /2 imports · 2 opens/);
+      assert.equal(fold.querySelector('pre').textContent, header.trimEnd());
+      assert.equal(fold.querySelectorAll('.source-link').length, 1);
+      assert.equal(fold.querySelector('.source-link').textContent, 'L1–5');
+      assert.equal(fold.querySelectorAll('button').length, 0);
+      assert.equal(d.querySelectorAll('#doc .cell-tools').length, 0);
+      assert.ok(d.querySelector('#doc .definition'));
+      fold.querySelector('.source-link').click();
+      for (let n = 1; n <= 5; n++) assert.ok(d.getElementById(`source-L${n}`));
+      d.querySelector('#source-L4 .ln a').click();
+      assert.equal(d.querySelector('#doc details.import-header').open, true, 'returning to a header line reveals it');
+      if (!browser) {
+        d.querySelector('#doc details.import-header').open = false;
+        d.dispatchEvent(new window.CustomEvent('glitnir-reveal-cell', {detail: {index: 0, sha256: snapshot.sha256}}));
+        assert.equal(d.querySelector('#doc details.import-header').open, true, 'the editor reveal opens the header');
+        let html;
+        window.glitnirHost.saveHTML = async value => { html = value; };
+        await d.getElementById('export-html').onclick();
+        const page = new JSDOM(html);
+        try {
+          const exported = page.window.document.querySelector('details.import-header');
+          assert.equal(exported.open, false);
+          assert.equal(exported.querySelector('pre').textContent, header.trimEnd());
+          assert.equal(page.window.document.querySelectorAll('script,button').length, 0);
+        } finally { page.window.close(); }
+      }
+    } finally { window.close(); }
+  });
+}
+
+test('a single import collapses, while later opens and ambiguous setup stay visible', async () => {
+  const snapshot = projectNotebook();
+  snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 6, text: 'import Mathlib\nnamespace Demo\nopen Nat\nset_option maxRecDepth 0\nend Demo\n'}];
+  snapshot.project_claims = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document, fold = d.querySelector('#doc .import-header');
+    assert.match(fold.querySelector('summary').textContent, /^1 import/);
+    assert.equal(fold.querySelector('pre').textContent, 'import Mathlib');
+    assert.ok([...d.querySelectorAll('#doc .source-context:not(.import-header) pre')].some(pre => pre.textContent === 'open Nat'));
+    assert.match(d.querySelector('#doc').textContent, /maxRecDepth/);
+  } finally { window.close(); }
+});
+
+
+test('module headers and ordinary comments stay exact inside the import fold', async () => {
+  const snapshot = projectNotebook();
+  const header = '-- Copyright <img src=x onerror=bad()>\nmodule\npublic import Mathlib\n-- More imports\npublic meta import Demo.Basic\n';
+  snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 7, text: header + 'open Nat in\ndef x := 1\n'}];
+  snapshot.project_claims = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document, fold = d.querySelector('#doc .import-header');
+    assert.equal(fold.querySelector('pre').textContent, header.trimEnd());
+    assert.match(fold.querySelector('summary').textContent, /^2 imports/);
+    assert.equal(fold.querySelectorAll('img,button').length, 0);
+    assert.match(d.querySelector('#doc .definition').textContent, /open Nat in/);
+  } finally { window.close(); }
+});
