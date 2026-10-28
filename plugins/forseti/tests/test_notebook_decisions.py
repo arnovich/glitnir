@@ -204,7 +204,7 @@ def test_a_goal_without_a_readable_form_keeps_the_root(monkeypatch) -> None:
     """The lane's own statement stays the claim for a goal of no known form."""
     from glitnir_forseti.notebook import decisions
 
-    monkeypatch.setattr(decisions, "readable", lambda goal: None)
+    monkeypatch.setattr(decisions, "readable", lambda goal, refuted=False: None)
     proposed = _valid(block("coefficient", _coefficient_refutation()), "refuted")
     (claim,) = parse_notebook(proposed.source).claims
     assert claim.name == "coefficient_refuted"
@@ -289,3 +289,27 @@ def test_undecided_or_unfamiliar_decisions_make_no_block() -> None:
     )
     with pytest.raises(DecisionError, match="no claim shape"):
         block("x", crossed)
+
+
+HEDGING_COVERS = (
+    "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
+    " premium 7/2 covers"
+)
+
+
+def test_a_hedging_refutation_may_prove_a_positive_statement() -> None:
+    """``∀ δ, ¬ Covers …`` is the lane's ``forsetiClaim``, proved as it is."""
+    goal = parse_goal(HEDGING_COVERS)
+    positive = Decision(
+        "hedging", goal, "REFUTED", lean=LeanApplication("", ": forsetiClaim", ("x",))
+    )
+    proposed = _valid(block("low", positive), "refuted")
+    assert proposed.theorem == "low_refuted"
+    assert "  have refuted : forsetiClaim := by\n    x\n  intro claim\n" in (
+        proposed.source
+    )
+    odd = dataclasses.replace(
+        positive, lean=LeanApplication("", ": something else", ("x",))
+    )
+    with pytest.raises(DecisionError, match="no claim shape"):
+        block("low", odd)

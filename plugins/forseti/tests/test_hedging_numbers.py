@@ -285,3 +285,28 @@ def test_bad_arguments_are_refused() -> None:
         wealth(CALL, STRIKE, SPOT, TWO_PERCENT, TWO_PERCENT, 2, (TWO_PERCENT,))
     with pytest.raises(ValueError, match="return"):
         wealth(CALL, STRIKE, SPOT, TWO_PERCENT, TWO_PERCENT, 1, (Fraction(-1),))
+
+
+@pytest.mark.parametrize(
+    ("up", "down"),
+    [
+        (Fraction(0), TWO_PERCENT),
+        (TWO_PERCENT, Fraction(0)),
+        (-TWO_PERCENT, TWO_PERCENT),
+        (TWO_PERCENT, -TWO_PERCENT),
+        (TWO_PERCENT, Fraction(1)),
+        (TWO_PERCENT, Fraction(3, 2)),
+    ],
+)
+def test_a_band_is_refused_unless_lean_would_accept_it(
+    up: Fraction, down: Fraction
+) -> None:
+    """``Band.ofRat`` needs ``0 < up``, ``0 < down`` and ``down < 1``."""
+    with pytest.raises(ValueError, match="band must have 0 < up and 0 < down < 1"):
+        fair_weight(up, down)
+    with pytest.raises(ValueError, match="band"):
+        price(CALL, STRIKE, SPOT, up, down, 1)
+    with pytest.raises(ValueError, match="band"):
+        worst_extreme_path(
+            CALL, STRIKE, SPOT, TWO_PERCENT, TWO_PERCENT, up, down, 1, never
+        )

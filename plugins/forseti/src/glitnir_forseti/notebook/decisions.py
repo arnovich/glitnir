@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from glitnir_forseti.claims.decide import Decision
 from glitnir_forseti.claims.text import render_goal
 from glitnir_forseti.entailment.syntax import Goal
+from glitnir_forseti.hedging import render as hedging_render
+from glitnir_forseti.hedging.goal import HedgingGoal
 from glitnir_forseti.notebook.readable import Readable, readable
 from glitnir_forseti.stepped import render as stepped_render
 from glitnir_forseti.stepped.goal import SteppedGoal
@@ -35,7 +37,10 @@ _ENTAILMENT = (
 #: The lane statements each readable bridge is written against. A stream
 #: refutation is the root's identities with the contract's negation, or, for
 #: a lane whose root has no identities (a field band), the root's negation. A
-#: stepped lane proves its claim, or its negation, as ``forsetiClaim``.
+#: stepped lane proves its claim, or its negation, as ``forsetiClaim``. So does
+#: a hedging lane, except that a refuted ``covers`` claim proves a positive
+#: ``forsetiClaim``, ``∀ δ, ¬ Covers …``: every spot-feedback strategy falls
+#: short, which its readable claim ``∃ δ, Covers …`` is bridged to.
 _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
     Goal: {
         "PROVEN": (_ENTAILMENT,),
@@ -49,6 +54,10 @@ _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
     SteppedGoal: {
         "PROVEN": (stepped_render.PROVED,),
         "REFUTED": (stepped_render.REFUTED,),
+    },
+    HedgingGoal: {
+        "PROVEN": (hedging_render.PROVED,),
+        "REFUTED": (hedging_render.PROVED, hedging_render.REFUTED),
     },
 }
 
@@ -88,8 +97,11 @@ def block(name: str, decision: Decision) -> Block:
     The claim is stated readably when the goal has a readable form
     (`readable.readable`): its proof first proves the lane's statement with
     the lane's script, as ``root``, then derives the claim from it. A
-    refutation is the theorem ``<name>_refuted : ¬ (claim)``, which proves the
-    lane's negated statement, as ``refuted``, then ``¬ claim`` from it. Other
+    refutation is the theorem ``<name>_refuted : ¬ (claim)``, with the claim
+    the readable form states for a refutation: it proves the lane's refuting
+    statement, as ``refuted``, then ``¬ claim`` from it. That statement is the
+    negation of the lane's proposition, or for a hedging ``covers`` claim the
+    positive proposition that no spot-feedback strategy covers. Other
     goals keep the lane's statement as the claim. The block carries every
     definition it uses, so it relies on nothing else in the notebook.
 
@@ -104,7 +116,7 @@ def block(name: str, decision: Decision) -> Block:
     if "-/" in goal:
         raise DecisionError("the goal text would close the claim's docstring")
     try:
-        stated = readable(decision.goal)
+        stated = readable(decision.goal, refuted=decision.status == "REFUTED")
     except (KeyError, ValueError) as error:
         raise DecisionError(f"no readable statement: {error}") from error
     if stated is None:
@@ -112,7 +124,7 @@ def block(name: str, decision: Decision) -> Block:
         note = _note(decision, "Stated as the decider states it.")
     else:
         statement, proof = _as_readable(decision, stated)
-        note = _note(decision, stated.description)
+        note = _note(decision, stated.description, stated.refutation)
     theorem = name
     if decision.status == "REFUTED":
         statement, theorem = _negated(statement), f"{name}_refuted"
@@ -137,10 +149,13 @@ def _negated(statement: str) -> str:
     return f": ¬ ({statement.removeprefix(':').strip()})"
 
 
-def _note(decision: Decision, what: str) -> str:
+def _note(decision: Decision, what: str, refutation: str = "") -> str:
     # Provenance only: whether the theorem holds is its check's to say.
-    verb = "proved" if decision.status == "PROVEN" else "refuted"
-    return f"{what} The {decision.kind} decider {verb} it."
+    if decision.status == "PROVEN":
+        return f"{what} The {decision.kind} decider proved it."
+    if refutation:
+        return f"{what} The {decision.kind} decider refuted it: {refutation}"
+    return f"{what} The {decision.kind} decider refuted it."
 
 
 def _as_lane(decision: Decision) -> tuple[str, tuple[str, ...]]:

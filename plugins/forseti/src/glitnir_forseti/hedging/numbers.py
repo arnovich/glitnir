@@ -22,9 +22,12 @@ The worst path is found by backward dynamic programming on the recombining
 tree. The hedge ratio depends only on the step and the spot, and the spot only
 on the step and the number of up moves, so the state is ``(step, ups)`` and the
 value is the least, over continuations, of the remaining ``Σ δ·ΔS - payoff``.
-The tree has about ``N²/2`` states, each costing one hedge ratio. The search
-asks its ``stop`` callback at every state and raises `Interrupted` when it
-answers true.
+The tree has about ``N²/2`` states, each costing one hedge ratio, and each
+hedge ratio is itself two prices of up to ``N`` terms over rationals whose size
+grows with the step, so the search is about cubic in ``N`` in rational
+operations, on numbers that grow too. The search asks its ``stop`` callback
+before each state, never during one, and raises `Interrupted` when it answers
+true.
 """
 
 from collections.abc import Callable, Sequence
@@ -60,11 +63,14 @@ def _require_spot(spot: Fraction) -> None:
 
 
 def _require_band(up: Fraction, down: Fraction) -> None:
-    """Raise `ValueError` unless the band moves and keeps the spot positive."""
-    if up < 0 or not 0 <= down < 1 or up + down <= 0:
+    """Raise `ValueError` unless the band is one `Band.ofRat` accepts.
+
+    Those are ``0 < up``, ``0 < down`` and ``down < 1``: the spot moves both
+    ways and stays positive.
+    """
+    if not (0 < up and 0 < down < 1):
         raise ValueError(
-            f"band must have up >= 0, 0 <= down < 1 and up + down > 0, "
-            f"got up={up}, down={down}"
+            f"band must have 0 < up and 0 < down < 1, got up={up}, down={down}"
         )
 
 

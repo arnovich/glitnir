@@ -1,6 +1,6 @@
 """Read and write closed goals as text, for people and agents.
 
-The four deciders take goals as exact values, and their JSON encodings (formulas
+The five deciders take goals as exact values, and their JSON encodings (formulas
 as nested tagged lists, rationals as pairs) are not for writing by hand. This
 module is a second, textual encoding of the same values:
 
@@ -568,7 +568,8 @@ def render_goal(goal: AnyGoal) -> str:
     """Write ``goal`` in the form `parse_goal` reads back to an equal value.
 
     Raises:
-        GoalTextError: A coordinate is named by a keyword (`RESERVED`), so no
+        GoalTextError: A coordinate is named by a keyword (`RESERVED`), or a
+            hedging goal names a payoff the grammar has no word for, so no
             text reads back to this goal; use its JSON encoding.
     """
     coordinates: tuple[str, ...] = ()
@@ -620,7 +621,8 @@ def render_short_goal(goal: AnyGoal) -> str | None:
     model registry, so it exists only for a registered model read the default
     way, with exactly the model's initial ports and an observation its name
     picks out. Every other goal, and every non-trajectory goal, has only the
-    long form `render_goal` writes.
+    long form `render_goal` writes; for a hedging goal that is ``None`` even
+    when its payoff has no grammar word, which only `render_goal` refuses.
 
     Raises:
         TypeError: ``goal`` is not a goal.

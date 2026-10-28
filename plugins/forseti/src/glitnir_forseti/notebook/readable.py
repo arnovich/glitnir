@@ -37,6 +37,15 @@ A stepped claim is already a statement about the model's Lean constants, for
 every shock law of its class; the lane's ``forsetiClaim`` is that very
 proposition, so its bridge is definitional. What it adds is the sentence that
 says the claim in words.
+
+A hedging claim is likewise a statement about the library's own definitions,
+`Covers` and the hedged wealth over a band with rational ends, and is the
+lane's ``forsetiClaim``. The exception is a refuted ``covers`` claim: its
+refutation proves that no spot-feedback strategy covers the payoff from the
+premium, ``∀ δ, ¬ Covers …``, which is more than the band's own hedge failing.
+Its claim is stated as ``∃ δ, Covers …``, so the block's ``¬ (claim)`` says all
+of that, and its bridge reads the negation off the lane's statement with
+``not_exists``.
 """
 
 from __future__ import annotations
@@ -64,6 +73,9 @@ from glitnir_forseti.entailment.syntax import (
     Var,
     walk,
 )
+from glitnir_forseti.hedging import render as hedging_render
+from glitnir_forseti.hedging.goal import HedgingGoal
+from glitnir_forseti.hedging.payoffs import PAYOFFS as HEDGING_PAYOFFS
 from glitnir_forseti.stepped import render as stepped_render
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.stepped.models import MODELS as STEPPED_MODELS
@@ -163,6 +175,10 @@ class Readable:
         identities: Whether the bridge uses ``forsetiIdentities``, which a
             rooted lane proves beside its contract; it is then taken, as
             ``identities``, from ``root`` or ``refuted`` before ``setup``.
+        refutation: What a refutation proves beyond the description's claim,
+            a clause ending in a period that the block's docstring puts after
+            its verdict; empty when it proves the claim's negation and no
+            more.
     """
 
     statement: str
@@ -174,6 +190,7 @@ class Readable:
     to_lane: tuple[str, ...]
     from_lane: tuple[str, ...]
     identities: bool = False
+    refutation: str = ""
 
     def _bridge(self, use: str, identities: str) -> tuple[str, ...]:
         given = (
@@ -206,15 +223,19 @@ class Readable:
         return self._bridge(f"{self.refuted} (bridge.mp claim)", "refuted.1")
 
 
-def readable(goal: object) -> Readable | None:
+def readable(goal: object, *, refuted: bool = False) -> Readable | None:
     """Render ``goal``'s readable statement and bridges, if it has a form.
 
     Returns ``None`` for a goal of no kind this module knows, whose lane
-    statement is then kept as it is.
+    statement is then kept as it is. ``refuted`` asks for the claim a
+    refutation is stated against; it is the claim itself for every goal but a
+    hedging ``covers`` goal, whose refutation speaks of every spot-feedback
+    strategy and so is stated against ``∃ δ, Covers …``.
 
     Raises:
         KeyError: If a trajectory, stream or stepped goal names an unknown
-            model, or a stepped goal an observation its model lacks.
+            model, a stepped goal an observation its model lacks, or a
+            hedging goal an unknown payoff.
         ValueError: If a trajectory goal's initial ports are not its model's,
             or a coefficient claim observes a port the model's circuit lacks,
             or a truncation goal's profile is not an exponential sum, or the
@@ -226,6 +247,8 @@ def readable(goal: object) -> Readable | None:
         return _trajectory(goal)
     if type(goal) is SteppedGoal:
         return _stepped(goal)
+    if type(goal) is HedgingGoal:
+        return _hedging(goal, refuted)
     if type(goal) is StreamGoal:
         claim = goal.claim
         if type(claim) is FieldClaim and goal.interpretation == "analytic-field":
@@ -627,6 +650,65 @@ def _stepped(goal: SteppedGoal) -> Readable:
         ":\n    " + stepped_render.claim(goal, entry, "      "),
         f"For {shocks}, {said}. {names}.",
         lane=stepped_render.CLAIM,
+        root="root",
+        refuted="refuted",
+        setup=(),
+        to_lane=("exact claim",),
+        from_lane=("exact lane",),
+    )
+
+
+# --- hedging ------------------------------------------------------------------
+
+
+def _hedging(goal: HedgingGoal, refuted: bool) -> Readable:
+    """State a hedging claim as the lane's proposition, with what it says."""
+    payoff = HEDGING_PAYOFFS[goal.payoff]
+    struck = f"{goal.payoff} struck at {number(goal.strike)}"
+    if goal.claim == "covers":
+        assert goal.premium is not None
+        premium = number(goal.premium)
+        said = (
+            f"Re-hedged at each of {goal.steps} steps at the binomial ratio from a"
+            f" premium of {premium}, the {struck} on a spot of {number(goal.spot)}"
+            " is covered at expiry on every path whose step returns stay within"
+            f" −{number(goal.down)} and +{number(goal.up)}."
+        )
+        if refuted:
+            some = hedging_render.some_cover_claim(goal, payoff, "      ")
+            return Readable(
+                ":\n    " + some,
+                said,
+                lane=" ".join(line.strip() for line in some.split("\n")),
+                root="root",
+                # The lane proves `∀ δ, ¬ Covers …`; `not_exists` makes it `¬ lane`.
+                refuted="(not_exists.mpr refuted)",
+                setup=(),
+                to_lane=("exact claim",),
+                from_lane=("exact lane",),
+                refutation=(
+                    "no spot-feedback strategy, holding over each step a number of"
+                    " units set by the step and the spot, covers it from a premium"
+                    f" of {premium}."
+                ),
+            )
+        statement = hedging_render.covers_claim(goal, payoff, "      ")
+    else:
+        assert goal.against_up is not None and goal.against_down is not None
+        assert goal.bound is not None
+        said = (
+            f"The hedge built for returns within −{number(goal.down)} and"
+            f" +{number(goal.up)}, from its own price, run on every path whose"
+            f" returns stay within −{number(goal.against_down)} and"
+            f" +{number(goal.against_up)}, ends at most {number(goal.bound)} below"
+            f" the payoff. The payoff is the {struck}, at expiry after"
+            f" {goal.steps} steps from a spot of {number(goal.spot)}."
+        )
+        statement = hedging_render.shortfall_claim(goal, payoff, "      ")
+    return Readable(
+        ":\n    " + statement,
+        said,
+        lane=hedging_render.CLAIM,
         root="root",
         refuted="refuted",
         setup=(),

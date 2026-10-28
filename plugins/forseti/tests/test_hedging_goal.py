@@ -1,11 +1,14 @@
 """Tests for the hedging goal: its grammar, its text form and its JSON."""
 
+import re
 from dataclasses import replace
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from glitnir_forseti.claims import text as claims_text
 from glitnir_forseti.claims.text import (
     GoalTextError,
     parse_goal,
@@ -143,6 +146,12 @@ def test_every_registered_payoff_has_a_word(payoff: str) -> None:
     assert parse_goal(render_goal(goal)) == goal
 
 
+def test_the_grammar_names_exactly_the_registered_payoffs() -> None:
+    grammar = (Path(claims_text.__file__).parent / "goal.lark").read_text()
+    [rule] = [line for line in grammar.splitlines() if line.startswith("PAYOFF:")]
+    assert set(re.findall(r'"([^"]+)"', rule)) == set(PAYOFFS)
+
+
 def test_the_grammar_names_no_payoff_the_registry_lacks() -> None:
     with pytest.raises(GoalTextError, match="expected"):
         parse_goal(COVERS.replace("call", "bond"))
@@ -192,9 +201,9 @@ def test_fractional_steps_are_refused() -> None:
         ("spot 100", "spot 0", "spot"),
         ("spot 100", "spot -100", "spot"),
         ("strike 100", "strike -1", "strike"),
-        ("up 1/50", "up 0", "up"),
-        ("down 1/50", "down 0", "down"),
-        ("down 1/50", "down -1/50", "down"),
+        ("up 1/50", "up 0", "the up move must be positive"),
+        ("down 1/50", "down 0", "the down move must be positive"),
+        ("down 1/50", "down -1/50", "the down move must be positive"),
         ("3555/1000", "-1", "premium"),
     ],
 )

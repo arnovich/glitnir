@@ -33,6 +33,10 @@ STEPPED = (
     "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks variance 64"
     " within 256 observe s breach 1 probability <= 1/4"
 )
+HEDGING = (
+    "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
+    " premium 3555/1000 covers"
+)
 TRAJECTORIES = {example.name: example.goal for example in EXAMPLES}
 
 
@@ -47,10 +51,16 @@ def _decided(name: str, goal: str, cancel: threading.Event | None = None) -> dic
 # ----- the provider -----------------------------------------------------------------
 
 
-def test_the_provider_decides_four_kinds_of_goal() -> None:
+def test_the_provider_decides_five_kinds_of_goal() -> None:
     provider = forseti.decision_provider()
     assert isinstance(provider, DecisionProvider) and provider.name == "forseti"
-    assert provider.kinds == {"entailment", "trajectory", "stream", "stepped"}
+    assert provider.kinds == {
+        "entailment",
+        "trajectory",
+        "stream",
+        "stepped",
+        "hedging",
+    }
     # A block's imports depend on its goal; each outcome lists them instead.
     assert provider.imports == ()
     assert provider in providers()
@@ -84,8 +94,9 @@ def test_it_is_available_with_z3_and_names_the_extra_without(monkeypatch) -> Non
         "stream formal-heat interpretation evaluated-field basis ogf profile x*x"
         " field u over t in [0, 1], x in [-1, 1] : u >= 0",
         STEPPED,
+        HEDGING,
     ],
-    ids=["entailment", "trajectory", "stream", "stepped"],
+    ids=["entailment", "trajectory", "stream", "stepped", "hedging"],
 )
 def test_parse_reads_each_kind_of_goal(goal: str) -> None:
     kind = goal.split()[0]
@@ -138,6 +149,7 @@ _BLOCK_TEMPLATES = (
     "streams/mild_render.py",
     "trajectory/render.py",
     "stepped/render.py",
+    "hedging/render.py",
     "notebook/readable.py",
     "notebook/decisions.py",
 )
@@ -260,6 +272,33 @@ def test_a_stepped_goal_proposes_its_block_without_z3_or_lean() -> None:
     assert outcome["reason"] == "Found by the horizon stage."
     refuted = _decided("tight", STEPPED.replace("1/4", "1/10"))
     assert (refuted["status"], refuted["theorem"]) == ("refuted", "tight_refuted")
+
+
+def test_a_hedging_goal_proposes_its_block_without_z3_or_lean() -> None:
+    outcome = _decided("held", HEDGING)
+    assert (outcome["status"], outcome["theorem"]) == ("proven", "held")
+    assert outcome["block"].startswith(
+        "namespace Decided_held\n\nopen Gimle.Forseti.Hedging\n"
+    )
+    assert "def forsetiClaim : Prop :=" in outcome["block"]
+    assert outcome["stages"][-2][:2] == ["price", "found"]
+    assert outcome["stages"][-1] == [
+        "imports",
+        "needed",
+        "import Gimle.Forseti.Hedging",
+    ]
+    assert outcome["reason"] == "Found by the price stage."
+    refuted = _decided("low", HEDGING.replace("3555/1000", "7/2"))
+    assert (refuted["status"], refuted["theorem"]) == ("refuted", "low_refuted")
+    assert "theorem low_refuted : ¬ (∃ δ : ℕ → ℝ → ℝ," in refuted["block"]
+    gap = _decided(
+        "gap",
+        HEDGING.replace("band down 1/50 up 1/50", "band down 1/100 up 1/100").replace(
+            "premium 3555/1000 covers", "against down 1/50 up 1/50 shortfall <= 5"
+        ),
+    )
+    assert (gap["status"], gap["reason"]) == ("unknown", "gap")
+    assert "block" not in gap
 
 
 def test_an_undecided_stepped_goal_is_unknown_with_its_numbers() -> None:

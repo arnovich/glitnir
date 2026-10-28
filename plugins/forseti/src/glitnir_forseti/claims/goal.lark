@@ -1,4 +1,4 @@
-// The textual form of a closed goal for one of the four deciders.
+// The textual form of a closed goal for one of the five deciders.
 //
 // Parsed by `glitnir.claims.text` with LALR and the contextual lexer, so a
 // hyphenated stable ID (`initial-x`) is one token where an ID is expected and

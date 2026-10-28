@@ -310,6 +310,20 @@ def test_the_catalog_names_every_registered_model() -> None:
     )
 
 
+def test_the_catalog_names_every_hedging_payoff() -> None:
+    from glitnir_forseti.hedging.payoffs import PAYOFFS
+
+    text = catalog()
+    assert (
+        "Hedging payoffs (`hedging <payoff> strike K spot S band down d up u"
+        " steps N`, then `premium P covers`, up to 250 steps, or `against down d'"
+        " up u' shortfall <= X`, up to 60 steps, for an against band containing"
+        " the band; 0 < u and 0 < d < 1 for either band):"
+    ) in text
+    for key, payoff in PAYOFFS.items():
+        assert f"  {key}: {payoff.lean_name}, convex by {payoff.convexity}" in text
+
+
 def test_every_registered_model_has_an_example_that_reads() -> None:
     from glitnir_forseti.claims.decide import examples
     from glitnir_forseti.stepped.models import MODELS as steppeds
@@ -375,6 +389,23 @@ def test_stepped_names_that_do_not_exist_are_errors_with_the_catalog(
         check_names(goal)
     assert "Stepped models" in str(raised.value)
     assert "  hedged-spread: from (0, 0)" in str(raised.value)
+
+
+HEDGING = (
+    "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
+    " premium 3555/1000 covers"
+)
+
+
+def test_an_unknown_hedging_payoff_is_an_error_with_the_catalog() -> None:
+    goal = read_goal(HEDGING)
+    check_names(goal)
+    # A whole-step band is the decider's to refuse, not a misspelled name.
+    check_names(dataclasses.replace(goal, down=Fraction(1)))
+    with pytest.raises(GoalTextError, match="no hedging payoff 'bond'") as raised:
+        check_names(dataclasses.replace(goal, payoff="bond"))
+    assert "Hedging payoffs" in str(raised.value)
+    assert "  straddle: Gimle.Forseti.Hedging.straddle" in str(raised.value)
 
 
 def test_known_stepped_names_pass_even_when_the_claim_is_unsupported() -> None:

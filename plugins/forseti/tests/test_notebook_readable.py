@@ -591,3 +591,71 @@ def test_a_stepped_claim_describes_its_shocks_as_independent(law, shocks) -> Non
     assert stated.lane == "forsetiClaim"
     # The statement is the lane's proposition, which the bridge restates as is.
     assert stated.to_lane == ("exact claim",) and stated.from_lane == ("exact lane",)
+
+
+HEDGING_COVERS = (
+    "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
+    " premium 3555/1000 covers"
+)
+HEDGING_SHORTFALL = (
+    "hedging call strike 100 spot 100 band down 1/100 up 1/100 steps 20"
+    " against down 1/50 up 1/50 shortfall <= 4"
+)
+WIDE = "Band.ofRat (1/50) (1/50) (by norm_num) (by norm_num) (by norm_num)"
+
+
+def test_a_covers_claim_says_who_hedges_from_what_on_which_paths() -> None:
+    stated = readable(parse_goal(HEDGING_COVERS))
+    assert stated is not None
+    assert stated.description == (
+        "Re-hedged at each of 20 steps at the binomial ratio from a premium of"
+        " 711/200, the call struck at 100 on a spot of 100 is covered at expiry on"
+        " every path whose step returns stay within −1/50 and +1/50."
+    )
+    assert stated.statement == (
+        ":\n"
+        f"    Covers ({WIDE}) (call 100) 20\n"
+        f"      (hedge ({WIDE}) (call 100) 20)\n"
+        "      (711/200) 100"
+    )
+    assert stated.lane == "forsetiClaim" and stated.refutation == ""
+    assert stated.to_lane == ("exact claim",) and stated.from_lane == ("exact lane",)
+
+
+def test_a_refuted_covers_claim_is_stated_for_every_spot_feedback_strategy() -> None:
+    """Its refutation is ``¬ ∃ δ, Covers …``: no strategy covers, not only the hedge."""
+    stated = readable(parse_goal(HEDGING_COVERS), refuted=True)
+    assert stated is not None
+    assert stated.statement == (
+        ":\n"
+        "    ∃ δ : ℕ → ℝ → ℝ,\n"
+        f"      Covers ({WIDE}) (call 100) 20 δ (711/200) 100"
+    )
+    assert stated.lane == (
+        f"∃ δ : ℕ → ℝ → ℝ, Covers ({WIDE}) (call 100) 20 δ (711/200) 100"
+    )
+    assert stated.refuted == "(not_exists.mpr refuted)"
+    assert stated.description.startswith("Re-hedged at each of 20 steps")
+    assert stated.refutation == (
+        "no spot-feedback strategy, holding over each step a number of units set"
+        " by the step and the spot, covers it from a premium of 711/200."
+    )
+    assert "no strategy" not in stated.refutation
+
+
+def test_a_shortfall_claim_names_both_bands_and_the_payoff() -> None:
+    stated = readable(parse_goal(HEDGING_SHORTFALL))
+    assert stated is not None
+    assert stated.description == (
+        "The hedge built for returns within −1/100 and +1/100, from its own price,"
+        " run on every path whose returns stay within −1/50 and +1/50, ends at"
+        " most 4 below the payoff. The payoff is the call struck at 100, at expiry"
+        " after 20 steps from a spot of 100."
+    )
+    assert stated.statement.startswith(
+        ":\n    ∀ S : ℕ → ℝ, S 0 = 100 →\n"
+        f"      (∀ k < 20, ({WIDE}).InBand (S k) (S (k + 1))) →\n"
+        "      -4 ≤ wealth (hedge (Band.ofRat (1/100) (1/100)"
+    )
+    # The same claim whichever way it is decided.
+    assert readable(parse_goal(HEDGING_SHORTFALL), refuted=True) == stated
