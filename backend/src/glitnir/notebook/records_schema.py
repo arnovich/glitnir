@@ -12,7 +12,8 @@ from typing import Any, Final, Literal, NotRequired, TypedDict, TypeGuard
 
 from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.project_checking import MAX_USES
-from glitnir.lean.results import Axiom, Use, Verdict, Withheld
+from glitnir.lean.reports import valid_statement_expansion
+from glitnir.lean.results import Axiom, StatementExpansion, Use, Verdict, Withheld
 from glitnir.providers.outcomes import (
     Decision,
     Drawing,
@@ -102,6 +103,7 @@ class ClaimRecord(TypedDict):
     uses_truncated: NotRequired[Literal[True]]
     example: NotRequired[Literal[True]]
     statement: NotRequired[str]
+    statement_expansion: NotRequired[StatementExpansion]
     statement_shortened: NotRequired[Literal[True]]
     kernel_statement: NotRequired[str]
     kernel_statement_shortened: NotRequired[Literal[True]]
@@ -424,6 +426,10 @@ def well_formed(records: dict[str, Any]) -> TypeGuard[Records]:
                 return False
             if claim.get(f"{key}_shortened", True) is not True:
                 return False
+        if "statement_expansion" in claim and not valid_statement_expansion(
+            claim["statement_expansion"]
+        ):
+            return False
         if "uses" in claim and not _uses_ok(claim["uses"]):
             return False
         if claim.get("uses_truncated", True) is not True or (

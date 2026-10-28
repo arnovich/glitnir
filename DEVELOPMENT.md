@@ -83,6 +83,13 @@ The repository has four parts:
   closure needed by reporting and kernel replay, including non-exported imports.
   It preserves the saved source's module flag and visibility. Fingerprint v5
   invalidates earlier saved results whose inventories could omit these inputs.
+- **Named proposition display.** A project check may record one head-definition
+  expansion for a named proposition, or the constructor signature of a
+  single-constructor proposition. The card labels it display only and states
+  its one-step/4096-character bound. Display work has separate heartbeat and
+  depth limits; failure leaves the proof status intact. The expansion follows
+  the saved claim's source/environment freshness. Older records have none;
+  check the notebook again to populate it.
 - **Saved results.** A saved result is current while the environment
   fingerprint it was saved under (`glitnir/lean/fingerprint.py`) still matches.
   The fingerprint names no location, so saved results are portable across

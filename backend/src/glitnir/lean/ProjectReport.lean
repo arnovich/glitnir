@@ -47,6 +47,51 @@ def usedTheorems (env : Environment) (module name : Name) (info : ConstantInfo) 
       ("name", toJson used.toString), ("module", toJson usedModule.toString)]
   return found
 
+/-- Display one named proposition's head definition, without recursively reducing
+other definitions. A single-constructor proposition instead shows the constructor
+signature: this describes its fields, not an equivalent unfolded proposition.
+The surrounding theorem binders and the applied definition parameters stay bound.
+No project extension or executable code is loaded for this display. -/
+def statementExpansion (env : Environment) (type : Expr) : MetaM Json := do
+  checkSystem "statementExpansion"
+  Meta.forallTelescope type fun xs body => do
+    let .const name levels := body.getAppFn | return Json.null
+    if name == ``True || name == ``False || name == ``Eq || name == ``And ||
+        name == ``Or || name == ``Exists || name == ``Iff || name == ``Not || name == ``Ne then
+      return Json.null
+    let some info := env.find? name | return Json.null
+    let (kind, expanded) ← match info with
+      | .defnInfo value =>
+        pure ("definition", (value.value.instantiateLevelParams value.levelParams levels).beta body.getAppArgs)
+      | .inductInfo value =>
+        if value.numIndices != 0 then return Json.null
+        let [ctor] := value.ctors | return Json.null
+        let some ctorInfo := env.find? ctor | return Json.null
+        let signature := ctorInfo.type.instantiateLevelParams ctorInfo.levelParams levels
+        let applied ← Meta.instantiateForall signature (body.getAppArgs.extract 0 value.numParams)
+        pure ("constructor", applied)
+      | _ => return Json.null
+    let expanded ← Meta.mkForallFVars xs expanded
+    let printed := (← Meta.ppExpr expanded).pretty
+    checkSystem "statementExpansion"
+    let truncated : Bool := printed.length > 4096
+    let text := if truncated then (printed.take 4095).toString ++ "…" else printed
+    return Json.mkObj [("text", toJson text), ("kind", toJson kind),
+      ("truncated", toJson truncated)]
+
+/-- Display work has its own heartbeat/depth bounds and cannot withhold an
+otherwise checked claim when pretty-printing or expansion reaches a limit. -/
+def boundedStatementExpansion (env : Environment) (type : Expr) : IO Json := do
+  try
+    let options := ({} : Options).set `maxHeartbeats (200 : Nat) |>.set `maxRecDepth (256 : Nat)
+    let (result, _) ← (statementExpansion env type).run'.toIO
+      { fileName := "", fileMap := default, options, maxRecDepth := 256, maxHeartbeats := 200000 }
+      { env }
+    return result
+  catch _ =>
+    return Json.mkObj [("text", toJson "Statement expansion unavailable."),
+      ("kind", toJson "unavailable"), ("truncated", toJson false)]
+
 unsafe def main (args : List String) : IO UInt32 := do
   let [moduleText, moduleRoot, artifactRoot] := args
     | IO.eprintln "usage: ProjectReport MODULE OUTPUT ARTIFACTS"; return 2
@@ -74,8 +119,10 @@ unsafe def main (args : List String) : IO UInt32 := do
       { fileName := "", fileMap := default } { env }
     let (printed, _) ← (Meta.ppExpr info.type).run'.toIO
       { fileName := "", fileMap := default } { env }
+    let expansion ← boundedStatementExpansion env info.type
     theorems := theorems.push <| Json.mkObj [
       ("name", toJson name.toString), ("type", toJson printed.pretty),
+      ("statement_expansion", expansion),
       ("canonical", toJson (canonical env declared name info)),
       ("uses", toJson (usedTheorems env module name info)),
       ("axioms", toJson (axioms.map fun n => Json.mkObj [

@@ -1,0 +1,14 @@
+{
+  "programs": {
+    "ProjectRead.lean": "cfc13b11c799c7a1ee423b48159c2d0dd2c9cc4abf1ae19edaa91d2d006b71c8",
+    "ProjectReport.lean": "45633ae4bdf7eb6844a0c77e0b359501a24ff33e6d01303af3e9406f3ff1f2bb",
+    "ProjectReplay.lean": "ea9902e1228838dd3862a53e9cdb41978248b0b7eb5ba0d1e1da71bff38be903",
+    "AxiomReport.lean": "2b53f4cc6117d9dae1533896e047174ef13ae39bc013f46073ecebcfa82d580f",
+    "ViewElab.lean": "e7b9c335e9a38fe0a5f81a05e50b7fcd142664b9dbf59cf3a2d19d8b03db54d9"
+  },
+  "axiom_allowlist": [
+    "Classical.choice",
+    "Quot.sound",
+    "propext"
+  ]
+}

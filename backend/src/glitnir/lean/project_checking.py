@@ -908,6 +908,8 @@ def _observe(
         if len(uses) <= MAX_USES:
             # Set in the literal so it keeps its place after `uses` when printed.
             del observation["uses_truncated"]
+        if theorem.get("statement_expansion") is not None:
+            observation["statement_expansion"] = theorem["statement_expansion"].copy()
         observations.append(observation)
     added_modules = replayed.added_modules
     return {
