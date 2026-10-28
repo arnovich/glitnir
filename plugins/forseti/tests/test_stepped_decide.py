@@ -751,8 +751,12 @@ def test_the_decider_uses_no_floating_point() -> None:
     Only the wall clock is a float, and it decides nothing but a timeout.
     """
     package = Path(service.__file__).parent
-    for name in ("models.py", "service.py", "render.py", "examples.py"):
-        tree = ast.parse((package / name).read_text())
+    names = ("models.py", "service.py", "render.py", "examples.py")
+    # The rule a reason writes its figures by is shared with the hedging lane.
+    paths = [package / name for name in names] + [Path(figures.__file__)]
+    for path in paths:
+        name = path.name
+        tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             assert not (
                 isinstance(node, ast.Constant) and type(node.value) is float

@@ -1,12 +1,29 @@
-"""Shared fixtures for the Forseti release, session and provider tests."""
+"""Shared fixtures for the Forseti release, session and provider tests.
 
+The live lane tests (``test_stepped_lean.py``, ``test_hedging_lean.py``) check
+each proposed block the way the editor does, through `check_block`; the
+constants and the budget they are held to are imported from here.
+"""
+
+import hashlib
 import os
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 #: The fixtures that give a test a built Forseti Lean checkout.
 _LEAN_FIXTURES = frozenset({"lean_test_project", "forseti_lake_project"})
+#: The axioms Lean itself provides; a block may rest on nothing else.
+STANDARD_AXIOMS = frozenset({"propext", "Classical.choice", "Quot.sound"})
+#: The longest a block may take to check, in milliseconds, unless the
+#: environment says otherwise (`read_check_budget_ms`).
+CHECK_BUDGET_MS = 300_000
+#: A block that needs nothing, to have the checker replay a notebook's imports.
+WARM_BLOCK = "theorem warm_up : True := trivial"
 
 
 @pytest.hookimpl(wrapper=True)
@@ -217,6 +234,133 @@ def scratch_notebook(forseti_lake_project):
         for path in written:
             path.unlink(missing_ok=True)
             records_path(path).unlink(missing_ok=True)
+
+
+def read_check_budget_ms() -> int:
+    """Return the budget a live check is held to.
+
+    An unset or empty ``FORSETI_CHECK_BUDGET_MS`` means `CHECK_BUDGET_MS`.
+
+    Raises:
+        pytest.fail.Exception: If the variable is not a positive whole number.
+    """
+    value = os.environ.get("FORSETI_CHECK_BUDGET_MS", "").strip()
+    if not value:
+        return CHECK_BUDGET_MS
+    try:
+        budget = int(value)
+    except ValueError:
+        budget = 0
+    if budget <= 0:
+        pytest.fail(
+            "FORSETI_CHECK_BUDGET_MS must be a positive whole number of"
+            f" milliseconds, got {value!r}",
+            pytrace=False,
+        )
+    return budget
+
+
+@pytest.fixture
+def check_budget_ms() -> int:
+    """Return the check budget, failing a test at once if the variable is bad."""
+    return read_check_budget_ms()
+
+
+@dataclass(frozen=True)
+class Checked:
+    """What the project's Lean said about a proposed block.
+
+    Attributes:
+        ok: Whether Glitnir reports the block's theorem as checked.
+        message: Glitnir's message, which names the failing line otherwise.
+        axioms: The axioms the theorem depends on.
+        check_ms: How long the check took, in milliseconds.
+        stage_ms: How long each of the check's stages took, in milliseconds.
+    """
+
+    ok: bool
+    message: str
+    axioms: tuple[str, ...]
+    check_ms: int
+    stage_ms: dict[str, int]
+
+
+def check_in_scratch(
+    write: Callable[[str, str], Path], imports: str, block: str, theorem: str
+) -> Checked:
+    """Check a block as the editor does, in a scratch notebook of the project.
+
+    The notebook holds the imports, then a directive line; the block is checked
+    right after it. ``write`` is the ``scratch_notebook`` fixture's, so no file
+    of the checkout is overwritten and only the scratch file is removed.
+    """
+    from glitnir.lean.project_checking import check_candidate
+
+    header = "".join(f"{line}\n" for line in imports.split("\n"))
+    text = f"{header}\n-- @decide {theorem} : (scratch)\n"
+    path = write("GlitnirBlockLive", text)
+    stage_ms: dict[str, int] = {}
+    started = time.monotonic()
+    verdict = check_candidate(
+        path,
+        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+        insert_after_line=text.count("\n"),
+        block=block,
+        theorem=theorem,
+        cancel=threading.Event(),
+        stage_ms=stage_ms,
+    )
+    elapsed = round((time.monotonic() - started) * 1000)
+    return Checked(
+        verdict["status"] == "checked",
+        verdict["message"],
+        tuple(verdict["axioms"]),
+        elapsed,
+        stage_ms,
+    )
+
+
+@pytest.fixture(scope="module")
+def replayed() -> set[str]:
+    """The import sets whose one-off kernel replay the session cache holds."""
+    return set()
+
+
+@pytest.fixture
+def check_block(scratch_notebook, replayed: set[str], record_check_stages):
+    """Return a function that checks a decision outcome's block, timed.
+
+    The outcome's own last stage lists the imports the block needs, so a block
+    whose imports are wrong fails here. The first check of an import set
+    replays its whole closure in the kernel, which takes minutes and is cached
+    for the session (`private_replay_cache`); a trivial block is checked
+    first, untimed, so that a block's time is its own, and the block's check
+    must reuse that replay rather than replay the imports again. Each check's
+    stage times are written to the log (`record_check_stages`).
+    """
+
+    def check(outcome: dict) -> Checked:
+        assert outcome["stages"][-1][:2] == ["imports", "needed"], outcome["stages"]
+        imports = outcome["stages"][-1][2]
+        if imports not in replayed:
+            warm = check_in_scratch(scratch_notebook, imports, WARM_BLOCK, "warm_up")
+            record_check_stages("warm_up", warm.stage_ms)
+            assert warm.ok, warm.message
+            replayed.add(imports)
+            print(f"replay of {imports!r}: {warm.check_ms} ms")
+        checked = check_in_scratch(
+            scratch_notebook, imports, outcome["block"], outcome["theorem"]
+        )
+        record_check_stages(outcome["theorem"], checked.stage_ms)
+        # The warm-up's import replay was recorded, so this check reuses it:
+        # a refused record would replay the closure (minutes) on every check.
+        assert "replay_imports" not in checked.stage_ms, checked.stage_ms
+        if checked.ok:
+            # A checked block was replayed over the recorded imports.
+            assert "replay" in checked.stage_ms, checked.stage_ms
+        return checked
+
+    return check
 
 
 @pytest.fixture

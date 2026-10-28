@@ -20,29 +20,35 @@ Beside the examples, which fix the worked example's call (strike and spot 100,
 twenty steps), variants reach what those constants do not: the lane's caps,
 where a ``shortfall`` refutation has the kernel evaluate the hedge along a
 path of 60 steps and a ``covers`` block evaluates a price over 250, and the
-straddle, whose names no example cites. A check is held to the budget the
-stepped live test defines (`test_stepped_lean.CHECK_BUDGET_MS`, five minutes
-unless ``FORSETI_CHECK_BUDGET_MS`` names another number of milliseconds).
+straddle, whose names no example cites. A check is the shared
+`conftest.check_block` fixture, held to the budget `conftest.CHECK_BUDGET_MS`
+(five minutes unless ``FORSETI_CHECK_BUDGET_MS`` names another number of
+milliseconds), as the stepped lane's live test is.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
 exclusively and removes only what it created.
+
+The ``hedge`` evidence verb's emission is run here too, through the runner
+Glitnir runs evidence with, in a notebook that imports the hedging library as
+a plain import (a notebook is not a Lean ``module``): Lean evaluates the
+library's own price and prints it, and the provider checks it and turns it into
+the card Glitnir would save.
 """
 
 import hashlib
+import json
 import threading
-import time
-from collections.abc import Callable
-from pathlib import Path
 
 import pytest
-from glitnir.lean.project_checking import check_candidate
-from glitnir.providers.outcomes import checked_decision
-from test_stepped_lean import STANDARD_AXIOMS, WARM_BLOCK, Checked, _check_budget_ms
+from conftest import STANDARD_AXIOMS
+from glitnir.providers.outcomes import checked_decision, checked_evidence
 
+from glitnir_forseti import evidence_provider
 from glitnir_forseti.claims.text import render_goal
 from glitnir_forseti.decision_provider import decide, parse
-from glitnir_forseti.hedging.examples import EXAMPLES, Example
+from glitnir_forseti.hedging.examples import EXAMPLES, PRICE, Example
+from glitnir_forseti.hedging.payoffs import PAYOFFS
 
 #: The worked example's goals, as the variants below change them.
 COVERS = (
@@ -53,90 +59,34 @@ SHORTFALL = (
     "hedging call strike 100 spot 100 band down 1/100 up 1/100 steps 20"
     " against down 1/50 up 1/50 shortfall <= 4"
 )
+#: The worked example's call as a ``hedge`` directive names it, and its options.
+CALL = PAYOFFS["call"].lean_name
+HEDGE_OPTIONS = (
+    "(strike := 100) (spot := 100) (down := 1/50) (up := 1/50) (steps := 20)"
+)
+HEDGE_DIRECTIVE = f"-- @evidence hedge {CALL} {HEDGE_OPTIONS}"
+HEDGE_NOTEBOOK = f"""import Gimle.Forseti.Hedging
+
+/-! # The at-the-money call, hedged on random paths -/
+
+{HEDGE_DIRECTIVE}
+"""
 
 
 @pytest.fixture
-def check_budget_ms() -> int:
-    """Return the check budget, failing a test at once if the variable is bad."""
-    return _check_budget_ms()
+def check_block(check_block):
+    """Check a block as `conftest.check_block` does, once it needs only the lane.
 
-
-def _check(
-    write: Callable[[str, str], Path], imports: str, block: str, theorem: str
-) -> Checked:
-    """Check a block as the editor does, in a scratch notebook of the project.
-
-    The notebook holds the imports, then a directive line; the block is checked
-    right after it. ``write`` is the ``scratch_notebook`` fixture's, so no file
-    of the checkout is overwritten and only the scratch file is removed.
-    """
-    header = "".join(f"{line}\n" for line in imports.split("\n"))
-    text = f"{header}\n-- @decide {theorem} : (scratch)\n"
-    path = write("GlitnirHedgingLive", text)
-    stage_ms: dict[str, int] = {}
-    started = time.monotonic()
-    verdict = check_candidate(
-        path,
-        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
-        insert_after_line=text.count("\n"),
-        block=block,
-        theorem=theorem,
-        cancel=threading.Event(),
-        stage_ms=stage_ms,
-    )
-    elapsed = round((time.monotonic() - started) * 1000)
-    return Checked(
-        verdict["status"] == "checked",
-        verdict["message"],
-        tuple(verdict["axioms"]),
-        elapsed,
-        stage_ms,
-    )
-
-
-@pytest.fixture(scope="module")
-def replayed() -> set[str]:
-    """The import sets whose one-off kernel replay the session cache holds."""
-    return set()
-
-
-@pytest.fixture
-def check_block(scratch_notebook, replayed: set[str], record_check_stages):
-    """Return a function that checks a decision outcome's block, timed.
-
-    The outcome's own last stage lists the imports the block needs, so a block
-    whose imports are wrong fails here. The first check of an import set
-    replays its whole closure in the kernel, which takes minutes and is cached
-    for the session (`conftest.private_replay_cache`); a trivial block is
-    checked first, untimed, so that a block's time is its own, and the block's
-    check must reuse that replay rather than replay the imports again. Each
-    check's stage times are written to the log (`record_check_stages`).
+    Every hedging block imports the hedging library and nothing else.
     """
 
-    def check(outcome: dict) -> Checked:
+    def check(outcome: dict):
         assert outcome["stages"][-1] == [
             "imports",
             "needed",
             "import Gimle.Forseti.Hedging",
         ], outcome["stages"]
-        imports = outcome["stages"][-1][2]
-        if imports not in replayed:
-            warm = _check(scratch_notebook, imports, WARM_BLOCK, "warm_up")
-            record_check_stages("warm_up", warm.stage_ms)
-            assert warm.ok, warm.message
-            replayed.add(imports)
-            print(f"replay of {imports!r}: {warm.check_ms} ms")
-        checked = _check(
-            scratch_notebook, imports, outcome["block"], outcome["theorem"]
-        )
-        record_check_stages(outcome["theorem"], checked.stage_ms)
-        # The warm-up's import replay was recorded, so this check reuses it:
-        # a refused record would replay the closure (minutes) on every check.
-        assert "replay_imports" not in checked.stage_ms, checked.stage_ms
-        if checked.ok:
-            # A checked block was replayed over the recorded imports.
-            assert "replay" in checked.stage_ms, checked.stage_ms
-        return checked
+        return check_block(outcome)
 
     return check
 
@@ -250,3 +200,61 @@ def test_a_lowered_premium_is_rejected(check_block) -> None:
     assert result.message.startswith(f"Block line {step}: "), result.message
     assert "Tactic `decide` failed" in result.message
     assert "unexpected" not in result.message
+
+
+def test_live_hedge_emission_prints_the_exact_premium(scratch_notebook) -> None:
+    """Lean prints the call's binomial price at ±2 % over 20 steps, exactly.
+
+    The directive goes through the provider's own ``parse``, ``command`` and
+    ``compute``, and its Lean through the runner Glitnir runs evidence with.
+    The notebook imports the hedging library, a Lean ``module``, with a plain
+    ``import``, and ``#eval`` runs the library's ``priceQ`` from its scope. The
+    printed JSON is read here first; the card is then checked as Glitnir checks
+    it, and carries the sampled profit and loss, never a proved number.
+    """
+    from glitnir.lean.provider_lean import run_provider_lean
+
+    path = scratch_notebook("GlitnirHedgeLive", HEDGE_NOTEBOOK)
+    [provider] = [
+        p for p in evidence_provider.evidence_providers() if "hedge" in p.verbs
+    ]
+    request = provider.parse("hedge", CALL, HEDGE_OPTIONS)
+    result = run_provider_lean(
+        path,
+        expected_sha256=hashlib.sha256(HEDGE_NOTEBOOK.encode()).hexdigest(),
+        line=HEDGE_NOTEBOOK.split("\n").index(HEDGE_DIRECTIVE) + 1,
+        provider_name=provider.name,
+        imports=provider.imports,
+        preamble=provider.preamble,
+        command=provider.command(request),
+        marker=provider.marker,
+        needs="evidence",
+        cancel=threading.Event(),
+    )
+    assert "payload" in result, result
+    emitted = json.loads(result["payload"])
+    print(f"emitted: {json.dumps(emitted)}")
+    assert emitted == {
+        "payoff": "call",
+        "strike": ["100", "1"],
+        "spot": ["100", "1"],
+        "up": ["1", "50"],
+        "down": ["1", "50"],
+        "steps": 20,
+        "premium": [
+            "177744620736998422379605070486628497811",
+            "50000000000000000000000000000000000000",
+        ],
+    }
+    assert emitted["premium"] == [str(PRICE.numerator), str(PRICE.denominator)]
+    card = provider.compute(request, emitted)
+    assert checked_evidence(card) == card and card["finite"] is True
+    provenance = dict(card["provenance"])
+    print(f"provenance: {provenance}")
+    assert provenance["premium"] == "≈ 3.5549" and provenance["paths"] == "4000"
+    assert provenance["paths below zero"].startswith("0 of 4000")
+    assert float(provenance["minimum"]) >= -1e-9
+    assert not any(
+        "<=" in value or "≤" in value or "bound" in value or "bound" in label
+        for label, value in provenance.items()
+    )

@@ -49,6 +49,19 @@ coordinates (the drivers, then the states), with the coordinates' IDs, the
 index of its one driver among them, the initial state and the stepped model's
 step, all exact.
 
+A registered payoff of the hedging lane (`glitnir_forseti.hedging.payoffs`) is
+hedged on random paths in a band, by a directive written on one line (wrapped
+here)::
+
+    -- @evidence hedge Gimle.Forseti.Hedging.call (strike := 100) (spot := 100)
+        (down := 1/50) (up := 1/50) (steps := 20) (law := uniform)
+
+Its options are read here into an exact `HedgePlan`. Lean, in the scope of a
+notebook that imports ``Gimle.Forseti.Hedging``, evaluates the library's own
+binomial price of the payoff at the plan's band and prints it exactly, with
+the parameters it was evaluated at; the template writes the plan's numbers
+from their exact values, never from the option text.
+
 Evidence is never a proof (semantic invariant 5): Glitnir keeps it outside the
 check records, and nothing that derives a claim's status reads it.
 """
@@ -64,6 +77,7 @@ from typing import Any
 # downsampled to this.
 from glitnir.providers.outcomes import MAX_SAMPLES, MAX_SERIES, MAX_TEXT
 
+from glitnir_forseti.hedging.payoffs import PAYOFFS, Payoff
 from glitnir_forseti.stepped.models import MODELS, SteppedEntry
 from glitnir_forseti.stepped.numbers import three_point
 
@@ -73,12 +87,21 @@ _STATE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
 #: What the emission templates print before their JSON.
 MARK = "forsetiEvidence:"
 SOLVERS = ("euler", "rk4")
-#: The evidence directives: a continuous model, a discrete update circuit, or
-#: a stepped model under random shocks.
-VERBS = ("simulate", "iterate", "sample")
-_USE_VERBS = "use simulate, iterate or sample"
+#: The evidence directives: a continuous model, a discrete update circuit, a
+#: stepped model under random shocks, or a payoff's hedge on random paths.
+VERBS = ("simulate", "iterate", "sample", "hedge")
+_USE_VERBS = "use simulate, iterate, sample or hedge"
 #: The shock laws ``sample`` draws from.
 LAWS = ("gaussian", "twopoint", "threepoint")
+#: The laws ``hedge`` draws each step's return from, in its band.
+HEDGE_LAWS = ("uniform", "twopoint", "gaussian")
+#: Most steps a ``hedge`` run takes: as many as the hedging lane decides a
+#: ``covers`` claim for (`hedging.service.COVERS_CAP`). Lean evaluates the
+#: price over them exactly, and the provider checks it exactly.
+MAX_HEDGE_STEPS = 250
+#: Most draws a Gaussian return may take before it falls in the band; past
+#: them it is the band's end nearer the last draw.
+MAX_GAUSSIAN_DRAWS = 100
 #: Most paths a ``sample`` card shows: its `MAX_SERIES` series are the paths
 #: shown and the breach fraction.
 MAX_SHOWN = MAX_SERIES - 1
@@ -88,7 +111,8 @@ MAX_PATHS = 100_000
 #: Most field-term evaluations one run may do (steps × terms × solver stages),
 #: so a large model cannot hold the server for minutes. A ``sample`` run also
 #: moves and checks every state of every path at every step, so it counts
-#: paths × steps × (terms + states).
+#: paths × steps × (terms + states); a ``hedge`` run counts its payoff
+#: evaluations and draws (`check_hedge_work`).
 MAX_WORK = 20_000_000
 #: Most terms one expanded output polynomial may have, and across all outputs;
 #: highest total degree of a term; most term products one expansion may form;
@@ -185,30 +209,105 @@ _EMIT_CIRCUIT = """def _root_.forsetiEvidenceJson {n m : Nat}
       (Gimle.Asgard.Interchange.RationalWire.encodeCircuit c))]
 
 #eval IO.println ("{mark}" ++ (_root_.forsetiEvidenceJson {name}).compress)"""
+#: A payoff's binomial price at a band, evaluated by the hedging library's own
+#: ``priceQ``, printed with the parameters it was evaluated at. Nothing is
+#: defined: the notebook imports the library, and ``#eval`` runs its code.
+_EMIT_HEDGING = """#eval
+  let rat (q : ℚ) : Lean.Json := Lean.toJson [toString q.num, toString q.den]
+  let strike : ℚ := {strike}
+  let spot : ℚ := {spot}
+  let up : ℚ := {up}
+  let down : ℚ := {down}
+  let steps : ℕ := {steps}
+  let premium : ℚ :=
+    Gimle.Forseti.Hedging.priceQ ({payoff_q} strike) up down steps spot
+  IO.println ("{mark}" ++ (Lean.Json.mkObj [
+    ("payoff", Lean.toJson "{payoff}"),
+    ("strike", rat strike),
+    ("spot", rat spot),
+    ("up", rat up),
+    ("down", rat down),
+    ("steps", Lean.toJson steps),
+    ("premium", rat premium)]).compress)"""
 
 
-def emission_command(verb: str, name: str) -> str:
-    """Return the Lean that prints `MARK` and the field or circuit of ``name``.
+def emission_command(verb: str, name: str, plan: "HedgePlan | None" = None) -> str:
+    """Return the Lean that prints `MARK` and what the directive's run reads.
 
     ``simulate`` prints a continuous model's field, ``iterate`` an update
-    circuit, and ``sample`` a registered stepped model's driven field with the
-    registry's step constant. Only Lean names are ever written into the
-    template.
+    circuit, ``sample`` a registered stepped model's driven field with the
+    registry's step constant, and ``hedge`` the binomial price of the payoff
+    ``name`` at ``plan``'s band. Only Lean names, and for ``hedge`` the plan's
+    exact numbers written from their values, are ever written into a
+    template; option text never is. A hedge's law, paths and seed are the
+    sampler's alone, so every run of one hedge has the same emission.
 
     Raises:
         EvidenceError: If ``verb`` is not an evidence verb, ``name`` is not a
-            Lean name, or ``sample`` names no registered stepped model.
+            Lean name, ``sample`` names no registered stepped model, or
+            ``hedge`` has no plan or names no registered payoff, or another
+            payoff than its plan's.
     """
     if verb not in VERBS:
         raise EvidenceError(f"unknown evidence {verb!r}; {_USE_VERBS}")
     if not _NAME.fullmatch(name):
         raise EvidenceError(f"{name!r} is not a Lean name")
+    if verb == "hedge":
+        return _hedge_emission(name, plan)
     if verb == "sample":
         step = _stepped_model(name).delta_name
         template = _EMIT_STEPPED.replace("{step}", step)
     else:
         template = _EMIT_CIRCUIT if verb == "iterate" else _EMIT
     return template.replace("{mark}", MARK).replace("{name}", name)
+
+
+def _hedge_emission(name: str, plan: "HedgePlan | None") -> str:
+    """Return `_EMIT_HEDGING` for the payoff ``name`` at ``plan``'s hedge."""
+    if plan is None:
+        raise EvidenceError("a hedge emission needs its plan")
+    payoff = hedge_payoff(name)
+    if payoff.key != plan.payoff:
+        raise EvidenceError(
+            f"{name} names the {payoff.key}, not the {plan.payoff} the plan hedges"
+        )
+    exact = {
+        "{strike}": plan.strike,
+        "{spot}": plan.spot,
+        "{up}": plan.up,
+        "{down}": plan.down,
+    }
+    text = _EMIT_HEDGING
+    for key, value in exact.items():
+        text = text.replace(key, _lean_rational(value))
+    return (
+        text.replace("{steps}", str(plan.steps))
+        .replace("{payoff_q}", payoff.lean_q)
+        .replace("{payoff}", payoff.key)
+        .replace("{mark}", MARK)
+    )
+
+
+def _lean_rational(value: Fraction) -> str:
+    """Write an exact value as a Lean numeral: ``100``, ``1/50``, ``-1/50``."""
+    if value.denominator == 1:
+        return str(value.numerator)
+    return f"{value.numerator}/{value.denominator}"
+
+
+def hedge_payoff(name: str) -> Payoff:
+    """Return the registered payoff whose Lean name is ``name``.
+
+    Raises:
+        EvidenceError: If no payoff of the hedging lane has that name, naming
+            those that do.
+    """
+    for payoff in PAYOFFS.values():
+        if payoff.lean_name == name:
+            return payoff
+    names = [payoff.lean_name for payoff in PAYOFFS.values()]
+    known = f"{', '.join(names[:-1])} or {names[-1]}"
+    raise EvidenceError(f"{name!r} is not a registered payoff; hedge {known}")
 
 
 def _stepped_model(name: str) -> SteppedEntry:
@@ -477,18 +576,66 @@ class SamplePlan:
 
 
 @dataclass(frozen=True)
+class HedgePlan:
+    """A ``hedge`` directive's run, read exactly.
+
+    The hedge is the one the hedging library builds for the band ``[-down,
+    up]``: it starts from the payoff's binomial price at that band and holds
+    the binomial hedge ratio at each step. Its paths are drawn in the against
+    band when one is given, else in its own (`path_band`).
+
+    Attributes:
+        payoff: The payoff's key in `glitnir_forseti.hedging.payoffs.PAYOFFS`.
+        strike: The payoff's strike; not negative.
+        spot: The spot the paths start from; positive.
+        up: The hedge band's up move; positive.
+        down: The hedge band's down move; positive and below 1.
+        against_up: The up move of the band the paths are drawn in, or None
+            for the hedge's own band; given exactly when ``against_down`` is.
+        against_down: That band's down move, or None.
+        steps: How many steps each path takes.
+        law: The law of each step's return, one of `HEDGE_LAWS`.
+        sigma: The standard deviation of a ``gaussian`` return before it is
+            truncated to the band; None for the other laws.
+        paths: How many paths to draw.
+        seed: The seed of the draws.
+    """
+
+    payoff: str
+    strike: Fraction
+    spot: Fraction
+    up: Fraction
+    down: Fraction
+    against_up: Fraction | None
+    against_down: Fraction | None
+    steps: int
+    law: str
+    sigma: Fraction | None
+    paths: int
+    seed: int
+
+    @property
+    def path_band(self) -> tuple[Fraction, Fraction]:
+        """Return ``(down, up)`` of the band the paths are drawn in."""
+        if self.against_up is None or self.against_down is None:
+            return self.down, self.up
+        return self.against_down, self.against_up
+
+
+@dataclass(frozen=True)
 class Simulation:
     """One evidence directive.
 
     Attributes:
         model: The Asgard ``ContinuousModel`` to simulate, the update
-            ``Circuit`` to iterate, or the compiled ``DrivenModel`` of a
-            registered stepped model to sample.
+            ``Circuit`` to iterate, the compiled ``DrivenModel`` of a
+            registered stepped model to sample, or the payoff of the hedging
+            library to hedge.
         solver: ``euler`` or ``rk4``.
         step: The step size, exact as written.
         steps: How many steps to take.
         error: Why it cannot be run as written, if it cannot.
-        verb: ``simulate``, ``iterate`` or ``sample``.
+        verb: ``simulate``, ``iterate``, ``sample`` or ``hedge``.
         state: For ``iterate``, the initial state.
         inputs: For ``iterate``, the input vectors taken in turn, one per tick.
         parameter: For ``iterate``, the fixed parameters.
@@ -497,6 +644,7 @@ class Simulation:
         plane: For ``simulate``, two state names drawn against each other
             beside the time series.
         sample: For ``sample``, its run; ``step`` and ``steps`` are unused.
+        hedge: For ``hedge``, its run; ``step`` and ``steps`` are unused.
     """
 
     model: str
@@ -511,6 +659,7 @@ class Simulation:
     names: tuple[str, ...] = ()
     plane: tuple[str, ...] = ()
     sample: SamplePlan | None = None
+    hedge: HedgePlan | None = None
 
 
 def read_directive(verb: str, model: str, rest: str) -> Simulation:
@@ -522,7 +671,7 @@ def read_directive(verb: str, model: str, rest: str) -> Simulation:
     options = dict(pairs)
     base = Simulation(model)
     if _OPTION.sub("", rest).strip():
-        hint = _SAMPLE_HINT if verb == "sample" else _SIMULATE_HINT
+        hint = _HINTS.get(verb, _SIMULATE_HINT)
         return _with_error(base, f"options are written {hint}")
     for index, (key, _) in enumerate(pairs):
         if any(key == earlier for earlier, _ in pairs[:index]):
@@ -535,6 +684,8 @@ def read_directive(verb: str, model: str, rest: str) -> Simulation:
         return _iteration(base, options)
     if verb == "sample":
         return _sampling(base, options)
+    if verb == "hedge":
+        return _hedging(base, options)
     unknown = sorted(set(options) - {"h", "steps", "solver", "plane"})
     if unknown:
         return _with_error(base, f"unknown option {unknown[0]!r}")
@@ -627,6 +778,8 @@ def _iteration(base: Simulation, options: dict[str, str]) -> Simulation:
 #: How the options of a directive are written, for one that is malformed.
 _SIMULATE_HINT = "(h := 1/100) (steps := 400) (solver := rk4)"
 _SAMPLE_HINT = "(law := gaussian) (variance := 64) (observe := s)"
+_HEDGE_HINT = "(strike := 100) (spot := 100) (down := 1/50) (up := 1/50) (steps := 20)"
+_HINTS = {"sample": _SAMPLE_HINT, "hedge": _HEDGE_HINT}
 
 
 def _sampling(base: Simulation, options: dict[str, str]) -> Simulation:
@@ -756,6 +909,142 @@ def check_sample_work(paths: int, steps: int, terms: int = 0, states: int = 1) -
         )
 
 
+def _hedging(base: Simulation, options: dict[str, str]) -> Simulation:
+    """Read a ``hedge`` directive against its registered payoff."""
+    base = Simulation(base.model, verb="hedge")
+    try:
+        plan = hedge_plan(hedge_payoff(base.model).key, options)
+    except EvidenceError as error:
+        return _with_error(base, str(error))
+    return Simulation(base.model, verb="hedge", hedge=plan)
+
+
+#: The options ``hedge`` reads; those it must be given, in the order a missing
+#: one is named; and the defaults of the others it may leave out.
+_HEDGE_OPTIONS = frozenset(
+    {
+        "strike",
+        "spot",
+        "down",
+        "up",
+        "steps",
+        "against_down",
+        "against_up",
+        "law",
+        "sigma",
+        "paths",
+        "seed",
+    }
+)
+_HEDGE_REQUIRED = ("strike", "spot", "down", "up", "steps")
+_HEDGE_DEFAULTS = {"law": "uniform", "paths": "4000", "seed": "7"}
+
+
+def hedge_plan(payoff: str, options: dict[str, str]) -> HedgePlan:
+    """Read a ``hedge`` directive's options as written into its exact plan.
+
+    The bands are the ones the hedging library's ``Band.ofRat`` accepts: a
+    positive up move and a down move strictly between 0 and 1, so that the
+    spot moves both ways and stays positive.
+
+    Raises:
+        EvidenceError: If an option is unknown, missing or out of range, the
+            against band is half given, ``sigma`` is given for a law other
+            than ``gaussian`` or missing for it, or the run would take more
+            than `MAX_WORK` payoff evaluations and draws.
+    """
+    unknown = sorted(set(options) - _HEDGE_OPTIONS)
+    if unknown:
+        raise EvidenceError(f"unknown option {unknown[0]!r}")
+    for key in _HEDGE_REQUIRED:
+        if key not in options:
+            raise EvidenceError(f"hedge needs a ({key} := …)")
+    written = {**_HEDGE_DEFAULTS, **options}
+    law = written["law"]
+    if law not in HEDGE_LAWS:
+        laws = f"{', '.join(HEDGE_LAWS[:-1])} or {HEDGE_LAWS[-1]}"
+        raise EvidenceError(f"unknown law {law!r}; use {laws}")
+    if ("against_down" in options) != ("against_up" in options):
+        raise EvidenceError("give both against_down and against_up, or neither")
+    if law == "gaussian" and "sigma" not in options:
+        raise EvidenceError("hedge with (law := gaussian) needs a (sigma := …)")
+    if law != "gaussian" and "sigma" in options:
+        raise EvidenceError("sigma is read only with (law := gaussian)")
+    exact = ("strike", "spot", "down", "up", "against_down", "against_up", "sigma")
+    try:
+        value = {key: _number(written[key]) for key in exact if key in written}
+        steps, paths, seed = (
+            _count(written[key]) for key in ("steps", "paths", "seed")
+        )
+    except _NotPlain:
+        raise EvidenceError(NOT_PLAIN) from None
+    except (ValueError, ZeroDivisionError):
+        raise EvidenceError(
+            "write the strike, spot, moves and sigma as numbers such as 100 or"
+            " 1/50, and steps, paths and seed as counts"
+        ) from None
+    if value["strike"] < 0:
+        raise EvidenceError("the strike must not be negative")
+    if value["spot"] <= 0:
+        raise EvidenceError("the spot must be positive")
+    _check_band("the band", value["up"], value["down"])
+    if "against_up" in value:
+        _check_band("the against band", value["against_up"], value["against_down"])
+    if "sigma" in value and value["sigma"] <= 0:
+        raise EvidenceError("sigma must be positive")
+    if not 0 < steps <= MAX_HEDGE_STEPS:
+        raise EvidenceError(f"steps must be 1–{MAX_HEDGE_STEPS}")
+    if not 0 < paths <= MAX_PATHS:
+        raise EvidenceError(f"paths must be 1–{MAX_PATHS}")
+    if seed < 0:
+        raise EvidenceError("the seed must not be negative")
+    check_hedge_work(paths, steps, MAX_GAUSSIAN_DRAWS if law == "gaussian" else 1)
+    return HedgePlan(
+        payoff=payoff,
+        strike=value["strike"],
+        spot=value["spot"],
+        up=value["up"],
+        down=value["down"],
+        against_up=value.get("against_up"),
+        against_down=value.get("against_down"),
+        steps=steps,
+        law=law,
+        sigma=value.get("sigma"),
+        paths=paths,
+        seed=seed,
+    )
+
+
+def _check_band(name: str, up: Fraction, down: Fraction) -> None:
+    """Refuse a band the hedging library's ``Band.ofRat`` does not accept."""
+    if up <= 0:
+        raise EvidenceError(f"{name}'s up move must be positive")
+    if down <= 0:
+        raise EvidenceError(f"{name}'s down move must be positive")
+    if down >= 1:
+        raise EvidenceError(
+            f"{name}'s down move must be below 1, or the spot would reach zero"
+        )
+
+
+def check_hedge_work(paths: int, steps: int, draws: int) -> None:
+    """Refuse a ``hedge`` run of more than `MAX_WORK` payoff evaluations and draws.
+
+    At step ``k`` of ``N`` a path's hedge ratio takes two prices of ``N - k``
+    terms, one payoff evaluation each, so a path evaluates ``N(N + 1)`` payoffs;
+    it also draws ``draws`` numbers for each of its ``N`` returns at most.
+
+    Raises:
+        EvidenceError: If ``paths × N × (N + 1 + draws)`` exceeds `MAX_WORK`.
+    """
+    work = paths * steps * (steps + 1 + draws)
+    if work > MAX_WORK:
+        raise EvidenceError(
+            f"this run would take {work:,} payoff evaluations and draws, more"
+            f" than the {MAX_WORK:,} allowed; use fewer paths or steps"
+        )
+
+
 class _NotPlain(ValueError):
     """Raised for a number token that is not a plain decimal or fraction."""
 
@@ -799,11 +1088,12 @@ def _with_error(simulation: Simulation, error: str) -> Simulation:
 _POSITIVE = re.compile(r"^[1-9][0-9]*$")
 
 
-def read_rational(value: Any) -> Fraction:
+def read_rational(value: Any, digits: int = MAX_RATIONAL_DIGITS) -> Fraction:
     """Read an emitted ``[numerator, denominator]`` pair as Asgard reads it.
 
-    Both are canonical decimal strings of at most `MAX_RATIONAL_DIGITS` digits,
-    the denominator positive and the pair reduced.
+    Both are canonical decimal strings of at most ``digits`` digits, by
+    default `MAX_RATIONAL_DIGITS`, the denominator positive and the pair
+    reduced.
     """
     if type(value) is not list or len(value) != 2:
         raise EvidenceError("a value is a [numerator, denominator] pair")
@@ -811,8 +1101,8 @@ def read_rational(value: Any) -> Fraction:
     if (
         type(numerator) is not str
         or type(denominator) is not str
-        or len(numerator.removeprefix("-")) > MAX_RATIONAL_DIGITS
-        or len(denominator) > MAX_RATIONAL_DIGITS
+        or len(numerator.removeprefix("-")) > digits
+        or len(denominator) > digits
         or not _DECIMAL.fullmatch(numerator)
         or not _POSITIVE.fullmatch(denominator)
     ):
