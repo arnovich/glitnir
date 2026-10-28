@@ -2,7 +2,7 @@
 // No notebook data or scripts are bootstrapped into the exported HTML.
 (() => {
   'use strict';
-  window.glitnirExport = async ({content, title, file, sha256, preview, css}) => {
+  window.glitnirExport = async ({content, title, renderedTitle, file, sha256, preview, css}) => {
     const page = document.implementation.createHTMLDocument(title);
     page.documentElement.lang = 'en';
     const meta = (name, value, attribute = 'name') => {
@@ -16,7 +16,9 @@
     page.body.className = 'static-notebook';
     const app = page.createElement('div'); app.className = 'app'; page.body.append(app);
     const heading = page.createElement('header'); heading.className = 'heading'; app.append(heading);
-    const h1 = page.createElement('h1'); h1.textContent = title; heading.append(h1);
+    const h1 = renderedTitle ? page.importNode(renderedTitle, true) : page.createElement('h1');
+    if (!renderedTitle) h1.textContent = title;
+    h1.removeAttribute('id'); heading.append(h1);
     const snapshot = page.createElement('p'); snapshot.className = 'snapshot';
     // Saved results shown as recorded say so in the snapshot's own words.
     const recorded = preview?.recorded === true;
@@ -58,8 +60,17 @@
       img.removeAttribute('srcset');
       img.loading = 'eager';
     }
+    const safeLink = href => {
+      if (href.startsWith('#')) return true;
+      if (/\s/.test(href)) return false;
+      try {
+        const url = new URL(href);
+        return url.protocol === 'https:' && !!url.hostname
+          || url.protocol === 'mailto:' && !!url.pathname;
+      } catch { return false; }
+    };
     for (const a of body.querySelectorAll('a')) {
-      if (!/^(#|https?:\/\/|mailto:)/i.test(a.getAttribute('href') || '')) {
+      if (!safeLink(a.getAttribute('href') || '')) {
         const span = page.createElement('span'); span.append(...a.childNodes); a.replaceWith(span);
       } else { a.removeAttribute('target'); a.rel = 'noopener noreferrer'; }
     }
