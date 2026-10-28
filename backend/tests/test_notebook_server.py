@@ -114,6 +114,34 @@ def test_the_notebook_endpoint_returns_the_snapshot(server) -> None:
     assert "prose" in [c["kind"] for c in snapshot["cells"]]
 
 
+def test_research_endpoint_reads_one_claim_and_never_accepts_a_write(
+    server, service, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "investigation",
+        lambda claim: {"state": "ready", "claim": claim, "proof_authority": False},
+    )
+    response, body = _request(server, "GET", "/api/research?claim=energy_falls")
+    assert response.status == 200
+    assert json.loads(body) == {
+        "state": "ready",
+        "claim": "energy_falls",
+        "proof_authority": False,
+    }
+    for path in ("/api/research", "/api/research?claim=a&claim=b"):
+        response, _ = _request(server, "GET", path)
+        assert response.status == 400
+    response, _ = _request(
+        server,
+        "POST",
+        "/api/research",
+        "{}",
+        {"Content-Type": "application/json"},
+    )
+    assert response.status == 404
+
+
 def test_requests_for_a_foreign_host_are_refused(server) -> None:
     for method in ("GET", "POST"):
         response, _ = _request(

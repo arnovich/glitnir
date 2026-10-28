@@ -2323,6 +2323,26 @@ def test_records_schema_validates_what_load_records_accepts(tmp_path: Path) -> N
     assert not records_schema.well_formed({**loaded, "claims": "not a list"})
 
 
+def test_checked_type_survives_records_and_claim_views() -> None:
+    result = copy.deepcopy(RESULT)
+    result["theorems"][0]["type"] = "base = 1"
+    records = records_from_check(TEXT, result, FP)
+    assert records["claims"][0]["type"] == "base = 1"
+    assert records["claims"][0]["type_sha256"] == check_records._sha("base = 1")
+    assert claim_views(TEXT, records, FP)[0]["type"] == "base = 1"
+
+
+def test_long_checked_type_keeps_exact_identity_digest() -> None:
+    result = copy.deepcopy(RESULT)
+    exact_type = "True ∧ " * 5_000 + "True"
+    result["theorems"][0]["type"] = exact_type
+    records = records_from_check(TEXT, result, FP)
+    claim = records["claims"][0]
+    assert claim["type"].endswith("…")
+    assert claim["type_shortened"] is True
+    assert claim["type_sha256"] == check_records._sha(exact_type)
+
+
 def test_dropping_sections_never_modifies_the_argument(monkeypatch):
     """The helpers that drop a section return new records and leave theirs alone."""
     from glitnir.notebook.records_schema import with_lenient_failures
@@ -2349,7 +2369,16 @@ def test_records_from_check_accepts_theorems_without_optional_keys():
     """Theorems with only the required keys save claims without the optional ones."""
     records = records_from_check(NOTEBOOK, _result(("A.t", 2)), FP)
     (claim,) = records["claims"]
-    optional = {"uses", "uses_truncated", "example", "statement", "kernel_statement"}
+    optional = {
+        "uses",
+        "uses_truncated",
+        "example",
+        "statement",
+        "kernel_statement",
+        "type",
+        "type_sha256",
+        "type_shortened",
+    }
     assert not optional & set(claim)
 
 

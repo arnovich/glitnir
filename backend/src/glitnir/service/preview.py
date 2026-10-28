@@ -50,6 +50,7 @@ from glitnir.preview.snapshot import (
 from glitnir.providers import Providers, load_providers
 from glitnir.service.context import CLOSED, PreviewContext
 from glitnir.service.proof_steps import ProofSteps
+from glitnir.service.research_history import TaskvaletReader, research_links
 from glitnir.service.runs import Candidate, DirectiveRuns
 from glitnir.service.views import ViewDrawing
 
@@ -112,6 +113,7 @@ class SourcePreviewService:
         self.path = path
         self._shared_providers = providers
         self.proof_steps = ProofSteps(path)
+        self._research_history = TaskvaletReader()
         self._cancel = threading.Event()
         self._inspection_lock = threading.Lock()
         self._state_lock = threading.Lock()
@@ -466,7 +468,23 @@ class SourcePreviewService:
     def snapshot(self) -> Snapshot:
         """Preserve all source, using prose cells only when parsing is lossless."""
         text = self._text()
-        return self._snapshot(text, self._fingerprint(text))
+        snapshot = self._snapshot(text, self._fingerprint(text))
+        try:
+            snapshot["research"] = research_links(
+                self.path, text, snapshot["project_claims"]
+            )
+        except NotebookError as error:
+            snapshot["research_error"] = str(error)
+        return snapshot
+
+    def investigation(self, claim: str) -> dict[str, Any]:
+        """Read one linked Taskvalet history without changing either system."""
+        text = self._text()
+        snapshot = self._snapshot(text, self._fingerprint(text))
+        links = research_links(self.path, text, snapshot["project_claims"])
+        if claim not in links:
+            raise KeyError(f"claim {claim!r} has no Taskvalet research link")
+        return self._research_history.investigation(links[claim])
 
     def _snapshot(
         self, text: str, fingerprint: Fingerprint, *, compare_environment: bool = True
