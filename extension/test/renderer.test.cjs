@@ -3074,7 +3074,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.deepEqual([...d.querySelectorAll('#outline .o-claim + .dot')].map(o => o.dataset.tone), ['green', 'amber']);
     assert.deepEqual([...d.querySelectorAll('#chips-row button')].map(b => b.textContent.trim()), ['k_pos', 'floor']);
     for (const id of ['graph', 'graph-label', 'graph-note']) assert.equal(d.getElementById(id).hidden, true, 'no uses: no claim graph');
-    assert.deepEqual([...d.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 's', 'i', 'r', '?'], 'no editor-only keys outside the editor');
+    assert.deepEqual([...d.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 's', 'g', 'i', 'r', '?'], 'no editor-only keys outside the editor');
     assert.deepEqual([...d.querySelectorAll('.proof-section .section-statuses .pill')].map(p => p.textContent), ['1 Kernel checked', '1 Contains sorry', '1 Out of date']);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
@@ -3089,7 +3089,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.equal(d.getElementById('source-L18').dataset.tone, undefined);
   } finally { window.close(); }
   const host = await renderSnapshot(projectNotebook());
-  try { assert.deepEqual([...host.document.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 'n p', 'c t', 's', 'i', 'r', 'e', '?'], 'the editor preview handles e, n/p and c/t'); } finally { host.close(); }
+  try { assert.deepEqual([...host.document.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 'n p', 'c t', 's', 'g', 'i', 'r', 'e', '?'], 'the editor preview handles e, n/p and c/t'); } finally { host.close(); }
 });
 
 test('the project banner is amber only when a result needs attention', async () => {
@@ -3355,6 +3355,164 @@ test('claim cards, the inspector and the claim graph show the claims each claim 
     const kept = [...page.querySelectorAll('[aria-label="Theorem floor"] .uses > *')];
     assert.deepEqual(kept.map(c => [c.tagName, c.textContent.trim()]), [['A', 'k_pos'], ['SPAN', 'ThreeState:settled'], ['SPAN', 'ThreeState:missing'], ['SPAN', 'Gone:lemma'], ['SPAN', 'not_a_result']]);
     assert.equal(kept[0].getAttribute('href'), '#cell-Demo.k_pos');
+  } finally { window.close(); }
+});
+
+test('the Graph view layers recorded direct uses, includes linked claims, and navigates from nodes', async () => {
+  const {main, linked} = notebooksWithUses();
+  main.project_claims[1].current = false;
+  main.project_claims[1].uses_truncated = true;
+  const messages = [];
+  const window = await renderSnapshot(main, {katex: true, onMessage: m => messages.push(m), onLinked: path => (path === '/api/linked?path=ThreeState.lean' ? {json: linked} : undefined)});
+  const d = window.document, $ = id => d.getElementById(id);
+  const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const click = element => element.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.scrollTo = () => {};
+  try {
+    const graphButton = d.querySelector('[data-mode="graph"]');
+    assert.equal(graphButton.textContent, 'Graph');
+    graphButton.click();
+    assert.equal($('graph-view').hidden, false);
+    assert.equal($('doc').hidden, true);
+    assert.match($('graph-view').textContent, /Recorded proof graph/);
+    assert.match($('graph-view').textContent, /does not check or update/);
+
+    const nodes = [...d.querySelectorAll('#graph-view .proof-node')];
+    assert.deepEqual(nodes.map(node => node.dataset.graphName), [
+      'Demo.k_pos', 'Demo.floor', 'ThreeState:settled', 'ThreeState:missing', 'Gone:lemma',
+    ]);
+    assert.equal(d.querySelector('[data-graph-name="Demo.floor"]').dataset.tone, 'amber', 'stale claims use the stale tone');
+    assert.equal(d.querySelector('[data-graph-name="ThreeState:settled"]').dataset.kind, 'imported');
+    assert.equal(d.querySelector('[data-graph-name="ThreeState:settled"]').dataset.tone, 'muted', 'an imported result is unknown until its notebook is opened');
+    assert.match(d.querySelector('[data-graph-name="Gone:lemma"]').getAttribute('aria-label'), /Show details$/);
+    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('role'), 'group', 'live graph controls remain exposed to assistive technology');
+    assert.equal(d.querySelectorAll('#graph-view .proof-node [role="button"]').length, 0, 'graph controls are not nested');
+    assert.equal(d.querySelectorAll('#graph-view .proof-edge').length, 4, 'every recorded local or imported relationship is shown');
+    assert.ok(d.querySelector('.proof-edge[data-from="local:Demo.k_pos"][data-to="local:Demo.floor"]'));
+    assert.ok(d.querySelector('.proof-edge[data-from="import:ThreeState:settled"][data-to="local:Demo.floor"]'));
+
+    const detailControl = d.querySelector('[data-act="graph-detail-picker"]');
+    detailControl.focus();
+    detailControl.value = 'local:Demo.floor';
+    detailControl.dispatchEvent(new window.Event('change', {bubbles: true}));
+    assert.equal(d.activeElement.dataset.act, 'graph-detail-picker', 'detail focus survives the graph redraw');
+    assert.match($('graph-detail').textContent, /floor/);
+    assert.match($('graph-detail').textContent, /Demo\.floor/);
+    assert.match($('graph-detail').textContent, /Uses.*k_pos.*ThreeState:settled/s);
+    assert.match($('graph-detail').textContent, /Used by.*None/s);
+    assert.match($('graph-detail').textContent, /only the first uses/);
+    window.glitnirWorkbench.render();
+    assert.equal(d.activeElement.dataset.act, 'graph-detail-picker', 'detail focus survives polling');
+    click(d.querySelector('[data-graph-id="local:Demo.k_pos"]'));
+    assert.equal($('doc').hidden, false, 'a local node returns to the Document view');
+    assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
+
+    d.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'g', bubbles: true}));
+    assert.equal($('graph-view').hidden, false, 'g opens the Graph view');
+    click(d.querySelector('[data-graph-id="import:ThreeState:settled"]'));
+    await settle(30);
+    assert.ok(d.body.classList.contains('glitnir-linked-view'));
+    assert.equal($('insp-title').textContent, 'settled');
+    assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/linked')).map(m => m.path), ['/api/linked?path=ThreeState.lean']);
+  } finally { window.close(); }
+});
+
+test('the Graph view reduces transitive edges, shows unchecked claims, and tolerates malformed uses', async () => {
+  const claim = (name, uses, status = 'checked') => ({name, keyword: 'theorem', statement: ': True', proof: 'trivial', proof_block: '  trivial', status, reason: '', uses, context: 'c'.repeat(64), record: status === 'unknown' ? null : {verdict: 'holds', axioms: [], context: 'c'.repeat(64)}});
+  const cell = (name, index) => ({id: name, index, kind: 'claim', start: index * 2 + 1, end: index * 2 + 2, text: `theorem ${name} : True := by\n  trivial`});
+  const snapshot = {file: 'Layers.lean', sha256: 'a'.repeat(64), checking: ['base'], check_errors: {}, cells: ['base', 'middle', 'result', 'unchecked'].map(cell), claims: [
+    claim('base', []), claim('middle', ['base']), claim('result', ['base', 'middle'], 'stale'), claim('unchecked', null, 'unknown'),
+  ], links: [], revisions: [], assets: []};
+  // Renderer input is untrusted even though the backend normally validates it.
+  snapshot.claims[3].uses = {bad: true};
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const edges = [...d.querySelectorAll('#graph-view .proof-edge')].map(edge => [edge.dataset.from, edge.dataset.to]);
+    assert.deepEqual(edges, [['local:base', 'local:middle'], ['local:middle', 'local:result']], 'the edge base → result is implied and omitted');
+    const y = name => Number(/translate\([^,]+,([^\)]+)\)/.exec(d.querySelector(`[data-graph-name="${name}"]`).getAttribute('transform'))[1]);
+    assert.ok(y('result') < y('middle') && y('middle') < y('base'), 'the result is above the foundations');
+    assert.match(d.querySelector('[data-graph-name="base"]').getAttribute('aria-label'), /Checked/, 'live checking state does not replace the recorded status');
+    assert.equal(d.querySelector('[data-graph-name="result"]').dataset.tone, 'amber');
+    assert.match(d.querySelector('[data-graph-name="result"] title').textContent, /result — Out of date/);
+    assert.equal(d.querySelector('[data-graph-name="unchecked"]').dataset.tone, 'muted');
+    assert.match(d.getElementById('graph-view').textContent, /Dependency observations are unknown for unchecked/);
+    const zoom = d.querySelector('[data-act="graph-zoom-in"]');
+    zoom.focus(); zoom.click();
+    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '125%');
+    assert.equal(d.activeElement.dataset.act, 'graph-zoom-in', 'zoom focus survives the graph redraw');
+    d.querySelector('[data-act="graph-zoom-out"]').click();
+    d.querySelector('[data-act="graph-zoom-out"]').click();
+    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '75%', 'zoom out is smaller than fit width');
+    d.querySelector('[data-act="graph-fit"]').click();
+    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '100%');
+  } finally { window.close(); }
+});
+
+test('the Graph view bounds dense input and preserves cyclic saved relationships and full identities', async () => {
+  const base = projectNotebook();
+  const window = await renderSnapshot(base);
+  try {
+    const claim = (name, uses = []) => ({name, label: name.split('.').at(-1), status: 'checked', record: {verdict: 'holds'}, uses});
+    const claims = Array.from({length: 260}, (_, index) => claim(`Namespace${index % 2}.claim${index}`, Array.from({length: Math.min(index, 200)}, (__, offset) => `Namespace${(index - offset - 1) % 2}.claim${index - offset - 1}`)));
+    const dense = {claims, cells: [], links: [], checking: [], project_claims: []};
+    const denseModel = window.glitnirWorkbench.claimGraphModel(dense);
+    assert.equal(denseModel.nodes.length, 240);
+    assert.ok(denseModel.edges.length <= 2400);
+    assert.equal(denseModel.omittedNodes, 20);
+    const denseHTML = window.glitnirWorkbench.proofGraphHTML(dense);
+    assert.match(denseHTML, /Graph limit reached/);
+    assert.doesNotMatch(denseHTML, /style=/, 'the graph does not require CSP-blocked inline styles');
+
+    const cyclic = {claims: [
+      claim('Alpha.same', ['Beta.same', 'Cycle.other']),
+      claim('Beta.same', ['Cycle.other']),
+      claim('Cycle.other', ['Beta.same']),
+    ], cells: [], links: [], checking: [], project_claims: []};
+    const cyclicModel = window.glitnirWorkbench.claimGraphModel(cyclic);
+    assert.equal(cyclicModel.cyclic, true);
+    assert.deepEqual([...cyclicModel.byId.get('local:Alpha.same').uses].sort(), ['local:Beta.same', 'local:Cycle.other']);
+    const cyclicHTML = window.glitnirWorkbench.proofGraphHTML(cyclic);
+    assert.match(cyclicHTML, /dependency cycle was recorded/i);
+    assert.match(cyclicHTML, /<title>Alpha\.same — Checked<\/title>/);
+    assert.match(cyclicHTML, /aria-label="Alpha\.same, Checked/);
+
+    const recordless = {claims: [claim('NoRecord.one'), claim('NoRecord.two')], cells: [], links: [], checking: ['NoRecord.one'], project_claims: []};
+    recordless.claims.forEach(entry => { entry.record = null; });
+    const recordlessModel = window.glitnirWorkbench.claimGraphModel(recordless);
+    assert.deepEqual([...recordlessModel.nodes].map(node => [node.status, node.tone]), [['Unknown', 'muted'], ['Unknown', 'muted']]);
+    assert.deepEqual([...recordlessModel.nodes].map(node => node.relationsKnown), [false, false]);
+    assert.match(window.glitnirWorkbench.proofGraphHTML(recordless), /Dependency observations are unknown for one, two/);
+
+    const wide = {claims: Array.from({length: 20}, (_, index) => claim(`Wide.claim${index}`)), cells: [], links: [], checking: [], project_claims: []};
+    const widePage = new JSDOM(window.glitnirWorkbench.proofGraphHTML(wide, {staticPage: true})).window.document;
+    assert.equal(widePage.querySelector('.proof-map').getAttribute('width'), '4400', 'a broad static graph keeps readable intrinsic node size inside its scrolling canvas');
+  } finally { window.close(); }
+});
+
+test('static export includes an inert recorded proof graph', async () => {
+  const {main} = notebooksWithUses();
+  main.project_claims[1].uses_truncated = true;
+  const messages = [];
+  const window = await renderSnapshot(main, {katex: true, onMessage: m => messages.push(m)});
+  const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
+  try {
+    window.document.getElementById('export-html').click(); await settle(80);
+    const exported = messages.find(message => message.type === 'export');
+    assert.ok(exported);
+    const page = new JSDOM(exported.body).window.document;
+    const graph = page.querySelector('.proof-graph-export');
+    assert.ok(graph);
+    assert.match(graph.textContent, /Recorded proof graph/);
+    assert.deepEqual([...graph.querySelectorAll('.proof-node text.proof-node-label')].map(node => node.textContent), ['k_pos', 'floor', 'ThreeState:settled', 'ThreeState:missing', 'Gone:lemma']);
+    assert.equal(graph.querySelectorAll('button,script').length, 0);
+    assert.equal(graph.querySelector('[data-graph-id]'), null);
+    assert.equal(graph.querySelector('.proof-map').getAttribute('role'), 'img');
+    assert.notEqual(graph.querySelector('.proof-map').getAttribute('width'), '100%');
+    assert.match(graph.textContent, /recorded only the first uses for Demo\.floor/);
+    assert.match(graph.textContent, /Static copy.*does not check or update/s);
   } finally { window.close(); }
 });
 
@@ -3737,7 +3895,7 @@ test('every shortcut listing comes from one list that matches the keys that work
     assert.deepEqual(rows.map(r => r.text), documented.map(r => r.text), 'the guide table says what the preview says');
     rows.forEach((row, i) => assert.ok(documented[i].keys.join(' ').includes(row.keys.join(' ')), `guide keys for ${row.keys}`));
     const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
-    assert.deepEqual(listed, ['?', 'c', 'e', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
+    assert.deepEqual(listed, ['?', 'c', 'e', 'g', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
     assert.deepEqual(handledKeys(host).sort(), listed, 'the editor preview acts on exactly the listed keys');
     const hinted = [...d.querySelectorAll('#key-hints kbd')].map(k => k.textContent);
     assert.ok(hinted.length && hinted.every(k => listed.includes(k)), 'the contents hint is drawn from the same list');
@@ -3746,7 +3904,7 @@ test('every shortcut listing comes from one list that matches the keys that work
   try {
     const rows = shortcutRows(browser.document);
     const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
-    assert.deepEqual(listed, ['?', 'i', 'j', 'k', 'r', 's'], 'outside the editor only the renderer’s own keys are listed');
+    assert.deepEqual(listed, ['?', 'g', 'i', 'j', 'k', 'r', 's'], 'outside the editor only the renderer’s own keys are listed');
     assert.deepEqual(handledKeys(browser).sort(), listed);
     assert.equal(rows.find(r => r.keys[0] === 'r').text, 'Check the saved file through the selected claim');
   } finally { browser.close(); }

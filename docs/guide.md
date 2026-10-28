@@ -149,7 +149,8 @@ shown but not saved. Without a provider the line shows why.
 Run **Glitnir: Open in Glitnir** from the Command Palette, or **Open in Glitnir**
 on a `.lean` file in the Explorer's context menu. The preview opens beside the
 editor and shows the saved file, not unsaved edits. **Contents** lists the
-sections, and `s` switches between the rendered document and the Lean source.
+sections, `s` switches between the rendered document and the Lean source, and
+`g` opens the recorded proof graph.
 
 - **Edit in VS Code** on a cell jumps to its source. **Glitnir: Reveal in
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
@@ -340,10 +341,24 @@ environment is identified shows saved results as out of date once, too.
 Each result also records the claims it uses: the theorems its statement and proof
 name directly, from this notebook or from another notebook of the project (a
 module the project builds itself, not a dependency). Cards show them as chips,
-the sidebar draws them as the claim graph, and a chip of another notebook opens
-it in the same panel at that claim. Uses are display only and never change a
-status. Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in
-`simp`), so a claim may use more than its chips show.
+the sidebar draws a compact claim graph, and the **Graph** view lays the same
+recorded relationships out from foundations at the bottom to results at the
+top. It drops an edge when the same dependency is already visible through
+another direct dependency. Imported claims are separate nodes; opening one
+reads its notebook in the same panel when that notebook is available. Node
+colours are recorded claim statuses, with out-of-date results shown in amber.
+Claims without a saved result remain visible as unknown, and a missing `uses`
+observation is labelled unknown rather than treated as an empty dependency
+list. The graph can be fitted to the available width or zoomed and scrolled,
+and the static HTML export includes an inert copy.
+
+The **Statement details** selector shows a node's recorded uses and users.
+Opening a local node returns to its highlighted claim in **Document**; its exact
+Lean source remains available from the claim's existing source action. None of
+these graph actions runs Lean, updates a record, or changes proof authority.
+Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in `simp`),
+so a claim may use more than its graph shows.
+
 ## Settings
 
 | Setting | Default | Purpose |
@@ -368,6 +383,7 @@ the preview for this list. Moving never starts a check.
 | `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
 | `c` `t` | Claims / Proof steps |
 | `s` | Switch between document and Lean source |
+| `g` | Show the recorded proof graph |
 | `i` | Show or hide the claim inspector |
 | `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
 | `e` | Edit the selected claim or proof step in VS Code |
@@ -518,4 +534,3 @@ an earlier copy: **Codex** uses `.agents/skills/glitnir-notebooks` and **Claude
 Code** uses `.claude/skills/glitnir-notebooks`. **Export for another agent**
 writes it to a folder you choose; give its `SKILL.md` to your agent. Agents can
 check a notebook with the command from **Glitnir: Copy Validation Command**.
-
