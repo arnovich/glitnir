@@ -1,10 +1,12 @@
 {
   "schema": "gimle.forseti.lean-replay/v2",
-  "release_sha256": "25ac189d2449cb89177cfeb7a8e218abb8e221379d96b96ac71a882cabc120bc",
+  "release_sha256": "2a7bef24f6d9480b174ac2d9ff88bba3efc65dfe7632d8831968feaf3712e314",
   "closure_program_sha256": "60d07a94daf2298ae5e053a74349efc2fa8a1d826e2192277657f3489becb97d",
   "toolchain": "leanprover/lean4:v4.35.0",
   "toolchain_binaries": {
     "Darwin-arm64": "edb18bdc4a454c75c128a8dba8e9c13723228c17ad1327b83aceec4d5bd1c0c4",
+    "Darwin-x86_64": "edf877a91afe1d8a7bed1ebad8215dde7c20f71ea39e42e643351ad499738cde",
+    "Linux-aarch64": "666ab93385f0ba71e56ad20a2c5d365678e7a95753b2a41f596c9194836fb26f",
     "Linux-x86_64": "7c6a262a8df5b5adb4ce2258d50f6b982fa6395d431b030e8b90354363fca537"
   },
   "closures": [
@@ -340,7 +342,7 @@
         {
           "name": "asgard",
           "modules": 25,
-          "digest": "55a8c3f34f88213bcd4e47e726e9338b608c3eec3ee93f42638995065fcbd01a"
+          "digest": "199b63d696e7ca346eeaa59d712064726d8137d6dc8dc51659e34d68e5286fe1"
         },
         {
           "name": "batteries",
@@ -530,7 +532,7 @@
         {
           "name": "asgard",
           "modules": 24,
-          "digest": "eb323b7649e30fdb5a77e01ba681c8874329077065e6a28b4bb0b010654e0399"
+          "digest": "f26c9a8cd74f215272794eb27d974ceb6dd60ba0964a823b47ed28eea0a3b608"
         },
         {
           "name": "batteries",
@@ -594,7 +596,7 @@
         {
           "name": "asgard",
           "modules": 26,
-          "digest": "3ad0fdcf677d418b85107bf71a92ff76c0716c17f92859c6cb8628410021db68"
+          "digest": "897b5d658b55b8b6a5aa8c18bc88b26ef69f23d2e29d2c97459a60fd7ecd7142"
         },
         {
           "name": "batteries",
@@ -658,7 +660,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
+          "digest": "8a69a33053b5dff71440cef512ebc2c5e1b18342b9a555e43bd96a660939d8dd"
         },
         {
           "name": "batteries",
@@ -723,7 +725,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
+          "digest": "8a69a33053b5dff71440cef512ebc2c5e1b18342b9a555e43bd96a660939d8dd"
         },
         {
           "name": "batteries",
@@ -788,7 +790,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
+          "digest": "8a69a33053b5dff71440cef512ebc2c5e1b18342b9a555e43bd96a660939d8dd"
         },
         {
           "name": "batteries",
@@ -852,7 +854,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
+          "digest": "8a69a33053b5dff71440cef512ebc2c5e1b18342b9a555e43bd96a660939d8dd"
         },
         {
           "name": "batteries",
@@ -916,7 +918,7 @@
         {
           "name": "asgard",
           "modules": 24,
-          "digest": "eb323b7649e30fdb5a77e01ba681c8874329077065e6a28b4bb0b010654e0399"
+          "digest": "f26c9a8cd74f215272794eb27d974ceb6dd60ba0964a823b47ed28eea0a3b608"
         },
         {
           "name": "batteries",
@@ -1044,7 +1046,7 @@
         {
           "name": "asgard",
           "modules": 25,
-          "digest": "55a8c3f34f88213bcd4e47e726e9338b608c3eec3ee93f42638995065fcbd01a"
+          "digest": "199b63d696e7ca346eeaa59d712064726d8137d6dc8dc51659e34d68e5286fe1"
         },
         {
           "name": "batteries",
@@ -1108,7 +1110,7 @@
         {
           "name": "asgard",
           "modules": 19,
-          "digest": "151af16ac7e899ed640d7b60b05295a658363fbf49238f149a1ab4c5b28547e7"
+          "digest": "8a69a33053b5dff71440cef512ebc2c5e1b18342b9a555e43bd96a660939d8dd"
         },
         {
           "name": "batteries",
@@ -1301,7 +1303,7 @@
         {
           "name": "asgard",
           "modules": 22,
-          "digest": "45422d6df68b70655206d2078eb61d9f739bb5f51d9797096e91f2c214d1e4d0"
+          "digest": "eb2302a9d995c766c5f65b3372a15c374a69762379786308ae6132f859a24cb9"
         },
         {
           "name": "batteries",
