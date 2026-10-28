@@ -449,8 +449,16 @@ reads a saved notebook and its saved results for the canonical renderer:
   Committing the `.glitnir.json` keeps a gallery Lean-free for views.
 
 The module's `export_styles()` returns the CSS that **Export HTML** embeds
-(`GET /api/export/styles`). Reading a snapshot or an image runs no Lean, git or
-provider run and writes no file.
+(`GET /api/export/styles`). `sibling_exports(directory, snapshot["references"])`
+returns the referenced modules whose regular `Module.html` files already exist
+beside the page being built. Pass that list to the renderer as the available
+exports so notebook and imported-claim links work without emitting dead links.
+For a clean multi-page gallery, use two passes: write every page without sibling
+links first, then regenerate every final page after all expected HTML files are
+present. Publish only the final pass. This makes links in both directions
+independent of generation order while still verifying every target on disk.
+Reading a snapshot or an image runs no Lean, git or provider run and writes no
+file.
 Nothing here checks the notebook or writes its source or results; drawing a view
 writes only Glitnir's own temporary and cache files, never the project. Saved
 results are matched to the saved source result by result, so a gallery that
@@ -461,14 +469,23 @@ Render the snapshot with the packaged renderer (`glitnir/preview/app`; a gallery
 finds its assets with `glitnir.preview.editor.renderer_directory()`, never the
 private `_APP`), and
 export it with its **Export HTML**, through the same `window.glitnirHost`
-interface the editor uses (`fetch`, `asset` and `saveHTML`). Answer `fetch` from
-the prepared data and refuse anything else:
+interface the editor uses (`fetch`, `asset`, `prepareHTMLExport` and
+`saveHTML`). `prepareHTMLExport` returns `{saved, token, siblings}`; for a gallery,
+derive `siblings` with `sibling_exports` and bind `token` to the selected output
+path until `saveHTML`. The exported page contains document and exact Lean-source
+views, switches between them without scripts, and links only the sibling exports
+named by that response. Answer `fetch` from the prepared data and refuse anything
+else:
 
 ```python
 import json
 from pathlib import Path
 
-from glitnir.service.static_export import SavedNotebook, export_styles
+from glitnir.service.static_export import (
+    SavedNotebook,
+    export_styles,
+    sibling_exports,
+)
 
 with SavedNotebook(Path("examples/Decay.lean")) as notebook:
     snapshot = notebook.snapshot()  # GET /api/notebook
@@ -476,7 +493,13 @@ with SavedNotebook(Path("examples/Decay.lean")) as notebook:
         f"{view['cell']}:{view['line']}": notebook.draw_view(view["cell"], view["line"])
         for view in snapshot["views"]
     }
-page = {"snapshot": snapshot, "views": views, "css": export_styles()}
+output = Path("gallery/Decay.html")
+page = {
+    "snapshot": snapshot,
+    "views": views,
+    "css": export_styles(),
+    "siblings": sibling_exports(output.parent, snapshot["references"]),
+}
 Path("decay.json").write_text(json.dumps(page))  # read by your renderer driver
 ```
 

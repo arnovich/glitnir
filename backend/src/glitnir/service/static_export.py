@@ -26,8 +26,9 @@ recorded observations: it neither runs Lean for checks nor updates records.
 import base64
 import os
 import re
+import stat
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -59,6 +60,34 @@ RECORDED_NOTICE = (
 )
 #: How often `SavedNotebook.draw_view` asks whether a drawing is done.
 POLL_SECONDS = 0.2
+
+
+def sibling_exports(
+    directory: Path, references: Sequence[Mapping[str, str]]
+) -> list[str]:
+    """Name regular sibling HTML exports that the renderer may link.
+
+    ``directory`` is where the current HTML page will be written. A module is
+    returned only when the snapshot lists its sibling Lean notebook and
+    ``Module.html`` already exists there as a regular file. Symbolic links,
+    directories, missing files and malformed module names are omitted, so a
+    gallery never emits a dead or path-crossing link.
+    """
+    found: set[str] = set()
+    for reference in references:
+        module = reference.get("module")
+        if (
+            not isinstance(module, str)
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", module) is None
+        ):
+            continue
+        try:
+            mode = (directory / f"{module}.html").lstat().st_mode
+        except OSError:
+            continue
+        if stat.S_ISREG(mode):
+            found.add(module)
+    return sorted(found)
 
 
 def _unfingerprinted(*_imports: str) -> str:

@@ -49,7 +49,8 @@ buttons in the preview.
   that run on click; `-- @decide` directives ask a provider for a Lean block,
   which Glitnir kernel-checks before **Accept** inserts it into the notebook.
 - **History and export:** recent Git commits of the notebook with their diffs,
-  and **Export HTML** for an offline snapshot.
+  and **Export HTML** for an offline snapshot with its exact Lean source. Links
+  to other notebooks work when their HTML exports are beside it.
 
 Checking, proof-step recording and evidence runs happen only when you ask. Lean
 always runs in the sandbox; an evidence provider computes from its output.

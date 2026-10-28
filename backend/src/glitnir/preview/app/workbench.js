@@ -66,7 +66,7 @@
     const found = importedClaim(u);
     const module = u.slice(0, u.indexOf(':'));
     const title = found ? `${found.file}: ${LABEL[found.status] || found.status}${found.reason ? ' · ' + found.reason : ''}` : 'no longer in the imported notebook';
-    return `<a class="use-link" href="/?${REFERENCE ? 'reference' : 'notebook'}=${encodeURIComponent(module)}" target="_blank" rel="noopener" title="${esc(title)}"><span class="dot" data-tone="${TONE[(found || {}).status] || 'amber'}"></span> ${esc(u)}</a>`;
+    return `<a class="use-link" data-claim="${esc(u.slice(u.indexOf(':') + 1))}" href="/?${REFERENCE ? 'reference' : 'notebook'}=${encodeURIComponent(module)}" target="_blank" rel="noopener" title="${esc(title)}"><span class="dot" data-tone="${TONE[(found || {}).status] || 'amber'}"></span> ${esc(u)}</a>`;
   }
 
   // ----- server ---------------------------------------------------------------
