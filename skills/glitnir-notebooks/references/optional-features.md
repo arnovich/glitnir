@@ -97,7 +97,7 @@ Forseti/Asgard modules the goal uses (a missing one shows as an unknown-identifi
 rejection on the card). Forseti `entailment`, `trajectory` and `stepped` decision
 blocks and the `simulate` and `sample` cards pass Glitnir's check in the plugin's
 live tests against Forseti Lean v0.5.1 on Lean 4.35.0, the pinned release (Linux
-CI; run 40361406695 of 2026-10-26 checked v0.5.0); CI also covers `stream` decisions
+CI, 2026-10-28, run 40654470418); CI also covers `stream` decisions
 (`tests/test_stream_decision_lean.py`). `stepped` decisions and `sample` need a
 Forseti Lean build that contains `Gimle.Forseti.Stepped` and
 `Gimle.Forseti.Examples.HedgedSpreadStepped`, as Forseti Lean v0.5.1, the pinned release, does. The first check of a Forseti
