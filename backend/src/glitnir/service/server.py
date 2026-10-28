@@ -92,6 +92,8 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if url.path == "/api/notebook":
                 self._json(HTTPStatus.OK, self.notebook.snapshot())
+            elif url.path == "/api/research":
+                self._research(parse_qs(url.query))
             elif url.path == "/api/linked":
                 self._linked(parse_qs(url.query))
             elif url.path == "/api/proof/trace":
@@ -196,6 +198,17 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, self.notebook.linked(links[0]))
         except NotebookLinkError as error:
             self._json(HTTPStatus(error.status), {"error": str(error)})
+
+    def _research(self, query: dict[str, list[str]]) -> None:
+        """Read one claim's bounded, observational Taskvalet history."""
+        claims = query.get("claim", [])
+        if set(query) != {"claim"} or len(claims) != 1 or not claims[0]:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "send one claim name"})
+            return
+        try:
+            self._json(HTTPStatus.OK, self.notebook.investigation(claims[0]))
+        except (KeyError, NotebookError) as error:
+            self._json(HTTPStatus.NOT_FOUND, {"error": str(error)})
 
     def _asset(self, query: dict[str, list[str]]) -> None:
         """Serve one image the saved prose shows, at the hash the page expects."""

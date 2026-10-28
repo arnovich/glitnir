@@ -19,6 +19,7 @@ test('unsaved Lean files hold back preview actions except stopping work, in the 
 
 test('preview bridge permits saved-file checks but rejects file edits and arbitrary requests', () => {
   assert.equal(validateRequest('/api/notebook', 'GET'), '/api/notebook');
+  assert.equal(validateRequest('/api/research?claim=target', 'GET'), '/api/research?claim=target');
   assert.equal(validateRequest('/api/view?cell=0&line=1', 'GET'), '/api/view?cell=0&line=1');
   assert.equal(validateRequest('/api/proof/start', 'POST'), '/api/proof/start');
   assert.equal(validateRequest('/api/project/inspect', 'POST'), '/api/project/inspect');
@@ -32,6 +33,8 @@ test('preview bridge permits saved-file checks but rejects file edits and arbitr
     assert.throws(() => validateRequest(url, 'POST'));
   }
   assert.throws(() => validateRequest('/api/notebook', 'DELETE'));
+  assert.throws(() => validateRequest('/api/research?problem=other', 'GET'));
+  assert.throws(() => validateRequest('/api/research', 'POST'));
   assert.equal(validateRequest('/asset?path=assets%2Fa.svg&sha256=x', 'GET'), '/asset?path=assets%2Fa.svg&sha256=x');
   assert.throws(() => validateRequest('/asset?path=assets/a.svg&sha256=x&notebook=Other', 'GET'));
   assert.throws(() => validateRequest('/asset?path=assets/a.svg&sha256=x', 'POST'));

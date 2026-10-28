@@ -97,7 +97,7 @@ const QUERIES: Record<string, RegExp> = {
 export function validateRequest(path: string, method: string, body?: string): string {
   const allowed: Record<string, string[]> = {
     '/api/notebook': [], '/api/proof/trace': [], '/api/export/styles': [], '/api/view': ['cell', 'line'],
-    '/asset': ['path', 'sha256'], '/api/linked': ['path'],
+    '/asset': ['path', 'sha256'], '/api/linked': ['path'], '/api/research': ['claim'],
   };
   const post = ['/api/proof/start', '/api/proof/cancel', '/api/project/inspect', ...Object.keys(BODIES)];
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) throw new Error('Invalid preview path');

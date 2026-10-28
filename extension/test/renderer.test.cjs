@@ -80,7 +80,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
 });
 
 // Loads the packaged renderer over a fixed snapshot and waits for it to draw.
-async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onAsset, onWindow, browser = false} = {}) {
+async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onResearch, onAsset, onWindow, browser = false} = {}) {
   const media = path.resolve(__dirname, '../../dist/media');
   const html = readFileSync(path.join(media, 'index.html'), 'utf8').replace('<body>', '<body><div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden></button>');
   const dom = new JSDOM(html, {runScripts: 'outside-only', url: 'https://preview.invalid/'});
@@ -112,6 +112,10 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
       Promise.resolve(onLinked?.(message.path) ?? {status: 404, json: {error: 'There is no such notebook.'}}).then(reply => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: reply.status ?? 200, json: structuredClone(reply.json)}})));
       return;
     }
+    if (message.path.startsWith('/api/research?') && onResearch) {
+      Promise.resolve(onResearch(message.path)).then(reply => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: reply.status ?? 200, json: structuredClone(reply.json)}})));
+      return;
+    }
     if (message.path.startsWith('/api/proof/') && onProof) {
       // A reply may name its HTTP status: {httpStatus, json}.
       const reply = onProof(message) || {};
@@ -132,6 +136,44 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
   await new Promise(resolve => setTimeout(resolve, 60));
   return window;
 }
+
+test('a linked project claim shows round decisions and exact evidence without changing proof status', async () => {
+  const sha = 'a'.repeat(64), context = 'c'.repeat(64);
+  const binding = {claim: 'Lab.target', project: 'lab', problem: '00000000-0000-4000-8000-000000000003', problem_version: 1, declaration: 'Lab.target', type: 'True', context_sha256: context, source_sha256: sha, environment: {fingerprint: 'e'.repeat(64), check: 'f'.repeat(64), toolchain: 'leanprover/lean4:v4.35.0'}, axiom_policy: [], stale_reasons: []};
+  const snapshot = {file: 'Research.lean', sha256: sha, preview: {mode: 'project', notice: '', check: null, inspection: null, project: {kind: 'loose', root: null, toolchain: null}, lean: {supported: true, message: ''}}, checking: [], check_errors: {}, reading: false, cells: [{index: 0, id: 'cell-0', kind: 'source', claim: 'Lab.target', start: 1, end: 1, text: 'theorem target : True := by trivial'}], claims: [], project_claims: [{name: 'Lab.target', start_line: 1, end_line: 1, status: 'checked', axioms: [], current: true, type: 'True'}], project_non_claims: [], project_withheld: null, views: [], evidence: [], decisions: [], directive_providers: {evidence: [], decide: []}, directive_unavailable: {evidence: {}, decide: {}}, links: [], references: [], revisions: [], assets: [], research: {'Lab.target': binding}};
+  const evidence = {id: 'verification-1', version: 1, category: 'checked_target', reason: 'A separate exact replay checked the linked target.', selected_reason: 'Carry exact evidence forward', summary: 'A checked candidate.', author: 'agent/reviewer', assignment: {id: 'assignment-1', data: {task: '001-proof'}}, task: '001-proof', originating_finding: {id: 'finding-1'}, artifacts: [{uri: 'https://evidence.example/result.json', revision: 'b'.repeat(64)}], consumer_checks: [{id: 'check-1', method: 'proof_assistant', verdict: 'supports', text: 'Replayed independently.'}], record: {id: 'verification-1', kind: 'verification'}, finding: {id: 'finding-1', kind: 'finding'}, receipt: {independent_replay: true, job: {request: {source: 'theorem Lab.target : True := by trivial\n'}}, declaration: {name: 'Lab.target', type: 'True'}}};
+  const history = {state: 'ready', reason: '', proof_authority: false, binding, problem: {title: 'Target theorem', statement: 'Prove the target.', assumptions: 'Lean standard axioms only.'}, rounds: [{id: 'round-1', status: 'review', approach: 'Direct proof', instructions: 'Try the exact boundary.', participants: [{role: 'researcher', task: '001-proof', status: 'complete'}], evidence: [evidence], decision: {action: 'deepen', assessment: 'partial_progress', rationale: 'The central case replayed.', obstacles: ['Boundary case remains.'], uncertainty: 'The edge case remains open.', exploration_percent: 25, allocations: [{mode: 'deepen', task: '001-proof'}]}}, {id: 'round-2', status: 'blocked', approach: 'Boundary analysis', participants: [], evidence: [{...evidence, id: 'finding-2', category: 'failed_approach'}], decision: {}}], partial: [], truncated_rounds: 0};
+  let researchRequests = 0;
+  const window = await renderSnapshot(snapshot, {onResearch: path => { researchRequests += 1; assert.match(path, /claim=Lab.target/); return {json: history}; }});
+  try {
+    await new Promise(resolve => setTimeout(resolve, 40));
+    const inspector = window.document.getElementById('insp');
+    assert.match(inspector.textContent, /Target theorem/);
+    assert.match(inspector.textContent, /Boundary case remains/);
+    assert.match(inspector.textContent, /edge case remains open/);
+    assert.match(inspector.textContent, /Exploration allocation: 25%/);
+    assert.match(inspector.textContent, /never change this claim’s proof status/);
+    assert.equal(inspector.querySelectorAll('.research-round').length, 2);
+    assert.equal(inspector.querySelector('.focus .pill').textContent, 'Kernel checked');
+    let scrolled;
+    window.HTMLElement.prototype.scrollIntoView = function() { scrolled = this; };
+    inspector.querySelector('.research-evidence-row').click();
+    assert.match(inspector.querySelector('.research-evidence-sheet').textContent, /Replayed independently/);
+    assert.match(inspector.querySelector('.research-evidence-sheet').textContent, /Exact Taskvalet selected record/);
+    assert.match(inspector.querySelector('.research-evidence-sheet').textContent, /Exact originating finding/);
+    assert.match(inspector.querySelector('.research-evidence-sheet').textContent, /Exact check receipt/);
+    assert.equal(window.document.activeElement?.dataset.act, 'research-evidence-close');
+    assert.equal(scrolled, inspector.querySelector('.research-evidence-sheet'));
+    inspector.querySelector('[data-act="research-evidence-close"]').click();
+    assert.equal(window.document.activeElement?.dataset.act, 'research-evidence');
+    assert.equal(scrolled, inspector.querySelector('.research-evidence-row'));
+    snapshot.sha256 = 'd'.repeat(64);
+    snapshot.research['Lab.target'] = {...binding, source_sha256: snapshot.sha256};
+    await window.glitnirPoll();
+    await new Promise(resolve => setTimeout(resolve, 40));
+    assert.equal(researchRequests, 2, 'a changed saved source must not reuse claim-name cache data');
+  } finally { window.close(); }
+});
 
 test('history separates source identity, Git commits and metadata activity with safe diffs', async () => {
   const sha = 'c'.repeat(40), messages = [];

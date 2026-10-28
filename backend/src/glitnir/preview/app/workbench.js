@@ -42,7 +42,7 @@
   const UI = {drawings: {}, diagrams: {}, expandedDiagram: null, data: null, selected: null, mode: 'doc', panel: true, connected: true, notice: '', sourceCell: null, sourceRange: null, documentLine: null,
     // Notebooks read in this panel: null is the previewed notebook, a string
     // the link to another notebook of its project. `at` is the one shown.
-    trail: [null], at: 0, main: null, goals: null};
+    trail: [null], at: 0, main: null, goals: null, research: {}, researchLoading: {}, researchEvidence: {}};
   const readingFolds = new Map();
   // Every API call carries this header; a cross-site page cannot send it.
   // In project mode a prose link to another notebook of the project is read
@@ -243,6 +243,7 @@
     if (!UI.selected || !claim(UI.selected)) UI.selected = claims().length ? claims()[0].name : null;
     const pending = takePendingClaim();
     render();
+    void workbench.loadResearch?.(UI.selected);
     if (pending) scrollToClaim(pending);
     else if (changed && canFollow() && highlighted.size) {
       const target = $('doc').querySelector('.live-changed');
