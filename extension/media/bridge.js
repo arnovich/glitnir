@@ -25,7 +25,7 @@
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => { pending.delete(id); reject(new Error('Glitnir did not answer')); }, 150000);
       pending.set(id, {resolve, timeout});
-      vscode.postMessage({type, id, path, method: options.method || 'GET', body: options.body});
+      vscode.postMessage({type, id, path, method: options.method || 'GET', body: options.body, ...(options.token ? {token: options.token} : {})});
     });
   }
   window.addEventListener('message', event => {
@@ -71,8 +71,13 @@
       const reply = await request('', {body: text}, 'clipboard');
       if (reply.status !== 200) throw new Error('Could not copy the command.');
     },
-    async saveHTML(html) {
-      const reply = await request('', {body: html}, 'export');
+    async prepareHTMLExport(modules) {
+      const reply = await request('', {body: modules}, 'exportTarget');
+      if (reply.status !== 200) throw new Error(reply.json?.error || 'Could not choose an HTML export destination.');
+      return reply.json;
+    },
+    async saveHTML(html, token) {
+      const reply = await request('', {body: html, token}, 'export');
       if (reply.status !== 200) throw new Error(reply.json?.error || 'Could not save HTML.');
     },
     // An image from the notebook's assets/ folder, as a data URL for an <img>.

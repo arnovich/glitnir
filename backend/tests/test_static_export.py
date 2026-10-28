@@ -37,6 +37,7 @@ from glitnir.service.static_export import (
     RECORDED_NOTICE,
     SavedNotebook,
     _unfingerprinted,
+    sibling_exports,
 )
 
 DIRECTIVE = "-- @evidence simulate c (h := 1/10)"
@@ -49,6 +50,35 @@ TEXT = (
     "-- @view circuit c\n"
 )
 RECORDED = "f" * 64
+
+
+def test_sibling_exports_names_only_regular_existing_html(tmp_path: Path) -> None:
+    """Gallery links never point at missing files, directories or symlinks."""
+    (tmp_path / "Neighbor.html").write_text("<!doctype html><p>neighbor</p>")
+    (tmp_path / "Folder.html").mkdir()
+    (tmp_path / "Alias.html").symlink_to(tmp_path / "Neighbor.html")
+    references = [
+        {"module": "Neighbor", "file": "Neighbor.lean"},
+        {"module": "Missing", "file": "Missing.lean"},
+        {"module": "Folder", "file": "Folder.lean"},
+        {"module": "Alias", "file": "Alias.lean"},
+        {"module": "../Escape", "file": "Escape.lean"},
+    ]
+    assert sibling_exports(tmp_path, references) == ["Neighbor"]
+
+
+def test_sibling_exports_resolves_both_directions_on_gallery_final_pass(
+    tmp_path: Path,
+) -> None:
+    """A staged gallery resolves links after every page has been written."""
+    a = [{"module": "B", "file": "B.lean"}]
+    b = [{"module": "A", "file": "A.lean"}]
+    assert sibling_exports(tmp_path, a) == []
+    assert sibling_exports(tmp_path, b) == []
+    (tmp_path / "A.html").write_text("first pass")
+    (tmp_path / "B.html").write_text("first pass")
+    assert sibling_exports(tmp_path, a) == ["B"]
+    assert sibling_exports(tmp_path, b) == ["A"]
 
 
 def _view_provider() -> ViewProvider:

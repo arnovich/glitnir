@@ -8,12 +8,25 @@
 .static-notebook .snapshot{color:var(--muted);overflow-wrap:anywhere;font-size:12px}
 /* Saved results shown as recorded: said in the heading, as the banner says it. */
 .static-notebook .snapshot.recorded{border-left:3px solid var(--blue);padding-left:9px}
+.static-notebook .export-tabs{display:flex;gap:8px;padding:12px 32px;border-bottom:1px solid var(--border);background:var(--chrome)}
+.static-notebook .export-tabs a{padding:5px 10px;border:1px solid var(--border);border-radius:7px;color:var(--ink);text-decoration:none;background:var(--paper)}
+.static-notebook .export-tabs a:hover,.static-notebook .export-tabs a:focus{border-color:var(--blue);color:var(--blue)}
+.static-notebook .export-tabs .document-tab{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+.static-notebook .app:has(.source-pane:target) .export-tabs .document-tab,.static-notebook .app:has(.source-pane :target) .export-tabs .document-tab{border-color:var(--border);color:var(--ink);background:var(--paper)}
+.static-notebook .app:has(.source-pane:target) .export-tabs .source-tab,.static-notebook .app:has(.source-pane :target) .export-tabs .source-tab{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+.static-notebook .source-pane{display:none;padding:24px 32px}
+.static-notebook .source-pane:target,.static-notebook .source-pane:has(:target){display:block}
+.static-notebook .source-pane:target~.document-pane,.static-notebook .source-pane:has(:target)~.document-pane{display:none}
+.static-notebook .document-pane:target{display:block}
+.static-notebook .source-pane .source{overflow:auto;border:1px solid var(--border);border-radius:8px}
+.static-notebook .source-pane .source-note{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.static-notebook .source-pane tr:target{background:var(--blue-soft);outline:2px solid var(--blue);outline-offset:-2px;scroll-margin-top:12px}
 .static-notebook .claim{cursor:default}
 .static-notebook .claim:hover{border-color:var(--border);box-shadow:none}
 .static-notebook .export-fold>h3{font:500 12px var(--sans);padding:10px 14px;margin:0;background:var(--chrome)}
 .static-notebook .uses a{color:var(--blue)}
 .static-notebook .footer{display:block;padding:16px 32px}
-@media(max-width:600px){.static-notebook{padding:0}.static-notebook .app{border:0;border-radius:0}.static-notebook .doc-inner,.static-notebook .heading{padding:16px}}
+@media(max-width:600px){.static-notebook{padding:0}.static-notebook .app{border:0;border-radius:0}.static-notebook .doc-inner,.static-notebook .heading,.static-notebook .source-pane{padding:16px}.static-notebook .export-tabs{padding:10px 16px}}
 @media print{.static-notebook{padding:0;background:white}.static-notebook .app{border:0;max-width:none}.static-notebook .claim,.static-notebook figure{break-inside:avoid}}
 
 .static-notebook .cell+.cell{margin-top:20px}

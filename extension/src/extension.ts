@@ -1,5 +1,6 @@
-import * as path from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {lstat, realpath} from 'node:fs/promises';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {credentialScope, executionEnvironment, executionSettings} from './compute-settings';
 import {Backend, heldWhileDirty} from './backend';
@@ -21,7 +22,27 @@ interface Preview {
   python: string;
   ready: boolean;
   accepting: boolean;
+  exportTarget?: {token: string; uri: vscode.Uri};
   pendingReveal?: {type: string; index: number; sha256: string; line?: number; character?: number};
+}
+
+async function writeHTMLExport(target: vscode.Uri, html: string): Promise<void> {
+  const directory = await realpath(path.dirname(target.fsPath));
+  const destination = vscode.Uri.file(path.join(directory, path.basename(target.fsPath)));
+  const temporary = vscode.Uri.file(path.join(directory, `.${path.basename(target.fsPath)}.${randomUUID()}.tmp`));
+  let cleanup = false;
+  try {
+    await vscode.workspace.fs.writeFile(temporary, Buffer.from(html, 'utf8'));
+    cleanup = true;
+    // Replacing the directory entry does not follow an existing destination
+    // symlink, and a random same-directory temporary keeps the rename atomic.
+    await vscode.workspace.fs.rename(temporary, destination, {overwrite: true});
+    cleanup = false;
+  } finally {
+    if (cleanup) {
+      try { await vscode.workspace.fs.delete(temporary); } catch { /* Best-effort cleanup after a failed export. */ }
+    }
+  }
 }
 
 const previews = new Map<string, Preview>();
@@ -215,17 +236,65 @@ export function activate(context: vscode.ExtensionContext): void {
         finally { preview.accepting = false; }
         return;
       }
-      if (message.type === 'export' && Number.isSafeInteger(message.id)) {
+      if (message.type === 'exportTarget' && Number.isSafeInteger(message.id)) {
+        preview.exportTarget = undefined;
         try {
           if (!vscode.workspace.isTrusted) throw new Error('The workspace is no longer trusted.');
-          if (typeof message.body !== 'string' || Buffer.byteLength(message.body) > 20_000_000) throw new Error('Invalid or oversized HTML export.');
+          if (!Array.isArray(message.body) || message.body.length > 512
+              || message.body.some((module: unknown) => typeof module !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(module))) {
+            throw new Error('Invalid sibling export list.');
+          }
+          const modules = [...new Set<string>(message.body)].sort();
           const target = await vscode.window.showSaveDialog({
             defaultUri: vscode.Uri.file(uri.fsPath.replace(/\.lean$/i, '') + '.html'),
             filters: {'HTML page': ['html']}, title: 'Export saved notebook as HTML',
           });
+          if (!target) {
+            void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json: {saved: false, siblings: []}});
+            return;
+          }
+          if (target.scheme !== 'file' || !target.fsPath.endsWith('.html')) throw new Error('Choose a local .html file for the export.');
+          const directory = await realpath(path.dirname(target.fsPath));
+          const destination = vscode.Uri.file(path.join(directory, path.basename(target.fsPath)));
+          const siblings: string[] = [];
+          await Promise.all(modules.map(async module => {
+            try {
+              if ((await lstat(path.join(directory, `${module}.html`))).isFile()) siblings.push(module);
+            } catch { /* A missing or unreadable sibling is plain text in the export. */ }
+          }));
+          siblings.sort();
+          const token = randomUUID();
+          preview.exportTarget = {token, uri: destination};
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json: {saved: true, token, siblings}});
+        } catch (error) {
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 409, json: {error: String(error)}});
+        }
+        return;
+      }
+      if (message.type === 'export' && Number.isSafeInteger(message.id)) {
+        try {
+          if (!vscode.workspace.isTrusted) throw new Error('The workspace is no longer trusted.');
+          const prepared = preview.exportTarget;
+          const bodyObject = message.body && typeof message.body === 'object' && !Array.isArray(message.body);
+          const structured = typeof message.token === 'string' || bodyObject;
+          if (structured) preview.exportTarget = undefined;
+          const html = bodyObject ? message.body.html : message.body;
+          if (typeof html !== 'string' || Buffer.byteLength(html) > 20_000_000) throw new Error('Invalid or oversized HTML export.');
+          let target: vscode.Uri | undefined;
+          if (structured) {
+            const token = bodyObject ? message.body.token : message.token;
+            if (!prepared || typeof token !== 'string' || token !== prepared.token) throw new Error('Invalid or expired HTML export destination.');
+            target = prepared.uri;
+          } else {
+            preview.exportTarget = undefined;
+            target = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(uri.fsPath.replace(/\.lean$/i, '') + '.html'),
+              filters: {'HTML page': ['html']}, title: 'Export saved notebook as HTML',
+            });
+          }
           if (target) {
             if (target.scheme !== 'file' || !target.fsPath.endsWith('.html')) throw new Error('Choose a local .html file for the export.');
-            await vscode.workspace.fs.writeFile(target, Buffer.from(message.body, 'utf8'));
+            await writeHTMLExport(target, html);
           }
           void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json: {saved: !!target}});
         } catch (error) {

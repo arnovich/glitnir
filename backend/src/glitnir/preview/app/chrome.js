@@ -8,8 +8,10 @@
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
-    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI,
+    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
     showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = workbench;
+  const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
+  const MAX_EXPORT_SOURCE_LINES = 20_000;
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
     const busy = UI.data && UI.data.checking.length;
@@ -303,12 +305,19 @@
       const snapshot = UI.data;
       if (snapshot.error) throw new Error(snapshot.error);
       if (snapshot.metadata_error) throw new Error(snapshot.metadata_error);
+      const sourceCharacters = snapshot.cells.reduce((total, cell) => total + cell.text.length, 0);
+      const sourceLines = snapshot.cells.reduce((total, cell) => total + cell.end - cell.start + 1, 0);
+      if (sourceCharacters > MAX_EXPORT_SOURCE_CHARACTERS || sourceLines > MAX_EXPORT_SOURCE_LINES) {
+        throw new Error('The saved source is too large to export safely as an interactive HTML page.');
+      }
       const exportTitle = title();
       const renderedTitle = document.createElement('h1');
       renderedTitle.innerHTML = inlineHTML(exportTitle);
       const content = document.createElement('div');
       const scopes = namespaceScopes(snapshot.cells);
       content.innerHTML = proofGraphHTML(snapshot, {staticPage: true}) + withheldBannerHTML(snapshot) + snapshot.cells.map(cell => cellView(cell, true, scopes)).join('');
+      const source = document.createElement('section');
+      source.innerHTML = sourceViewHTML(true);
       proofSections(content, true);
       if (snapshot.preview?.check?.status === 'checked_snapshot') content.insertAdjacentHTML('beforeend', projectCheckHTML(snapshot.preview.check, snapshot.sha256));
       if (content.querySelector('.view-wait')) throw new Error('Wait for the diagrams to finish drawing, then export again.');
@@ -319,8 +328,11 @@
       const response = await fetch('/api/export/styles', {headers: API});
       if (!response.ok) throw new Error('The server could not supply export styles. Restart the notebook server after updating Glitnir.');
       const {css} = await response.json();
-      const html = await window.glitnirExport({content, title: exportTitle, renderedTitle, file: snapshot.file, sha256: snapshot.sha256, preview: snapshot.preview, css});
-      if (window.glitnirHost) await window.glitnirHost.saveHTML(html);
+      const modules = [...new Set((snapshot.references || []).map(item => item.module).filter(module => /^[A-Za-z_][A-Za-z0-9_]*$/.test(module)))].sort();
+      const target = HOST?.prepareHTMLExport ? await HOST.prepareHTMLExport(modules) : {saved: true, siblings: []};
+      if (!target.saved) return;
+      const html = await window.glitnirExport({content, source, title: exportTitle, renderedTitle, file: snapshot.file, sha256: snapshot.sha256, preview: snapshot.preview, css, availableExports: target.siblings || []});
+      if (window.glitnirHost) await window.glitnirHost.saveHTML(html, target.token);
       else {
         const url = URL.createObjectURL(new Blob([html], {type: 'text/html;charset=utf-8'}));
         const link = document.createElement('a'); link.href = url; link.download = snapshot.file.replace(/\.lean$/i, '') + '.html';

@@ -3,12 +3,13 @@ const {test} = require('node:test');
 const {EventEmitter} = require('node:events');
 const Module = require('node:module');
 const path = require('node:path');
-const {mkdtempSync, symlinkSync, rmSync, readFileSync} = require('node:fs');
+const {mkdtempSync, symlinkSync, rmSync, readFileSync, realpathSync, writeFileSync} = require('node:fs');
 const {tmpdir} = require('node:os');
 
 // Exercise command and message handlers through a small VS Code API double.
 test('preview tabs deduplicate, restrict dirty-file checks and reject injected routes', async () => {
   const commands = new Map(), panels = [], servers = [], events = {}, writes = [];
+  const pendingWrites = new Map(), temporaryWrites = [];
   const gitFiles = [], gitDiffs = [], sourceWatchers = [];
   let memoryInspect = {defaultValue: 16384, globalValue: 12288};
   let saveTarget, dialogs = 0, clipboard;
@@ -63,7 +64,15 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
       onDidChangeConfiguration: fn => { events.configuration = fn; return {}; },
       isTrusted: true, textDocuments: documents,
       applyEdit: async edit => { edits.push(...edit.inserts); documents[0].version++; return true; },
-      fs: {writeFile: async (uri, bytes) => { writes.push([uri, bytes.toString()]); }},
+      fs: {
+        writeFile: async (uri, bytes) => { pendingWrites.set(uri.fsPath, bytes.toString()); temporaryWrites.push(uri.fsPath); },
+        rename: async (from, to, options) => {
+          assert.deepEqual(options, {overwrite: true});
+          writes.push([to, pendingWrites.get(from.fsPath)]);
+          pendingWrites.delete(from.fsPath);
+        },
+        delete: async uri => { pendingWrites.delete(uri.fsPath); },
+      },
       openTextDocument: async uri => documents.find(d => d.uri.fsPath === uri.fsPath) || {uri},
       getWorkspaceFolder: () => ({uri: file('/workspace')}),
       getConfiguration: namespace => (assert.equal(namespace, 'glitnir'), {get: (key, fallback) => ({pythonPath: '.venv/bin/python', memoryLimitMb: memoryInspect.globalValue ?? memoryInspect.defaultValue})[key] ?? fallback, inspect: key => (assert.equal(key, 'memoryLimitMb'), memoryInspect)}),
@@ -202,7 +211,8 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.equal(panel.messages.at(-1).json.saved, false);
   saveTarget = file('/tmp/Notebook.html');
   await panel.receive({type: 'export', id: 11, body: '<!doctype html><p>snapshot</p>'});
-  assert.deepEqual(writes[0], [saveTarget, '<!doctype html><p>snapshot</p>']);
+  assert.equal(writes[0][0].fsPath, path.join(realpathSync(path.dirname(saveTarget.fsPath)), path.basename(saveTarget.fsPath)));
+  assert.equal(writes[0][1], '<!doctype html><p>snapshot</p>');
   assert.equal(panel.messages.at(-1).json.saved, true);
   saveTarget = file(fixture);
   await panel.receive({type: 'export', id: 12, body: 'bad'});
@@ -215,6 +225,29 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.equal(panel.messages.at(-1).status, 409);
   assert.equal(dialogs, 3, 'untrusted or malformed messages do not open a save dialog');
   fake.workspace.isTrusted = true;
+  saveTarget = undefined;
+  await panel.receive({type: 'exportTarget', id: 15, body: ['Neighbor']});
+  assert.deepEqual(panel.messages.at(-1).json, {saved: false, siblings: []}, 'cancelling destination selection stops before serialization');
+  const exportDirectory = mkdtempSync(path.join(tmpdir(), 'glitnir-export-test-'));
+  try {
+    writeFileSync(path.join(exportDirectory, 'Neighbor.html'), '<!doctype html><p>neighbor</p>');
+    symlinkSync(path.join(exportDirectory, 'Neighbor.html'), path.join(exportDirectory, 'Alias.html'));
+    saveTarget = file(path.join(exportDirectory, 'Notebook.html'));
+    await panel.receive({type: 'exportTarget', id: 16, body: ['Neighbor', 'Missing', 'Alias']});
+    const prepared = panel.messages.at(-1);
+    assert.equal(prepared.status, 200);
+    assert.equal(prepared.json.saved, true);
+    assert.deepEqual(prepared.json.siblings, ['Neighbor'], 'only regular sibling exports are linked; symlinks are refused');
+    assert.match(prepared.json.token, /^[a-f0-9-]+$/);
+    await panel.receive({type: 'export', id: 17, body: '<!doctype html><p>prepared snapshot</p>', token: prepared.json.token});
+    assert.equal(writes.at(-1)[0].fsPath, path.join(realpathSync(path.dirname(saveTarget.fsPath)), path.basename(saveTarget.fsPath)));
+    assert.equal(writes.at(-1)[1], '<!doctype html><p>prepared snapshot</p>');
+    assert.ok(temporaryWrites.at(-1).startsWith(path.join(realpathSync(exportDirectory), '.Notebook.html.')));
+    assert.ok(temporaryWrites.at(-1).endsWith('.tmp'), 'exports are atomically renamed from an unpredictable sibling file');
+    assert.equal(panel.messages.at(-1).json.saved, true);
+    await panel.receive({type: 'export', id: 18, body: '<p>replay</p>', token: prepared.json.token});
+    assert.equal(panel.messages.at(-1).status, 409, 'an export target capability is single-use');
+  } finally { rmSync(exportDirectory, {recursive: true}); }
   await panel.receive({type: 'source', index: 0, sha256: hash, path: '/tmp/foreign.lean'});
   assert.equal(fake.window.shown.uri.fsPath, fixture, 'webview cannot choose another source file');
   assert.deepEqual(editor.selection.start, {line: 0, character: 0});

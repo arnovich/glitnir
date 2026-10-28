@@ -19,14 +19,18 @@ test('static export retains maths, claims and images offline without workbench c
     content.innerHTML = `<section class="prose"><h2>Whole page</h2><span class="math typeset"><span class="katex">x²</span></span>
       <figure><img src="data:image/svg+xml;base64,PHN2Zy8+"><figcaption>A figure</figcaption></figure></section>
       <section id="cell-first"><article class="claim" data-selected="true"><span class="pill" data-tone="amber">Out of date</span>
+      <a class="lines" href="#source-L2" data-act="source-lines" data-start="2" data-end="2">L2</a>
       <pre>theorem first : True := by trivial</pre><div class="uses"><button data-act="goto" data-id="second">second</button></div>
       <div class="claim-actions"><button>Replay</button>Run Lean now</div><details><summary>Proof</summary><pre>trivial</pre></details></article></section>
-      <a class="use-link" href="/?notebook=Other">Other:claim</a><script>alert(1)</script>
+      <a class="use-link" data-claim="Other.claim" href="/?notebook=Other">Other:claim</a>
+      <a class="notebook-reference" href="/?reference=Missing">missing notebook</a><script>alert(1)</script>
       <a class="external-link" href="https://example.com/guide" target="_blank">guide</a>
       <a class="external-link" href="mailto:help@example.com" target="_blank">email</a>
       <a href="http://example.com">insecure</a><a href="file:///tmp/a">file</a>
       <img src="https://example.invalid/tracker" onerror="alert(1)"><a href="javascript:alert(1)">bad</a>`;
-    const html = await window.glitnirExport({content, title: '</title><script>bad</script>', file: 'Example.lean', sha256: 'abc', css: 'body{color:black}'});
+    const source = window.document.createElement('section');
+    source.innerHTML = '<p class="source-note">Example.lean · source SHA-256 abc</p><div class="source"><table><tr id="source-L2"><td class="ln"><a href="#cell-first">2</a></td><td>theorem first : True</td></tr></table></div>';
+    const html = await window.glitnirExport({content, source, title: '</title><script>bad</script>', file: 'Example.lean', sha256: 'abc', css: 'body{color:black}', availableExports: ['Other']});
     const page = new JSDOM(html);
     try {
       const d = page.window.document;
@@ -41,6 +45,14 @@ test('static export retains maths, claims and images offline without workbench c
       assert.match(d.body.textContent, /abc/);
       assert.doesNotMatch(d.body.textContent, /Run Lean now/);
       assert.equal(d.querySelector('.uses a').getAttribute('href'), '#cell-second');
+      assert.equal(d.querySelector('.document-pane .lines').getAttribute('href'), '#source-L2');
+      assert.equal(d.querySelector('.source-pane #source-L2 .ln a').getAttribute('href'), '#cell-first');
+      assert.equal(d.querySelector('.use-link').getAttribute('href'), 'Other.html#cell-Other.claim');
+      assert.equal(d.querySelector('.notebook-reference').tagName, 'SPAN');
+      assert.deepEqual([...d.querySelectorAll('.export-tabs a')].map(link => link.getAttribute('href')), ['#document-view', '#source-view']);
+      assert.equal(d.querySelector('.document-pane').getAttribute('aria-labelledby'), 'document-tab');
+      assert.equal(d.querySelector('.source-pane').getAttribute('aria-labelledby'), 'source-tab');
+      assert.match(d.querySelector('.source-note').textContent, /source SHA-256 abc/);
       assert.equal(d.querySelectorAll('a[href^="/"]').length, 0);
       assert.equal(d.querySelectorAll('a[href^="javascript:"]').length, 0);
       assert.deepEqual([...d.querySelectorAll('a.external-link')].map(link => [link.getAttribute('href'), link.getAttribute('target'), link.rel]), [

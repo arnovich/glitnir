@@ -187,8 +187,11 @@ claim. Use **Open in its own preview** to check it.
 
 ### Export and history
 
-- **Export HTML** saves an offline snapshot of the rendered notebook, with its
-  images embedded.
+- **Export HTML** saves an offline snapshot of the rendered notebook and its
+  exact saved Lean source, with images embedded. **Document** and **Lean source**
+  switch without a server or scripts, and source locations link between the two
+  views. A link to another notebook stays a link when its `Module.html` export
+  already exists beside the selected file; otherwise it becomes plain text.
 - **History** lists recent Git commits of the notebook, each with its diff.
 
 A gallery can also publish notebooks from their committed saved results without

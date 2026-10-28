@@ -95,6 +95,10 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
   window.matchMedia = () => ({matches: false});
   window.acquireVsCodeApi = () => ({postMessage: message => {
     onMessage?.(message);
+    if (message.type === 'exportTarget') {
+      queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: {saved: true, token: 'test-export', siblings: []}}})));
+      return;
+    }
     if (['gitHistory', 'gitDiff'].includes(message.type)) {
       Promise.resolve(onGit?.(message)).then(json => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
       return;
@@ -1132,6 +1136,20 @@ test('export refuses unreadable notebook or metadata snapshots', async () => {
   }
 });
 
+test('export refuses source whose expanded HTML could exhaust the webview', async () => {
+  const snapshot = {file: 'Huge.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], revisions: [], assets: [],
+    cells: [{index: 0, kind: 'lean', start: 1, end: 20001, text: 'def bounded := true'}],
+  };
+  const window = await renderSnapshot(snapshot, {katex: true});
+  try {
+    let saved = false;
+    window.glitnirHost.saveHTML = async () => { saved = true; };
+    await window.document.getElementById('export-html').onclick();
+    assert.equal(saved, false);
+    assert.match(window.document.body.textContent, /saved source is too large to export safely/);
+  } finally { window.close(); }
+});
+
 test('reading folds keep both open and closed states through polling and view changes', async () => {
   const snapshot = {file: 'Folds.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], revisions: [], assets: [],
     cells: [{index: 0, kind: 'lean', start: 1, end: 5, text: 'def value : Nat := 3\n\ndef second : Nat := 4'}],
@@ -1385,7 +1403,11 @@ test('line indicators switch to Source, focus and highlight the range without lo
     const exported = new JSDOM(html);
     try {
       assert.equal(exported.window.document.querySelector('.definition .lines').textContent, 'L260–261');
-      assert.equal(exported.window.document.querySelectorAll('[data-act="source-lines"],a[href^="#source-L"]').length, 0);
+      assert.equal(exported.window.document.querySelectorAll('[data-act="source-lines"]').length, 0);
+      assert.equal(exported.window.document.querySelector('.definition .lines').getAttribute('href'), '#source-L260');
+      assert.equal(exported.window.document.getElementById('source-L260').textContent.includes('def'), true);
+      assert.match(exported.window.document.querySelector('.source-note').textContent, new RegExp(snapshot.sha256));
+      assert.equal(exported.window.document.querySelectorAll('script').length, 0);
     } finally { exported.window.close(); }
   } finally { window.close(); }
 });
@@ -1417,11 +1439,17 @@ test('prose sibling references open a notebook tab and export as readable text',
     assert.equal(messages.at(-1).module, 'Neighbor');
     assert.match(d.querySelector('.prose').textContent, /Missing.lean/);
     let html;
+    window.glitnirHost.prepareHTMLExport = async modules => {
+      assert.deepEqual([...modules], ['Neighbor']);
+      return {saved: true, token: 'neighbor-export', siblings: ['Neighbor']};
+    };
     window.glitnirHost.saveHTML = async body => { html = body; };
     await d.getElementById('export-html').onclick();
     const exported = new JSDOM(html);
     try {
       assert.equal(exported.window.document.querySelectorAll('a[href*="reference="]').length, 0);
+      assert.equal(exported.window.document.querySelectorAll('a[href="Neighbor.html"]').length, 5,
+        [...exported.window.document.querySelectorAll('a')].map(link => link.getAttribute('href')).join(', '));
       assert.match(exported.window.document.body.textContent, /Neighbor/);
     } finally { exported.window.close(); }
   } finally { window.close(); }
@@ -1867,8 +1895,11 @@ test('project source preview reads Lean as cards, with source navigation and an 
   window.katex = {};
   window.acquireVsCodeApi = () => ({postMessage: message => {
     requests.push(message);
-    if (!['request', 'export'].includes(message.type)) return;
-    queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
+    if (!['request', 'export', 'exportTarget'].includes(message.type)) return;
+    const json = message.type === 'exportTarget'
+      ? {saved: true, token: 'project-export', siblings: []}
+      : message.path === '/api/notebook' ? snapshot : {css: ''};
+    queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
   }});
   try {
     for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
@@ -2036,8 +2067,11 @@ test('project claim cards show saved status and out-of-date results', async () =
   window.katex = {};
   window.acquireVsCodeApi = () => ({postMessage: message => {
     requests.push(message);
-    if (!['request', 'export'].includes(message.type)) return;
-    queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json: message.path === '/api/notebook' ? snapshot : {css: ''}}})));
+    if (!['request', 'export', 'exportTarget'].includes(message.type)) return;
+    const json = message.type === 'exportTarget'
+      ? {saved: true, token: 'claim-export', siblings: []}
+      : message.path === '/api/notebook' ? snapshot : {css: ''};
+    queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
   }});
   try {
     for (const file of rendererScripts(media, {bridge: true})) window.eval(readFileSync(path.join(media, file), 'utf8'));
