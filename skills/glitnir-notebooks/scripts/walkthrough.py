@@ -4,10 +4,11 @@ A walkthrough explains an existing Lean formalization through an
 `outline.json`: the statements of a paper, their dependencies and the Lean
 declarations that formalize them. This helper verifies such an outline.
 
-Run it with the standard library only, without writing bytecode:
+It needs Python 3.10 or newer and only the standard library. Run it with
+Glitnir's backend Python, without writing bytecode:
 
-    python3 -B walkthrough.py check OUTLINE [--notebook FILE ...]
-    python3 -B walkthrough.py map OUTLINE [--out DIR] [--links local|public]
+    python -B walkthrough.py check OUTLINE [--notebook FILE ...]
+    python -B walkthrough.py map OUTLINE [--out DIR] [--links local|public]
 
 `check --notebook` may be repeated, once per file of a walkthrough split into
 parts. `map` draws the outline's dependency graph and a clickable detail page,
@@ -18,6 +19,8 @@ Exit status: 0 when no problem is an error, 1 when any is, 2 for an
 unreadable outline or a usage error.
 """
 
+from __future__ import annotations
+
 import argparse
 import html
 import json
@@ -27,7 +30,27 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Collection, Literal, Sequence
+from typing import Any, Collection, Literal, NamedTuple, Sequence
+
+
+def python_problem(major: int, minor: int) -> str:
+    """Return why this Python cannot run the helper, or "" if it can.
+
+    It runs before anything that needs Python 3.10, so that an older Python
+    says what to run instead of failing on the first such line.
+    """
+    if (major, minor) >= (3, 10):
+        return ""
+    return (
+        "walkthrough.py needs Python 3.10 or newer; run it with Glitnir's backend "
+        'Python or `uv run --no-project --python ">=3.10" python -B walkthrough.py ...`'
+    )
+
+
+_PYTHON_PROBLEM = python_problem(sys.version_info.major, sys.version_info.minor)
+if _PYTHON_PROBLEM:
+    print(f"error: {_PYTHON_PROBLEM}", file=sys.stderr)
+    sys.exit(2)
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 NODE_KINDS = (
@@ -257,7 +280,7 @@ class Declaration:
     namespaces: tuple[str, ...]
     variables: bool = False  # a `variable` command is in force at the declaration
     keyword: str = ""  # theorem, lemma, def, axiom, ...
-    gap: str = ""  # `sorry` or `admit` if its text uses one outside comments
+    gap: str = ""  # `sorry`, `admit` or `stop` if its text uses one outside comments
     protected: bool = False  # a short name never resolves to it
 
 
@@ -307,6 +330,54 @@ def _header(first_rest: str, following: list[str]) -> str:
     return _split_header(first_rest, following)[0]
 
 
+def _comment_end(line: str, start: int, depth: int) -> tuple[int, int]:
+    """Follow nested `/- -/` comments through a line from `start`.
+
+    `depth` comments are open at `start`. Return how many are still open at
+    the end of the line, or 0 and the index just after the last one closes.
+    """
+    index = start
+    while index < len(line) and depth:
+        if line.startswith("/-", index):
+            depth, index = depth + 1, index + 2
+        elif line.startswith("-/", index):
+            depth, index = depth - 1, index + 2
+        else:
+            index += 1
+    return depth, index
+
+
+# A column-0 line that starts another command, so it ends the declaration
+# before it. `open ... in` and `set_option ... in` may start a term, so they
+# do not end one: a proof may go on after them. Nor do `#[1]` and `#v[1]`,
+# which are terms: only `#` and a word, such as `#check`, starts a command.
+_COMMAND_RE = re.compile(
+    r"^(?:@\[|#[A-Za-z_]\w*(?![\w\[])"
+    r"|(?:theorem|lemma|def|abbrev|structure|class|inductive|instance"
+    r"|opaque|axiom|example|namespace|section|end|variable|universe|attribute"
+    r"|mutual|noncomputable|private|protected|public|scoped|local|partial|unsafe"
+    r"|nonrec|import|export|alias|notation|infix|infixl|infixr|prefix|postfix"
+    r"|macro|macro_rules|syntax|elab|elab_rules|declare_syntax_cat|initialize"
+    r"|builtin_initialize|deriving|add_decl_doc|irreducible_def|omit|include)\b)"
+)
+
+
+def _body(lines: list[str], code: list[str], start: int) -> list[str]:
+    """Return the lines after line `start` up to the next command.
+
+    `code` is the file's lines as `_code_only` leaves them. A proof may go on
+    at column 0, so the body ends only at a line whose code starts a command
+    at column 0: when unsure, a line belongs to the declaration, so that a
+    `sorry` in it is reported.
+    """
+    if len(code) != len(lines):
+        return lines[start + 1 :]
+    end = start + 1
+    while end < len(lines) and not _COMMAND_RE.match(code[end]):
+        end += 1
+    return lines[start + 1 : end]
+
+
 def _continuation(lines: list[str], start: int) -> list[str]:
     """Return the indented lines directly after line `start`."""
     rest: list[str] = []
@@ -319,22 +390,24 @@ def _continuation(lines: list[str], start: int) -> list[str]:
 
 def declarations(root: Path, file: str) -> list[Declaration]:
     """Return the declarations at column 0 of a Lean file, in order."""
-    lines = (root / file).read_text(encoding="utf-8").splitlines()
+    text = (root / file).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    code = _code_only("\n".join(lines)).split("\n")
     frames: list[tuple[str, tuple[str, ...]]] = []
     scoped_vars: list[bool] = []
     file_vars = False
     found: list[Declaration] = []
-    in_comment = False
+    depth = 0
     for index, line in enumerate(lines):
-        if in_comment:
-            in_comment = "-/" not in line
-            continue
-        if line.startswith("/-"):
-            in_comment = "-/" not in line
+        # code after comments on its line, as in `/-- doc -/ def x`, counts
+        while line.startswith("/-") or (depth and line):
+            depth, end = _comment_end(line, 0 if depth else 2, depth or 1)
+            line = "" if depth else line[end:].lstrip()
+        if not line:
             continue
         match = _NAMESPACE_RE.match(line)
         if match:
-            for part in match.group(1).split("."):
+            for part in _components(_plain_name(match.group(1))):
                 frames.append(("namespace", (part,)))
                 scoped_vars.append(False)
             continue
@@ -368,7 +441,7 @@ def declarations(root: Path, file: str) -> list[Declaration]:
             continue
         parts = [part for _, names in frames for part in names]
         prefixes = tuple(".".join(parts[: i + 1]) for i in range(len(parts)))
-        name = match.group("name").rstrip(".")
+        name = _plain_name(match.group("name").rstrip("."))
         if name.startswith("_root_."):
             full = name[len("_root_.") :]
         else:
@@ -387,7 +460,9 @@ def declarations(root: Path, file: str) -> list[Declaration]:
                 prefixes,
                 file_vars or any(scoped_vars),
                 match.group("keyword"),
-                _proof_gap("\n".join([match.group("rest"), *following])),
+                _proof_gap(
+                    "\n".join([match.group("rest"), *_body(lines, code, index)])
+                ),
                 "protected" in match.group("modifiers").split(),
             )
         )
@@ -399,10 +474,15 @@ _CHAR_RE = re.compile(r"'(?:\\[^']*|[^\\'\n])'")
 
 
 def _code_only(text: str) -> str:
-    """Return Lean text with its comments, strings and characters blanked."""
+    """Return Lean text with its comments, strings and characters blanked.
+
+    Each blanked stretch keeps its line breaks, so that the lines of the
+    result line up with the text's.
+    """
     out: list[str] = []
     index = 0
     while index < len(text):
+        begin = index
         after_name = index > 0 and (
             text[index - 1].isalnum() or text[index - 1] in "_'"
         )
@@ -410,6 +490,9 @@ def _code_only(text: str) -> str:
             end = text.find("\n", index)
             index = len(text) if end < 0 else end
             continue
+        literal = None
+        if not after_name:
+            literal = _RAW_STRING_RE.match(text, index) or _CHAR_RE.match(text, index)
         if text.startswith("/-", index):
             depth, index = 1, index + 2
             while index < len(text) and depth:
@@ -419,30 +502,29 @@ def _code_only(text: str) -> str:
                     depth, index = depth - 1, index + 2
                 else:
                     index += 1
-            out.append(" ")
-            continue
-        raw = None if after_name else _RAW_STRING_RE.match(text, index)
-        char = None if after_name else _CHAR_RE.match(text, index)
-        if raw or char:
-            index = (raw or char).end()  # type: ignore[union-attr]
-            out.append(" ")
-            continue
-        if text[index] == '"':
+        elif literal:
+            index = literal.end()
+        elif text[index] == '"':
             index += 1
             while index < len(text) and text[index] != '"':
                 index += 2 if text[index] == "\\" else 1
             index += 1
-            out.append(" ")
+        else:
+            out.append(text[index])
+            index += 1
             continue
-        out.append(text[index])
-        index += 1
+        out.append(" " + "\n" * text.count("\n", begin, index))
     return "".join(out)
 
 
 def _proof_gap(text: str) -> str:
-    """Return `sorry` or `admit` if the code uses one as a word, else ""."""
+    """Return `sorry`, `admit` or `stop` if the code uses one as a word, else "".
+
+    `stop` closes the rest of a proof with `sorry`. A name spelled so is
+    reported too: the text cannot tell it from the tactic.
+    """
     words = set(_tokens(_code_only(text)))
-    return next((gap for gap in ("sorry", "admit") if gap in words), "")
+    return next((gap for gap in ("sorry", "admit", "stop") if gap in words), "")
 
 
 def _lean_entries(outline: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
@@ -468,6 +550,7 @@ def check_lean_entries(outline: dict[str, Any], base: Path) -> list[Problem]:
     for node_id, lean in _lean_entries(outline):
         file, name = str(lean["file"]), str(lean["name"])
         where = f"node {node_id}: {name}"
+        name = _plain_name(name)
         if file not in scanned:
             try:
                 scanned[file] = declarations(root, file)
@@ -533,7 +616,7 @@ def check_commit(outline: dict[str, Any], base: Path) -> list[Problem]:
 
 
 _CLAIM_RE = re.compile(
-    r"^(?:@\[[^\]]*\]\s*)*"
+    r"^(?P<attributes>(?:@\[[^\]]*\]\s*)*)"
     r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
     r"|public|scoped|local)\s+)*"
     r"(?:theorem|lemma)\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
@@ -545,9 +628,39 @@ _TOKEN_RE = re.compile(
 _IDENT_START_RE = re.compile(r"[^\W\d]|«")
 
 
+_GUILLEMET_RE = re.compile(r"«([^»]*)»")
+_PLAIN_PART_RE = re.compile(r"(?!_$)[^\W\d][\w'!?]*")
+# words Lean reads as syntax: `«fun»` names something, `fun` does not
+_KEYWORDS = frozenset(
+    "fun λ let have show from by do then else if match with at in where "
+    "deriving calc suffices obtain forall exists Type Sort Prop sorry admit stop "
+    "theorem lemma def abbrev structure class inductive instance opaque axiom "
+    "example namespace section end open variable universe import mutual "
+    "private protected public noncomputable partial unsafe nonrec scoped local "
+    "termination_by decreasing_by nomatch nofun".split()
+)
+
+
+def _plain_name(name: str) -> str:
+    """Drop the guillemets of each `«…»` part that Lean reads the same without.
+
+    `«cost»` is `cost`; `«a.b»`, `«x y»` and `«fun»` keep theirs.
+    """
+
+    def plain(part: re.Match[str]) -> str:
+        inner = part.group(1)
+        simple = _PLAIN_PART_RE.fullmatch(inner) and not set(inner) & set("λΠΣ")
+        return inner if simple and inner not in _KEYWORDS else part.group(0)
+
+    return _GUILLEMET_RE.sub(plain, name) if "«" in name else name
+
+
 def _tokens(text: str) -> list[str]:
-    """Split Lean text into identifiers (dots and `«…»` included) and symbols."""
-    return _TOKEN_RE.findall(text)
+    """Split Lean text into identifiers (dots and `«…»` included) and symbols.
+
+    Each identifier is spelled as `_plain_name` writes it.
+    """
+    return [_plain_name(token) for token in _TOKEN_RE.findall(text)]
 
 
 def _components(name: str) -> list[str]:
@@ -714,6 +827,46 @@ def ambiguous_names(
     }
 
 
+def _mixed_meaning(name: str, scopes: Sequence[str], names: ProjectNames) -> str:
+    """Return the `mixed` name Lean's search for a name may stop at, or "".
+
+    The search is `resolve`'s. A one-part prefix that meets a name the project
+    declares both protected and not may or may not stop there.
+    """
+    if name.startswith("_root_."):
+        return ""
+    parts = _components(name)
+    for size in range(len(parts), 0, -1):
+        head = ".".join(parts[:size])
+        for scope in reversed(scopes):
+            full = f"{scope}.{head}"
+            if size == 1 and full in names.mixed:
+                return full
+            if full in names.known and not (size == 1 and full in names.protected):
+                return ""
+        if head in names.known:
+            return ""
+    return ""
+
+
+def mixed_names(header: str, scopes: Sequence[str], names: ProjectNames) -> set[str]:
+    """Return the names a header may mean that are protected in only some files.
+
+    Lean resolves each such use by the file that is imported, which the text
+    of the project alone does not say.
+    """
+    bound = bound_names(header)
+    tokens = _tokens(header)
+    found: set[str] = set()
+    for index, token in enumerate(tokens):
+        if not _IDENT_START_RE.match(token) or (index and tokens[index - 1] == "."):
+            continue
+        if _components(token)[0] not in bound:
+            found.add(_mixed_meaning(token, scopes, names))
+    found.discard("")
+    return found
+
+
 def differences(
     written: str,
     declared: str,
@@ -760,14 +913,25 @@ def same_statement(
     return differences(written, declared, scopes, known, protected) == []
 
 
-def project_names(root: Path) -> tuple[set[str], set[str]]:
-    """Return every declaration name in the project, and the protected ones.
+class ProjectNames(NamedTuple):
+    """The full names a project declares, and how it protects them."""
+
+    known: set[str]
+    protected: set[str]  # declared protected wherever they are declared
+    mixed: set[str]  # declared protected in one place and not in another
+
+
+def project_names(root: Path) -> ProjectNames:
+    """Return every declaration name in the project, and which are protected.
 
     Names are full names. Every `.lean` file under the root is scanned,
     except inside `.lake` folders, which hold dependencies and build output.
+    A name declared in two files may be protected in only one of them; which
+    one a module imports is not checked, so such a name is `mixed`.
     """
     names: set[str] = set()
     protected: set[str] = set()
+    unprotected: set[str] = set()
     for folder, subfolders, files in os.walk(root):
         subfolders[:] = sorted(s for s in subfolders if s != ".lake")
         for file in sorted(files):
@@ -780,10 +944,18 @@ def project_names(root: Path) -> tuple[set[str], set[str]]:
                 continue
             names.update(d.name for d in found)
             protected.update(d.name for d in found if d.protected)
-    return names, protected
+            unprotected.update(d.name for d in found if not d.protected)
+    return ProjectNames(names, protected - unprotected, protected & unprotected)
 
 
-Claim = tuple[str, str, str]  # name, header, the text after the header
+class Claim(NamedTuple):
+    """One claim of a notebook, as written."""
+
+    name: str
+    header: str
+    tail: str  # the text after the header
+    attributed: bool  # written after attributes such as `@[simp]`
+
 
 _ONLY = "walkthrough must contain only imports, prose, namespaces and claims"
 _PREFIX_RE = re.compile(
@@ -810,7 +982,7 @@ def _after_comment(number: int, rest: str, scan: _Scan) -> None:
 
 def _is_name(word: str) -> bool:
     """Tell whether a word is one Lean name, dots and `«…»` parts included."""
-    return bool(_IDENT_START_RE.match(word)) and _tokens(word) == [word]
+    return bool(_IDENT_START_RE.match(word)) and _tokens(word) == [_plain_name(word)]
 
 
 def _one_name(words: list[str], size: int) -> str:
@@ -839,18 +1011,22 @@ def _command(number: int, line: str, frames: list[str], scan: _Scan) -> None:
         if word:
             scan.stray.append((number, word))
         return
-    if first == "namespace" and len(words) == 2:
-        frames.extend(_components(words[1]))
-        scan.namespaces.append((number, ".".join(f for f in frames if f)))
-        return
-    if first == "section" and len(words) <= 2:
-        frames.append("")
-        return
-    if first == "end" and len(words) <= 2:
-        count = (
-            len(_components(words[1])) if len(words) == 2 and frames[-1:] != [""] else 1
-        )
-        del frames[max(len(frames) - count, 0) :]
+    if first in ("namespace", "section", "end"):
+        # Lean reads one name after the keyword; a word after it starts a
+        # command, which a `section #exit` would hide.
+        word = _one_name(words, 1) if first == "namespace" or words[1:] else ""
+        if word:
+            scan.stray.append((number, word))
+        elif first == "namespace":
+            frames.extend(_components(_plain_name(words[1])))
+            scan.namespaces.append((number, ".".join(f for f in frames if f)))
+        elif first == "section":
+            frames.append("")
+        else:
+            count = (
+                len(_components(words[1])) if words[1:] and frames[-1:] != [""] else 1
+            )
+            del frames[max(len(frames) - count, 0) :]
         return
     rest = line[_PREFIX_RE.match(line).end() :].split()  # type: ignore[union-attr]
     word = rest[0] if rest else first
@@ -899,7 +1075,14 @@ def _scan_notebook(text: str) -> _Scan:
         if match:
             following = _continuation(lines, index - 1)
             header, tail = _split_header(match.group("rest"), following)
-            scan.claims.append((match.group("name"), header, tail))
+            scan.claims.append(
+                Claim(
+                    _plain_name(match.group("name")),
+                    header,
+                    tail,
+                    bool(match.group("attributes")),
+                )
+            )
             index += len(following)
             continue
         _command(number, line, frames, scan)
@@ -924,10 +1107,10 @@ def check_notebook(
     node's claim exactly once.
     """
     root = _project_root(outline, base)
-    known, protected = project_names(root)
-    spaces = _project_namespaces(known)
+    names = project_names(root)
+    spaces = _project_namespaces(names.known)
     nodes = {
-        str(item["claim"]): item
+        _plain_name(str(item["claim"])): item
         for item in outline.get("nodes", [])
         if isinstance(item.get("claim"), str)
     }
@@ -952,10 +1135,10 @@ def check_notebook(
                     )
                 )
         scanned.append((notebook, scan.claims))
-    claim_names = {name for _, claims in scanned for name, _, _ in claims}
+    claim_names = {claim.name for _, claims in scanned for claim in claims}
     written: dict[str, Path] = {}
     for notebook, claims in scanned:
-        for name, header, tail in claims:
+        for name, header, tail, attributed in claims:
             if name in written:
                 problems.append(
                     _error(f"claim {name} is in both {written[name]} and {notebook}")
@@ -966,10 +1149,14 @@ def check_notebook(
                 # Lean elaborates `theorem A.c` inside `namespace A`.
                 problems.append(_error(f"claim {name} must have a plain name"))
                 continue
+            if attributed:
+                # `@[instance]`, `@[simp]` and the like change what follows
+                problems.append(
+                    _error(f"claim {name} has attributes; a claim takes none")
+                )
+                continue
             problems.extend(_claim_names_written(name, header, claim_names))
-            problems.extend(
-                _check_claim(root, (known, protected), nodes, name, header, tail)
-            )
+            problems.extend(_check_claim(root, names, nodes, name, header, tail))
     for claim, item in nodes.items():
         if claim not in written:
             problems.append(
@@ -1001,7 +1188,7 @@ def _claim_names_written(name: str, header: str, claims: set[str]) -> list[Probl
 
 def _check_claim(
     root: Path,
-    names: tuple[set[str], set[str]],
+    names: ProjectNames,
     nodes: dict[str, dict[str, Any]],
     name: str,
     header: str,
@@ -1014,8 +1201,10 @@ def _check_claim(
     item = nodes.get(name)
     if item is None:
         return [_error(f"claim {name} is not a claim of any node")]
-    target = exact.group("target")
-    entries = [e for e in item.get("lean", []) if e.get("name") == target]
+    target = _plain_name(exact.group("target"))
+    entries = [
+        e for e in item.get("lean", []) if _plain_name(str(e.get("name"))) == target
+    ]
     if not entries:
         return [
             _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
@@ -1044,17 +1233,14 @@ def takes_explicit_arguments(header: str) -> bool:
 
 def _compare_claim(
     root: Path,
-    names: tuple[set[str], set[str]],
+    names: ProjectNames,
     claim: str,
     header: str,
     target: str,
     entry: dict[str, Any],
 ) -> list[Problem]:
-    """Compare one claim's header with the declaration it cites.
-
-    `names` holds the project's declaration names and its protected ones.
-    """
-    known, protected = names
+    """Compare one claim's header with the declaration it cites."""
+    known, protected = names.known, names.protected
     file = str(entry["file"])
     try:
         found = [d for d in declarations(root, file) if d.name == target]
@@ -1102,6 +1288,17 @@ def _compare_claim(
                 "explain it in prose instead"
             )
         ]
+    mixed = sorted(
+        {name for d in found for name in mixed_names(d.type, d.namespaces, names)}
+    )
+    if mixed:
+        return [
+            _error(
+                f"claim {claim} uses {name}, which the project declares both "
+                "protected and not; explain it in prose instead"
+            )
+            for name in mixed
+        ]
     differing: list[tuple[str, str, str]] = []
     for found_one in found:
         found_differences = differences(
@@ -1133,6 +1330,23 @@ KIND_COLOUR = {
     "appendix": ("#f1f1f1", "#8a8a8a"),
 }
 _KATEX = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/"
+# cdnjs's published SHA-512 digests of the three files the page loads
+_KATEX_INTEGRITY = {
+    "katex.min.css": "sha512-fHwaWebuwA7NSF5Qg/af4UeDx9XqUpYpOGgubo3yWu+b2IQR4UeQwbb42"
+    "Ti7gVAjNtVoI/I9TEoYeu9omwcC6g==",
+    "katex.min.js": "sha512-LQNxIMR5rXv7o+b1l8+N1EZMfhG7iFZ9HhnbJkTp4zjNr5Wvst75AqUeFD"
+    "xeRUa7l5vEDyUiAip//r+EFLLCyA==",
+    "contrib/auto-render.min.js": "sha512-iWiuBS5nt6r60fCz26Nd0Zqe0nbk1ZTIQbl3Kv7kYsX+"
+    "yKMUFHzjaH2+AnM6vp2Xs+gNmaBAVWJjSmuPw76Efg==",
+}
+
+
+def _katex(file: str) -> str:
+    """Return the attributes that load one KaTeX file, pinned to its digest."""
+    return (
+        f'"{_KATEX}{file}" integrity="{_KATEX_INTEGRITY[file]}" '
+        'crossorigin="anonymous"'
+    )
 
 
 def _esc(value: Any) -> str:
@@ -1457,9 +1671,9 @@ def map_html(
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
-<link rel="stylesheet" href="{_KATEX}katex.min.css">
-<script defer src="{_KATEX}katex.min.js"></script>
-<script defer src="{_KATEX}contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href={_katex("katex.min.css")}>
+<script defer src={_katex("katex.min.js")}></script>
+<script defer src={_katex("contrib/auto-render.min.js")}></script>
 <style>{_PAGE_STYLE}</style></head><body>
 <main>
 <section id="map">{map_svg(outline)}</section>
