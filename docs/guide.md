@@ -356,6 +356,18 @@ observation is labelled unknown rather than treated as an empty dependency
 list. The graph can be fitted to the available width or zoomed and scrolled,
 and the static HTML export includes an inert copy.
 
+For a guided paper walkthrough, an `outline.json` beside the Lean notebook is
+the map's source of truth. New walkthroughs keep mapped claims in that one
+notebook. The same **Graph** view shows the
+paper's definitions, lemmas, theorems and appendices instead of the claim-only
+graph. Box colours distinguish statement kinds; the status dot comes from the
+saved walkthrough claim named by the outline. **Statement details** gives the
+paper page and pinned public Lean declarations, and a mapped node returns to
+its walkthrough claim. A local-only paper is identified without exposing a
+filesystem path; links require a public HTTPS URL. Static export includes the
+same self-contained map and safe public links. It loads no map script, font or
+other external resource.
+
 The **Statement details** selector shows a node's recorded uses and users.
 Opening a local node returns to its highlighted claim in **Document**; its exact
 Lean source remains available from the claim's existing source action. None of

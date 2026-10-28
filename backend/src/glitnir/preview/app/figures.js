@@ -67,12 +67,15 @@
   // source rather than freeze the page, sizes are bounded, and the CSS clips
   // typeset maths to its own box so it cannot paint over a status.
   const MAX_TEX = 2000;
+  const MAX_MATH_NODES = 512;
   const KATEX = {throwOnError: true, trust: false, maxSize: 10, maxExpand: 1000};
   const typeset = new Map();
   function typesetMath(...roots) {
     if (!window.katex) return;
     const seen = new Set();
-    for (const el of roots.flatMap(root => [...root.querySelectorAll('.math[data-tex]')])) {
+    const expressions = roots.flatMap(root => [...root.querySelectorAll('.math[data-tex]')]);
+    for (const [index, el] of expressions.entries()) {
+      if (index >= MAX_MATH_NODES) { el.title = `Not typeset: more than ${MAX_MATH_NODES} expressions on this view`; continue; }
       const tex = el.dataset.tex;
       if (tex.length > MAX_TEX) { el.title = `Not typeset: longer than ${MAX_TEX} characters`; continue; }
       const display = el.classList.contains('math-display');

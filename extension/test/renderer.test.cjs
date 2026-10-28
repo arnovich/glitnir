@@ -3579,6 +3579,146 @@ test('static export includes an inert recorded proof graph', async () => {
   } finally { window.close(); }
 });
 
+test('the Graph view shows a walkthrough statement map with statuses, direct uses, and links', async () => {
+  const nodes = Array.from({length: 21}, (_, index) => ({
+    id: `step${index}`, label: index === 20 ? 'Theorem 20' : `Lemma ${index}`,
+    kind: index === 0 ? 'definition' : index === 19 ? 'appendix' : index === 20 ? 'theorem' : 'lemma',
+    section: index === 19 ? 'Appendix A' : '§2', pages: String(index + 2),
+    statement: `Statement $S_${index}$.`, idea: `Idea ${index}.`,
+    uses: index === 0 ? [] : index === 20 ? ['step0', 'step19'] : [`step${index - 1}`],
+    claim: index === 20 ? 'floor' : undefined,
+    lean: [{name: `Paper.step${index}`, file: 'Paper.lean', line: index + 1, note: '', href: `https://github.com/example/paper/blob/${'a'.repeat(40)}/Paper.lean#L${index + 1}`}],
+  }));
+  const snapshot = projectNotebook();
+  snapshot.project_claims.find(claim => claim.name === 'Demo.floor').current = false;
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Paper map', overview: 'The whole proof.', paper: 'https://example.org/paper.pdf', problems: ['step20: unknown statement absent'], nodes};
+  const window = await renderSnapshot(snapshot, {katex: true});
+  const d = window.document;
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    assert.match(d.getElementById('graph-view').textContent, /Paper map/);
+    assert.equal(d.querySelector('#graph-view .walkthrough-map').getAttribute('aria-label'), 'Paper map statement map');
+    assert.equal(d.querySelectorAll('#graph-view .proof-node').length, 21, 'the eth-sized map remains readable');
+    assert.equal(d.querySelector('[data-graph-name="Theorem 20"]').dataset.tone, 'amber', 'a stale saved claim marks its paper statement');
+    assert.equal(d.querySelector('[data-graph-name="Theorem 20"]').dataset.statementKind, 'theorem');
+    assert.match(d.querySelector('[data-graph-name="Theorem 20"]').getAttribute('aria-label'), /^theorem, Theorem 20,/);
+    assert.equal(d.querySelector('[data-graph-name="Lemma 19"]').dataset.statementKind, 'appendix');
+    assert.deepEqual([...d.querySelectorAll('.walkthrough-legend span')].map(item => item.textContent), ['definition', 'lemma', 'appendix', 'theorem']);
+    assert.equal(d.querySelectorAll('#graph-view .proof-edge').length, 20, 'the transitive step0 → step20 edge is omitted');
+    assert.ok(d.querySelector('#graph-view .proof-edge.appendix-edge'));
+    assert.match(d.getElementById('graph-view').textContent, /unknown statement absent/);
+
+    const picker = d.querySelector('[data-act="graph-detail-picker"]');
+    assert.match([...picker.options].find(option => option.value === 'walkthrough:step20').textContent, /^theorem — Theorem 20/);
+    picker.value = 'walkthrough:step20';
+    picker.dispatchEvent(new window.Event('change', {bubbles: true}));
+    const detail = d.getElementById('graph-detail');
+    assert.match(detail.querySelector('.walkthrough-statement').textContent, /Statement/);
+    assert.equal(detail.querySelector('.walkthrough-statement .math').dataset.tex, 'S_20');
+    assert.match(detail.textContent, /Idea 20/);
+    assert.equal(detail.querySelector('[href="https://example.org/paper.pdf#page=22"]').textContent, 'Paper page 22');
+    assert.match(detail.querySelector('[href*="Paper.lean#L21"]').textContent, /Paper\.step20/);
+    detail.querySelector('[data-act="graph-node"]').click();
+    assert.equal(d.getElementById('doc').hidden, false);
+    assert.equal(d.querySelector('[data-claim="Demo.floor"] .claim').dataset.selected, 'true');
+  } finally { window.close(); }
+});
+
+test('walkthrough maps keep unknown references and unknown claims explicit', async () => {
+  const snapshot = projectNotebook();
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', problems: ['result: unknown statement missing in uses'], nodes: [
+    {id: 'known', label: 'Definition 1', kind: 'definition', section: '', pages: '', statement: 'Known.', idea: 'Base.', uses: [], claim: '', lean: []},
+    {id: 'result', label: 'Theorem 2', kind: 'theorem', section: '', pages: '', statement: 'Result.', idea: 'Uses a missing statement.', uses: ['known', 'missing'], claim: 'missing_claim', lean: []},
+  ]};
+  const window = await renderSnapshot(snapshot);
+  try {
+    window.document.querySelector('[data-mode="graph"]').click();
+    const model = window.glitnirWorkbench.walkthroughGraphModel(snapshot);
+    assert.deepEqual(JSON.parse(JSON.stringify(model.missingReferences)), [{node: 'result', reference: 'missing'}]);
+    assert.deepEqual(JSON.parse(JSON.stringify(model.problems)), ['result: unknown statement missing in uses', 'No saved walkthrough result matches missing_claim.']);
+    assert.equal(model.byId.get('walkthrough:result').status, 'Unknown');
+    assert.equal((window.document.getElementById('graph-view').textContent.match(/unknown statement missing/g) || []).length, 1);
+    assert.match(window.document.getElementById('graph-view').textContent, /No saved walkthrough result matches missing_claim/);
+  } finally { window.close(); }
+});
+
+test('a mapped source claim stays navigable before it has a saved result', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = snapshot.project_claims.filter(claim => claim.name !== 'Demo.floor');
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', paper_local: false, problems: [], nodes: [
+    {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '', pages: '', statement: 'Result.', idea: 'Direct.', uses: [], claim: 'floor', lean: []},
+  ]};
+  const window = await renderSnapshot(snapshot);
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  try {
+    window.document.querySelector('[data-mode="graph"]').click();
+    const model = window.glitnirWorkbench.walkthroughGraphModel(snapshot);
+    assert.equal(model.byId.get('walkthrough:result').name, 'Demo.floor');
+    assert.equal(model.byId.get('walkthrough:result').status, 'Unknown');
+    window.document.querySelector('[data-graph-name="Theorem 1"]').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    assert.equal(window.glitnirWorkbench.UI.mode, 'doc');
+    assert.equal(window.glitnirWorkbench.UI.documentLine.line, 15);
+    assert.ok(window.document.querySelector('#doc .document-target'));
+  } finally { window.close(); }
+});
+
+test('walkthrough math rendering is bounded across an adversarial map', async () => {
+  const snapshot = projectNotebook();
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Large math map', overview: '', paper: '', paper_local: false, problems: [], nodes: [
+    {id: 'many', label: 'Theorem many', kind: 'theorem', section: '', pages: '', statement: Array.from({length: 600}, () => '$x$').join(' '), idea: '', uses: [], claim: '', lean: []},
+  ]};
+  const window = await renderSnapshot(snapshot, {katex: true});
+  try {
+    window.document.querySelector('[data-mode="graph"]').click();
+    const graph = window.document.getElementById('graph-view');
+    assert.ok(graph.querySelectorAll('.math.typeset').length <= 512);
+    assert.match(graph.querySelector('.math:not(.typeset)[title]').title, /more than 512 expressions/);
+  } finally { window.close(); }
+});
+
+test('a path-only walkthrough paper explains that its public link is unavailable', async () => {
+  const snapshot = projectNotebook();
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Local paper', overview: '', paper: '', paper_local: true, problems: [], nodes: [
+    {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '', pages: '8', statement: 'Result.', idea: '', uses: [], claim: '', lean: []},
+  ]};
+  const window = await renderSnapshot(snapshot);
+  try {
+    window.document.querySelector('[data-mode="graph"]').click();
+    assert.match(window.document.getElementById('graph-detail').textContent, /Paper page 8 is available only in the local walkthrough folder/);
+  } finally { window.close(); }
+});
+
+test('static export includes the paper map, claim anchors, and safe public references', async () => {
+  const snapshot = projectNotebook();
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: 'https://example.org/paper.pdf', problems: [], nodes: [
+    {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '§1', pages: '4', statement: 'Result.', idea: 'Direct.', uses: [], claim: 'floor', lean: [
+      {name: 'Demo.floor', file: 'Demo.lean', line: 8, note: '', href: 'https://github.com/example/repo/blob/abc/Demo.lean#L8'},
+      {name: 'unsafe', file: 'Unsafe.lean', line: 1, note: '', href: 'file:///tmp/Unsafe.lean'},
+    ]},
+  ]};
+  const messages = [];
+  const window = await renderSnapshot(snapshot, {katex: true, onMessage: message => messages.push(message)});
+  try {
+    window.document.getElementById('export-html').click();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const exported = messages.find(message => message.type === 'export');
+    assert.ok(exported, window.glitnirWorkbench.UI.notice);
+    const page = new JSDOM(exported.body).window.document;
+    const map = page.querySelector('.walkthrough-map');
+    assert.ok(map);
+    assert.ok(map.querySelector('.proof-node.statement-theorem'), 'kind styling survives export without data attributes');
+    assert.equal(map.querySelector('.proof-map').getAttribute('role'), 'group');
+    const claimLink = map.querySelector('.proof-node').closest('a');
+    assert.equal(claimLink.getAttribute('href'), '#cell-Demo.floor');
+    assert.match(claimLink.getAttribute('aria-label'), /^theorem, Theorem 1, Contains sorry/);
+    assert.ok(map.querySelector('a[href="https://example.org/paper.pdf#page=4"]'));
+    assert.ok(map.querySelector('a[href*="github.com/example/repo"]'));
+    assert.equal(map.querySelector('a[href^="file:"]'), null);
+    assert.equal(map.querySelectorAll('script,button,select').length, 0);
+  } finally { window.close(); }
+});
+
 test('a claim card, the inspector and r check the saved file through that claim', async () => {
   const messages = [];
   const snapshot = projectNotebook();

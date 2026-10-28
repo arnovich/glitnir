@@ -3,13 +3,14 @@
 (() => {
   'use strict';
   const workbench = window.glitnirWorkbench;
-  const {$, UI, claimLabel, esc, projectClaims, recorded, statusOf, title} = workbench;
+  const {$, UI, claimLabel, esc, inlineHTML, projectClaims, recorded, statusOf, title} = workbench;
 
   const shortName = name => String(name).split('.').pop();
   const importedTone = status => ({checked: 'green', refuted: 'red', conditional: 'amber', stale: 'amber', failed: 'red', open: 'blue'})[status] || 'muted';
   const importedLabel = status => ({checked: 'Checked', refuted: 'Refuted', conditional: 'Conditional', stale: 'Out of date', failed: 'Failed', open: 'Open goal'})[status] || 'Unknown';
   const localId = name => `local:${name}`;
   const importId = (module, name) => `import:${module}:${name}`;
+  const STATEMENT_KINDS = new Set(['definition', 'lemma', 'proposition', 'theorem', 'corollary', 'algorithm', 'appendix']);
   const MAX_GRAPH_NODES = 240;
   const MAX_GRAPH_EDGES = 2400;
 
@@ -20,6 +21,41 @@
     }
     const split = use.indexOf(':');
     return {module: use.slice(0, split), name: use.slice(split + 1), path: null, status: null};
+  }
+
+  function finalizeGraph(nodes, byId, dependencies, unavailable = new Map(), extra = {}) {
+    const reachCache = new Map();
+    const reachable = start => {
+      if (reachCache.has(start)) return reachCache.get(start);
+      const seen = new Set(), todo = [...(dependencies.get(start) || [])];
+      while (todo.length) {
+        const current = todo.pop();
+        if (seen.has(current)) continue;
+        seen.add(current);
+        todo.push(...(dependencies.get(current) || []));
+      }
+      reachCache.set(start, seen);
+      return seen;
+    };
+    // Transitive reduction is unambiguous for the expected acyclic proof
+    // relation. Preserve every edge if hostile input contains a cycle.
+    const cyclic = nodes.some(node => reachable(node.id).has(node.id));
+    const direct = new Map();
+    for (const [user, own] of dependencies) {
+      direct.set(user, cyclic ? [...own] : own.filter(dependency => !own.some(other => other !== dependency && reachable(other).has(dependency))));
+    }
+    const edges = [];
+    for (const [user, own] of direct) for (const dependency of own) {
+      edges.push({from: dependency, to: user, appendix: byId.get(user)?.statementKind === 'appendix'});
+    }
+    const users = new Map(nodes.map(node => [node.id, []]));
+    for (const edge of edges) users.get(edge.from)?.push(edge.to);
+    for (const node of nodes) {
+      node.uses = direct.get(node.id) || [];
+      node.usedBy = users.get(node.id) || [];
+      node.unavailable = unavailable.get(node.id) || 0;
+    }
+    return {nodes, byId, edges, dependencies: direct, cyclic, ...extra};
   }
 
   function claimGraphModel(data) {
@@ -106,38 +142,75 @@
       }
     }
 
-    const reachCache = new Map();
-    const reachable = start => {
-      if (reachCache.has(start)) return reachCache.get(start);
-      const seen = new Set(), todo = [...(dependencies.get(start) || [])];
-      while (todo.length) {
-        const current = todo.pop();
-        if (seen.has(current)) continue;
-        seen.add(current);
-        todo.push(...(dependencies.get(current) || []));
-      }
-      reachCache.set(start, seen);
-      return seen;
-    };
-    // Transitive reduction is unambiguous for the expected acyclic proof
-    // relation. Preserve every saved edge if hostile input contains a cycle;
-    // reducing through a strongly connected component can erase all choices.
-    const cyclic = nodes.some(node => reachable(node.id).has(node.id));
-    const direct = new Map();
-    for (const [user, own] of dependencies) {
-      direct.set(user, cyclic ? [...own] : own.filter(dependency => !own.some(other => other !== dependency && reachable(other).has(dependency))));
-    }
-    const edges = [];
-    for (const [user, own] of direct) for (const dependency of own) edges.push({from: dependency, to: user});
-    const users = new Map(nodes.map(node => [node.id, []]));
-    for (const edge of edges) users.get(edge.from)?.push(edge.to);
-    for (const node of nodes) {
-      node.uses = direct.get(node.id) || [];
-      node.usedBy = users.get(node.id) || [];
-      node.unavailable = unavailable.get(node.id) || 0;
-    }
-    return {nodes, byId, edges, dependencies: direct, omittedNodes: omittedNodeIds.size, omittedEdges, cyclic};
+    return finalizeGraph(nodes, byId, dependencies, unavailable, {omittedNodes: omittedNodeIds.size, omittedEdges, walkthrough: false});
   }
+
+  const walkthroughId = id => `walkthrough:${id}`;
+  function walkthroughGraphModel(data) {
+    const outline = data.walkthrough || {};
+    const allNodes = Array.isArray(outline.nodes) ? outline.nodes : [];
+    const rawNodes = allNodes.slice(0, MAX_GRAPH_NODES);
+    const rendered = data.preview?.mode === 'project' ? projectClaims(data) : (Array.isArray(data.claims) ? data.claims : []);
+    const sourceClaims = (data.cells || []).filter(cell => typeof cell?.claim === 'string' && cell.claim)
+      .map(cell => ({name: cell.claim, label: shortName(cell.claim), sourceOnly: true, start: cell.start}));
+    const walkthroughClaims = [...rendered, ...sourceClaims.filter(source => !rendered.some(entry => entry.name === source.name))]
+      .filter(entry => typeof entry?.name === 'string');
+    const savedByName = new Map((data.project_claims || []).filter(saved => typeof saved?.name === 'string').map(saved => [saved.name, saved]));
+    const matchingClaim = requested => {
+      if (!requested) return null;
+      const exact = walkthroughClaims.find(entry => entry.name === requested);
+      if (exact) return exact;
+      const suffix = walkthroughClaims.filter(entry => entry.name.endsWith(`.${requested}`));
+      return suffix.length === 1 ? suffix[0] : null;
+    };
+    const nodes = [], byId = new Map(), claimProblems = [];
+    for (const raw of rawNodes) {
+      if (!raw || typeof raw.id !== 'string' || !raw.id || byId.has(walkthroughId(raw.id))) continue;
+      const matchedClaim = matchingClaim(typeof raw.claim === 'string' ? raw.claim : '');
+      const saved = matchedClaim ? savedByName.get(matchedClaim.name) : null;
+      const hasRecord = data.preview?.mode === 'project' ? Boolean(saved) : Boolean(matchedClaim?.record || matchedClaim?.refutation || matchedClaim?.status === 'stale');
+      const status = matchedClaim && hasRecord ? statusOf(matchedClaim, true) : {key: 'unknown', label: 'Unknown', tone: 'muted'};
+      const stale = saved?.current === false || matchedClaim?.status === 'stale';
+      if (raw.claim && !matchedClaim) claimProblems.push(`No saved walkthrough result matches ${raw.claim}.`);
+      const statementKind = STATEMENT_KINDS.has(raw.kind) ? raw.kind : 'unknown';
+      const node = {id: walkthroughId(raw.id), outlineId: raw.id, name: matchedClaim?.name || null,
+        label: typeof raw.label === 'string' && raw.label ? raw.label : raw.id, fullLabel: typeof raw.label === 'string' && raw.label ? raw.label : raw.id,
+        kind: 'walkthrough', statementKind, section: typeof raw.section === 'string' ? raw.section : '',
+        pages: typeof raw.pages === 'string' ? raw.pages : '', statement: typeof raw.statement === 'string' ? raw.statement : '', idea: typeof raw.idea === 'string' ? raw.idea : '',
+        paper: typeof outline.paper === 'string' ? outline.paper : '', paperLocal: outline.paper_local === true, lean: Array.isArray(raw.lean) ? raw.lean.slice(0, 32) : [], rawUses: Array.isArray(raw.uses) ? raw.uses.slice(0, MAX_GRAPH_NODES) : [],
+        claimRequested: typeof raw.claim === 'string' ? raw.claim : '', tone: stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone,
+        status: status.label, stale, hasRecord, sourceLine: Number.isSafeInteger(matchedClaim?.start) ? matchedClaim.start : null,
+        relationsKnown: true, truncated: false, malformed: !Array.isArray(raw.uses), path: null};
+      nodes.push(node); byId.set(node.id, node);
+    }
+    const dependencies = new Map(nodes.map(node => [node.id, []])), missingReferences = [];
+    let dependencyCount = 0, omittedEdges = 0;
+    for (const node of nodes) for (const reference of node.rawUses) {
+      if (typeof reference !== 'string') { node.malformed = true; continue; }
+      const target = byId.get(walkthroughId(reference));
+      if (target) {
+        const own = dependencies.get(node.id);
+        if (!own.includes(target.id)) {
+          if (dependencyCount < MAX_GRAPH_EDGES) { own.push(target.id); dependencyCount += 1; }
+          else omittedEdges += 1;
+        }
+      } else if (missingReferences.length < MAX_GRAPH_EDGES) missingReferences.push({node: node.outlineId, reference});
+      else omittedEdges += 1;
+    }
+    const backendProblems = Array.isArray(outline.problems) ? outline.problems.filter(item => typeof item === 'string').slice(0, 80) : [];
+    const describedReferences = new Set();
+    for (const problem of backendProblems) {
+      const found = /^(.+): unknown statement (.+) in uses$/.exec(problem);
+      if (found) describedReferences.add(`${found[1]}\0${found[2]}`);
+    }
+    const problems = [...backendProblems,
+      ...missingReferences.filter(item => !describedReferences.has(`${item.node}\0${item.reference}`)).map(item => `${item.node}: missing statement reference ${item.reference}.`), ...claimProblems];
+    return finalizeGraph(nodes, byId, dependencies, new Map(), {omittedNodes: Math.max(0, allNodes.length - MAX_GRAPH_NODES), omittedEdges,
+      walkthrough: true, title: typeof outline.title === 'string' ? outline.title : 'Walkthrough statement map', overview: typeof outline.overview === 'string' ? outline.overview : '',
+      problems, missingReferences});
+  }
+
+  const graphModel = data => data.walkthrough ? walkthroughGraphModel(data) : claimGraphModel(data);
 
   function graphLayout(model) {
     const depth = new Map(model.nodes.map(node => [node.id, 0]));
@@ -182,8 +255,42 @@
   }
 
   const nodeList = (ids, model) => ids.length ? ids.map(id => esc(model.byId.get(id)?.fullLabel || model.byId.get(id)?.name || id)).join(', ') : 'None';
+  function safeHTTPS(value) {
+    if (typeof value !== 'string' || /\s/.test(value)) return '';
+    try { const url = new URL(value); return url.protocol === 'https:' && url.hostname ? value : ''; } catch { return ''; }
+  }
+  function paperHref(node) {
+    const target = safeHTTPS(node.paper);
+    if (!target) return '';
+    const page = /\d+/.exec(node.pages || '')?.[0];
+    if (!page) return target;
+    const url = new URL(target);
+    if (url.pathname.toLowerCase().endsWith('.pdf')) url.hash = `page=${page}`;
+    return url.href;
+  }
+  function walkthroughLinks(node) {
+    const paper = paperHref(node);
+    const paperLink = paper ? `<a class="external-link" href="${esc(paper)}" target="_blank" rel="noopener noreferrer">Paper page ${esc(/\d+/.exec(node.pages || '')?.[0] || node.pages || '')}</a>` : '';
+    const localPaper = !paper && node.paperLocal ? `<p class="small muted">Paper page ${esc(/\d+/.exec(node.pages || '')?.[0] || node.pages || '')} is available only in the local walkthrough folder; this preview links only to public HTTPS sources.</p>` : '';
+    const lean = node.lean.map(entry => {
+      if (!entry || typeof entry.name !== 'string') return '';
+      const href = safeHTTPS(entry.href);
+      const label = `<code>${esc(entry.name)}</code>${entry.note ? ` — ${inlineHTML(entry.note)}` : ''}`;
+      return `<li>${href ? `<a class="external-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label}</li>`;
+    }).filter(Boolean).join('');
+    return `${paperLink ? `<p>${paperLink}</p>` : localPaper}${lean ? `<h4>Lean declarations</h4><ul class="walkthrough-lean">${lean}</ul>` : '<p class="small muted">No Lean declaration is recorded for this statement.</p>'}`;
+  }
   function graphDetailHTML(node, model, staticPage) {
     if (!node) return '<h3>Pick a statement</h3><p class="muted">Use Statement details to read its saved relationships.</p>';
+    if (node.kind === 'walkthrough') {
+      const action = node.name
+        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Document</button>`
+        : node.claimRequested ? `<p class="small muted">No saved walkthrough result matches ${esc(node.claimRequested)}.</p>` : '<p class="small muted">This paper statement has no mapped walkthrough result.</p>';
+      const where = [node.statementKind, node.section, node.pages ? `pp. ${node.pages}` : ''].filter(Boolean).join(' · ');
+      return `<h3${staticPage ? '' : ' tabindex="-1"'}>${esc(node.fullLabel)}</h3><p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>
+        ${where ? `<p class="small muted">${esc(where)}</p>` : ''}<div class="walkthrough-statement">${inlineHTML(node.statement)}</div><p>${inlineHTML(node.idea)}</p>
+        <dl><dt>Uses</dt><dd>${nodeList(node.uses, model)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model)}</dd></dl>${walkthroughLinks(node)}${action}`;
+    }
     const action = !staticPage && node.kind === 'local'
       ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Document</button>`
       : !staticPage && node.path ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Open notebook</button>` : '';
@@ -196,21 +303,27 @@
   }
 
   function proofGraphHTML(data, {staticPage = false, selected = null, zoom = 1} = {}) {
-    const model = claimGraphModel(data), layout = graphLayout(model), boxWidth = 188, boxHeight = 50;
+    const model = graphModel(data), layout = graphLayout(model), boxWidth = 188, boxHeight = 50;
     const marker = staticPage ? 'proof-arrow-static' : 'proof-arrow';
     const paths = model.edges.map(edge => {
       const from = layout.positions.get(edge.from), to = layout.positions.get(edge.to);
       const start = from.y - boxHeight / 2, end = to.y + boxHeight / 2, mid = (start + end) / 2;
-      return `<path class="proof-edge" data-from="${esc(edge.from)}" data-to="${esc(edge.to)}" d="M${from.x},${start} C${from.x},${mid} ${to.x},${mid} ${to.x},${end + 6}" marker-end="url(#${marker})"/>`;
+      return `<path class="proof-edge${edge.appendix ? ' appendix-edge' : ''}" data-from="${esc(edge.from)}" data-to="${esc(edge.to)}" d="M${from.x},${start} C${from.x},${mid} ${to.x},${mid} ${to.x},${end + 6}" marker-end="url(#${marker})"/>`;
     }).join('');
     const nodes = model.nodes.map(node => {
       const point = layout.positions.get(node.id), chosen = node.id === selected ? ' chosen' : '';
       const fullLabel = node.fullLabel || node.name;
-      const nodeAction = node.kind === 'local' ? 'Open in Document' : node.path ? 'Open notebook' : 'Show details';
-      const attrs = staticPage ? '' : ` data-act="graph-node" data-graph-id="${esc(node.id)}" tabindex="0" role="button" aria-label="${esc(fullLabel)}, ${esc(node.status)}. ${nodeAction}"`;
-      return `<g class="proof-node${chosen}" data-graph-name="${esc(node.kind === 'imported' ? node.label : node.name)}" data-kind="${node.kind}" data-tone="${esc(node.tone)}" transform="translate(${point.x},${point.y})"${attrs}>
+      const nodeAction = node.kind === 'local' || node.kind === 'walkthrough' && node.name ? 'Open in Document' : node.path ? 'Open notebook' : 'Show details';
+      const accessibleKind = node.kind === 'walkthrough' ? `${node.statementKind}, ` : '';
+      const nodeLabel = `${accessibleKind}${fullLabel}, ${node.status}. ${nodeAction}`;
+      const attrs = staticPage ? '' : ` data-act="graph-node" data-graph-id="${esc(node.id)}" tabindex="0" role="button" aria-label="${esc(nodeLabel)}"`;
+      const graphName = node.kind === 'walkthrough' || node.kind === 'imported' ? node.label : node.name;
+      const meta = node.kind === 'imported' ? 'Imported · ' + node.status : node.kind === 'walkthrough' ? `${node.statementKind} · ${node.status}` : node.status + (node.stale && node.status !== 'Out of date' ? ' · Out of date' : '');
+      const kindClass = node.kind === 'walkthrough' ? ` walkthrough-node statement-${node.statementKind}` : '';
+      const group = `<g class="proof-node${kindClass}${chosen}" data-graph-name="${esc(graphName)}" data-kind="${node.kind}"${node.statementKind ? ` data-statement-kind="${esc(node.statementKind)}"` : ''} data-tone="${esc(node.tone)}" transform="translate(${point.x},${point.y})"${attrs}>
         <rect x="${-boxWidth / 2}" y="${-boxHeight / 2}" width="${boxWidth}" height="${boxHeight}" rx="8"/><circle class="proof-node-status" cx="${-boxWidth / 2 + 15}" cy="0" r="5"/>
-        <title>${esc(fullLabel)} — ${esc(node.status)}</title><text class="proof-node-label" text-anchor="middle" y="-3">${esc(node.label.length > 27 ? node.label.slice(0, 26) + '…' : node.label)}</text><text class="proof-node-meta" text-anchor="middle" y="15">${esc(node.kind === 'imported' ? 'Imported · ' + node.status : node.status + (node.stale && node.status !== 'Out of date' ? ' · Out of date' : ''))}</text></g>`;
+        <title>${esc(fullLabel)} — ${esc(node.status)}</title><text class="proof-node-label" text-anchor="middle" y="-3">${esc(node.label.length > 27 ? node.label.slice(0, 26) + '…' : node.label)}</text><text class="proof-node-meta" text-anchor="middle" y="15">${esc(meta)}</text></g>`;
+      return staticPage && node.kind === 'walkthrough' && node.name && node.hasRecord ? `<a href="#cell-${esc(node.name)}" aria-label="${esc(nodeLabel)}">${group}</a>` : group;
     }).join('');
     const unknown = model.nodes.filter(node => !node.relationsKnown).map(node => node.label);
     const malformed = model.nodes.filter(node => node.malformed).map(node => node.label);
@@ -220,24 +333,34 @@
     const truncatedNote = truncated.length ? `<p class="small warn-text">The saved check recorded only the first uses for ${esc(truncated.join(', '))}; more dependencies may exist.</p>` : '';
     const cyclicNote = model.cyclic ? '<p class="small warn-text">A dependency cycle was recorded. All saved relationships are shown without transitive reduction.</p>' : '';
     const bounded = model.omittedNodes || model.omittedEdges ? `<p class="small warn-text">Graph limit reached: ${model.omittedNodes ? `${model.omittedNodes} additional node${model.omittedNodes === 1 ? '' : 's'}` : ''}${model.omittedNodes && model.omittedEdges ? ' and ' : ''}${model.omittedEdges ? `${model.omittedEdges} additional relationship${model.omittedEdges === 1 ? '' : 's'}` : ''} omitted.</p>` : '';
+    const outlineProblems = model.walkthrough && model.problems.length ? `<p class="small warn-text">${esc(model.problems.join(' '))}</p>` : '';
+    const statementKinds = model.walkthrough ? [...new Set(model.nodes.map(node => node.statementKind))] : [];
+    const legend = statementKinds.length ? `<div class="walkthrough-legend" aria-label="Statement kinds">${statementKinds.map(kind => `<span><i class="statement-swatch statement-${kind}" aria-hidden="true"></i>${esc(kind)}</span>`).join('')}</div>` : '';
     const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" aria-label="Graph size"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-fit">Fit width</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button></div>`;
-    const detailOptions = model.nodes.map(node => `<option value="${esc(node.id)}"${node.id === selected ? ' selected' : ''}>${esc(node.fullLabel || node.name)} — ${esc(node.status)}</option>`).join('');
+    const detailOptions = model.nodes.map(node => `<option value="${esc(node.id)}"${node.id === selected ? ' selected' : ''}>${node.kind === 'walkthrough' ? `${esc(node.statementKind)} — ` : ''}${esc(node.fullLabel || node.name)} — ${esc(node.status)}</option>`).join('');
     const picker = '<se' + `lect data-act="graph-detail-picker">${detailOptions}</se` + 'lect>';
     const detail = staticPage ? '' : `<aside class="proof-graph-detail" id="graph-detail" aria-live="polite"><label class="proof-graph-detail-picker">Statement details${picker}</label>${graphDetailHTML(model.byId.get(selected), model, false)}</aside>`;
-    const svgRole = staticPage ? ' role="img"' : ' role="group"';
+    const staticDetails = staticPage && model.walkthrough ? `<div class="walkthrough-static-details">${model.nodes.map(node => `<section id="walkthrough-detail-${esc(node.outlineId)}">${graphDetailHTML(node, model, true)}</section>`).join('')}</div>` : '';
+    const svgRole = staticPage && !model.walkthrough ? ' role="img"' : ' role="group"';
     const svgWidth = staticPage ? layout.width : `${Math.round(zoom * 100)}%`;
-    return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}" aria-label="Recorded proof graph"><header><div><h2>Recorded proof graph</h2><p>Arrows run from a statement to each statement that directly uses it. Foundations are at the bottom; results rise to the top. This view does not check or update results.</p></div>${toolbar}</header>
-      <div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Recorded statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}</section>`;
+    const heading = model.walkthrough ? model.title : 'Recorded proof graph';
+    const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows its mapped result status.` : 'Arrows run from a statement to each statement that directly uses it. Foundations are at the bottom; results rise to the top. This view does not check or update results.';
+    const label = model.walkthrough ? `${model.title} statement map` : 'Recorded proof graph';
+    return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2><p>${description}</p>${legend}</div>${toolbar}</header>
+      <div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}</section>`;
   }
 
   function renderProofGraph() {
     const root = document.getElementById('graph-view');
     if (!root || !UI.data) return;
-    const model = claimGraphModel(UI.data);
-    if (!model.byId.has(UI.graphSelected)) UI.graphSelected = model.byId.has(localId(UI.selected)) ? localId(UI.selected) : model.nodes[0]?.id || null;
+    const model = graphModel(UI.data);
+    if (!model.byId.has(UI.graphSelected)) {
+      const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
+      UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
+    }
     root.innerHTML = proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1});
   }
-  const graphNode = id => claimGraphModel(UI.data).byId.get(id);
+  const graphNode = id => graphModel(UI.data).byId.get(id);
 
-  Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, proofGraphHTML, renderProofGraph});
+  Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, proofGraphHTML, renderProofGraph, walkthroughGraphModel});
 })();

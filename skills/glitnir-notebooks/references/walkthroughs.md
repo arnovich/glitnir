@@ -55,9 +55,8 @@ that is `odd-sums-walkthrough/` next to `formal-proofs/`, never
 
 ```text
 outline.json      the outline, the source of truth
-Walkthrough.lean  the notebook; large projects may use one file per part
-assets/           map.svg and the figures
-map.html          the clickable map
+Walkthrough.lean  the notebook that owns the Graph statement map
+assets/           explanatory figures
 lakefile.toml     a Lake project requiring the original by relative path
 lean-toolchain    a copy of the original's lean-toolchain
 ```
@@ -84,16 +83,20 @@ to run and exits with status 2.
   `ok: 21 nodes, 57 Lean entries`.
 - `python -B scripts/walkthrough.py check OUTLINE --notebook FILE` also checks
   the notebook's claims (below), once the outline and its Lean entries have
-  no errors. For a walkthrough in several files, repeat `--notebook` once per
-  file in one run: together the files must hold each node's claim exactly once.
+  no errors. The helper still accepts several `--notebook` arguments for older
+  multi-file walkthroughs. New walkthroughs keep mapped claims in one notebook:
+  the Graph view and its static export show saved status and navigation for the
+  notebook currently open.
   To resolve the project's names it scans every `.lean` file under the project
   root, except in `.lake` folders.
-- `python -B scripts/walkthrough.py map OUTLINE` writes `assets/map.svg` and
-  `map.html` beside the outline; `--out DIR` writes them elsewhere. Its links
+- `python -B scripts/walkthrough.py map OUTLINE` is retained for older
+  walkthroughs that already publish `assets/map.svg` or `map.html`. It writes
+  those files beside the outline; `--out DIR` writes them elsewhere. Its links
   open this machine's files. `--links public` links to `repository` at `commit`
-  and to the sources' `url`s instead, and writes no local path: use it for a
-  copy meant for others. `map` refuses an outline with structural errors but
-  does not compare Lean entries, so run `check` first.
+  and to the sources' `url`s instead, and writes no local path. `map` refuses
+  an outline with structural errors but does not compare Lean entries, so run
+  `check` first. New walkthroughs use Glitnir's Graph view and static HTML
+  export, both drawn directly from `outline.json` with no generated map asset.
 
 `check` exits 0 when it reports no error, 1 when it reports any (it lists them
 all), and 2 when the outline cannot be read or the command is wrong. In the map,
@@ -257,9 +260,13 @@ levels only when asked. Node kinds are fixed:
 
 ### 3. Draw the map
 
-Run `python -B scripts/walkthrough.py map OUTLINE`. The map shows direct uses
-only: a use also reached through another is not drawn. Edges into appendix
-nodes are dashed.
+Open the walkthrough notebook beside `outline.json` in Glitnir and choose
+**Graph**. The map shows direct uses only: a use also reached through another
+is not drawn. Edges into appendix nodes are dashed. A statement's box shows its
+kind, while its dot shows the saved status of the walkthrough claim named by
+the outline. The details panel links to the paper page and pinned public Lean
+declarations when the outline supplies their URLs. The static HTML export uses
+the same map without an external fetch.
 
 *Check:* look at the rendered map, by whatever means you have, and fix the
 outline, not the picture. If you cannot view it, say that it was not inspected.
@@ -267,10 +274,10 @@ outline, not the picture. If you cannot view it, say that it was not inspected.
 ### 4. Write the notebook
 
 Open with the title and scope; what is proved and which file a reader must
-trust; the original's authors and licence, as the rules say; the map as
-`![How the proof fits together](assets/map.svg)`, with a pointer to `map.html`;
-and the strategy in one page. If the walkthrough cannot be checked (step 6),
-say so here. Then write one `{fold}` section per part of the argument, in
+trust; the original's authors and licence, as the rules say; tell the reader
+that **Graph** shows how the paper's statements fit together; and give the
+strategy in one page. If the walkthrough cannot be checked (step 6), say so
+here. Then write one `{fold}` section per part of the argument, in
 reading order, whose first paragraph is its summary. In each, give the
 statement, the idea, how Lean states it and where that differs, and the claim.
 Import only the modules the claims need, each the file that proves the cited
@@ -278,9 +285,10 @@ theorem. Say plainly where the project's final
 theorem does not follow the paper's route.
 
 *Check:* `python -B scripts/walkthrough.py check OUTLINE --notebook NOTEBOOK`
-exits 0, with one `--notebook` for each file of the walkthrough in the same run,
-and the preview shows the prose, and the claims as cards, rather than the whole
-file as source. If you cannot open the preview, say so in the report.
+exits 0, and the preview shows the prose and claims as cards, rather than the
+whole file as source. If you are maintaining an older multi-file walkthrough,
+pass every file in the same helper run; its Graph view maps only claims in the
+file currently open. If you cannot open the preview, say so in the report.
 
 ### 5. Add figures
 
@@ -331,8 +339,8 @@ name = "Walkthrough"
 roots = ["Walkthrough"]             # one module per notebook file
 ```
 
-For a walkthrough in several files, list each file's module in `roots`, such
-as `roots = ["Walkthrough", "Appendices"]` for `Walkthrough.lean` and
+For an older walkthrough in several files, list each file's module in `roots`,
+such as `roots = ["Walkthrough", "Appendices"]` for `Walkthrough.lean` and
 `Appendices.lean`. Copy the original's `leanOptions` exactly, so that the
 restated statements elaborate as they do in the original, and leave the table
 out if it sets none. Copy the original's `lean-toolchain` beside the lakefile.

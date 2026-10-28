@@ -104,6 +104,7 @@ svg.graph .node{cursor:pointer}
 .proof-graph-canvas{border:1px solid var(--border);border-radius:8px;background:var(--paper);overflow:auto;min-height:220px}
 .proof-map{height:auto;display:block;transition:width .12s ease}
 .proof-edge{fill:none;stroke:var(--faint);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.proof-edge.appendix-edge{stroke-dasharray:5 4}
 .proof-map marker path{fill:var(--faint)}
 .proof-node{cursor:pointer;color:var(--blue)}
 .proof-node rect{fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5;vector-effect:non-scaling-stroke}
@@ -112,6 +113,14 @@ svg.graph .node{cursor:pointer}
 .proof-node[data-tone=amber]{color:var(--amber)}.proof-node[data-tone=amber] rect{fill:var(--amber-soft);stroke:var(--amber)}
 .proof-node[data-tone=red]{color:var(--red)}.proof-node[data-tone=red] rect{fill:var(--red-soft);stroke:var(--red)}
 .proof-node[data-tone=muted]{color:var(--faint)}.proof-node[data-tone=muted] rect{fill:var(--sunk);stroke:var(--faint);stroke-dasharray:5 3}
+.proof-node.walkthrough-node.statement-definition rect,.statement-swatch.statement-definition{fill:var(--blue-soft);stroke:var(--blue);background:var(--blue-soft);border-color:var(--blue)}
+.proof-node.walkthrough-node.statement-lemma rect,.statement-swatch.statement-lemma{fill:var(--green-soft);stroke:var(--green);background:var(--green-soft);border-color:var(--green)}
+.proof-node.walkthrough-node.statement-proposition rect,.statement-swatch.statement-proposition{fill:var(--violet-soft);stroke:var(--violet);background:var(--violet-soft);border-color:var(--violet)}
+.proof-node.walkthrough-node.statement-theorem rect,.statement-swatch.statement-theorem{fill:var(--amber-soft);stroke:var(--amber);background:var(--amber-soft);border-color:var(--amber)}
+.proof-node.walkthrough-node.statement-corollary rect,.statement-swatch.statement-corollary{fill:var(--red-soft);stroke:var(--red);background:var(--red-soft);border-color:var(--red)}
+.proof-node.walkthrough-node.statement-algorithm rect,.statement-swatch.statement-algorithm{fill:var(--green-soft);stroke:var(--blue);background:var(--green-soft);border-color:var(--blue)}
+.proof-node.walkthrough-node.statement-appendix rect,.statement-swatch.statement-appendix{fill:var(--sunk);stroke:var(--faint);background:var(--sunk);border-color:var(--faint)}
+.proof-node.walkthrough-node rect{stroke-dasharray:none}.proof-node.walkthrough-node.statement-appendix rect{stroke-dasharray:5 3}
 .proof-node.chosen rect{stroke-width:3}
 .proof-node-status{fill:currentColor}
 .proof-node-label{fill:var(--ink);font:600 12px var(--mono)}
@@ -123,6 +132,14 @@ svg.graph .node{cursor:pointer}
 .proof-graph-detail dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 9px;margin:12px 0}
 .proof-graph-detail dt{font-weight:600}.proof-graph-detail dd{margin:0;color:var(--muted)}
 .proof-graph-detail button{margin-top:8px}
+.walkthrough-statement{font:15px/1.55 var(--serif);margin:10px 0}
+.walkthrough-legend{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:9px;color:var(--muted);font-size:11px}
+.walkthrough-legend span{display:inline-flex;align-items:center;gap:5px}.statement-swatch{width:12px;height:12px;border:1.5px solid;border-radius:3px}
+.walkthrough-lean{margin:6px 0 12px;padding-left:18px}.walkthrough-lean li+li{margin-top:5px}
+.walkthrough-static-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:16px}
+.walkthrough-static-details>section{border:1px solid var(--border);border-radius:8px;padding:14px;break-inside:avoid}
+.walkthrough-static-details h3{margin:0 0 8px}.walkthrough-static-details h4{margin:12px 0 4px}
+.walkthrough-claim-link{display:inline-block;padding:6px 10px;border:1px solid var(--blue);border-radius:5px;text-decoration:none}
 .proof-graph-detail-picker{display:grid;gap:5px;margin-bottom:14px;color:var(--muted);font-weight:600}
 .proof-graph-detail-picker select{min-height:30px;max-width:100%;font-weight:400}
 .proof-graph-export{margin:0 0 28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
