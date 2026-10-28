@@ -124,6 +124,9 @@ def _check_lean(where: str, entries: Any) -> list[Problem]:
         label = f"{where} lean {index}"
         if isinstance(entry, dict):
             problems.extend(_missing(label, entry, _LEAN_KEYS))
+            line = entry.get("line")
+            if "line" in entry and not (type(line) is int and line > 0):
+                problems.append(_error(f"{label}: line must be a positive integer"))
         else:
             problems.append(_error(f"{label}: must be an object"))
     return problems
@@ -140,6 +143,7 @@ def _check_nodes(nodes: Any) -> list[Problem]:
         return [_error("nodes: must be a list")]
     problems: list[Problem] = []
     uses: dict[str, list[str]] = {}
+    claimed: dict[str, str] = {}
     for index, item in enumerate(nodes):
         if not isinstance(item, dict):
             problems.append(_error(f"node {index}: must be an object"))
@@ -157,6 +161,17 @@ def _check_nodes(nodes: Any) -> list[Problem]:
         if "uses" in item and not isinstance(item["uses"], list):
             problems.append(_error(f"{where}: uses must be a list"))
         problems.extend(_check_lean(where, item.get("lean", [])))
+        claim = item.get("claim")
+        if isinstance(claim, str):
+            label = node_id if isinstance(node_id, str) else str(index)
+            if claim in claimed:
+                problems.append(
+                    _error(
+                        f"claim {claim} is listed on nodes {claimed[claim]} and {label}"
+                    )
+                )
+            else:
+                claimed[claim] = label
     for node_id, used_ids in uses.items():
         for used_id in used_ids:
             if used_id not in uses:
@@ -212,7 +227,8 @@ _DECL_RE = re.compile(
     r"^(?:@\[[^\]]*\]\s*)*"
     r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
     r"|public|scoped|local)\s+)*"
-    r"(?:theorem|lemma|def|abbrev|structure|class|inductive|instance|opaque|axiom)"
+    r"(?P<keyword>theorem|lemma|def|abbrev|structure|class|inductive|instance"
+    r"|opaque|axiom)"
     r"\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
 )
 _NAMESPACE_RE = re.compile(r"^namespace\s+(\S+)")
@@ -236,8 +252,12 @@ class Declaration:
     file: str
     line: int
     type: str
-    namespaces: tuple[str, ...]  # enclosing namespace prefixes only, never opens
+    # the namespaces the header's names resolve in, innermost last: the
+    # enclosing ones and those of the name's own prefix, never opens
+    namespaces: tuple[str, ...]
     variables: bool = False  # a `variable` command is in force at the declaration
+    keyword: str = ""  # theorem, lemma, def, axiom, ...
+    gap: str = ""  # `sorry` or `admit` if its text uses one outside comments
 
 
 def _collapse(text: str) -> str:
@@ -352,13 +372,75 @@ def declarations(root: Path, file: str) -> list[Declaration]:
             full = name[len("_root_.") :]
         else:
             full = ".".join([*parts, name])
-        header = _header(match.group("rest"), _continuation(lines, index))
+            # Lean elaborates `theorem A.t` inside `namespace A`.
+            own = _components(full)
+            prefixes = tuple(".".join(own[:i]) for i in range(1, len(own)))
+        following = _continuation(lines, index)
+        header = _header(match.group("rest"), following)
         found.append(
             Declaration(
-                full, file, index + 1, header, prefixes, file_vars or any(scoped_vars)
+                full,
+                file,
+                index + 1,
+                header,
+                prefixes,
+                file_vars or any(scoped_vars),
+                match.group("keyword"),
+                _proof_gap("\n".join([match.group("rest"), *following])),
             )
         )
     return found
+
+
+_RAW_STRING_RE = re.compile(r'r(#*)".*?"\1', re.DOTALL)
+_CHAR_RE = re.compile(r"'(?:\\[^']*|[^\\'\n])'")
+
+
+def _code_only(text: str) -> str:
+    """Return Lean text with its comments, strings and characters blanked."""
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        after_name = index > 0 and (
+            text[index - 1].isalnum() or text[index - 1] in "_'"
+        )
+        if text.startswith("--", index):
+            end = text.find("\n", index)
+            index = len(text) if end < 0 else end
+            continue
+        if text.startswith("/-", index):
+            depth, index = 1, index + 2
+            while index < len(text) and depth:
+                if text.startswith("/-", index):
+                    depth, index = depth + 1, index + 2
+                elif text.startswith("-/", index):
+                    depth, index = depth - 1, index + 2
+                else:
+                    index += 1
+            out.append(" ")
+            continue
+        raw = None if after_name else _RAW_STRING_RE.match(text, index)
+        char = None if after_name else _CHAR_RE.match(text, index)
+        if raw or char:
+            index = (raw or char).end()  # type: ignore[union-attr]
+            out.append(" ")
+            continue
+        if text[index] == '"':
+            index += 1
+            while index < len(text) and text[index] != '"':
+                index += 2 if text[index] == "\\" else 1
+            index += 1
+            out.append(" ")
+            continue
+        out.append(text[index])
+        index += 1
+    return "".join(out)
+
+
+def _proof_gap(text: str) -> str:
+    """Return `sorry` or `admit` if the code uses one as a word, else ""."""
+    words = set(_tokens(_code_only(text)))
+    return next((gap for gap in ("sorry", "admit") if gap in words), "")
 
 
 def _lean_entries(outline: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
@@ -466,34 +548,143 @@ def _tokens(text: str) -> list[str]:
     return _TOKEN_RE.findall(text)
 
 
-def qualifications(
-    written: str, declared: str, namespaces: Sequence[str]
-) -> list[str] | None:
-    """Return the names a written header qualifies, or None if it differs.
+def _components(name: str) -> list[str]:
+    """Split a name at its dots, keeping each `«…»` part whole."""
+    return re.findall(r"(?:«[^»]*»|[^.«])+", name)
 
-    The headers match token by token. A declared name may be written in full,
-    or with any of the enclosing namespaces as its prefix; each name written
-    with such a prefix is returned, so the caller can confirm it is declared.
+
+def resolve(name: str, scopes: Sequence[str], known: set[str]) -> str:
+    """Return the declaration a name means where it is written, as Lean finds it.
+
+    Lean tries the longest prefix of the name first, and for each prefix the
+    innermost enclosing namespace first; what follows the prefix is field
+    access. A name the project does not declare keeps its spelling.
+    """
+    if name.startswith("_root_."):
+        return name[len("_root_.") :]
+    parts = _components(name)
+    for size in range(len(parts), 0, -1):
+        head, rest = ".".join(parts[:size]), parts[size:]
+        for scope in reversed(scopes):
+            if f"{scope}.{head}" in known:
+                return ".".join([scope, head, *rest])
+        if head in known:
+            return name
+    return name
+
+
+_BINDER_WORDS = frozenset("∀ ∃ ∃! fun λ Π Σ ∑ ∏ ⨆ ⨅ ⋃ ⋂".split())
+_GROUP_OPENERS = "({⦃["
+
+
+def _is_atom(token: str) -> bool:
+    """Tell whether a token is an undotted identifier or `_`."""
+    return bool(_IDENT_START_RE.match(token)) and len(_components(token)) == 1
+
+
+def _group_binders(tokens: list[str], start: int, closer_ok: bool) -> list[str]:
+    """Return the names a binder group opening at `start` binds, if it is one."""
+    index = start + 1
+    while index < len(tokens) and _is_atom(tokens[index]):
+        index += 1
+    if index == start + 1 or index == len(tokens):
+        return []
+    follower = tokens[index]
+    if follower == ":" or (closer_ok and follower in _CLOSERS + "⦄"):
+        return tokens[start + 1 : index]
+    return []
+
+
+def bound_names(header: str) -> set[str]:
+    """Return the names a header binds: its binder groups and `∀`-style binders.
+
+    A name is counted wherever it is bound, without its scope, so a name both
+    bound and used free in one header is taken as bound.
+    """
+    tokens = _tokens(header)
+    bound: set[str] = set()
+    depth = 0
+    signature = True
+    for index, token in enumerate(tokens):
+        if signature and depth == 0 and token == ":":
+            signature = False
+        if signature and depth == 0 and token in _GROUP_OPENERS:
+            bound.update(_group_binders(tokens, index, token != "["))
+        if token in _OPENERS + "⦃":
+            depth += 1
+        elif token in _CLOSERS + "⦄":
+            depth -= 1
+        if token == "{" and index + 2 < len(tokens) and tokens[index + 2] == "|":
+            if _is_atom(tokens[index + 1]):
+                bound.add(tokens[index + 1])
+        if token not in _BINDER_WORDS:
+            continue
+        after = index + 1
+        if token == "∃" and after < len(tokens) and tokens[after] == "!":
+            after += 1
+        while after < len(tokens):
+            if _is_atom(tokens[after]):
+                bound.add(tokens[after])
+                after += 1
+            elif tokens[after] in _GROUP_OPENERS:
+                names = _group_binders(tokens, after, True)
+                if not names:
+                    break
+                bound.update(names)
+                after = _group_end(tokens, after)
+            else:
+                break
+    bound.discard("_")
+    return bound
+
+
+def _group_end(tokens: list[str], start: int) -> int:
+    """Return the index after the bracket group opening at `start`."""
+    depth = 0
+    for index in range(start, len(tokens)):
+        if tokens[index] in _OPENERS + "⦃":
+            depth += 1
+        elif tokens[index] in _CLOSERS + "⦄":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return len(tokens)
+
+
+def differences(
+    written: str, declared: str, scopes: Sequence[str], known: set[str]
+) -> list[tuple[str, str, str]] | None:
+    """Compare a written header with a declared one, token by token.
+
+    Return None if their tokens do not line up, else each (written token,
+    declared token, what the declared token means) that differs. A declared
+    name means the declaration Lean resolves it to in the project, so the
+    written token must be that full name; bound names and field names after
+    a dot must be written as declared.
     """
     left, right = _tokens(written), _tokens(declared)
     if len(left) != len(right):
         return None
-    qualified: list[str] = []
-    for token, wanted in zip(left, right):
-        if token == wanted:
-            continue
-        if _IDENT_START_RE.match(wanted) and any(
-            token == f"{space}.{wanted}" for space in namespaces
+    bound = bound_names(declared)
+    found: list[tuple[str, str, str]] = []
+    for index, (token, wanted) in enumerate(zip(left, right)):
+        meant = wanted
+        if (
+            _IDENT_START_RE.match(wanted)
+            and not (index and right[index - 1] == ".")
+            and _components(wanted)[0] not in bound
         ):
-            qualified.append(token)
-            continue
-        return None
-    return qualified
+            meant = resolve(wanted, scopes, known)
+        if token != meant:
+            found.append((token, wanted, meant))
+    return found
 
 
-def same_statement(written: str, declared: str, namespaces: Sequence[str]) -> bool:
+def same_statement(
+    written: str, declared: str, scopes: Sequence[str], known: set[str]
+) -> bool:
     """Tell whether a written header restates the declared one, as text."""
-    return qualifications(written, declared, namespaces) is not None
+    return differences(written, declared, scopes, known) == []
 
 
 def project_names(root: Path) -> set[str]:
@@ -516,25 +707,113 @@ def project_names(root: Path) -> set[str]:
     return names
 
 
-def _claims_in(text: str) -> list[tuple[str, str, str]]:
-    """Return (name, header, tail) for each column-0 theorem or lemma in text."""
+Claim = tuple[str, str, str]  # name, header, the text after the header
+
+_ONLY = "walkthrough must contain only imports, prose, namespaces and claims"
+_PREFIX_RE = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)*"
+    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe|public)\s+)*"
+)
+
+
+@dataclass
+class _Scan:
+    """What one notebook holds: its claims, its other code and its namespaces."""
+
+    claims: list[Claim]
+    stray: list[tuple[int, str]]  # line number and first word of disallowed code
+    namespaces: list[tuple[int, str]]  # line number and full namespace opened
+
+
+def _after_comment(number: int, rest: str, scan: _Scan) -> None:
+    """Record any code written after a comment's `-/` on the same line."""
+    words = rest.split()
+    if words:
+        scan.stray.append((number, f"{words[0]} after -/"))
+
+
+def _command(number: int, line: str, frames: list[str], scan: _Scan) -> None:
+    """Check one column-0 line that is not a claim, tracking namespaces."""
+    words = line.split("--", 1)[0].split()
+    first = words[0]
+    if first == "import":
+        return
+    if first == "namespace" and len(words) == 2:
+        frames.extend(_components(words[1]))
+        scan.namespaces.append((number, ".".join(f for f in frames if f)))
+        return
+    if first == "section" and len(words) <= 2:
+        frames.append("")
+        return
+    if first == "end" and len(words) <= 2:
+        count = (
+            len(_components(words[1])) if len(words) == 2 and frames[-1:] != [""] else 1
+        )
+        del frames[max(len(frames) - count, 0) :]
+        return
+    if words[:2] == ["#print", "axioms"]:
+        return
+    rest = line[_PREFIX_RE.match(line).end() :].split()  # type: ignore[union-attr]
+    word = rest[0] if rest else first
+    if word in ("import", "namespace", "section", "end", "theorem", "lemma"):
+        word = first
+    scan.stray.append((number, word))
+
+
+def _scan_notebook(text: str) -> _Scan:
+    """Read a notebook: its claims, the code it may not hold, its namespaces.
+
+    Allowed are blank lines, `--` comments, `/- -/` comments, `/-- -/`
+    docstrings and `/-! -/` prose, and at column 0 `import`, `namespace`,
+    `section`, `end`, `#print axioms` and claims; a claim's indented lines
+    belong to it. Anything else is recorded, as is code after a `-/`.
+    """
     lines = text.splitlines()
-    found: list[tuple[str, str, str]] = []
+    scan = _Scan([], [], [])
+    frames: list[str] = []
     in_comment = False
-    for index, line in enumerate(lines):
+    index = 0
+    while index < len(lines):
+        line, number = lines[index], index + 1
+        index += 1
+        stripped = line.lstrip()
         if in_comment:
-            in_comment = "-/" not in line
+            close = line.find("-/")
+            if close >= 0:
+                in_comment = False
+                _after_comment(number, line[close + 2 :], scan)
             continue
-        if line.startswith("/-"):
-            in_comment = "-/" not in line
+        if not stripped or stripped.startswith("--"):
+            continue
+        if stripped.startswith("/-"):
+            opened = len(line) - len(stripped)
+            close = line.find("-/", opened + 2)
+            if close < 0:
+                in_comment = True
+            else:
+                _after_comment(number, line[close + 2 :], scan)
+            continue
+        if line[0].isspace():
+            scan.stray.append((number, stripped.split()[0]))
             continue
         match = _CLAIM_RE.match(line)
         if match:
-            header, tail = _split_header(
-                match.group("rest"), _continuation(lines, index)
-            )
-            found.append((match.group("name"), header, tail))
-    return found
+            following = _continuation(lines, index - 1)
+            header, tail = _split_header(match.group("rest"), following)
+            scan.claims.append((match.group("name"), header, tail))
+            index += len(following)
+            continue
+        _command(number, line, frames, scan)
+    return scan
+
+
+def _project_namespaces(known: set[str]) -> set[str]:
+    """Return every namespace the project declares a name in, and every name."""
+    spaces: set[str] = set()
+    for name in known:
+        parts = _components(name)
+        spaces.update(".".join(parts[:i]) for i in range(1, len(parts) + 1))
+    return spaces
 
 
 def check_notebook(
@@ -547,32 +826,70 @@ def check_notebook(
     """
     root = _project_root(outline, base)
     known = project_names(root)
+    spaces = _project_namespaces(known)
     nodes = {
         str(item["claim"]): item
         for item in outline.get("nodes", [])
         if isinstance(item.get("claim"), str)
     }
     problems: list[Problem] = []
-    written: dict[str, Path] = {}
+    scanned: list[tuple[Path, list[Claim]]] = []
     for notebook in notebooks:
         try:
             text = notebook.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             problems.append(_error(f"notebook {notebook} cannot be read"))
             continue
-        problems.extend(_forbidden_in(text, notebook))
-        for name, header, tail in _claims_in(text):
+        scan = _scan_notebook(text)
+        for number, word in scan.stray:
+            problems.append(_error(f"{_ONLY}: line {number}: {word} in {notebook}"))
+        for number, space in scan.namespaces:
+            parts = _components(space)
+            if any(".".join(parts[:i]) in spaces for i in range(1, len(parts) + 1)):
+                problems.append(
+                    _error(
+                        f"{notebook} line {number}: namespace {space} is a namespace "
+                        "of the project; put the claims in the walkthrough's own"
+                    )
+                )
+        scanned.append((notebook, scan.claims))
+    claim_names = {name for _, claims in scanned for name, _, _ in claims}
+    written: dict[str, Path] = {}
+    for notebook, claims in scanned:
+        for name, header, tail in claims:
             if name in written:
                 problems.append(
                     _error(f"claim {name} is in both {written[name]} and {notebook}")
                 )
                 continue
             written[name] = notebook
+            problems.extend(_claim_names_written(name, header, claim_names))
             problems.extend(_check_claim(root, known, nodes, name, header, tail))
     for claim, item in nodes.items():
         if claim not in written:
             problems.append(
                 _error(f"node {item['id']}: claim {claim} is not in any notebook")
+            )
+    return problems
+
+
+def _claim_names_written(name: str, header: str, claims: set[str]) -> list[Problem]:
+    """Report each name in a claim's header that could mean one of the claims."""
+    bound = bound_names(header)
+    tokens = _tokens(header)
+    problems: list[Problem] = []
+    for index, token in enumerate(tokens):
+        if not _IDENT_START_RE.match(token) or (index and tokens[index - 1] == "."):
+            continue
+        parts = _components(token)
+        if parts[0] in bound:
+            continue
+        if any(".".join(parts[:i]) in claims for i in range(1, len(parts) + 1)):
+            problems.append(
+                _error(
+                    f"claim {name} writes {token}, which names a claim of the "
+                    "walkthrough"
+                )
             )
     return problems
 
@@ -599,39 +916,6 @@ def _check_claim(
             _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
         ]
     return _compare_claim(root, known, name, header, target, entries[0])
-
-
-_FORBIDDEN_WORDS = frozenset(
-    "open variable universe def abbrev notation infix infixl infixr prefix postfix"
-    " macro syntax axiom instance opaque structure class inductive attribute"
-    " set_option local scoped".split()
-)
-_PREFIX_RE = re.compile(
-    r"^(?:@\[[^\]]*\]\s*)*"
-    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe|public)\s+)*"
-)
-
-
-def _forbidden_in(text: str, notebook: Path) -> list[Problem]:
-    """Report each column-0 command of the notebook that defines or opens."""
-    problems: list[Problem] = []
-    in_comment = False
-    for number, line in enumerate(text.splitlines(), start=1):
-        if in_comment:
-            in_comment = "-/" not in line
-            continue
-        if line.startswith("/-"):
-            in_comment = "-/" not in line
-            continue
-        words = line[_PREFIX_RE.match(line).end() :].split()  # type: ignore[union-attr]
-        if words and words[0] in _FORBIDDEN_WORDS:
-            problems.append(
-                _error(
-                    f"walkthrough must not define or open anything: "
-                    f"line {number}: {words[0]} in {notebook}"
-                )
-            )
-    return problems
 
 
 def takes_explicit_arguments(header: str) -> bool:
@@ -669,6 +953,18 @@ def _compare_claim(
         return [_error(f"claim {claim}: file {file} cannot be read")]
     if not found:
         return [_error(f"claim {claim}: no declaration {target} in {file}")]
+    other = next((d for d in found if d.keyword not in ("theorem", "lemma")), None)
+    if other is not None:
+        article = "an" if other.keyword[:1] in tuple("aeiou") else "a"
+        return [
+            _error(
+                f"claim {claim} cites {target}, which is {article} {other.keyword}, "
+                "not a theorem"
+            )
+        ]
+    gap = next((d.gap for d in found if d.gap), "")
+    if gap:
+        return [_error(f"claim {claim} cites {target}, whose proof contains {gap}")]
     if any(d.variables for d in found):
         return [
             _error(
@@ -683,24 +979,23 @@ def _compare_claim(
                 "explain it in prose instead"
             )
         ]
-    undeclared: list[str] = []
+    differing: list[tuple[str, str, str]] = []
     for found_one in found:
-        qualified = qualifications(header, found_one.type, found_one.namespaces)
-        if qualified is None:
-            continue
-        missing = [name for name in qualified if name not in known]
-        if not missing:
+        found_differences = differences(
+            header, found_one.type, found_one.namespaces, known
+        )
+        if found_differences == []:
             return []
-        undeclared = undeclared or missing
-    if undeclared:
-        return [
-            _error(f"claim {claim} writes {name}, which the project does not declare")
-            for name in undeclared
-        ]
+        differing = differing or found_differences or []
+    hints = "".join(
+        f"; there {wanted} means {meant}"
+        for _, wanted, meant in differing
+        if wanted != meant
+    )
     return [
         _error(
             f"claim {claim}: statement {header!r} differs from "
-            f"{target} in {file}: {found[0].type!r}"
+            f"{target} in {file}: {found[0].type!r}{hints}"
         )
     ]
 

@@ -234,7 +234,8 @@ def test_declarations_are_found_with_headers_and_namespaces(tmp_path: Path) -> N
     assert (found["A.four"].type, found["A.four"].line) == (": True", 8)
     assert (found["S"].type, found["S"].line) == (": Prop", 9)
     assert found["A.B.one"].namespaces == ("A", "A.B")
-    assert found["A.four"].namespaces == ()
+    assert found["A.four"].namespaces == ("A",)
+    assert found["S"].namespaces == ()
 
 
 def test_opened_namespaces_are_not_recorded(tmp_path: Path) -> None:
@@ -247,8 +248,10 @@ def test_opened_namespaces_are_not_recorded(tmp_path: Path) -> None:
 
 def test_open_namespaces_do_not_license_a_prefix() -> None:
     same = load_script().same_statement
-    assert not same(": Real.exp x = 1", ": exp x = 1", ())
-    assert same(": Printed.GroupingLemma", ": GroupingLemma", ("Printed",))
+    assert not same(": Real.exp x = 1", ": exp x = 1", (), set())
+    known = {"Printed.GroupingLemma"}
+    assert same(": Printed.GroupingLemma", ": GroupingLemma", ("Printed",), known)
+    assert not same(": GroupingLemma", ": GroupingLemma", ("Printed",), known)
 
 
 def test_variables_are_tracked_per_scope(tmp_path: Path) -> None:
@@ -486,12 +489,36 @@ def test_explicit_binders_are_found_only_before_the_type() -> None:
 
 def test_same_statement_resolves_namespaces() -> None:
     same = load_script().same_statement
-    assert same(": A.B.Foo", ": Foo", ("A", "A.B"))
-    assert not same(": C.Foo", ": Foo", ("A",))
-    assert same(": A.Foo x", ": A.Foo x", ())
-    assert not same(": Foo x", ": Foo", ("A",))
-    assert not same(": Foo y", ": Foo x", ())
-    assert same(": «a.b».c", ": «a.b».c", ())
+    known = {"A.B.Foo", "A.Foo", "C.Foo"}
+    assert same(": A.B.Foo", ": Foo", ("A", "A.B"), known)
+    assert not same(": A.Foo", ": Foo", ("A", "A.B"), known)
+    assert not same(": Foo", ": Foo", ("A", "A.B"), known)
+    assert not same(": C.Foo", ": Foo", ("A",), known)
+    assert same(": A.Foo x", ": A.Foo x", (), known)
+    assert not same(": Foo x", ": Foo", ("A",), known)
+    assert not same(": Foo y", ": Foo x", (), known)
+    assert same(": «a.b».c", ": «a.b».c", (), known)
+
+
+def test_resolution_follows_lean() -> None:
+    resolve = load_script().resolve
+    known = {"A.cost", "A.B.cost", "A.B.t", "cost", "A.size"}
+    assert resolve("cost", ("A", "A.B"), known) == "A.B.cost"
+    assert resolve("cost", ("A",), known) == "A.cost"
+    assert resolve("cost", (), known) == "cost"
+    assert resolve("size", ("A", "A.B"), known) == "A.size"
+    assert resolve("B.cost", ("A",), known) == "A.B.cost"
+    assert resolve("B.t.symm", ("A",), known) == "A.B.t.symm"
+    assert resolve("Nat.succ", ("A",), known) == "Nat.succ"
+
+
+def test_bound_names_are_found() -> None:
+    bound = load_script().bound_names
+    assert bound("{n m : Nat} [inst : Inhabited Nat] : n = m") == {"n", "m", "inst"}
+    assert bound("{n} : ∀ k ∈ s, ∃ (j : Nat) (i), j = k + i") >= {"n", "k", "j", "i"}
+    assert bound(": fun x => x = f") == {"x"}
+    assert "Inhabited" not in bound("[Inhabited Nat] : True")
+    assert "a" not in bound(": s = {a}")
 
 
 @pytest.mark.parametrize(
@@ -583,6 +610,9 @@ def test_a_claim_citing_a_declaration_with_variables_is_an_error(
     assert "claim d" not in out
 
 
+ONLY = "walkthrough must contain only imports, prose, namespaces and claims"
+
+
 @pytest.mark.parametrize(
     "line, word",
     [
@@ -593,23 +623,53 @@ def test_a_claim_citing_a_declaration_with_variables_is_an_error(
         ("private noncomputable def x := 1", "def"),
         ("set_option autoImplicit true", "set_option"),
         ('local notation "x" => 1', "local"),
+        ("example : 1 = 2 := by sorry", "example"),
+        ("export A (size)", "export"),
+        ("alias foo := A.B.one", "alias"),
+        ("macro_rules | `(x) => `(1)", "macro_rules"),
+        ('notation3 "x" => 1', "notation3"),
+        ("irreducible_def x : Nat := 1", "irreducible_def"),
+        ("#eval 1", "#eval"),
+        ("#print A.B.one", "#print"),
+        ("noncomputable section", "noncomputable"),
+        ("@[simp]", "@[simp]"),
     ],
 )
-def test_the_notebook_must_not_define_or_open(
+def test_the_notebook_holds_only_allowed_commands(
     tmp_path: Path, line: str, word: str
 ) -> None:
     data = claim_outline(make_project(tmp_path))
     text = f"import X\n{line}\ntheorem w_one : True := by\n  exact A.B.one\n"
     out = notebook_run(tmp_path, data, text).stdout
-    assert f"walkthrough must not define or open anything: line 2: {word}" in out
+    assert f"{ONLY}: line 2: {word} in " in out, out
+    assert not any(w in out for w in STRUCTURAL_WORDS), out
+
+
+@pytest.mark.parametrize(
+    "text, number, word",
+    [
+        ("/-- doc -/ theorem bogus : 1 = 2 := by sorry\n", 2, "theorem after -/"),
+        ("/-! prose\nmore -/ example : 1 = 2 := by sorry\n", 3, "example after -/"),
+        ("namespace N\n  theorem bogus : 1 = 2 := by sorry\nend N\n", 3, "theorem"),
+        ("#print axioms w_one\n  #eval 1\n", 3, "#eval"),
+    ],
+)
+def test_code_hidden_after_comments_or_indented_is_an_error(
+    tmp_path: Path, text: str, number: int, word: str
+) -> None:
+    data = claim_outline(make_project(tmp_path))
+    claim = "theorem w_one : True := by\n  exact A.B.one\n"
+    out = notebook_run(tmp_path, data, "import X\n" + text + claim).stdout
+    assert f"{ONLY}: line {number}: {word} in " in out, out
 
 
 def test_a_plain_notebook_passes(tmp_path: Path) -> None:
     data = claim_outline(make_project(tmp_path))
     text = (
         "import Mathlib\n/-! prose\ndef not_code := 1\n-/\n-- open Real\n"
-        "/-- doc -/\nnamespace N\ntheorem w_one : True := by\n  exact A.B.one\n"
-        "end N\n#print axioms w_one\n"
+        "  -- an indented comment\n/- a comment -/\nsection\nnamespace N\n"
+        "/-- doc -/\ntheorem w_one : True := by\n  exact A.B.one\n"
+        "end N\nend\n#print axioms w_one\n"
     )
     result = notebook_run(tmp_path, data, text)
     assert (
@@ -885,12 +945,13 @@ def test_a_qualification_the_project_declares_passes(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout
 
 
-def test_a_qualification_the_project_does_not_declare_is_an_error(
-    tmp_path: Path,
+@pytest.mark.parametrize("written", ["Q.X", "X"])
+def test_a_name_lean_does_not_resolve_to_the_projects_is_an_error(
+    tmp_path: Path, written: str
 ) -> None:
-    result = qualified_run(tmp_path, "Q.X")
+    result = qualified_run(tmp_path, written)
     assert result.returncode == 1
-    assert "claim c writes Q.X, which the project does not declare" in result.stdout
+    assert "there X means Q.P.X" in result.stdout, result.stdout
 
 
 def test_the_map_legend_explains_dashed_edges() -> None:
@@ -902,3 +963,181 @@ def test_map_labels_keep_28_characters() -> None:
     short = load_script()._short
     assert short("x" * 28) == "x" * 28
     assert short("x" * 29) == "x" * 27 + "…"
+
+
+RESOLVE_SOURCE = """def size := 1
+namespace A
+def size := 2
+def cost := 5
+def n := 3
+namespace B
+def cost := 7
+theorem t_inner : cost = 7 := rfl
+theorem t_size : size = 2 := rfl
+theorem t_bound {n : Nat} : n = n := rfl
+end B
+end A
+def cost := 9
+theorem A.four : cost = 5 := rfl
+namespace Printed
+def GroupingLemma : Prop := True
+theorem groupingLemma : GroupingLemma := trivial
+end Printed
+"""
+RESOLVE_LINES = {
+    "A.B.t_inner": (8, ": cost = 7"),
+    "A.B.t_size": (9, ": size = 2"),
+    "A.B.t_bound": (10, "{n : Nat} : n = n"),
+    "A.four": (14, ": cost = 5"),
+    "Printed.groupingLemma": (17, ": GroupingLemma"),
+}
+
+
+def resolve_run(tmp_path: Path, target: str, claim: str) -> Any:
+    """Check the claim line `theorem c ...` citing the target in RESOLVE_SOURCE."""
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj/R.lean").write_text(RESOLVE_SOURCE, encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", "proj/R.lean")
+    git(tmp_path, "commit", "-q", "-m", "r")
+    line, type_ = RESOLVE_LINES[target]
+    data = lean_outline(
+        git(tmp_path, "rev-parse", "HEAD"),
+        entry(name=target, file="R.lean", line=line, type=type_),
+    )
+    data["nodes"][0]["claim"] = "c"
+    text = f"namespace W\n{claim} := by\n  exact {target}\nend W\n"
+    return notebook_run(tmp_path, data, text)
+
+
+@pytest.mark.parametrize(
+    "target, claim, means",
+    [
+        ("A.B.t_inner", "theorem c : A.cost = 7", "there cost means A.B.cost"),
+        ("A.B.t_inner", "theorem c : cost = 7", "there cost means A.B.cost"),
+        ("A.B.t_size", "theorem c : size = 2", "there size means A.size"),
+        ("A.four", "theorem c : cost = 5", "there cost means A.cost"),
+        ("Printed.groupingLemma", "theorem c : GroupingLemma", "Printed.Grouping"),
+    ],
+)
+def test_a_name_lean_resolves_elsewhere_is_an_error(
+    tmp_path: Path, target: str, claim: str, means: str
+) -> None:
+    result = resolve_run(tmp_path, target, claim)
+    assert result.returncode == 1 and means in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize(
+    "target, claim",
+    [
+        ("A.B.t_inner", "theorem c : A.B.cost = 7"),
+        ("A.B.t_size", "theorem c : A.size = 2"),
+        ("A.B.t_bound", "theorem c {n : Nat} : n = n"),
+        ("A.four", "theorem c : A.cost = 5"),
+        ("Printed.groupingLemma", "theorem c : Printed.GroupingLemma"),
+    ],
+)
+def test_the_name_lean_resolves_to_passes(
+    tmp_path: Path, target: str, claim: str
+) -> None:
+    result = resolve_run(tmp_path, target, claim)
+    assert result.stdout == "ok: 1 nodes, 1 Lean entries, 1 claims\n", result.stdout
+
+
+def test_a_walkthrough_namespace_the_project_uses_is_an_error(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = "namespace A\ntheorem w_one : True := by\n  exact A.B.one\nend A\n"
+    out = notebook_run(tmp_path, data, text).stdout
+    assert "line 1: namespace A is a namespace of the project" in out, out
+
+
+def test_a_claim_writing_the_name_of_a_claim_is_an_error(tmp_path: Path) -> None:
+    data = split_outline(make_project(tmp_path))
+    data["nodes"][1]["lean"] = [entry(name="A.three", line=6, type=": 1 = 1")]
+    text = (
+        "theorem ca : True := by\n  exact A.B.one\n"
+        "theorem cb : 1 = 1 := by\n  exact A.three\n"
+        "theorem cc : True := by\n  exact A.B.one\n"
+    )
+    assert notebooks_run(tmp_path, data, text).returncode == 0
+    data["nodes"][2]["lean"] = [entry(name="S", line=9, type=": Prop")]
+    text = text.replace("theorem cc : True", "theorem cc : Prop").replace(
+        "exact A.B.one\n", "exact S\n"
+    )
+    data["nodes"][0]["claim"] = "Prop"
+    text = text.replace("theorem ca", "theorem Prop", 1)
+    out = notebooks_run(tmp_path, data, text).stdout
+    assert "claim cc writes Prop, which names a claim of the walkthrough" in out, out
+
+
+def cite_run(tmp_path: Path, source: str, type_: str = ": 1 = 2") -> str:
+    """Check claim c restating `t` declared on line 1 of the source."""
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj/T.lean").write_text(source, encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", "proj/T.lean")
+    git(tmp_path, "commit", "-q", "-m", "t")
+    data = lean_outline(
+        git(tmp_path, "rev-parse", "HEAD"),
+        entry(name="t", file="T.lean", line=1, type=type_),
+    )
+    data["nodes"][0]["claim"] = "c"
+    text = f"theorem c {type_} := by\n  exact t\n"
+    return str(notebook_run(tmp_path, data, text).stdout)
+
+
+@pytest.mark.parametrize(
+    "source, message",
+    [
+        ("axiom t : 1 = 2\n", "claim c cites t, which is an axiom, not a theorem"),
+        ("def t : 1 = 2 := sorry\n", "claim c cites t, which is a def, not a theorem"),
+        (
+            "theorem t : 1 = 2 := by sorry\n",
+            "claim c cites t, whose proof contains sorry",
+        ),
+        (
+            "theorem t : 1 = 2 := by admit\n",
+            "claim c cites t, whose proof contains admit",
+        ),
+        (
+            "lemma t : 1 = 2 := by\n  simp\n  · sorry\n",
+            "claim c cites t, whose proof contains sorry",
+        ),
+        (
+            "theorem t : 1 = 2 :=\n  sorry\n",
+            "claim c cites t, whose proof contains sorry",
+        ),
+    ],
+)
+def test_a_claim_must_cite_a_proved_theorem(
+    tmp_path: Path, source: str, message: str
+) -> None:
+    out = cite_run(tmp_path, source)
+    assert message in out, out
+
+
+def test_sorry_in_strings_comments_and_names_is_not_a_proof_gap(tmp_path: Path) -> None:
+    source = (
+        "theorem t : True := by -- sorry\n"
+        "  /- admit\n  sorry -/\n"
+        '  have : "sorry" = "sorry" := rfl\n'
+        "  have : '\"' = '\"' := rfl\n"
+        "  exact no_sorry.admit_free\n"
+    )
+    out = cite_run(tmp_path, source, ": True")
+    assert out == "ok: 1 nodes, 1 Lean entries, 1 claims\n", out
+
+
+@pytest.mark.parametrize("line", ["3", 0, -1, True, 1.5])
+def test_a_lean_line_must_be_a_positive_integer(tmp_path: Path, line: Any) -> None:
+    data = outline(nodes=[node("a", lean=[entry(line=line)])])
+    result = run("check", str(write(tmp_path, data)))
+    assert result.returncode == 1
+    assert "node a lean 0: line must be a positive integer" in result.stdout
+
+
+def test_a_claim_on_two_nodes_is_an_error(tmp_path: Path) -> None:
+    data = outline(nodes=[node("a", claim="w"), node("b", claim="w")])
+    result = run("check", str(write(tmp_path, data)))
+    assert result.returncode == 1
+    assert "claim w is listed on nodes a and b" in result.stdout

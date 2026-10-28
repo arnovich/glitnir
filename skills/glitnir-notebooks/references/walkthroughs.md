@@ -15,7 +15,9 @@ rules in [SKILL.md](../SKILL.md) still apply; the outline format is in
 
 - **The original stays untouched.** Never write into the original project or
   the repository that contains it: no notebooks, no annotations, no build
-  configuration.
+  configuration. The one exception is a build of the original the user has
+  approved, which may write Lake's build output (`.lake/`) there; nothing else
+  is ever written into the original.
 - **Ask before building the original.** Large projects take many CPU-minutes
   and gigabytes of memory to build. Without the user's approval, do not build,
   and report compilation as not run.
@@ -77,7 +79,7 @@ give it absolute paths:
   the notebook's claims (below), once the outline and its Lean entries have
   no errors. For a walkthrough in several files, repeat `--notebook` once per
   file in one run: together the files must hold each node's claim exactly once.
-  To confirm qualified names it scans every `.lean` file under the project
+  To resolve the project's names it scans every `.lean` file under the project
   root, except in `.lake` folders.
 - `python3 -B scripts/walkthrough.py map OUTLINE` writes `assets/map.svg` and
   `map.html` beside the outline; `--out DIR` writes them elsewhere. Its links
@@ -109,12 +111,21 @@ sentence of the paper's statement or another form of an appendix's result, a
 node of its own. `check --notebook` compares the statement with the project's
 text:
 
-- Write the statement exactly as the project does. Whitespace may differ. A
-  name may be qualified only with a namespace that encloses the project's
-  declaration, and only when the project declares the qualified name: where
-  the project writes `oddSum` inside `namespace OddSums` and declares
-  `OddSums.oddSum`, write `OddSums.oddSum`. `check` reports a qualified name
-  the project does not declare.
+- Write the statement as the project does, with each name written as the full
+  name Lean resolves it to in the project. Whitespace may differ. Lean looks a
+  name up in the innermost enclosing namespace first, then outward, then at the
+  root; the namespaces of the theorem's own name count too (`theorem
+  OddSums.main` is read inside `namespace OddSums`). So where the project
+  writes `oddSum` inside `namespace OddSums.Main` and declares both
+  `OddSums.oddSum` and `OddSums.Main.oddSum`, write `OddSums.Main.oddSum`; if it
+  declares only `OddSums.oddSum`, write that. A name that resolves to a
+  declaration inside a namespace must be written with that namespace, and a
+  qualification with any other namespace is reported. Names the statement
+  binds, such as `n` in `{n : ℕ}` or `∀ n, …`, and field names after a dot are
+  written as the project writes them. `check` reports each name that differs
+  from what Lean resolves it to, with the name it expects. It knows only the
+  declarations that start a line (not structure fields, constructors or
+  `alias`es): for such a name, find its declaration and qualify it yourself.
 - A name the project reaches through `open` is not accepted: its exact text
   would not elaborate in the walkthrough, which opens nothing. To tell, read
   the `open` lines of the file that declares the theorem and find where the
@@ -122,6 +133,11 @@ text:
   as above; one declared only under an opened namespace is reached through
   `open`. If both declare it, the text cannot tell which Lean takes, so do not
   restate it.
+- Cite a `theorem` or `lemma` whose proof uses no `sorry` or `admit`. A claim
+  citing an `axiom`, a `def` or another declaration, or a theorem whose own
+  proof text contains `sorry` or `admit` (outside comments and strings), is an
+  error. `check` reads only the cited proof's text: a `sorry` in a theorem it
+  uses is not seen, so read the project's audit notes or axiom report too.
 - Writing an `abbrev` alias in place of what the project wrote, or unfolding
   one, differs textually and is reported as a mismatch. Restate the theorem's
   own declared type.
@@ -150,12 +166,20 @@ text:
   project that opens its machine namespace, for example, are reached through
   `open` and stay prose.
 
-The notebook defines and opens nothing. It contains only imports, prose,
-comments and docstrings, `namespace`, `section` and `end`, `#print axioms`, and
-claims. `open`, `variable`, `def`, `notation`, `set_option` and other commands
-would give the restated text a meaning of the notebook's own, so `check` reports
-them. Put the claims in a namespace of the walkthrough's own, such as
-`namespace OddSumsWalkthrough`, so their names cannot clash with the project's.
+The notebook defines and opens nothing. Each line is blank, inside a `/-! -/`
+prose block, a `/-- -/` docstring or a `/- -/` comment, a `--` comment, or one
+of these at column 0: `import`, `namespace <name>`, `section` or `section
+<name>`, `end` or `end <name>`, `#print axioms <name>`, or a claim (`theorem` or
+`lemma`, with any attributes and modifiers), whose header lines and single
+`exact` line are indented under it. `check` reports every other line: any other
+command (`open`, `variable`, `def`, `example`, `notation`, `export`, `alias`,
+`set_option`, `#eval`, a lone attribute line and so on), any other indented
+code, and code after a comment's closing `-/` on the same line. Such commands
+would give the restated text a meaning of the notebook's own, or add claims
+`check` does not compare. Put the claims in a namespace of the walkthrough's
+own, such as `namespace OddSumsWalkthrough`, so their names cannot clash with
+the project's; `check` reports a walkthrough namespace in which the project
+declares names, and a claim whose statement names another claim.
 
 The text check does not see either side's wider context, such as an `open` or
 notation elsewhere in the project's file or what the notebook's imports bring
@@ -282,7 +306,8 @@ as `roots = ["Walkthrough", "Appendices"]` for `Walkthrough.lean` and
 restated statements elaborate as they do in the original, and leave the table
 out if it sets none. Copy the original's `lean-toolchain` beside the lakefile.
 Running Lake here may fetch the original's dependencies again and build the
-original: ask first, as for any build.
+original, writing its build output into the original's `.lake/`: ask first, as
+for any build.
 
 ## Extending a walkthrough
 
