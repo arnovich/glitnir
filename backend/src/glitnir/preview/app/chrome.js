@@ -104,7 +104,7 @@
   function renderChrome() {
     const d = UI.data, cs = claims();
     document.title = `${title()} · Glitnir`;
-    $('title').textContent = title();
+    $('title').innerHTML = inlineHTML(title());
     $('file-name').textContent = d.file;
     const linked = Boolean(linkedPath());
     $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : 'Notebook';
@@ -246,7 +246,8 @@
     const diagramUI = saveDiagramUI();
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
     const foldFocus = saveReadingFolds();
-    const linkFocus = document.activeElement?.matches('#doc .source-link, #doc .source-edit, #doc .notebook-reference') ? {index: [...$('doc').querySelectorAll('.source-link,.source-edit,.notebook-reference')].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
+    const linkSelector = '.source-link,.source-edit,.notebook-reference,.external-link';
+    const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
     const activeGraphControl = UI.mode === 'graph' ? document.activeElement?.closest?.('#graph-view [data-act]') : null;
@@ -260,7 +261,7 @@
     }
     renderInspector();
     renderChrome();
-    typesetMath($('doc'), $('insp'));
+    typesetMath($('doc'), $('insp'), $('title'), $('outline'));
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
     if (UI.mode === 'doc' && UI.documentLine?.sha === UI.data.sha256) {
@@ -276,8 +277,8 @@
       const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail);
       control?.focus({preventScroll: true});
     }
-    if (linkFocus && UI.mode === 'doc' && linkFocus.sha === UI.data.sha256) {
-      const link = $('doc').querySelectorAll('.source-link,.source-edit,.notebook-reference')[linkFocus.index];
+    if (linkFocus && UI.mode === 'doc' && (!linkFocus.sha || linkFocus.sha === UI.data.sha256)) {
+      const link = $('doc').querySelectorAll(linkSelector)[linkFocus.index];
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
     $('insp').scrollTop = scroll;
@@ -303,6 +304,8 @@
       if (snapshot.error) throw new Error(snapshot.error);
       if (snapshot.metadata_error) throw new Error(snapshot.metadata_error);
       const exportTitle = title();
+      const renderedTitle = document.createElement('h1');
+      renderedTitle.innerHTML = inlineHTML(exportTitle);
       const content = document.createElement('div');
       const scopes = namespaceScopes(snapshot.cells);
       content.innerHTML = proofGraphHTML(snapshot, {staticPage: true}) + withheldBannerHTML(snapshot) + snapshot.cells.map(cell => cellView(cell, true, scopes)).join('');
@@ -312,11 +315,11 @@
       if (content.querySelector('.image-wait')) throw new Error('An image is still loading. Export again in a moment.');
       const defs = document.querySelector('svg.defs');
       if (defs) content.append(defs.cloneNode(true));
-      typesetMath(content);
+      typesetMath(content, renderedTitle);
       const response = await fetch('/api/export/styles', {headers: API});
       if (!response.ok) throw new Error('The server could not supply export styles. Restart the notebook server after updating Glitnir.');
       const {css} = await response.json();
-      const html = await window.glitnirExport({content, title: exportTitle, file: snapshot.file, sha256: snapshot.sha256, preview: snapshot.preview, css});
+      const html = await window.glitnirExport({content, title: exportTitle, renderedTitle, file: snapshot.file, sha256: snapshot.sha256, preview: snapshot.preview, css});
       if (window.glitnirHost) await window.glitnirHost.saveHTML(html);
       else {
         const url = URL.createObjectURL(new Blob([html], {type: 'text/html;charset=utf-8'}));

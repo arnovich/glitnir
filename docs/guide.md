@@ -55,7 +55,11 @@ preview reads it in the same panel, read-only and with its own saved results,
 with **Back**, **Forward** and a trail of the notebooks read; **Open in its own
 preview** opens it where it can be checked. To use another notebook's results,
 import it like any Lean module (`import Basics`); it must be a module of the
-same Lake project and built with `lake build`.
+same Lake project and built with `lake build`. Prose also supports emphasis
+with `*text*` or `_text_`, plus `[label](https://example.com)` and
+`[label](mailto:name@example.com)` links. Other URL schemes stay as text. These
+links and emphasis are retained by **Export HTML**, and mathematics in section
+headings is typeset like mathematics in paragraphs.
 
 ### Optional directives
 

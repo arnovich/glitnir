@@ -11,6 +11,15 @@
   // extension host applies the same list (STOP_PATHS in backend.ts).
   const STOP_PATHS = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel', '/api/project/check/cancel'];
 
+  function externalHref(href) {
+    if (/\s/.test(href)) return false;
+    try {
+      const url = new URL(href);
+      return url.protocol === 'https:' && !!url.hostname
+        || url.protocol === 'mailto:' && !!url.pathname;
+    } catch { return false; }
+  }
+
   function request(path, options = {}, type = 'request') {
     const id = ++sequence;
     return new Promise((resolve, reject) => {
@@ -95,6 +104,9 @@
         if (target.dataset.act === 'open-notebook') return;
         event.stopImmediatePropagation();
         vscode.postMessage({type: 'reference', module: new URLSearchParams(href.slice(2)).get('reference')});
+      } else if (externalHref(href)) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        vscode.postMessage({type: 'external', href});
       } else if (!href.startsWith('#')) {
         // Source links are text-only in this first preview; never invoke commands.
         event.preventDefault(); event.stopImmediatePropagation();

@@ -31,9 +31,23 @@
     }
     return `<a class="notebook-reference" data-sha="${esc(UI.data.sha256)}" href="/?reference=${encodeURIComponent(module)}" target="_blank" rel="noopener" title="Open ${esc(module)}.lean in another notebook tab">${label}</a>`;
   }
-  // Code and math remain atomic; only exact sibling names are navigable.
+  function externalReference(target, label) {
+    if (/\s/.test(target)) return null;
+    let url;
+    try { url = new URL(target); } catch { return null; }
+    if (url.protocol === 'https:' && url.hostname
+        || url.protocol === 'mailto:' && url.pathname) {
+      return `<a class="external-link" href="${esc(target)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    }
+    return null;
+  }
+  // Code and math remain atomic; only exact sibling names and explicitly safe
+  // external schemes are navigable.
   function inlineHTML(text) {
-    const plain = s => esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    const plain = s => esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/(^|[^\w])\*([^*]+)\*(?=$|[^\w])/g, '$1<em>$2</em>')
+      .replace(/(^|[^\w])_([^_]+)_(?=$|[^\w])/g, '$1<em>$2</em>');
     let out = '';
     let at = 0;
     for (const m of text.matchAll(/`([^`]+)`|\$\$([^$]+)\$\$|\$([^$\n]+)\$|\[([^\]\n]+)\]\(([^)\s]+)\)/g)) {
@@ -42,7 +56,8 @@
         const code = `<code>${esc(m[1])}</code>`;
         out += notebookReference(m[1], code) || code;
       } else if (m[4] !== undefined) {
-        out += notebookReference(m[5], plain(m[4])) || plain(m[0]);
+        const label = plain(m[4]);
+        out += notebookReference(m[5], label) || externalReference(m[5], label) || plain(m[0]);
       } else out += mathHTML((m[2] ?? m[3]).trim(), m[2] !== undefined);
       at = m.index + m[0].length;
     }

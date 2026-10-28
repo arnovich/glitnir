@@ -12,6 +12,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   const gitFiles = [], gitDiffs = [], sourceWatchers = [];
   let memoryInspect = {defaultValue: 16384, globalValue: 12288};
   let saveTarget, dialogs = 0, clipboard;
+  const externalUris = [];
   let references = [];
   let candidateReply;
   let packageRestart;
@@ -37,8 +38,14 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   }
   const fake = {
     RelativePattern: class { constructor(base, pattern) { this.base = base; this.pattern = pattern; } },
-    Uri: {file, joinPath: (uri, ...parts) => file(path.join(uri.fsPath, ...parts))},
-    ViewColumn: {One: 1, Beside: 2}, env: {clipboard: {writeText: async text => { clipboard = text; }}},
+    Uri: {file, joinPath: (uri, ...parts) => file(path.join(uri.fsPath, ...parts)), parse: value => {
+      const parsed = new URL(value);
+      return {scheme: parsed.protocol.slice(0, -1), toString: () => value};
+    }},
+    ViewColumn: {One: 1, Beside: 2}, env: {
+      clipboard: {writeText: async text => { clipboard = text; }},
+      openExternal: async uri => { externalUris.push(uri.toString()); return true; },
+    },
     TextEditorRevealType: {InCenterIfOutsideViewport: 1},
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     WorkspaceEdit: class { constructor() { this.inserts = []; } insert(uri, position, text) { this.inserts.push([uri.fsPath, position.line, position.character, text]); } },
@@ -141,6 +148,13 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
     await panel.receive({type: 'clipboard', id: 302, body});
     assert.equal(panel.messages.at(-1).status, 400);
   }
+  await panel.receive({type: 'external', href: 'https://example.com/a?x=1&y=2'});
+  await panel.receive({type: 'external', href: 'mailto:help@example.com'});
+  assert.deepEqual(externalUris, ['https://example.com/a?x=1&y=2', 'mailto:help@example.com']);
+  for (const href of ['http://example.com', 'javascript:alert(1)', 'file:///tmp/a', 'https://example.com/space here', '', null, {}]) {
+    await assert.rejects(panel.receive({type: 'external', href}), /Invalid external link/);
+  }
+  assert.equal(externalUris.length, 2, 'invalid schemes and malformed links never reach VS Code');
   assert.equal(servers[0].requests.length, 0, 'copying never executes or sends the command to the backend');
   documents[0].isDirty = true; events.change();
   assert.deepEqual(panel.messages.at(-1), {type: 'editorState', dirty: true});

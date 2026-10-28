@@ -168,6 +168,16 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         return;
       }
+      if (message.type === 'external') {
+        try {
+          if (typeof message.href !== 'string' || message.href.length > 4096 || /\s/.test(message.href)) throw new Error();
+          const parsed = new URL(message.href);
+          if (!(parsed.protocol === 'https:' && parsed.hostname
+              || parsed.protocol === 'mailto:' && parsed.pathname)) throw new Error();
+          await vscode.env.openExternal(vscode.Uri.parse(message.href, true));
+        } catch { void vscode.window.showErrorMessage('Invalid external link.'); }
+        return;
+      }
       if (message.type === 'source') {
         try {
           const document = await vscode.workspace.openTextDocument(uri);

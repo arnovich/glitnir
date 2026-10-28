@@ -1427,6 +1427,69 @@ test('prose sibling references open a notebook tab and export as readable text',
   } finally { window.close(); }
 });
 
+test('prose links, emphasis and heading maths render safely in browser and VS Code', async () => {
+  const prose = '# Notebook $N^2$\n\n## *Stable* heading $x^2$\n\n'
+    + 'Read [the **guide**](https://example.com/a?x=1&y=2) or [email us](mailto:help@example.com). '
+    + 'Use *asterisk emphasis*, _underscore emphasis_, and keep snake_case. '
+    + '[<img src=x onerror=alert(1)>](https://example.com/safe) '
+    + '[HTTP](http://example.com) [script](javascript:alert(1)) [file](file:///tmp/a).';
+  const snapshot = {file: 'Links.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {},
+    claims: [], links: [], references: [], revisions: [], assets: [],
+    cells: [{id: 'cell-0', index: 0, kind: 'prose', start: 1, end: 5, text: prose, markdown: prose}]};
+
+  for (const browser of [true, false]) {
+    const messages = [];
+    let poll;
+    const window = await renderSnapshot(snapshot, {browser, katex: true, onMessage: message => messages.push(message), onPoll: fn => { poll = fn; }});
+    try {
+      const proseElement = window.document.querySelector('#doc .prose');
+      const links = [...proseElement.querySelectorAll('a.external-link')];
+      assert.deepEqual(links.map(link => link.getAttribute('href')), [
+        'https://example.com/a?x=1&y=2', 'mailto:help@example.com', 'https://example.com/safe',
+      ]);
+      assert.ok(links.every(link => link.target === '_blank' && link.rel === 'noopener noreferrer'));
+      assert.equal(links[0].innerHTML, 'the <b>guide</b>');
+      assert.equal(links[2].textContent, '<img src=x onerror=alert(1)>');
+      assert.equal(proseElement.querySelectorAll('img,script').length, 0);
+      assert.deepEqual([...proseElement.querySelectorAll('em')].map(em => em.textContent),
+        ['Stable', 'asterisk emphasis', 'underscore emphasis']);
+      assert.match(proseElement.textContent, /snake_case/);
+      assert.match(proseElement.textContent, /\[HTTP\]\(http:\/\/example\.com\)/);
+      assert.match(proseElement.textContent, /\[script\]\(javascript:alert\(1\)\)/);
+      assert.match(proseElement.textContent, /\[file\]\(file:\/\/\/tmp\/a\)/);
+      assert.ok(proseElement.querySelector('h2 .math.typeset .katex'));
+      assert.ok(window.document.querySelector('#title .math.typeset .katex'));
+      assert.ok(window.document.querySelector('#outline .math.typeset .katex'));
+      if (!browser) {
+        links[0].focus();
+        await poll();
+        const refreshedLinks = [...window.document.querySelectorAll('#doc a.external-link')];
+        assert.equal(window.document.activeElement, refreshedLinks[0], 'polling preserves focus on an external link');
+        refreshedLinks[0].click();
+        refreshedLinks[1].click();
+        assert.deepEqual(JSON.parse(JSON.stringify(messages.slice(-2))), [
+          {type: 'external', href: 'https://example.com/a?x=1&y=2'},
+          {type: 'external', href: 'mailto:help@example.com'},
+        ]);
+        let html;
+        window.glitnirHost.saveHTML = async body => { html = body; };
+        await window.document.getElementById('export-html').onclick();
+        const exported = new JSDOM(html);
+        try {
+          const exportedProse = exported.window.document.querySelector('.prose');
+          assert.deepEqual([...exportedProse.querySelectorAll('a.external-link')].map(link => link.getAttribute('href')), [
+            'https://example.com/a?x=1&y=2', 'mailto:help@example.com', 'https://example.com/safe',
+          ]);
+          assert.equal(exportedProse.querySelectorAll('a[href^="http:"],a[href^="javascript:"],a[href^="file:"]').length, 0);
+          assert.equal(exportedProse.querySelectorAll('em').length, 3);
+          assert.ok(exportedProse.querySelector('h2 .math.typeset .katex'));
+          assert.ok(exported.window.document.querySelector('header h1 .math.typeset .katex'));
+        } finally { exported.window.close(); }
+      }
+    } finally { window.close(); }
+  }
+});
+
 for (const browser of [false, true]) test(`Source returns to the exact document card (${browser ? 'browser' : 'VS Code'})`, async () => {
   const snapshot = {file: 'Return.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {},
     claims: [{name: 'done', keyword: 'theorem', statement: ': True', proof: 'trivial', proof_block: '  trivial', status: 'open', reason: '', uses: [], context: 'c'.repeat(64)}],
