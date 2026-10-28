@@ -27,7 +27,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Any, Collection, Literal, Sequence
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 NODE_KINDS = (
@@ -225,8 +225,8 @@ def check_outline(outline: dict[str, Any]) -> list[Problem]:
 
 _DECL_RE = re.compile(
     r"^(?:@\[[^\]]*\]\s*)*"
-    r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
-    r"|public|scoped|local)\s+)*"
+    r"(?P<modifiers>(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
+    r"|public|scoped|local)\s+)*)"
     r"(?P<keyword>theorem|lemma|def|abbrev|structure|class|inductive|instance"
     r"|opaque|axiom)"
     r"\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
@@ -258,6 +258,7 @@ class Declaration:
     variables: bool = False  # a `variable` command is in force at the declaration
     keyword: str = ""  # theorem, lemma, def, axiom, ...
     gap: str = ""  # `sorry` or `admit` if its text uses one outside comments
+    protected: bool = False  # a short name never resolves to it
 
 
 def _collapse(text: str) -> str:
@@ -387,6 +388,7 @@ def declarations(root: Path, file: str) -> list[Declaration]:
                 file_vars or any(scoped_vars),
                 match.group("keyword"),
                 _proof_gap("\n".join([match.group("rest"), *following])),
+                "protected" in match.group("modifiers").split(),
             )
         )
     return found
@@ -553,12 +555,19 @@ def _components(name: str) -> list[str]:
     return re.findall(r"(?:«[^»]*»|[^.«])+", name)
 
 
-def resolve(name: str, scopes: Sequence[str], known: set[str]) -> str:
+def resolve(
+    name: str,
+    scopes: Sequence[str],
+    known: set[str],
+    protected: Collection[str] = frozenset(),
+) -> str:
     """Return the declaration a name means where it is written, as Lean finds it.
 
     Lean tries the longest prefix of the name first, and for each prefix the
     innermost enclosing namespace first; what follows the prefix is field
-    access. A name the project does not declare keeps its spelling.
+    access. A one-part prefix never finds a protected declaration through a
+    namespace, so the search goes on outward. A name the project does not
+    declare keeps its spelling.
     """
     if name.startswith("_root_."):
         return name[len("_root_.") :]
@@ -566,7 +575,8 @@ def resolve(name: str, scopes: Sequence[str], known: set[str]) -> str:
     for size in range(len(parts), 0, -1):
         head, rest = ".".join(parts[:size]), parts[size:]
         for scope in reversed(scopes):
-            if f"{scope}.{head}" in known:
+            full = f"{scope}.{head}"
+            if full in known and not (size == 1 and full in protected):
                 return ".".join([scope, head, *rest])
         if head in known:
             return name
@@ -595,25 +605,33 @@ def _group_binders(tokens: list[str], start: int, closer_ok: bool) -> list[str]:
     return []
 
 
-def bound_names(header: str) -> set[str]:
-    """Return the names a header binds: its binder groups and `∀`-style binders.
-
-    A name is counted wherever it is bound, without its scope, so a name both
-    bound and used free in one header is taken as bound.
-    """
-    tokens = _tokens(header)
-    bound: set[str] = set()
+def _signature_groups(tokens: list[str]) -> list[tuple[int, list[str]]]:
+    """Return each binder group before the type: where it ends, what it binds."""
+    groups: list[tuple[int, list[str]]] = []
     depth = 0
-    signature = True
     for index, token in enumerate(tokens):
-        if signature and depth == 0 and token == ":":
-            signature = False
-        if signature and depth == 0 and token in _GROUP_OPENERS:
-            bound.update(_group_binders(tokens, index, token != "["))
+        if depth == 0 and token == ":":
+            break
+        if depth == 0 and token in _GROUP_OPENERS:
+            names = _group_binders(tokens, index, token != "[")
+            if names:
+                groups.append((_group_end(tokens, index), names))
         if token in _OPENERS + "⦃":
             depth += 1
         elif token in _CLOSERS + "⦄":
             depth -= 1
+    return groups
+
+
+def bound_names(header: str) -> set[str]:
+    """Return the names a header binds: its binder groups and `∀`-style binders.
+
+    A name is counted wherever it is bound, without its scope; `loose_names`
+    says which of them the header may also use free.
+    """
+    tokens = _tokens(header)
+    bound = {name for _, names in _signature_groups(tokens) for name in names}
+    for index, token in enumerate(tokens):
         if token == "{" and index + 2 < len(tokens) and tokens[index + 2] == "|":
             if _is_atom(tokens[index + 1]):
                 bound.add(tokens[index + 1])
@@ -651,8 +669,57 @@ def _group_end(tokens: list[str], start: int) -> int:
     return len(tokens)
 
 
+def loose_names(header: str) -> set[str]:
+    """Return the names a header binds that it may also use free.
+
+    A name bound by a group before the type is bound everywhere after that
+    group, so it is loose only if it is also written before the group ends.
+    A name bound by `∀`, `∃`, `fun` and the like is always loose: its scope
+    is not tracked.
+    """
+    tokens = _tokens(header)
+    ends: dict[str, int] = {}
+    for end, names in _signature_groups(tokens):
+        for name in names:
+            ends.setdefault(name, end)
+    loose = bound_names(header) - set(ends)
+    for name, end in ends.items():
+        written = [
+            index
+            for index, token in enumerate(tokens[:end])
+            if _IDENT_START_RE.match(token)
+            and _components(token)[0] == name
+            and not (index and tokens[index - 1] == ".")
+        ]
+        if len(written) > 1:
+            loose.add(name)
+    return loose
+
+
+def ambiguous_names(
+    header: str,
+    scopes: Sequence[str],
+    known: set[str],
+    protected: Collection[str] = frozenset(),
+) -> set[str]:
+    """Return the loose names of a header that also name a project declaration.
+
+    Each of their uses may mean the bound variable or the declaration, and
+    the text cannot tell which.
+    """
+    return {
+        name
+        for name in loose_names(header)
+        if resolve(name, scopes, known, protected) in known
+    }
+
+
 def differences(
-    written: str, declared: str, scopes: Sequence[str], known: set[str]
+    written: str,
+    declared: str,
+    scopes: Sequence[str],
+    known: set[str],
+    protected: Collection[str] = frozenset(),
 ) -> list[tuple[str, str, str]] | None:
     """Compare a written header with a declared one, token by token.
 
@@ -660,40 +727,47 @@ def differences(
     declared token, what the declared token means) that differs. A declared
     name means the declaration Lean resolves it to in the project, so the
     written token must be that full name; bound names and field names after
-    a dot must be written as declared.
+    a dot must be written as declared. A name of `ambiguous_names` means
+    nothing that can be written, "", so it always differs.
     """
     left, right = _tokens(written), _tokens(declared)
     if len(left) != len(right):
         return None
     bound = bound_names(declared)
+    ambiguous = ambiguous_names(declared, scopes, known, protected)
     found: list[tuple[str, str, str]] = []
     for index, (token, wanted) in enumerate(zip(left, right)):
         meant = wanted
-        if (
-            _IDENT_START_RE.match(wanted)
-            and not (index and right[index - 1] == ".")
-            and _components(wanted)[0] not in bound
-        ):
-            meant = resolve(wanted, scopes, known)
+        if _IDENT_START_RE.match(wanted) and not (index and right[index - 1] == "."):
+            first = _components(wanted)[0]
+            if first in ambiguous:
+                meant = ""
+            elif first not in bound:
+                meant = resolve(wanted, scopes, known, protected)
         if token != meant:
             found.append((token, wanted, meant))
     return found
 
 
 def same_statement(
-    written: str, declared: str, scopes: Sequence[str], known: set[str]
+    written: str,
+    declared: str,
+    scopes: Sequence[str],
+    known: set[str],
+    protected: Collection[str] = frozenset(),
 ) -> bool:
     """Tell whether a written header restates the declared one, as text."""
-    return differences(written, declared, scopes, known) == []
+    return differences(written, declared, scopes, known, protected) == []
 
 
-def project_names(root: Path) -> set[str]:
-    """Return the full name of every declaration in the project's Lean files.
+def project_names(root: Path) -> tuple[set[str], set[str]]:
+    """Return every declaration name in the project, and the protected ones.
 
-    Every `.lean` file under the root is scanned, except inside `.lake`
-    folders, which hold dependencies and build output.
+    Names are full names. Every `.lean` file under the root is scanned,
+    except inside `.lake` folders, which hold dependencies and build output.
     """
     names: set[str] = set()
+    protected: set[str] = set()
     for folder, subfolders, files in os.walk(root):
         subfolders[:] = sorted(s for s in subfolders if s != ".lake")
         for file in sorted(files):
@@ -701,10 +775,12 @@ def project_names(root: Path) -> set[str]:
                 continue
             relative = str((Path(folder) / file).relative_to(root))
             try:
-                names.update(d.name for d in declarations(root, relative))
+                found = declarations(root, relative)
             except (OSError, UnicodeDecodeError):
                 continue
-    return names
+            names.update(d.name for d in found)
+            protected.update(d.name for d in found if d.protected)
+    return names, protected
 
 
 Claim = tuple[str, str, str]  # name, header, the text after the header
@@ -732,11 +808,36 @@ def _after_comment(number: int, rest: str, scan: _Scan) -> None:
         scan.stray.append((number, f"{words[0]} after -/"))
 
 
+def _is_name(word: str) -> bool:
+    """Tell whether a word is one Lean name, dots and `«…»` parts included."""
+    return bool(_IDENT_START_RE.match(word)) and _tokens(word) == [word]
+
+
+def _one_name(words: list[str], size: int) -> str:
+    """Return "" if the words are a `size`-word command and one name.
+
+    Otherwise return the first word that does not belong, as the notebook
+    error names it. Lean reads one module name after `import` and one
+    declaration name after `#print axioms`; a word after it starts a command.
+    """
+    command = " ".join(words[:size])
+    if len(words) == size:
+        return command
+    if not _is_name(words[size]):
+        return f"{words[size]} after {command}"
+    if len(words) > size + 1:
+        return f"{words[size + 1]} after {command}"
+    return ""
+
+
 def _command(number: int, line: str, frames: list[str], scan: _Scan) -> None:
     """Check one column-0 line that is not a claim, tracking namespaces."""
     words = line.split("--", 1)[0].split()
     first = words[0]
-    if first == "import":
+    if first == "import" or words[:2] == ["#print", "axioms"]:
+        word = _one_name(words, 1 if first == "import" else 2)
+        if word:
+            scan.stray.append((number, word))
         return
     if first == "namespace" and len(words) == 2:
         frames.extend(_components(words[1]))
@@ -750,8 +851,6 @@ def _command(number: int, line: str, frames: list[str], scan: _Scan) -> None:
             len(_components(words[1])) if len(words) == 2 and frames[-1:] != [""] else 1
         )
         del frames[max(len(frames) - count, 0) :]
-        return
-    if words[:2] == ["#print", "axioms"]:
         return
     rest = line[_PREFIX_RE.match(line).end() :].split()  # type: ignore[union-attr]
     word = rest[0] if rest else first
@@ -825,7 +924,7 @@ def check_notebook(
     node's claim exactly once.
     """
     root = _project_root(outline, base)
-    known = project_names(root)
+    known, protected = project_names(root)
     spaces = _project_namespaces(known)
     nodes = {
         str(item["claim"]): item
@@ -863,8 +962,14 @@ def check_notebook(
                 )
                 continue
             written[name] = notebook
+            if "." in name:
+                # Lean elaborates `theorem A.c` inside `namespace A`.
+                problems.append(_error(f"claim {name} must have a plain name"))
+                continue
             problems.extend(_claim_names_written(name, header, claim_names))
-            problems.extend(_check_claim(root, known, nodes, name, header, tail))
+            problems.extend(
+                _check_claim(root, (known, protected), nodes, name, header, tail)
+            )
     for claim, item in nodes.items():
         if claim not in written:
             problems.append(
@@ -896,7 +1001,7 @@ def _claim_names_written(name: str, header: str, claims: set[str]) -> list[Probl
 
 def _check_claim(
     root: Path,
-    known: set[str],
+    names: tuple[set[str], set[str]],
     nodes: dict[str, dict[str, Any]],
     name: str,
     header: str,
@@ -915,7 +1020,7 @@ def _check_claim(
         return [
             _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
         ]
-    return _compare_claim(root, known, name, header, target, entries[0])
+    return _compare_claim(root, names, name, header, target, entries[0])
 
 
 def takes_explicit_arguments(header: str) -> bool:
@@ -939,13 +1044,17 @@ def takes_explicit_arguments(header: str) -> bool:
 
 def _compare_claim(
     root: Path,
-    known: set[str],
+    names: tuple[set[str], set[str]],
     claim: str,
     header: str,
     target: str,
     entry: dict[str, Any],
 ) -> list[Problem]:
-    """Compare one claim's header with the declaration it cites."""
+    """Compare one claim's header with the declaration it cites.
+
+    `names` holds the project's declaration names and its protected ones.
+    """
+    known, protected = names
     file = str(entry["file"])
     try:
         found = [d for d in declarations(root, file) if d.name == target]
@@ -979,10 +1088,24 @@ def _compare_claim(
                 "explain it in prose instead"
             )
         ]
+    ambiguous = sorted(
+        {
+            name
+            for d in found
+            for name in ambiguous_names(d.type, d.namespaces, known, protected)
+        }
+    )
+    if ambiguous:
+        return [
+            _error(
+                f"claim {claim} binds and uses {', '.join(ambiguous)}; "
+                "explain it in prose instead"
+            )
+        ]
     differing: list[tuple[str, str, str]] = []
     for found_one in found:
         found_differences = differences(
-            header, found_one.type, found_one.namespaces, known
+            header, found_one.type, found_one.namespaces, known, protected
         )
         if found_differences == []:
             return []
@@ -990,7 +1113,7 @@ def _compare_claim(
     hints = "".join(
         f"; there {wanted} means {meant}"
         for _, wanted, meant in differing
-        if wanted != meant
+        if meant and wanted != meant
     )
     return [
         _error(

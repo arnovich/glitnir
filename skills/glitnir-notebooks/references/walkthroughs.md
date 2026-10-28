@@ -106,24 +106,35 @@ theorem theorem1 : OddSums.MainResults.OddSumIsSquare := by
 The shape is `theorem <id> : <the project's statement> := by`, then
 `exact <project theorem>` indented on the next line, and nothing else. Use `by`
 so that the preview shows the claim as a claim card. The node's `claim` is
-`<id>`. A node has at most one claim: give a second statement, such as another
-sentence of the paper's statement or another form of an appendix's result, a
-node of its own. `check --notebook` compares the statement with the project's
-text:
+`<id>`, a plain name without a dot: Lean reads `theorem A.c` inside
+`namespace A`, where its statement's names can mean other declarations, so
+`check` reports a dotted claim name. A node has at most one claim: give a
+second statement, such as another sentence of the paper's statement or another
+form of an appendix's result, a node of its own. `check --notebook` compares
+the statement with the project's text:
 
 - Write the statement as the project does, with each name written as the full
   name Lean resolves it to in the project. Whitespace may differ. Lean looks a
   name up in the innermost enclosing namespace first, then outward, then at the
   root; the namespaces of the theorem's own name count too (`theorem
-  OddSums.main` is read inside `namespace OddSums`). So where the project
-  writes `oddSum` inside `namespace OddSums.Main` and declares both
-  `OddSums.oddSum` and `OddSums.Main.oddSum`, write `OddSums.Main.oddSum`; if it
-  declares only `OddSums.oddSum`, write that. A name that resolves to a
-  declaration inside a namespace must be written with that namespace, and a
-  qualification with any other namespace is reported. Names the statement
-  binds, such as `n` in `{n : ℕ}` or `∀ n, …`, and field names after a dot are
-  written as the project writes them. `check` reports each name that differs
-  from what Lean resolves it to, with the name it expects. It knows only the
+  OddSums.main` is read inside `namespace OddSums`). A one-part name never
+  finds a `protected` declaration that way: inside `namespace A`, `cost`
+  passes over `protected def A.cost` and means the next `cost` outward. So
+  where the project writes `oddSum` inside `namespace OddSums.Main` and
+  declares both `OddSums.oddSum` and `OddSums.Main.oddSum`, write
+  `OddSums.Main.oddSum`; if it declares only `OddSums.oddSum`, write that. A
+  name that resolves to a declaration inside a namespace must be written with
+  that namespace, and a qualification with any other namespace is reported.
+  Names the statement binds, such as `n` in `{n : ℕ}` or `∀ n, …`, and field
+  names after a dot are written as the project writes them. If the statement
+  binds a name that also names a project declaration where the theorem is
+  written, as in `(∃ n, n = 3) ∧ n = 3` with a `def n` in scope, the text
+  cannot tell its bound uses from its free ones: `check` reports
+  `binds and uses n`, so explain the theorem in prose. A name bound before the
+  colon, as in `{n : ℕ}`, is bound for the rest of the statement and is not
+  reported, unless it is also written before its binder ends. `check` reports
+  each name that differs from what Lean resolves it to, with the name it
+  expects. It knows only the
   declarations that start a line (not structure fields, constructors or
   `alias`es): for such a name, find its declaration and qualify it yourself.
 - A name the project reaches through `open` is not accepted: its exact text
@@ -168,13 +179,16 @@ text:
 
 The notebook defines and opens nothing. Each line is blank, inside a `/-! -/`
 prose block, a `/-- -/` docstring or a `/- -/` comment, a `--` comment, or one
-of these at column 0: `import`, `namespace <name>`, `section` or `section
-<name>`, `end` or `end <name>`, `#print axioms <name>`, or a claim (`theorem` or
-`lemma`, with any attributes and modifiers), whose header lines and single
-`exact` line are indented under it. `check` reports every other line: any other
-command (`open`, `variable`, `def`, `example`, `notation`, `export`, `alias`,
-`set_option`, `#eval`, a lone attribute line and so on), any other indented
-code, and code after a comment's closing `-/` on the same line. Such commands
+of these at column 0: `import <module>`, `namespace <name>`, `section` or
+`section <name>`, `end` or `end <name>`, `#print axioms <name>`, or a claim
+(`theorem` or `lemma`, with any attributes and modifiers), whose header lines
+and single `exact` line are indented under it. Only a `--` comment may follow
+the one module of an `import` or the one name of a `#print axioms`, because
+Lean reads any further word as a command of its own. `check` reports every
+other line: any other command (`open`, `variable`, `def`, `example`,
+`notation`, `export`, `alias`, `set_option`, `#eval`, a lone attribute line and
+so on), any other indented code, and code after a comment's closing `-/` on the
+same line. Such commands
 would give the restated text a meaning of the notebook's own, or add claims
 `check` does not compare. Put the claims in a namespace of the walkthrough's
 own, such as `namespace OddSumsWalkthrough`, so their names cannot clash with

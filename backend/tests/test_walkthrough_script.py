@@ -1141,3 +1141,164 @@ def test_a_claim_on_two_nodes_is_an_error(tmp_path: Path) -> None:
     result = run("check", str(write(tmp_path, data)))
     assert result.returncode == 1
     assert "claim w is listed on nodes a and b" in result.stdout
+
+
+def source_run(
+    tmp_path: Path, source: str, target: str, line: int, type_: str, notebook: str
+) -> Any:
+    """Check the notebook against `proj/R.lean`, its one node citing the target."""
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj/R.lean").write_text(source, encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", "proj/R.lean")
+    git(tmp_path, "commit", "-q", "-m", "r")
+    data = lean_outline(
+        git(tmp_path, "rev-parse", "HEAD"),
+        entry(name=target, file="R.lean", line=line, type=type_),
+    )
+    claim = notebook.split("theorem ", 1)[1].split()[0]
+    data["nodes"][0]["claim"] = claim
+    return notebook_run(tmp_path, data, notebook)
+
+
+def in_w(claim: str, target: str) -> str:
+    """Return notebook text holding the claim, proved by the target, in `W`."""
+    return f"import X\nnamespace W\n{claim} := by\n  exact {target}\nend W\n"
+
+
+PROTECTED_SOURCE = (
+    "def cost := 9\nnamespace A\nprotected def cost := 5\n"
+    "theorem t : cost = 9 := rfl\nend A\n"
+)
+OK_ONE = "ok: 1 nodes, 1 Lean entries, 1 claims\n"
+
+
+def test_protected_declarations_are_recorded(tmp_path: Path) -> None:
+    (tmp_path / "F.lean").write_text(PROTECTED_SOURCE, encoding="utf-8")
+    found = {d.name: d for d in load_script().declarations(tmp_path, "F.lean")}
+    assert found["A.cost"].protected and not found["cost"].protected
+
+
+def test_a_short_name_never_means_a_protected_declaration() -> None:
+    resolve = load_script().resolve
+    known = {"cost", "A.cost", "A.B.cost"}
+    assert resolve("cost", ("A",), known, {"A.cost"}) == "cost"
+    assert resolve("cost.succ", ("A",), known, {"A.cost"}) == "cost.succ"
+    assert resolve("A.cost", ("A",), known, {"A.cost"}) == "A.cost"
+    assert resolve("cost", ("A", "A.B"), known, {"A.B.cost"}) == "A.cost"
+    assert resolve("B.cost", ("A",), known, {"A.B.cost"}) == "A.B.cost"
+
+
+def test_a_claim_naming_a_protected_declaration_is_an_error(tmp_path: Path) -> None:
+    claim = in_w("theorem c : A.cost = 9", "A.t")
+    result = source_run(tmp_path, PROTECTED_SOURCE, "A.t", 4, ": cost = 9", claim)
+    assert result.returncode == 1 and "differs from A.t" in result.stdout
+    assert "there cost means" not in result.stdout, result.stdout
+
+
+def test_a_claim_skipping_a_protected_declaration_passes(tmp_path: Path) -> None:
+    claim = in_w("theorem c : cost = 9", "A.t")
+    result = source_run(tmp_path, PROTECTED_SOURCE, "A.t", 4, ": cost = 9", claim)
+    assert result.stdout == OK_ONE, result.stdout
+
+
+def test_an_equal_protected_value_does_not_excuse_its_name(tmp_path: Path) -> None:
+    source = PROTECTED_SOURCE.replace("9", "5")
+    claim = in_w("theorem c : A.cost = 5", "A.t")
+    result = source_run(tmp_path, source, "A.t", 4, ": cost = 5", claim)
+    assert result.returncode == 1 and "differs from A.t" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "line, word",
+    [
+        ("import Y example : (1 : Nat) = 2 := by sorry", "example after import"),
+        ("import Y open Nat", "open after import"),
+        ("import A.B C", "C after import"),
+        ("import", "import"),
+        (
+            "#print axioms w_one example : 1 = 2 := by sorry",
+            "example after #print axioms",
+        ),
+        ("#print axioms w_one A.B.one", "A.B.one after #print axioms"),
+        ("#print axioms", "#print axioms"),
+    ],
+)
+def test_an_import_or_print_line_holds_nothing_else(
+    tmp_path: Path, line: str, word: str
+) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = f"import X\n{line}\ntheorem w_one : True := by\n  exact A.B.one\n"
+    out = notebook_run(tmp_path, data, text).stdout
+    assert f"{ONLY}: line 2: {word} in " in out, out
+    assert not any(w in out for w in STRUCTURAL_WORDS), out
+
+
+def test_import_and_print_lines_may_end_in_a_comment(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = (
+        "import A.B -- note\nimport C\ntheorem w_one : True := by\n  exact A.B.one\n"
+        "#print axioms w_one -- note\n#print axioms W.w_one\n"
+    )
+    result = notebook_run(tmp_path, data, text)
+    assert result.stdout == OK_ONE, result.stdout
+
+
+BOUND_SOURCE = (
+    "def n := 4\nnamespace A\ndef n := 3\n"
+    "theorem t : (∃ n : Nat, n = 3) ∧ n = 3 := ⟨⟨3, rfl⟩, rfl⟩\nend A\n"
+)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "theorem c : (∃ n : Nat, n = 3) ∧ n = 3",
+        "theorem c : (∃ n : Nat, n = 3) ∧ A.n = 3",
+    ],
+)
+def test_a_name_both_bound_and_declared_is_an_error(tmp_path: Path, claim: str) -> None:
+    type_ = ": (∃ n : Nat, n = 3) ∧ n = 3"
+    result = source_run(tmp_path, BOUND_SOURCE, "A.t", 4, type_, in_w(claim, "A.t"))
+    assert result.returncode == 1
+    assert "claim c binds and uses n; explain it in prose instead" in result.stdout
+
+
+def test_a_name_used_before_its_binder_is_an_error(tmp_path: Path) -> None:
+    source = (
+        "namespace A\ndef n := 3\n"
+        "theorem t {m : Fin n} {n : Nat} : m = m ∧ n = n := ⟨rfl, rfl⟩\nend A\n"
+    )
+    type_ = "{m : Fin n} {n : Nat} : m = m ∧ n = n"
+    claim = in_w("theorem c {m : Fin A.n} {n : Nat} : m = m ∧ n = n", "A.t")
+    result = source_run(tmp_path, source, "A.t", 3, type_, claim)
+    assert "claim c binds and uses n" in result.stdout, result.stdout
+
+
+def test_a_bound_name_the_project_does_not_declare_passes(tmp_path: Path) -> None:
+    source = (
+        "namespace A\ndef m := 3\n"
+        "theorem t : (∃ n : Nat, n = 3) ∧ m = 3 := ⟨⟨3, rfl⟩, rfl⟩\nend A\n"
+    )
+    type_ = ": (∃ n : Nat, n = 3) ∧ m = 3"
+    claim = in_w("theorem c : (∃ n : Nat, n = 3) ∧ A.m = 3", "A.t")
+    result = source_run(tmp_path, source, "A.t", 3, type_, claim)
+    assert result.stdout == OK_ONE, result.stdout
+
+
+def test_loose_names_are_those_that_may_also_be_free() -> None:
+    loose = load_script().loose_names
+    assert loose("{n : Nat} : n = n") == set()
+    assert loose("{n : Nat} {m : Fin n} : ∀ n, n = m") == set()
+    assert loose("{m : Fin n} {n : Nat} : m = m") == {"n"}
+    assert loose(": (∃ n : Nat, n = 3) ∧ n = 3") == {"n"}
+    assert loose(": s = {x | x = 1}") == {"x"}
+
+
+def test_a_claim_name_must_be_plain(tmp_path: Path) -> None:
+    source = "def cost := 9\nnamespace A\ndef cost := 5\nend A\n"
+    source += "theorem t : cost = 9 := rfl\n"
+    notebook = "import X\ntheorem A.c : cost = 9 := by\n  exact t\n"
+    result = source_run(tmp_path, source, "t", 5, ": cost = 9", notebook)
+    assert result.returncode == 1
+    assert "claim A.c must have a plain name" in result.stdout, result.stdout
