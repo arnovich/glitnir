@@ -24,7 +24,10 @@ rules in [SKILL.md](../SKILL.md) still apply; the outline format is in
 - **Ask before any download.** If a paper is cited only by identifier, such as
   an arXiv number, ask the user for the file or for permission to download it.
 - **Never present a claim as checked** unless a Glitnir check of the walkthrough
-  reported it. The helper's `check` compares text; it grants no status.
+  reported it. The helper's `check` compares text and verifies that the outline's
+  toolchain pin matches the project checkout; it grants no status. When the
+  formalization or walkthrough notebook uses another Lean version, Glitnir
+  labels its claims **Unchecked** everywhere and states why.
 - **Every Lean name, file, line and type is real.** Copy them from the source
   and let `check` confirm them. Never write a type that is not the project's
   own. `check` covers only the outline's Lean entries and the claims: confirm
@@ -76,7 +79,8 @@ to run and exits with status 2.
 
 - `python -B scripts/walkthrough.py check OUTLINE` checks the outline's
   structure: the format, required keys, unique ids, known `uses` and no cycles.
-  If those pass, it compares every `lean` entry's file, name, line and `type`
+  If those pass, it verifies that `project.toolchain` matches the declaration in
+  `<project.root>/lean-toolchain`, then compares every `lean` entry's file, name, line and `type`
   with the project's source and reports where a declaration moved or how it
   changed. Last, it notes commits to the project folder since `commit`; that
   note is not an error. With no error it ends with one line, such as

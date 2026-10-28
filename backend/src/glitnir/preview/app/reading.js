@@ -5,7 +5,7 @@
   const {$, DECLARATION, HOST, UI, checking, claim, decisionHTML, directiveNotes, esc, evidenceHTML, icon,
     inlineHTML, leanCellHTML, leanHTML, linkedPath, markdown, needsDecider, needsProvider, nonClaimsHTML,
     projectCardsHTML, projectClaimHTML, projectEvidence, refresh, showNotebookAt, sourceDirectivesHTML,
-    statusOf, summariesOf, title, toneOf, useHTML, viewHTML, withheldBannerHTML} = workbench;
+    statusOf, summariesOf, title, toneOf, useHTML, viewHTML, walkthroughMessage, walkthroughUnchecked, withheldBannerHTML} = workbench;
   // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
   const refutationHTML = (...a) => workbench.refutationHTML(...a);
   const render = (...a) => workbench.render(...a);
@@ -405,6 +405,7 @@
   }
 
   function noteFor(c) {
+    if (walkthroughUnchecked()) return ['muted', 'branch', esc(walkthroughMessage())];
     const record = c.record;
     switch (c.status) {
       case 'checked': return ['green', 'check', `Checked · context ${c.context.slice(0, 8)} is current.`];

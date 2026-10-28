@@ -5,7 +5,7 @@
   const {$, API, UI, cellEntries, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
     currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, icon, inlineHTML,
     leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
-    useChipsHTML} = workbench;
+    useChipsHTML, walkthroughMessage, walkthroughUnchecked} = workbench;
   // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
   const render = (...a) => workbench.render(...a);
   // ----- inspector ------------------------------------------------------------------
@@ -24,9 +24,10 @@
     for (const axiom of saved.axioms) modules.set(axiom.module, [...(modules.get(axiom.module) || []), axiom.name]);
     const statement = saved.example === true ? checkedStatementHTML(saved, true) : '';
     const checked = statement ? `<div class="insp-section">${statement}</div>` : '';
+    const compatibility = walkthroughUnchecked() ? `<div class="note-line walkthrough-compatibility" data-tone="muted">${icon('branch')}<span>${esc(walkthroughMessage())}</span></div>` : '';
     return `<div class="focus"><div class="row"><span class="pill" data-tone="${st.tone}">${esc(st.label)}</span>${currencyPillHTML(saved)}</div>${reading?.doc ? `<div class="eq">${docHTML(reading.doc)}</div>` : ''}
         <dl><dt>name</dt><dd>${esc(saved.example === true ? c.label : c.name)}</dd><dt>lines</dt><dd>${cell ? lineLinkHTML(saved.start_line, saved.end_line) : '—'}</dd><dt>result</dt><dd>${currencyText(saved)}</dd><dt>uses</dt><dd class="insp-uses">${!Array.isArray(saved.uses) ? '<span class="muted">not recorded by this check</span>' : saved.uses.length ? `<span class="uses">${useChipsHTML(saved)}</span>` : '—'}</dd></dl></div>
-      ${checked}
+      ${compatibility}${checked}
       ${linkedPath() ? '' : `<div class="insp-section insp-check">${checkThroughHTML(saved, 'Check through this claim', `<kbd>r</kbd> · compiles and kernel-replays lines 1–${esc(saved.end_line)} of the saved file; later claims are not rechecked. <b>Check saved file</b> checks all of it.`)}</div>`}
       <div class="insp-section"><h5>Assumptions from the last check</h5>${modules.size ? [...modules].map(([module, names]) => `<p class="small muted axiom-module">${esc(module)}</p><div class="axioms">${names.map(name => `<code>${esc(name)}</code>`).join('')}</div>`).join('') : '<p class="small muted">None.</p>'}</div>
       ${goalSectionHTML(c)}`;

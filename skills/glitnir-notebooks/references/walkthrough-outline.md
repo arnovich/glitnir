@@ -36,7 +36,9 @@ format; do not add one.
 | `repository` | no | the public URL of the git repository that contains the project |
 | `path` | no | the project's folder within that repository; `""` when it is the repository's root |
 
-`check` notes, without failing, when the project has commits after `commit`
+`check` reads `<root>/lean-toolchain` and fails when it is missing, unreadable,
+or resolves to a different Lean version than `toolchain`. It notes, without
+failing, when the project has commits after `commit`
 that touch its folder; commits elsewhere in the repository are ignored. The map
 links to `<repository>/blob/<commit>/<path>/<file>#L<line>` when it is drawn for
 publication, so set `repository` and `path` before publishing.

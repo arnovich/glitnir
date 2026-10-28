@@ -7,6 +7,7 @@ import threading
 import pytest
 
 from glitnir.lean import project_inspection as inspection
+from glitnir.lean.project import toolchain_declaration
 
 #: The Lean version Glitnir checks, as `TOOLCHAIN` names it.
 VERSION = inspection.supported_version()
@@ -452,6 +453,24 @@ def _loose(tmp_path, toolchain: bytes | None) -> dict:
 def test_the_supported_version_comes_from_the_toolchain():
     assert inspection.TOOLCHAIN == "leanprover/lean4:v4.35.0"
     assert inspection.supported_version() == "4.35.0"
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("  leanprover/lean4:v4.35.0 \n", "leanprover/lean4:v4.35.0"),
+        ("v4.35.0\r\n", "v4.35.0"),
+    ],
+)
+def test_raw_toolchain_declarations_share_the_project_file_rules(raw, expected):
+    assert toolchain_declaration(raw) == expected
+    assert inspection.toolchain_version(expected) == "4.35.0"
+
+
+@pytest.mark.parametrize("raw", ["", "\n", "v4.33.1\nv4.35.0\n"])
+def test_raw_toolchain_declarations_require_one_nonempty_line(raw):
+    with pytest.raises(ValueError, match="one toolchain declaration"):
+        toolchain_declaration(raw)
 
 
 # Each spelling elan resolves to the supported toolchain (checked against

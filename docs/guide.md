@@ -371,6 +371,16 @@ filesystem path; links require a public HTTPS URL. Static export includes the
 same self-contained map and safe public links. It loads no map script, font or
 other external resource.
 
+The outline also records the formalization's `lean-toolchain`. Glitnir compares
+that declaration with its one supported Lean version and combines it with the
+walkthrough notebook project's own compatibility. If either differs, every
+saved claim result is shown as **Unchecked** throughout the preview and static
+export, with the reason stated explicitly; saved source and historical records
+remain readable. An outline with no valid compatibility record fails closed.
+Glitnir does not port or build another-version formalization on a laptop. A
+future port is separate work: its upstream commit and port diff must remain
+visible, and only current Glitnir checks of that port may supply claim statuses.
+
 The **Statement details** selector shows a node's recorded uses and users.
 Opening a local node returns to its highlighted claim in **Document**; its exact
 Lean source remains available from the claim's existing source action. None of

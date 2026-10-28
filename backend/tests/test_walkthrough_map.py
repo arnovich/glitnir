@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from glitnir.service.preview import SourcePreviewService
 
 
@@ -89,6 +91,12 @@ def test_snapshot_reads_the_bounded_outline_beside_the_walkthrough(
         "https://example.org/paper.pdf",
     )
     assert walkthrough["problems"] == []
+    assert walkthrough["formalization"] == {
+        "supported": True,
+        "declared": "leanprover/lean4:v4.35.0",
+        "toolchain": "leanprover/lean4:v4.35.0",
+        "message": None,
+    }
     assert walkthrough["nodes"][1]["claim"] == "result"
     assert walkthrough["nodes"][1]["lean"][0]["href"] == (
         "https://github.com/example/formalization/blob/"
@@ -117,6 +125,37 @@ def test_missing_and_malformed_outlines_never_break_the_notebook(
     assert any("format" in problem for problem in problems)
     assert "private roadmap" not in json.dumps(snapshot["walkthrough"])
     assert "do not render this" not in json.dumps(snapshot["walkthrough"])
+    assert snapshot["walkthrough"]["formalization"]["supported"] is False
+
+
+def test_another_formalization_toolchain_is_explicitly_unchecked(
+    tmp_path: Path,
+) -> None:
+    outline = _outline([_node("result", claim="result")])
+    outline["project"]["toolchain"] = "leanprover/lean4:v4.33.1"
+    walkthrough = _snapshot(tmp_path, outline)["walkthrough"]
+    assert walkthrough["formalization"] == {
+        "supported": False,
+        "declared": "leanprover/lean4:v4.33.1",
+        "toolchain": "leanprover/lean4:v4.35.0",
+        "message": (
+            "This walkthrough's formalization uses Lean 4.33.1. Glitnir checks "
+            "Lean 4.35.0, so its claims are unchecked."
+        ),
+    }
+    assert walkthrough["problems"] == []
+
+
+@pytest.mark.parametrize("toolchain", [None, "", "v4.33.1\nv4.35.0", "v" + "4" * 300])
+def test_a_missing_or_malformed_outline_toolchain_fails_closed(
+    tmp_path: Path, toolchain: object
+) -> None:
+    outline = _outline([_node("result")])
+    outline["project"]["toolchain"] = toolchain
+    formalization = _snapshot(tmp_path, outline)["walkthrough"]["formalization"]
+    assert formalization["supported"] is False
+    assert formalization["declared"] is None
+    assert "valid Lean toolchain" in formalization["message"]
 
 
 def test_unknown_references_and_claims_are_preserved_as_diagnostics(

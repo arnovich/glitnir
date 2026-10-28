@@ -9,7 +9,7 @@
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
-    showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = workbench;
+    showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
   // ----- chrome -----------------------------------------------------------------------
@@ -121,7 +121,9 @@
     const uncompared = cs.filter(c => c.project && c.project.current === null).length;
     const notRechecked = cs.filter(c => c.project?.not_rechecked).length;
     const covered = project && requestedCut(d.project_withheld) ? d.project_withheld.through_line : null;
-    const bits = project
+    const bits = walkthroughUnchecked()
+      ? [stat(cs.length, 'muted', 'unchecked')]
+      : project
       ? [...statuses.map(k => stat(count(k), statusOf({status: k, project: true}).tone, statusOf({status: k, project: true}).label.toLowerCase())), ...(outOfDate ? [stat(outOfDate, 'amber', 'out of date')] : []), ...(uncompared ? [stat(uncompared, '', 'not compared')] : []),
         ...(notRechecked ? [stat(notRechecked, 'muted', 'not rechecked')] : []), ...(covered ? [`<span class="stat project-covered">last check: lines 1–${esc(covered)}</span>`] : [])]
       : [['checked', 'green'], ['refuted', 'red'], ['conditional', 'amber'], ['stale', 'amber'], ['open', ''], ['failed', 'red'], ['unknown', 'amber']]
@@ -138,13 +140,14 @@
     $('inspect-project').disabled = checkBusy();
     $('check-project').hidden = !project || linked;
     // One banner for a project Glitnir does not check; never on a static page.
-    const unsupported = leanOff();
+    const unsupported = leanOff() || walkthroughUnchecked();
     $('lean-unsupported').hidden = !unsupported;
     // The message already names any lean-toolchain read error: shown verbatim.
-    $('lean-unsupported-text').textContent = unsupported ? d.preview.lean.message : '';
-    if (unsupported) { $('check-project').hidden = true; $('inspect-project').hidden = true; }
+    $('lean-unsupported-text').textContent = unsupported ? walkthroughMessage() || d.preview.lean?.message || '' : '';
+    if (unsupported) $('check-project').hidden = true;
+    if (leanOff()) $('inspect-project').hidden = true;
     $('check-project').disabled = checkBusy();
-    $('project-check').hidden = !project || linked || !d.preview.check;
+    $('project-check').hidden = !project || linked || (!d.preview.check && !walkthroughUnchecked());
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
     const inspected = inspection();
     $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';

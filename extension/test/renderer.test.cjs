@@ -3052,8 +3052,17 @@ function projectNotebook({current = true} = {}) {
       {name: 'Demo.floor', start_line: 15, end_line: 17, status: 'admitted', current, axioms: [{name: 'sorryAx', module: 'Init.Prelude'}]},
     ],
     project_non_claims: [], references: [], revisions: [], assets: [],
-    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}}};
+    preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake', root: '/p', toolchain: 't'}, lean: {
+      supported: true, declared: 'leanprover/lean4:v4.35.0', toolchain: 'leanprover/lean4:v4.35.0', message: null,
+    }}};
 }
+
+const supportedWalkthroughFormalization = {
+  supported: true,
+  declared: 'leanprover/lean4:v4.35.0',
+  toolchain: 'leanprover/lean4:v4.35.0',
+  message: null,
+};
 
 test('project claim cards read like the reading view: prose docstring, statement, highlighted source', async () => {
   const window = await renderSnapshot(projectNotebook({current: false}), {katex: true});
@@ -3625,11 +3634,12 @@ test('the Graph view shows a walkthrough statement map with statuses, direct use
   }));
   const snapshot = projectNotebook();
   snapshot.project_claims.find(claim => claim.name === 'Demo.floor').current = false;
-  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Paper map', overview: 'The whole proof.', paper: 'https://example.org/paper.pdf', problems: ['step20: unknown statement absent'], nodes};
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Paper map', overview: 'The whole proof.', paper: 'https://example.org/paper.pdf', formalization: supportedWalkthroughFormalization, problems: ['step20: unknown statement absent'], nodes};
   const window = await renderSnapshot(snapshot, {katex: true});
   const d = window.document;
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
+    assert.equal(window.glitnirWorkbench.walkthroughCompatibility(snapshot).supported, true);
     d.querySelector('[data-mode="graph"]').click();
     assert.match(d.getElementById('graph-view').textContent, /Paper map/);
     assert.equal(d.querySelector('#graph-view .walkthrough-map').getAttribute('aria-label'), 'Paper map statement map');
@@ -3661,7 +3671,7 @@ test('the Graph view shows a walkthrough statement map with statuses, direct use
 
 test('walkthrough maps keep unknown references and unknown claims explicit', async () => {
   const snapshot = projectNotebook();
-  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', problems: ['result: unknown statement missing in uses'], nodes: [
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', formalization: supportedWalkthroughFormalization, problems: ['result: unknown statement missing in uses'], nodes: [
     {id: 'known', label: 'Definition 1', kind: 'definition', section: '', pages: '', statement: 'Known.', idea: 'Base.', uses: [], claim: '', lean: []},
     {id: 'result', label: 'Theorem 2', kind: 'theorem', section: '', pages: '', statement: 'Result.', idea: 'Uses a missing statement.', uses: ['known', 'missing'], claim: 'missing_claim', lean: []},
   ]};
@@ -3680,7 +3690,7 @@ test('walkthrough maps keep unknown references and unknown claims explicit', asy
 test('a mapped source claim stays navigable before it has a saved result', async () => {
   const snapshot = projectNotebook();
   snapshot.project_claims = snapshot.project_claims.filter(claim => claim.name !== 'Demo.floor');
-  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', paper_local: false, problems: [], nodes: [
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', paper_local: false, formalization: supportedWalkthroughFormalization, problems: [], nodes: [
     {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '', pages: '', statement: 'Result.', idea: 'Direct.', uses: [], claim: 'floor', lean: []},
   ]};
   const window = await renderSnapshot(snapshot);
@@ -3699,7 +3709,7 @@ test('a mapped source claim stays navigable before it has a saved result', async
 
 test('walkthrough math rendering is bounded across an adversarial map', async () => {
   const snapshot = projectNotebook();
-  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Large math map', overview: '', paper: '', paper_local: false, problems: [], nodes: [
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Large math map', overview: '', paper: '', paper_local: false, formalization: supportedWalkthroughFormalization, problems: [], nodes: [
     {id: 'many', label: 'Theorem many', kind: 'theorem', section: '', pages: '', statement: Array.from({length: 600}, () => '$x$').join(' '), idea: '', uses: [], claim: '', lean: []},
   ]};
   const window = await renderSnapshot(snapshot, {katex: true});
@@ -3713,7 +3723,7 @@ test('walkthrough math rendering is bounded across an adversarial map', async ()
 
 test('a path-only walkthrough paper explains that its public link is unavailable', async () => {
   const snapshot = projectNotebook();
-  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Local paper', overview: '', paper: '', paper_local: true, problems: [], nodes: [
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Local paper', overview: '', paper: '', paper_local: true, formalization: supportedWalkthroughFormalization, problems: [], nodes: [
     {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '', pages: '8', statement: 'Result.', idea: '', uses: [], claim: '', lean: []},
   ]};
   const window = await renderSnapshot(snapshot);
@@ -3725,7 +3735,7 @@ test('a path-only walkthrough paper explains that its public link is unavailable
 
 test('static export includes the paper map, claim anchors, and safe public references', async () => {
   const snapshot = projectNotebook();
-  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: 'https://example.org/paper.pdf', problems: [], nodes: [
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: 'https://example.org/paper.pdf', formalization: supportedWalkthroughFormalization, problems: [], nodes: [
     {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '§1', pages: '4', statement: 'Result.', idea: 'Direct.', uses: [], claim: 'floor', lean: [
       {name: 'Demo.floor', file: 'Demo.lean', line: 8, note: '', href: 'https://github.com/example/repo/blob/abc/Demo.lean#L8'},
       {name: 'unsafe', file: 'Unsafe.lean', line: 1, note: '', href: 'file:///tmp/Unsafe.lean'},
@@ -3751,6 +3761,79 @@ test('static export includes the paper map, claim anchors, and safe public refer
     assert.equal(map.querySelector('a[href^="file:"]'), null);
     assert.equal(map.querySelectorAll('script,button,select').length, 0);
   } finally { window.close(); }
+});
+
+test('an incompatible walkthrough never presents saved claim results as checked', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims[0] = {...snapshot.project_claims[0], example: true, statement: '0 < Demo.k', kernel_statement: 'GT.gt Demo.k 0'};
+  snapshot.preview.lean = {supported: true, declared: 'leanprover/lean4:v4.35.0', toolchain: 'leanprover/lean4:v4.35.0', message: null};
+  snapshot.preview.check = {status: 'checked_snapshot', source_sha256: snapshot.sha256, environment_sha256: 'b'.repeat(64), message: 'Kernel replay complete.', theorems: [
+    {name: 'Demo.k_pos', status: 'checked', type: '0 < Demo.k', statement: '0 < k', axioms: []},
+  ]};
+  const incompatibility = "This walkthrough's formalization uses Lean 4.33.1. Glitnir checks Lean 4.35.0, so its claims are unchecked.";
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Pinned elsewhere', overview: '', paper: '', formalization: {
+    supported: false, declared: 'leanprover/lean4:v4.33.1', toolchain: 'leanprover/lean4:v4.35.0', message: incompatibility,
+  }, problems: [], nodes: [
+    {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '', pages: '', statement: 'Result.', idea: '', uses: [], claim: 'k_pos', lean: []},
+  ]};
+  const messages = [];
+  const window = await renderSnapshot(snapshot, {katex: true, onMessage: message => messages.push(message)});
+  const d = window.document;
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+  try {
+    assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .pill').textContent, 'Unchecked');
+    assert.match(d.getElementById('subline').textContent, /2 unchecked/);
+    assert.equal(d.getElementById('check-project').hidden, true);
+    assert.equal(d.getElementById('inspect-project').hidden, false);
+    assert.equal(window.glitnirWorkbench.leanOff(), false);
+    assert.match(d.getElementById('project-check').textContent, /formalization uses Lean 4\.33\.1/);
+    assert.doesNotMatch(d.getElementById('doc').textContent, /Checked statement|Kernel checked/);
+
+    d.querySelector('[data-mode="graph"]').click();
+    const model = window.glitnirWorkbench.walkthroughGraphModel(snapshot);
+    assert.equal(model.byId.get('walkthrough:result').status, 'Unchecked');
+    assert.match(d.getElementById('graph-view').textContent, /claims are unchecked/);
+    assert.doesNotMatch(d.getElementById('graph-view').textContent, /\bChecked\b|Kernel checked/);
+    d.querySelector('[data-graph-name="Theorem 1"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.equal(d.getElementById('doc').hidden, false);
+    assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .pill').textContent, 'Unchecked');
+    assert.match(d.getElementById('insp-sub').textContent, /unchecked/);
+
+    d.getElementById('export-html').click();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const exported = messages.find(message => message.type === 'export');
+    assert.ok(exported, window.glitnirWorkbench.UI.notice);
+    const page = new JSDOM(exported.body).window.document;
+    assert.match(page.body.textContent, /claims are unchecked/);
+    assert.equal(page.querySelector('.walkthrough-map .proof-node title').textContent, 'Theorem 1 — Unchecked');
+    assert.doesNotMatch(page.body.textContent, /Checked statement|Kernel checked|Last checked snapshot/);
+  } finally { window.close(); }
+});
+
+test('walkthrough compatibility fails closed and also respects the notebook project', async () => {
+  for (const [label, configure] of [
+    ['missing formalization', snapshot => { delete snapshot.walkthrough.formalization; }],
+    ['partial formalization', snapshot => { snapshot.walkthrough.formalization = {supported: true}; }],
+    ['contradictory formalization', snapshot => { snapshot.walkthrough.formalization = {...supportedWalkthroughFormalization, declared: 'leanprover/lean4:v4.33.1'}; }],
+    ['other formalization toolchain', snapshot => { snapshot.walkthrough.formalization = {supported: true, declared: 'leanprover/lean4:v4.33.1', toolchain: 'leanprover/lean4:v4.33.1', message: null}; }],
+    ['oversized formalization', snapshot => { snapshot.walkthrough.formalization = {supported: true, declared: 'v' + '4'.repeat(300), toolchain: 'v' + '4'.repeat(300), message: null}; }],
+    ['partial notebook support', snapshot => { snapshot.preview.lean = {}; }],
+    ['unsupported notebook', snapshot => { snapshot.preview.lean = {supported: false, message: 'This project uses Lean 4.33.1.'}; }],
+  ]) {
+    const snapshot = projectNotebook();
+    snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', overview: '', paper: '', formalization: supportedWalkthroughFormalization, problems: [], nodes: [
+      {id: 'result', label: 'Theorem 1', kind: 'theorem', section: '', pages: '', statement: 'Result.', idea: '', uses: [], claim: 'k_pos', lean: []},
+      {id: 'unmapped', label: 'Theorem 2', kind: 'theorem', section: '', pages: '', statement: 'No mapping.', idea: '', uses: [], claim: '', lean: []},
+    ]};
+    configure(snapshot);
+    const window = await renderSnapshot(snapshot);
+    try {
+      const model = window.glitnirWorkbench.walkthroughGraphModel(snapshot);
+      assert.equal(model.byId.get('walkthrough:result').status, 'Unchecked', label);
+      assert.equal(model.byId.get('walkthrough:unmapped').status, 'Unknown', label);
+      assert.match(model.compatibility.message, /unchecked|uses Lean/i);
+    } finally { window.close(); }
+  }
 });
 
 test('a claim card, the inspector and r check the saved file through that claim', async () => {
