@@ -6,8 +6,9 @@ module is a second, textual encoding of the same values:
 
     entailment x : x*x = 2 |- x < 0
 
-`parse_goal` returns exactly the `Goal`, `TrajectoryGoal`, `StreamGoal` or
-`SteppedGoal` the text denotes, or raises `GoalTextError`; it never guesses.
+`parse_goal` returns exactly the `Goal`, `TrajectoryGoal`, `StreamGoal`,
+`SteppedGoal` or `HedgingGoal` the text denotes, or raises `GoalTextError`; it
+never guesses.
 `render_goal` writes the forms the parser reads back, so
 ``parse_goal(render_goal(g)) == g``.
 The mapping is structural, not algebraic: ``p <= q`` is the atom
@@ -59,6 +60,8 @@ from glitnir_forseti.entailment.syntax import (
     Tru,
     Var,
 )
+from glitnir_forseti.hedging.goal import HedgingGoal
+from glitnir_forseti.hedging.payoffs import PAYOFFS
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams.goal import (
     AXES_CONTEXT,
@@ -83,7 +86,7 @@ from glitnir_forseti.trajectory.goal import TrajectoryGoal
 from glitnir_forseti.trajectory.models import MODELS as TRAJECTORY_MODELS
 from glitnir_forseti.trajectory.models import ModelEntry, ObservationBand
 
-AnyGoal = Union[Goal, TrajectoryGoal, StreamGoal, SteppedGoal]
+AnyGoal = Union[Goal, TrajectoryGoal, StreamGoal, SteppedGoal, HedgingGoal]
 
 #: The longest goal text accepted; the decoders' node limits apply after.
 MAX_TEXT = 65536
@@ -104,6 +107,7 @@ _TERMINALS = {
     "RELATION": "a comparison (<=, <, >=, >, =)",
     "TURNSTILE": "|-",
     "QUANTIFIER": "always, at-start or eventually",
+    "PAYOFF": "a payoff (call, put or straddle)",
 }
 
 _RELATIONS = {
@@ -208,6 +212,8 @@ def _goal(tree: Tree) -> AnyGoal:
         return _short_trajectory(tree.children)
     if tree.data == "stepped":
         return _stepped(tree.children)
+    if tree.data == "hedging":
+        return _hedging(tree.children)
     return _stream(tree.children)
 
 
@@ -337,6 +343,38 @@ def _stepped(children: list) -> SteppedGoal:
         observation=str(observation),
         barrier=barrier,
         bound=_rational(bound),
+    )
+
+
+def _hedging(children: list) -> HedgingGoal:
+    """Read a hedging goal; its claim is one of two shapes."""
+    payoff, strike, spot, down, up, steps, claim = children
+    premium: Fraction | None = None
+    against_up: Fraction | None = None
+    against_down: Fraction | None = None
+    bound: Fraction | None = None
+    kind: Literal["covers", "shortfall"]
+    if claim.data == "covers":
+        (level,) = claim.children
+        premium = _rational(level)
+        kind = "covers"
+    else:
+        wide_down, wide_up, level = claim.children
+        against_down, against_up = _rational(wide_down), _rational(wide_up)
+        bound = _rational(level)
+        kind = "shortfall"
+    return HedgingGoal(
+        payoff=str(payoff),
+        strike=_rational(strike),
+        spot=_rational(spot),
+        up=_rational(up),
+        down=_rational(down),
+        steps=_steps(steps),
+        claim=kind,
+        premium=premium,
+        against_up=against_up,
+        against_down=against_down,
+        bound=bound,
     )
 
 
@@ -559,6 +597,8 @@ def render_goal(goal: AnyGoal) -> str:
         )
     if type(goal) is SteppedGoal:
         return _render_stepped(goal)
+    if type(goal) is HedgingGoal:
+        return _render_hedging(goal)
     if type(goal) is StreamGoal:
         viscosity, declared = "", "profile"
         if goal.viscosity is not None:
@@ -586,7 +626,7 @@ def render_short_goal(goal: AnyGoal) -> str | None:
         TypeError: ``goal`` is not a goal.
         GoalTextError: The coordinate is a keyword (`RESERVED`).
     """
-    if type(goal) not in (Goal, TrajectoryGoal, StreamGoal, SteppedGoal):
+    if type(goal) not in (Goal, TrajectoryGoal, StreamGoal, SteppedGoal, HedgingGoal):
         raise TypeError("not a goal")
     if type(goal) is not TrajectoryGoal:
         return None
@@ -638,6 +678,28 @@ def _render_stepped(goal: SteppedGoal) -> str:
     return (
         f"{head}{mark} within {goal.horizon} observe {goal.observation}"
         f" breach {_number(goal.barrier)} probability {bound}"
+    )
+
+
+def _render_hedging(goal: HedgingGoal) -> str:
+    if goal.payoff not in PAYOFFS:
+        raise GoalTextError(
+            f"{goal.payoff!r} is not a payoff the text names ({', '.join(PAYOFFS)});"
+            " this goal has no text form"
+        )
+    head = (
+        f"hedging {goal.payoff} strike {_number(goal.strike)}"
+        f" spot {_number(goal.spot)} band down {_number(goal.down)}"
+        f" up {_number(goal.up)} steps {goal.steps}"
+    )
+    if goal.claim == "covers":
+        assert goal.premium is not None
+        return f"{head} premium {_number(goal.premium)} covers"
+    assert goal.against_down is not None and goal.against_up is not None
+    assert goal.bound is not None
+    return (
+        f"{head} against down {_number(goal.against_down)}"
+        f" up {_number(goal.against_up)} shortfall <= {_number(goal.bound)}"
     )
 
 

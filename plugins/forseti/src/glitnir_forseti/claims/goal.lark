@@ -5,7 +5,7 @@
 // `x - 1` is a subtraction where a polynomial is. The tree is converted to the
 // exact goal values by hand in `text.py`; nothing here assigns meaning.
 
-start: entailment | trajectory | short_trajectory | stepped | stream
+start: entailment | trajectory | short_trajectory | stepped | stream | hedging
 
 // entailment x, y : x^2 + y^2 <= 1 |- x <= 1
 entailment: "entailment" names ":" formula TURNSTILE formula
@@ -48,6 +48,20 @@ law_class: "variance" -> two_moment
 stepped_claim: "within" SIGNED "observe" NAME "breach" SIGNED "probability" "<=" SIGNED -> horizon
              | "at" "every" "mark" "within" SIGNED "observe" NAME "breach" SIGNED "probability" "<=" SIGNED -> fixed_date
              | "observe" NAME "expected" "<=" SIGNED "at" SIGNED -> expected
+
+// hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20
+//   premium 3555/1000 covers
+// hedging call strike 100 spot 100 band down 1/100 up 1/100 steps 20
+//   against down 1/50 up 1/50 shortfall <= 4
+// A hedging goal names a payoff, a strike and a spot, a band of `down` and `up`
+// moves, a number of steps, and one claim of two: a premium that `covers`, or
+// an `against` band with a `shortfall` bound. The payoff is one of the three
+// words below; `text.py` reads the step count as a whole number, refuses a
+// fraction, and gives every word its meaning.
+hedging: "hedging" PAYOFF "strike" SIGNED "spot" SIGNED "band" "down" SIGNED "up" SIGNED "steps" SIGNED hedging_claim
+hedging_claim: "premium" SIGNED "covers" -> covers
+             | "against" "down" SIGNED "up" SIGNED "shortfall" "<=" SIGNED -> shortfall
+PAYOFF: "call" | "put" | "straddle"
 
 // stream formal-heat interpretation evaluated-field basis ogf profile x*x
 //   field u over t in [0, 1], x in [-1, 1] : u >= 0 and u <= 3
