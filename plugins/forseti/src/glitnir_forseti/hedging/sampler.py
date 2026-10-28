@@ -22,9 +22,12 @@ Each return is drawn in the band the paths run in (`HedgePlan.path_band`),
   after which it is the band's end nearer the last draw.
 
 Each is then clipped into the band, so that no path leaves it: the library's
-theorems speak of paths in the band and of no other. One `random.Random`
-seeded with the plan's seed draws every return, path by path and, within a
-path, step by step, so the same plan always gives the same run.
+theorems speak of paths in the band and of no other. The band's ends are
+converted to float64 with round-to-nearest, so a return at an end may exceed the
+exact rational end by half an ulp, far below the card's tolerance (`BELOW`).
+One `random.Random` seeded with the plan's seed draws every return, path by
+path and, within a path, step by step, so the same plan always gives the same
+run.
 
 This is the only part of the hedging lane in floating point: exact values
 become float64 here and nowhere upstream, and nothing returned here reaches a

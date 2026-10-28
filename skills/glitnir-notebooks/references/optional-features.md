@@ -57,16 +57,18 @@ While the preview stays open, a rerun after editing only the directive's options
 reuses Lean's earlier output (same source above, same environment) and takes
 seconds; the first run of a directive always runs Lean.
 
-`glitnir-forseti` provides three verbs: `simulate`, `iterate` and `sample`. They
-load `Gimle.Asgard.Compile.RationalInterchange` and `Gimle.Asgard.Model.Continuous`
-from the project's build; the notebook need not import them. `sample` also needs
-the notebook to import `Gimle.Forseti.Examples.HedgedSpreadStepped`, which
-defines the step it samples. Without Python Asgard, `iterate` cards say it is
-unavailable and cannot run.
+`glitnir-forseti` provides four verbs: `simulate`, `iterate`, `sample` and `hedge`.
+They load `Gimle.Asgard.Compile.RationalInterchange` and
+`Gimle.Asgard.Model.Continuous` from the project's build; the notebook need not
+import them. `sample` also needs the notebook to import
+`Gimle.Forseti.Examples.HedgedSpreadStepped`, which defines the step it samples,
+and `hedge` the notebook to import `Gimle.Forseti.Hedging`. Without Python Asgard,
+`iterate` cards say it is unavailable and cannot run.
 
 ```lean
 -- @evidence simulate dissipative (h := 1/100) (steps := 400) (solver := rk4) (plane := x, z)
 -- @evidence iterate update (state := 1, 1) (inputs := 1, -1; 1, 1) (parameter := 1/4) (steps := 200)
+-- @evidence hedge Gimle.Forseti.Hedging.call (strike := 100) (spot := 100) (down := 1/50) (up := 1/50) (steps := 20) (law := uniform) (paths := 4000) (seed := 7)
 ```
 
 `simulate` takes `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`; it needs no
@@ -75,12 +77,21 @@ extra package. `iterate` takes `state`, `inputs`, `parameter`, `steps` and `name
 Asgard (`gimle-asgard`, installed separately into the backend).
 `sample` takes `law` (`gaussian`, `twopoint` or `threepoint`), `variance` and
 `observe`, plus `paths` (at most 100000), `steps`, `seed`, `barrier` and `show`,
-and needs no extra package. Numbers are plain decimals or
+and needs no extra package. `hedge` targets `Gimle.Forseti.Hedging.call`, `.put` or
+`.straddle`, requires `strike`, `spot`, `down`, `up` and `steps` (at most 250), and
+takes `law` (`uniform`, the default, `twopoint` or `gaussian`, which requires
+`sigma`), `paths` (4000, at most 100000), `seed` (7) and, given together,
+`against_down` and `against_up`, which draw the paths in a wider band than the
+hedge's; it needs no extra package. Its card is the hedge's profit and loss at expiry
+by quantiles, with the premium and the paths that end below zero, and shows no
+proved number. Numbers are plain decimals or
 fractions of at most 40 digits per part; write `1/100` or `0.01`, not `1e-2`.
 Without a provider the line shows why, and saved results stay viewable. A bad
-option is reported on the card. CI skips the plugin's live Lean tests, so Forseti
-evidence is exercised end to end only by the opt-in
-`plugins/forseti/tests/test_evidence_provider_lean.py`.
+option is reported on the card. CI's `plugin-live` job runs the plugin's live Lean
+tests in shards against the pinned Forseti Lean release, so Forseti evidence is
+exercised end to end there by `plugins/forseti/tests/test_evidence_provider_lean.py`
+(and `hedge` by `test_hedging_lean.py`); locally they skip unless
+`FORSETI_LEAN_TEST_PROJECT` names a built Forseti Lean checkout.
 
 Evidence is never proof. It changes no claim's status and not the check exit code,
 so state what a claim proves from Lean alone and describe a run as a numerical
@@ -91,8 +102,8 @@ results untouched.
 
 `-- @decide <name> : <goal>` on a line of its own, with continuation lines `--`
 plus at least two spaces, asks a decision provider for a Lean proof or refutation
-of the goal. `glitnir-forseti` decides kinds `entailment`, `trajectory`, `stream`
-and `stepped`; it needs `glitnir-forseti[z3]`, and the notebook must import the
+of the goal. `glitnir-forseti` decides kinds `entailment`, `trajectory`, `stream`,
+`stepped` and `hedging`; it needs `glitnir-forseti[z3]`, and the notebook must import the
 Forseti/Asgard modules the goal uses (a missing one shows as an unknown-identifier
 rejection on the card). Forseti `entailment`, `trajectory` and `stepped` decision
 blocks and the `simulate` and `sample` cards pass Glitnir's check in the plugin's
@@ -108,7 +119,24 @@ few minutes.
 -- @decide disk : entailment x, y : x^2 + y^2 <= 1 |- x^2 <= 1 and y^2 <= 1
 -- @decide energy_band : trajectory three-state from (1, 2, -1) at 2
 --   observe V always : V >= 0 and V <= 6
+-- @decide covered : hedging call strike 100 spot 100 band down 1/50 up 1/50
+--   steps 20 premium 3555/1000 covers
 ```
+
+A `hedging` goal names a `call`, `put` or `straddle` with a strike, a spot, a band
+of per-step moves (`down`, `up`) and a step count, and claims one of two things,
+in exact rationals. `premium P covers` is proven when the premium is at least the
+binomial price at the band's ends (the hedge from it covers the payoff on every
+path whose simple returns stay in the band) and refuted when it is below (no
+spot-feedback strategy covers the payoff from it). `against down d up u
+shortfall <= X` compares a hedge built for one band with paths of a wider band: it
+is proven only for equal bands with a nonnegative bound, refuted by one exhibited
+extreme path of the wider band, and otherwise Unknown, since no theorem bounds the
+shortfall over the band's other paths. A `covers` claim is decided up to 250 steps
+and a `shortfall` claim up to 60. The notebook must import `Gimle.Forseti.Hedging`,
+and `hedging` decisions and `hedge` evidence need a Forseti Lean build that
+contains it, as the Forseti Lean release that carries `Gimle.Forseti.Hedging`
+does; an older build reports the missing module.
 
 Nothing runs when the preview opens. **Run** asks the provider (one provider run
 at a time, evidence included); Glitnir then checks the saved text up to the

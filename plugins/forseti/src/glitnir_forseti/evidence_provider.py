@@ -513,6 +513,8 @@ def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:
         EvidenceError: If the payload cannot be read or the run is refused.
     """
     if not isinstance(payload, dict):
+        if request.verb == "hedge":
+            raise EvidenceError("Lean printed a hedge that is not an object")
         raise EvidenceError("Lean printed a malformed field")
     simulation = _simulation(request)
     if simulation.verb == "iterate":

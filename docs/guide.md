@@ -70,8 +70,9 @@ reports an error instead of drawing.
 
 `-- @evidence <verb> <target> (options)` shows a simulation of an object defined
 earlier as a card with a chart, provenance and a **Run** button, for example
-`-- @evidence simulate dissipative (h := 1/100) (steps := 400)`, or sampled
-paths of a stepped model under random shocks (`-- @evidence sample`). It runs
+`-- @evidence simulate dissipative (h := 1/100) (steps := 400)`, sampled
+paths of a stepped model under random shocks (`-- @evidence sample`), or a
+payoff's hedge on random paths (`-- @evidence hedge`). It runs
 only when you click **Run**, one run at a time, and the result is saved in
 `<Notebook>.glitnir.json`. A card is Never run, Running, Current, Failed or Out
 of date (anything above the directive, or the environment, changed). A failed
@@ -516,7 +517,7 @@ prepared Lake setup while the environment is unchanged (checks never do). On
 macOS the Mac is kept awake while Glitnir's checks, proof steps, views and
 evidence run Lean or Lake; decision runs are not covered.
 
-**Evidence.** It runs `-- @evidence simulate|iterate|sample <target>`
+**Evidence.** It runs `-- @evidence simulate|iterate|sample|hedge <target>`
 directives, loading `Gimle.Asgard.Compile.RationalInterchange` and
 `Gimle.Asgard.Model.Continuous` from the project's build in the same way.
 `simulate` needs nothing more; `iterate` needs Python Asgard (`gimle-asgard`),
@@ -531,16 +532,43 @@ nothing more, requires `(law := gaussian|twopoint|threepoint)`,
 100000), `steps` (256), `seed` (7), `show` (8, or `paths` if fewer) and
 `barrier` (1) as options. Its card is sampled evidence beside a proved bound,
 never the bound.
+`hedge` runs the binomial hedge of a payoff on seeded random paths in float64
+and needs nothing more. Its target is `Gimle.Forseti.Hedging.call`, `.put` or
+`.straddle`, and the notebook must import `Gimle.Forseti.Hedging`. It requires
+`(strike := …)`, `(spot := …)`, `(down := …)`, `(up := …)` and `(steps := …)`
+(at most 250), and takes `law` (`uniform`, the default, `twopoint` or
+`gaussian`, which requires `(sigma := …)`), `paths` (4000, at most 100000),
+`seed` (7) and, given together, `against_down` and `against_up`, which draw the
+paths in a wider band than the hedge's. Its card shows the profit and loss at
+expiry by its quantiles and the paths that end below zero. It is sampled
+evidence beside a `hedging` decision, never a proved number.
 Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 
 **Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
-`entailment`, `trajectory`, `stream` or `stepped` (the `z3` extra,
+`entailment`, `trajectory`, `stream`, `stepped` or `hedging` (the `z3` extra,
 `glitnir-forseti[z3]`, is needed). Its blocks need the Forseti and Asgard modules
 the goal uses imported in the notebook; a missing one shows as the check's
 unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
 Forseti Lean build that contains `Gimle.Forseti.Stepped` and
 `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the pinned release, Forseti Lean
 v0.5.1, does; an older build reports the missing module.
+
+A `hedging` goal asks whether the binomial hedge of a `call`, `put` or
+`straddle` over a band of per-step moves covers the payoff, for example
+`hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20 premium
+3555/1000 covers`, or `hedging call strike 100 spot 100 band down 1/100 up 1/100
+steps 20 against down 1/50 up 1/50 shortfall <= 4`. A `covers` claim is PROVEN
+when the premium is at least the binomial price at the band's ends, so the hedge
+from it covers the payoff on every path whose simple returns stay in the band,
+and REFUTED when it is below, since no spot-feedback strategy covers the payoff
+from there. A `shortfall` claim compares a hedge built for one band with paths of
+a wider band: it is PROVEN only for equal bands with a nonnegative bound, REFUTED
+by one exhibited extreme path of the wider band, and otherwise UNKNOWN, since no
+theorem bounds the shortfall over the band's other paths. Numbers are exact
+rationals; a `covers` claim is decided up to 250 steps and a `shortfall` claim up
+to 60. `hedging` decisions and `hedge` evidence need a Forseti Lean build that
+contains `Gimle.Forseti.Hedging`, as the Forseti Lean release that carries
+`Gimle.Forseti.Hedging` does; an older build reports the missing module.
 
 `entailment`, `trajectory` and `stepped` decisions and `simulate` and `sample`
 evidence pass Glitnir's check in the plugin's live tests against Forseti Lean

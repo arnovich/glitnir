@@ -15,7 +15,7 @@ Lake project whose packages build `Gimle.Forseti` and
 for the view, so the notebook need not import them. An unbuilt or out-of-date one
 is named on the card with the `lake build` command to run.
 
-It also provides evidence for `-- @evidence simulate|iterate|sample <target>`
+It also provides evidence for `-- @evidence simulate|iterate|sample|hedge <target>`
 directives, shown as cards with a **Run** button; a run only happens when
 clicked. The notebook loads `Gimle.Asgard.Compile.RationalInterchange` and
 `Gimle.Asgard.Model.Continuous` from the project's build, as views load theirs.
@@ -24,6 +24,7 @@ clicked. The notebook loads `Gimle.Asgard.Compile.RationalInterchange` and
 -- @evidence simulate dissipative (h := 1/100) (steps := 400) (solver := rk4)
 -- @evidence iterate update (state := 1, 1) (inputs := 1, -1; 1, 1) (parameter := 1/4) (steps := 200)
 -- @evidence sample Gimle.Forseti.Examples.HedgedSpread.compiled (law := threepoint) (variance := 64) (observe := s)
+-- @evidence hedge Gimle.Forseti.Hedging.call (strike := 100) (spot := 100) (down := 1/50) (up := 1/50) (steps := 20) (law := uniform) (paths := 4000) (seed := 7)
 ```
 
 `simulate` options are `h`, `steps`, `solver` (`euler` or `rk4`) and `plane`;
@@ -58,9 +59,27 @@ Its card shows a few paths and the fraction that has left the band
 `|observe| ≤ barrier`: sampled evidence to read beside a proved bound, never
 the bound. Evidence is never proof and changes no claim's status.
 
+`hedge` runs the binomial hedge of a convex payoff on seeded random paths in
+float64 and needs nothing beyond this package. Its target is a payoff as the
+hedging library names it, `Gimle.Forseti.Hedging.call`, `.put` or `.straddle`,
+and the notebook must import `Gimle.Forseti.Hedging`, which defines the price
+Lean prints. `strike`, `spot`, `down`, `up` and `steps` (at most 250) are
+required; `law` (`uniform`, the default, `twopoint` or `gaussian`), `paths`
+(4000, at most 100000) and `seed` (7) are optional, as are `against_down` and
+`against_up`, which are given together and draw the paths in a wider band than
+the hedge's, and `sigma`, which `gaussian` requires and the other laws refuse.
+A run of more than 20 million payoff evaluations and draws is refused on the
+card. Lean prints the library's binomial price at the band, the provider checks
+it against the same price in exact arithmetic, and the hedge built for the band
+is run from that premium. Its card shows the profit and loss at expiry by its
+quantiles, with the premium, the least, median and greatest outcome and the
+paths that end below zero in the provenance. It shows no proved number: it is
+sampled evidence beside a `hedging` decision, never the decision. Both are
+described in [the hedging lane](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/src/glitnir_forseti/hedging/README.md).
+
 It also decides `-- @decide <name> : <goal>` directives whose goal starts with
-`entailment`, `trajectory`, `stream` or `stepped`, in the goal syntax of
-`glitnir_forseti.claims.text`:
+`entailment`, `trajectory`, `stream`, `stepped` or `hedging`, in the goal
+syntax of `glitnir_forseti.claims.text`:
 
 ```lean
 -- @decide disk : entailment x, y : x^2 + y^2 <= 1 |- x^2 <= 1 and y^2 <= 1
@@ -68,6 +87,10 @@ It also decides `-- @decide <name> : <goal>` directives whose goal starts with
 --   observe V always : V >= 0 and V <= 6
 -- @decide breach_within_year : stepped hedged-spread from (0, 0) at 0 step 1/256
 --   shocks variance 64 within 256 observe s breach 1 probability <= 1/4
+-- @decide covered : hedging call strike 100 spot 100 band down 1/50 up 1/50
+--   steps 20 premium 3555/1000 covers
+-- @decide narrow_hedge : hedging call strike 100 spot 100 band down 1/100
+--   up 1/100 steps 20 against down 1/50 up 1/50 shortfall <= 4
 ```
 
 A `stepped` goal's law class goes with its claim: a breach within a horizon
@@ -82,6 +105,23 @@ years. A longer claim is `UNKNOWN: unsupported`. `stepped` decisions and
 `Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the
 pinned release, Forseti Lean v0.5.1, does; an older build reports the missing
 module.
+
+A `hedging` goal names a payoff (`call`, `put` or `straddle`), a strike, a spot,
+a band of per-step moves (`down` and `up`, as fractions of the spot), a number
+of steps and one claim, in exact rationals. `premium P covers` is PROVEN when
+the premium is at least the binomial price at the band's ends, so the hedge
+from it covers the payoff on every path whose simple returns stay in the band,
+and REFUTED when it is below, since then no spot-feedback strategy covers the
+payoff from it. `against down d up u shortfall <= X` compares a hedge built for
+one band with paths of a wider band: it is PROVEN only for equal bands with a
+nonnegative bound, REFUTED by one exhibited extreme path of the wider band that
+leaves the hedge more than `X` below the payoff, and otherwise
+`UNKNOWN: gap`, since no theorem bounds the shortfall over the band's other
+paths. A `covers` claim is decided up to 250 steps and a `shortfall` claim up
+to 60; a longer one is `UNKNOWN: resource-limit`. `hedging` decisions and
+`hedge` evidence need a Forseti Lean build that contains `Gimle.Forseti.Hedging`,
+as the Forseti Lean release that carries `Gimle.Forseti.Hedging` does; an older
+build reports the missing module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
 so before anything runs. **Run** searches for a certificate or a counterexample and proposes a self-contained Lean block: a `Decided_<name>`
@@ -157,4 +197,20 @@ To run them:
 cd plugins/forseti
 FORSETI_LEAN_TEST_PROJECT=/path/to/forseti-lean \
   ../../.venv/bin/python -m pytest -q -rs tests/test_decision_provider_lean.py
+```
+
+The live hedging tests (`tests/test_hedging_lean.py`) take each example goal of
+the lane through the decision provider and have Glitnir's project check accept
+every block it proposes, check variants at the step caps and for the straddle,
+show that a block whose premium was lowered by hand is rejected by the kernel,
+and run the `hedge` verb end to end, comparing the premium Lean prints with the
+exact binomial price. They need the same project, `lake`, Lean and sandbox as
+the live evidence tests, a checkout that holds `Gimle.Forseti.Hedging`, and
+create and remove their scratch modules the same way. CI's `plugin-live` job
+runs them in its `hedging` shard; without a project they skip. To run them:
+
+```sh
+cd plugins/forseti
+FORSETI_LEAN_TEST_PROJECT=/path/to/forseti-lean \
+  ../../.venv/bin/python -m pytest -q -rs tests/test_hedging_lean.py
 ```

@@ -198,7 +198,7 @@ use `fresh_replay_cache`.
 Each project check a backend live test runs through
 `project_checking.check_project` or `check_candidate` (looked up when called,
 so not those made through the editor service or the compute worker), and each
-block the plugin's stepped live test checks, writes a `check stages <test>
+block the plugin's stepped and hedging live tests check, writes a `check stages <test>
 <file>: resolve 4.2 s, capture …` line after the test's outcome, so CI logs
 show where each check's time goes.
 The stages are those of the result's `stage_ms` (see
@@ -234,10 +234,12 @@ sandbox, and skip unless
 under it a test using that checkout that skips at run time fails too; a skip it
 declares with a `skipif` mark (another platform's sandbox probes) or for the
 optional `simulation` input stays a skip. Plugin
-tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped live
-test allows each block 300 s to check (on CI's Linux runners a block takes
-69–75 s); on a loaded or slower machine raise that with
-`FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The
+tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped and
+hedging live tests allow each block 300 s to check (on CI's Linux runners a
+stepped block takes 69–75 s); on a loaded or slower machine raise that with
+`FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The hedging tests
+need a Forseti Lean checkout that holds `Gimle.Forseti.Hedging`, and CI runs
+them in the `hedging` shard of `plugin-live`. The
 [plugin README](plugins/forseti/README.md) shows how to run them.
 
 CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the

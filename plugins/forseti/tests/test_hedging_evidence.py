@@ -437,8 +437,10 @@ def test_a_print_missing_a_key_is_refused(key: str) -> None:
 
 def test_compute_refuses_what_lean_did_not_print_as_a_hedge() -> None:
     request = forseti.parse("hedge", CALL, REQUIRED)
-    with pytest.raises(EvidenceError, match="malformed"):
+    with pytest.raises(EvidenceError, match="a hedge that is not an object") as raised:
         forseti.compute(request, [1, 2])
+    # The simulate wording, "a malformed field", does not describe a hedge.
+    assert "field" not in str(raised.value)
     with pytest.raises(EvidenceError, match="unknown key 'field'"):
         forseti.compute(request, {**EMITTED, "field": []})
 
@@ -467,7 +469,7 @@ def test_compute_refuses_what_lean_did_not_print_as_a_hedge() -> None:
     ],
 )
 def test_every_drawn_return_lies_in_the_band(changes) -> None:
-    """Review Focus 5: the theorems speak of paths in the band and no other."""
+    """The theorems speak of paths in the band and no other."""
     run = plan(**changes)
     down, up = run.path_band
     low, high = -float(down), float(up)

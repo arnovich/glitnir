@@ -10,8 +10,9 @@ Install it through the extension's **Glitnir: Set Up Environment** command, into
 dedicated environment. The core wheel has no runtime dependencies. Views come
 from optional provider packages found through the `glitnir.providers` entry
 point; `glitnir-forseti` (in `plugins/forseti` of the repository) draws Forseti
-circuit, model and dynamics views, runs `-- @evidence simulate|iterate|sample`
-directives and decides `-- @decide` goals when installed into the same environment.
+circuit, model and dynamics views, runs
+`-- @evidence simulate|iterate|sample|hedge` directives and decides `-- @decide`
+goals when installed into the same environment.
 
 To check a saved file from a terminal or coding agent:
 
