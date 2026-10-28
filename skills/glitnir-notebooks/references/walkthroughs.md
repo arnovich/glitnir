@@ -64,24 +64,31 @@ lean-toolchain    a copy of the original's lean-toolchain
 
 ## The helper
 
-`scripts/walkthrough.py` uses only Python's standard library. Run it from this
-skill's folder with `python3 -B`, so that it leaves the folder unchanged, and
-give it absolute paths:
+`scripts/walkthrough.py` uses only Python's standard library and needs Python
+3.10 or newer. Run it from this skill's folder with Glitnir's backend Python:
+the interpreter `glitnir.pythonPath` points to, or the one **Output → Glitnir**
+shows as "Glitnir environment: …" (Python 3.12 or newer, which the extension
+sets up with uv). Below, `python` stands for it. Pass `-B`, so that it writes no
+bytecode and leaves the folder unchanged, and give it absolute paths. With no
+Glitnir backend installed, run each command through uv instead, such as
+`uv run --no-project --python ">=3.10" python -B scripts/walkthrough.py check OUTLINE`.
+Never use the system Python: macOS ships 3.9, on which the helper only says what
+to run and exits with status 2.
 
-- `python3 -B scripts/walkthrough.py check OUTLINE` checks the outline's
+- `python -B scripts/walkthrough.py check OUTLINE` checks the outline's
   structure: the format, required keys, unique ids, known `uses` and no cycles.
   If those pass, it compares every `lean` entry's file, name, line and `type`
   with the project's source and reports where a declaration moved or how it
   changed. Last, it notes commits to the project folder since `commit`; that
   note is not an error. With no error it ends with one line, such as
   `ok: 21 nodes, 57 Lean entries`.
-- `python3 -B scripts/walkthrough.py check OUTLINE --notebook FILE` also checks
+- `python -B scripts/walkthrough.py check OUTLINE --notebook FILE` also checks
   the notebook's claims (below), once the outline and its Lean entries have
   no errors. For a walkthrough in several files, repeat `--notebook` once per
   file in one run: together the files must hold each node's claim exactly once.
   To resolve the project's names it scans every `.lean` file under the project
   root, except in `.lake` folders.
-- `python3 -B scripts/walkthrough.py map OUTLINE` writes `assets/map.svg` and
+- `python -B scripts/walkthrough.py map OUTLINE` writes `assets/map.svg` and
   `map.html` beside the outline; `--out DIR` writes them elsewhere. Its links
   open this machine's files. `--links public` links to `repository` at `commit`
   and to the sources' `url`s instead, and writes no local path: use it for a
@@ -119,7 +126,12 @@ the statement with the project's text:
   root; the namespaces of the theorem's own name count too (`theorem
   OddSums.main` is read inside `namespace OddSums`). A one-part name never
   finds a `protected` declaration that way: inside `namespace A`, `cost`
-  passes over `protected def A.cost` and means the next `cost` outward. So
+  passes over `protected def A.cost` and means the next `cost` outward. A
+  name declared `protected` in one file and not in another means whichever
+  the theorem's file imports, which `check` does not follow: it reports
+  `declares both protected and not`, so explain the theorem in prose. A name
+  part in guillemets that needs none, such as `«cost»`, is the plain name
+  `cost` on both sides. So
   where the project writes `oddSum` inside `namespace OddSums.Main` and
   declares both `OddSums.oddSum` and `OddSums.Main.oddSum`, write
   `OddSums.Main.oddSum`; if it declares only `OddSums.oddSum`, write that. A
@@ -144,11 +156,13 @@ the statement with the project's text:
   as above; one declared only under an opened namespace is reached through
   `open`. If both declare it, the text cannot tell which Lean takes, so do not
   restate it.
-- Cite a `theorem` or `lemma` whose proof uses no `sorry` or `admit`. A claim
-  citing an `axiom`, a `def` or another declaration, or a theorem whose own
-  proof text contains `sorry` or `admit` (outside comments and strings), is an
-  error. `check` reads only the cited proof's text: a `sorry` in a theorem it
-  uses is not seen, so read the project's audit notes or axiom report too.
+- Cite a `theorem` or `lemma` whose proof uses no `sorry`, `admit` or `stop`.
+  A claim citing an `axiom`, a `def` or another declaration, or a theorem whose
+  own proof text contains `sorry`, `admit` or `stop` (outside comments and
+  strings), is an error. The proof text runs to the next command, column-0
+  lines included. `check` reads only the cited proof's text: a `sorry` in a
+  theorem it uses is not seen, so read the project's audit notes or axiom
+  report too.
 - Writing an `abbrev` alias in place of what the project wrote, or unfolding
   one, differs textually and is reported as a mismatch. Restate the theorem's
   own declared type.
@@ -181,10 +195,13 @@ The notebook defines and opens nothing. Each line is blank, inside a `/-! -/`
 prose block, a `/-- -/` docstring or a `/- -/` comment, a `--` comment, or one
 of these at column 0: `import <module>`, `namespace <name>`, `section` or
 `section <name>`, `end` or `end <name>`, `#print axioms <name>`, or a claim
-(`theorem` or `lemma`, with any attributes and modifiers), whose header lines
-and single `exact` line are indented under it. Only a `--` comment may follow
-the one module of an `import` or the one name of a `#print axioms`, because
-Lean reads any further word as a command of its own. `check` reports every
+(`theorem` or `lemma`, with any modifiers but no attributes), whose header
+lines and single `exact` line are indented under it. A claim with attributes,
+such as `@[simp]` or `@[instance]`, is reported: they change how the claims
+after it elaborate. Only a `--` comment may follow the one module of an
+`import`, the one name of a `#print axioms` or `namespace`, or the keyword of
+`section` or `end` and its optional name, because Lean reads any further word
+as a command of its own: `section #exit` would stop Lean before the claims. `check` reports every
 other line: any other command (`open`, `variable`, `def`, `example`,
 `notation`, `export`, `alias`, `set_option`, `#eval`, a lone attribute line and
 so on), any other indented code, and code after a comment's closing `-/` on the
@@ -236,11 +253,11 @@ levels only when asked. Node kinds are fixed:
 - A paper item split into several nodes, one per claim, is labelled with the
   paper's name and the part in parentheses, such as `Theorem 22 (3SUM)`.
 
-*Check:* `python3 -B scripts/walkthrough.py check OUTLINE` exits 0.
+*Check:* `python -B scripts/walkthrough.py check OUTLINE` exits 0.
 
 ### 3. Draw the map
 
-Run `python3 -B scripts/walkthrough.py map OUTLINE`. The map shows direct uses
+Run `python -B scripts/walkthrough.py map OUTLINE`. The map shows direct uses
 only: a use also reached through another is not drawn. Edges into appendix
 nodes are dashed.
 
@@ -260,7 +277,7 @@ Import only the modules the claims need, each the file that proves the cited
 theorem. Say plainly where the project's final
 theorem does not follow the paper's route.
 
-*Check:* `python3 -B scripts/walkthrough.py check OUTLINE --notebook NOTEBOOK`
+*Check:* `python -B scripts/walkthrough.py check OUTLINE --notebook NOTEBOOK`
 exits 0, with one `--notebook` for each file of the walkthrough in the same run,
 and the preview shows the prose, and the claims as cards, rather than the whole
 file as source. If you cannot open the preview, say so in the report.

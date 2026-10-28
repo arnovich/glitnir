@@ -4,8 +4,9 @@
 they depend on each other and which Lean declarations formalize them. The
 notebook and the map are written from it, and a later agent extends the
 walkthrough by reading it first. Check it with
-`python3 -B scripts/walkthrough.py check OUTLINE`, run from the skill folder;
-[walkthroughs.md](walkthroughs.md) says when.
+`python -B scripts/walkthrough.py check OUTLINE`, run from the skill folder
+with Glitnir's backend Python; [walkthroughs.md](walkthroughs.md) says when and
+with which Python.
 
 The format is JSON, identified as `glitnir.walkthrough-outline/v1`. Paths in
 the outline are relative to the folder that holds it, except Lean files, which

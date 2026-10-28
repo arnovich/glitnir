@@ -4,6 +4,8 @@ import ast
 import importlib.util
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -146,6 +148,67 @@ def test_script_parses_as_python_3_10() -> None:
     ast.parse(SCRIPT.read_text(), feature_version=(3, 10))
 
 
+PYTHON_NEEDED = (
+    "walkthrough.py needs Python 3.10 or newer; run it with Glitnir's backend "
+    'Python or `uv run --no-project --python ">=3.10" python -B walkthrough.py ...`'
+)
+
+
+def test_an_old_python_is_told_what_to_run() -> None:
+    problem = load_script().python_problem
+    assert problem(3, 9) == problem(2, 7) == PYTHON_NEEDED
+    assert problem(3, 10) == problem(3, 12) == problem(4, 0) == ""
+
+
+def test_the_python_check_runs_before_anything_else() -> None:
+    """An older Python reaches the check: no annotation or syntax stops it first."""
+    source = SCRIPT.read_text(encoding="utf-8")
+    ast.parse(source, feature_version=(3, 9))
+    body = ast.parse(source).body
+    assert isinstance(body[0], ast.Expr)  # the docstring
+    future = body[1]
+    assert isinstance(future, ast.ImportFrom) and future.module == "__future__"
+    assert [alias.name for alias in future.names] == ["annotations"]
+    imports = (ast.Import, ast.ImportFrom)
+    first = next(i for i in range(2, len(body)) if not isinstance(body[i], imports))
+    check, problem, exit_ = body[first : first + 3]
+    assert isinstance(check, ast.FunctionDef) and check.name == "python_problem"
+    assert ast.unparse(problem) == (
+        "_PYTHON_PROBLEM = python_problem(sys.version_info.major, "
+        "sys.version_info.minor)"
+    )
+    assert isinstance(exit_, ast.If) and "sys.exit(2)" in ast.unparse(exit_)
+
+
+def old_python() -> str | None:
+    """Return an installed Python older than 3.10, such as macOS's, if any."""
+    for candidate in ("python3.9", "/usr/bin/python3"):
+        path = shutil.which(candidate)
+        if path is None:
+            continue
+        done = subprocess.run(
+            [path, "-c", "import sys; print(sys.version_info < (3, 10))"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if done.stdout.strip() == "True":
+            return path
+    return None
+
+
+@pytest.mark.skipif(old_python() is None, reason="needs a Python older than 3.10")
+def test_an_old_python_exits_2_with_one_line() -> None:
+    done = subprocess.run(
+        [str(old_python()), "-B", str(SCRIPT), "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 2 and done.stdout == ""
+    assert done.stderr == f"error: {PYTHON_NEEDED}\n", done.stderr
+
+
 LEAN_SOURCE = """namespace A.B
 theorem one : True := trivial
 private theorem two (n : Nat) :
@@ -164,6 +227,8 @@ def load_script() -> Any:
     spec = importlib.util.spec_from_file_location("walkthrough_under_test", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # dataclasses look the module up to read its string annotations
+    sys.modules[spec.name] = module
     sys.dont_write_bytecode = True
     spec.loader.exec_module(module)
     return module
@@ -720,13 +785,25 @@ def test_map_html_escapes_outline_text(tmp_path: Path) -> None:
     assert json.loads(raw)["nodes"][0]["statement"] == text
 
 
+KATEX_INTEGRITY = {
+    "katex.min.css": "sha512-fHwaWebuwA7NSF5Qg/af4UeDx9XqUpYpOGgubo3yWu+b2IQR4UeQwbb42"
+    "Ti7gVAjNtVoI/I9TEoYeu9omwcC6g==",
+    "katex.min.js": "sha512-LQNxIMR5rXv7o+b1l8+N1EZMfhG7iFZ9HhnbJkTp4zjNr5Wvst75AqUeFD"
+    "xeRUa7l5vEDyUiAip//r+EFLLCyA==",
+    "contrib/auto-render.min.js": "sha512-iWiuBS5nt6r60fCz26Nd0Zqe0nbk1ZTIQbl3Kv7kYsX+"
+    "yKMUFHzjaH2+AnM6vp2Xs+gNmaBAVWJjSmuPw76Efg==",
+}
+
+
 def test_map_html_loads_only_katex_from_cdnjs(tmp_path: Path) -> None:
     page = map_page(tmp_path, outline())
     base = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/"
-    assert base + "katex.min.css" in page
-    assert base + "katex.min.js" in page
-    assert base + "contrib/auto-render.min.js" in page
-    assert page.count("https://") == 3
+    tags = re.findall(r"<(?:link|script)\b[^>]*https://[^>]*>", page)
+    assert len(tags) == 3 and page.count("https://") == 3, tags
+    for tag, (file, integrity) in zip(tags, KATEX_INTEGRITY.items()):
+        assert f'"{base}{file}"' in tag, tag
+        assert f'integrity="{integrity}"' in tag, tag
+        assert 'crossorigin="anonymous"' in tag, tag
 
 
 def link_outline(tmp_path: Path) -> dict[str, Any]:
@@ -838,11 +915,27 @@ def documented_commands() -> list[list[str]]:
     commands = []
     for path in [SKILL / "SKILL.md", *sorted((SKILL / "references").glob("*.md"))]:
         for line in path.read_text(encoding="utf-8").splitlines():
-            _, found, rest = line.partition("python3 -B scripts/walkthrough.py ")
+            _, found, rest = line.partition("python -B scripts/walkthrough.py ")
             words = rest.split("`")[0].split()
             if found and words:
                 commands.append(words)
     return commands
+
+
+UV_RUN = 'uv run --no-project --python ">=3.10" python -B scripts/walkthrough.py'
+
+
+def test_the_skill_names_a_python_that_can_run_the_helper() -> None:
+    """The backend's Python or uv, never the system `python3` (3.9 on macOS)."""
+    texts = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in [SKILL / "SKILL.md", *sorted((SKILL / "references").glob("*.md"))]
+    }
+    for name, text in texts.items():
+        assert "python3" not in text, name
+    for name in ("SKILL.md", "walkthroughs.md"):
+        assert "glitnir.pythonPath" in texts[name] and UV_RUN in texts[name], name
+    assert "python3" not in SCRIPT.read_text(encoding="utf-8")
 
 
 def test_every_documented_command_exists() -> None:
@@ -1302,3 +1395,190 @@ def test_a_claim_name_must_be_plain(tmp_path: Path) -> None:
     result = source_run(tmp_path, source, "t", 5, ": cost = 9", notebook)
     assert result.returncode == 1
     assert "claim A.c must have a plain name" in result.stdout, result.stdout
+
+
+def files_run(tmp_path: Path, files: dict[str, str], target: str, notebook: str) -> Any:
+    """Check the notebook against a project of the files, citing the target.
+
+    The target's entry is filled in from what the scan finds, so the outline
+    itself is never what fails.
+    """
+    (tmp_path / "proj").mkdir()
+    for name, text in files.items():
+        (tmp_path / "proj" / name).write_text(text, encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", "proj")
+    git(tmp_path, "commit", "-q", "-m", "p")
+    script = load_script()
+    file, found = next(
+        (name, d)
+        for name in files
+        for d in script.declarations(tmp_path / "proj", name)
+        if d.name == target
+    )
+    data = lean_outline(
+        git(tmp_path, "rev-parse", "HEAD"),
+        entry(name=target, file=file, line=found.line, type=found.type),
+    )
+    data["nodes"][0]["claim"] = notebook.split("theorem ", 1)[1].split()[0]
+    return notebook_run(tmp_path, data, notebook)
+
+
+MIXED_FILES = {
+    "Stmt.lean": "namespace A\nprotected def cost := 5\nend A\n",
+    "Main.lean": (
+        "def cost := 9\nnamespace A\ndef cost := 7\n"
+        "theorem t : cost = 7 := rfl\nend A\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("written", ["cost", "A.cost"])
+def test_a_name_declared_both_protected_and_not_is_an_error(
+    tmp_path: Path, written: str
+) -> None:
+    claim = in_w(f"theorem c : {written} = 7", "A.t")
+    out = files_run(tmp_path, MIXED_FILES, "A.t", claim).stdout
+    assert (
+        "claim c uses A.cost, which the project declares both protected and not; "
+        "explain it in prose instead"
+    ) in out, out
+    assert not any(w in out for w in STRUCTURAL_WORDS), out
+
+
+def test_a_protected_name_in_every_file_still_passes(tmp_path: Path) -> None:
+    files = {**MIXED_FILES, "Main.lean": PROTECTED_SOURCE}
+    files["Stmt.lean"] = files["Stmt.lean"].replace("5", "9")
+    claim = in_w("theorem c : cost = 9", "A.t")
+    assert files_run(tmp_path, files, "A.t", claim).stdout == OK_ONE
+
+
+GUILLEMET_SOURCE = (
+    "def cost := 9\nnamespace A\ndef cost := 5\n"
+    "theorem t : «cost» = 5 := rfl\nend A\n"
+)
+
+
+def test_a_guillemet_name_resolves_like_its_plain_spelling(tmp_path: Path) -> None:
+    claim = in_w("theorem c : «cost» = 5", "A.t")
+    out = files_run(tmp_path, {"R.lean": GUILLEMET_SOURCE}, "A.t", claim).stdout
+    assert "there cost means A.cost" in out, out
+
+
+@pytest.mark.parametrize("written", ["A.cost", "«A».«cost»", "A.«cost»"])
+def test_a_guillemet_name_restated_in_full_passes(tmp_path: Path, written: str) -> None:
+    claim = in_w(f"theorem c : {written} = 5", "A.t")
+    out = files_run(tmp_path, {"R.lean": GUILLEMET_SOURCE}, "A.t", claim).stdout
+    assert out == OK_ONE, out
+
+
+def test_a_guillemet_use_before_its_binder_is_an_error(tmp_path: Path) -> None:
+    source = (
+        "def n := 4\nnamespace A\ndef n := 3\n"
+        "theorem t {m : Fin «n»} {n : Nat} : m = m ∧ n = n := ⟨rfl, rfl⟩\nend A\n"
+    )
+    claim = in_w("theorem c {m : Fin «n»} {n : Nat} : m = m ∧ n = n", "A.t")
+    out = files_run(tmp_path, {"R.lean": source}, "A.t", claim).stdout
+    assert "claim c binds and uses n" in out, out
+
+
+def test_guillemets_are_dropped_only_from_plain_components() -> None:
+    script = load_script()
+    assert script._tokens("«cost» = «A».«b'»") == ["cost", "=", "A.b'"]
+    assert script._tokens("«a.b».c «x y» «fun»") == ["«a.b».c", "«x y»", "«fun»"]
+    assert script.same_statement(": «a.b».c", ": «a.b».c", (), set())
+
+
+@pytest.mark.parametrize(
+    "line, word",
+    [
+        ("section #exit", "#exit after section"),
+        ("namespace N #exit", "#exit after namespace"),
+        ("end N #exit", "#exit after end"),
+        ("end #exit", "#exit after end"),
+        ("section A B", "B after section"),
+        ("#exit", "#exit"),
+        ("namespace", "namespace"),
+    ],
+)
+def test_a_structural_line_holds_only_its_name(
+    tmp_path: Path, line: str, word: str
+) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = f"import X\n{line}\ntheorem w_one : True := by\n  exact A.B.one\n"
+    out = notebook_run(tmp_path, data, text).stdout
+    assert f"{ONLY}: line 2: {word} in " in out, out
+    assert not any(w in out for w in STRUCTURAL_WORDS), out
+
+
+def test_structural_lines_may_name_and_end_in_a_comment(tmp_path: Path) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = (
+        "import X\nsection S -- part\nnamespace N.M -- part\n"
+        "theorem w_one : True := by\n  exact A.B.one\nend N.M -- part\nend S\n"
+    )
+    assert notebook_run(tmp_path, data, text).stdout == OK_ONE
+
+
+@pytest.mark.parametrize(
+    "source, gap",
+    [
+        ("theorem t : 1 = 2 :=\nsorry\n", "sorry"),
+        ("theorem t : 1 = 2 :=\n\nsorry\n", "sorry"),
+        ("theorem t : 1 = 2 :=\n(by\nsorry)\n", "sorry"),
+        ("theorem t : 1 = 2 := by\nadmit\n", "admit"),
+        ("theorem t : 1 = 2 := by\n  stop\n  rfl\n", "stop"),
+        ("theorem t : 1 = 2 :=\nby stop\n", "stop"),
+    ],
+)
+def test_a_proof_continued_at_column_0_is_scanned(
+    tmp_path: Path, source: str, gap: str
+) -> None:
+    out = cite_run(tmp_path, source)
+    assert f"claim c cites t, whose proof contains {gap}" in out, out
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        "theorem u : True := sorry\n",
+        "\n/-- doc -/\n@[simp] theorem u : True := sorry\n",
+        "#check (sorry : Nat)\n",
+        "example : True := sorry\n",
+        "namespace N\ndef u : Nat := sorry\nend N\n",
+    ],
+)
+def test_the_next_command_is_not_part_of_the_proof(tmp_path: Path, after: str) -> None:
+    out = cite_run(tmp_path, "theorem t : True :=\ntrivial\n" + after, ": True")
+    assert out == OK_ONE, out
+
+
+@pytest.mark.parametrize(
+    "attribute", ["@[simp] ", "@[instance] ", "@[simp, reducible]"]
+)
+def test_a_claim_with_attributes_is_an_error(tmp_path: Path, attribute: str) -> None:
+    data = claim_outline(make_project(tmp_path))
+    text = f"import X\n{attribute}theorem w_one : True := by\n  exact A.B.one\n"
+    out = notebook_run(tmp_path, data, text).stdout
+    assert "claim w_one has attributes; a claim takes none" in out, out
+    assert not any(w in out for w in STRUCTURAL_WORDS), out
+
+
+def test_a_declaration_after_its_docstring_on_one_line_is_scanned(
+    tmp_path: Path,
+) -> None:
+    source = (
+        "/-- doc -/ def x := 1\n/-- doc -/ theorem y : x = 1 := rfl\n"
+        "/- a\nb -/ def z := 2\n/- a /- b -/ c -/ def w := 3\n/-- only a doc -/\n"
+    )
+    assert list(names_in(tmp_path, source)) == ["x", "y", "z", "w"]
+
+
+def test_a_declaration_on_its_docstring_line_resolves_names(tmp_path: Path) -> None:
+    source = (
+        "def cost := 9\nnamespace A\n/-- doc -/ def cost := 5\n"
+        "/-- doc -/ theorem t : cost = 5 := rfl\nend A\n"
+    )
+    claim = in_w("theorem c : cost = 5", "A.t")
+    out = files_run(tmp_path, {"R.lean": source}, "A.t", claim).stdout
+    assert "there cost means A.cost" in out, out
