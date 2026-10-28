@@ -1529,6 +1529,19 @@ def test_structural_lines_may_name_and_end_in_a_comment(tmp_path: Path) -> None:
         ("theorem t : 1 = 2 := by\nadmit\n", "admit"),
         ("theorem t : 1 = 2 := by\n  stop\n  rfl\n", "stop"),
         ("theorem t : 1 = 2 :=\nby stop\n", "stop"),
+        (
+            "theorem t : 1 = 2 := ((fun (_ : Array Nat) (h : 1 = 2) => h)\n"
+            "#[1]\nsorry)\n",
+            "sorry",
+        ),
+        ("theorem t : 1 = 2 := (id\n#v[1]\nsorry)\n", "sorry"),
+        (
+            'theorem t : 1 = 2 :=\nlet _s := "--" /-\ntheorem x\n-/\nsorry\n',
+            "sorry",
+        ),
+        ("theorem t : 1 = 2 := /-\ntheorem x\n-/\nsorry\n", "sorry"),
+        ('theorem t : 1 = 2 :=\nlet _s := "a\ntheorem x"\nsorry\n', "sorry"),
+        ("theorem t : 1 = 2 :=\nlet _c := '\"'\n/-\ntheorem x\n-/\nsorry\n", "sorry"),
     ],
 )
 def test_a_proof_continued_at_column_0_is_scanned(
@@ -1544,6 +1557,7 @@ def test_a_proof_continued_at_column_0_is_scanned(
         "theorem u : True := sorry\n",
         "\n/-- doc -/\n@[simp] theorem u : True := sorry\n",
         "#check (sorry : Nat)\n",
+        "#print axioms t\n#eval (sorry : Nat)\n",
         "example : True := sorry\n",
         "namespace N\ndef u : Nat := sorry\nend N\n",
     ],
@@ -1570,13 +1584,17 @@ def test_a_declaration_after_its_docstring_on_one_line_is_scanned(
     source = (
         "/-- doc -/ def x := 1\n/-- doc -/ theorem y : x = 1 := rfl\n"
         "/- a\nb -/ def z := 2\n/- a /- b -/ c -/ def w := 3\n/-- only a doc -/\n"
+        "/- a -/ /- b -/ def v := 4\n/- a\n-/ /-- b -/ def u := 5\n"
     )
-    assert list(names_in(tmp_path, source)) == ["x", "y", "z", "w"]
+    assert list(names_in(tmp_path, source)) == ["x", "y", "z", "w", "v", "u"]
 
 
-def test_a_declaration_on_its_docstring_line_resolves_names(tmp_path: Path) -> None:
+@pytest.mark.parametrize("comments", ["/-- doc -/", "/- a -/ /- b -/"])
+def test_a_declaration_on_its_docstring_line_resolves_names(
+    tmp_path: Path, comments: str
+) -> None:
     source = (
-        "def cost := 9\nnamespace A\n/-- doc -/ def cost := 5\n"
+        f"def cost := 9\nnamespace A\n{comments} def cost := 5\n"
         "/-- doc -/ theorem t : cost = 5 := rfl\nend A\n"
     )
     claim = in_w("theorem c : cost = 5", "A.t")

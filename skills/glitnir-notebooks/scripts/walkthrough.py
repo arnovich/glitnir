@@ -349,9 +349,11 @@ def _comment_end(line: str, start: int, depth: int) -> tuple[int, int]:
 
 # A column-0 line that starts another command, so it ends the declaration
 # before it. `open ... in` and `set_option ... in` may start a term, so they
-# do not end one: a proof may go on after them.
+# do not end one: a proof may go on after them. Nor do `#[1]` and `#v[1]`,
+# which are terms: only `#` and a word, such as `#check`, starts a command.
 _COMMAND_RE = re.compile(
-    r"^(?:@\[|#|(?:theorem|lemma|def|abbrev|structure|class|inductive|instance"
+    r"^(?:@\[|#[A-Za-z_]\w*(?![\w\[])"
+    r"|(?:theorem|lemma|def|abbrev|structure|class|inductive|instance"
     r"|opaque|axiom|example|namespace|section|end|variable|universe|attribute"
     r"|mutual|noncomputable|private|protected|public|scoped|local|partial|unsafe"
     r"|nonrec|import|export|alias|notation|infix|infixl|infixr|prefix|postfix"
@@ -360,31 +362,20 @@ _COMMAND_RE = re.compile(
 )
 
 
-def _body(lines: list[str], start: int) -> list[str]:
+def _body(lines: list[str], code: list[str], start: int) -> list[str]:
     """Return the lines after line `start` up to the next command.
 
-    A proof may go on at column 0, so the body ends only at a column-0 line
-    outside comments that starts a command: when unsure, a line belongs to
-    the declaration, so that a `sorry` in it is reported.
+    `code` is the file's lines as `_code_only` leaves them. A proof may go on
+    at column 0, so the body ends only at a line whose code starts a command
+    at column 0: when unsure, a line belongs to the declaration, so that a
+    `sorry` in it is reported.
     """
-    rest: list[str] = []
-    depth = 0
-    for line in lines[start + 1 :]:
-        if depth == 0 and _COMMAND_RE.match(line):
-            break
-        rest.append(line)
-        index = 0
-        while True:
-            if depth:
-                depth, index = _comment_end(line, index, depth)
-                if depth:
-                    break
-            opened = line.find("/-", index)
-            comment = line.find("--", index)
-            if opened < 0 or 0 <= comment < opened:
-                break
-            depth, index = 1, opened + 2
-    return rest
+    if len(code) != len(lines):
+        return lines[start + 1 :]
+    end = start + 1
+    while end < len(lines) and not _COMMAND_RE.match(code[end]):
+        end += 1
+    return lines[start + 1 : end]
 
 
 def _continuation(lines: list[str], start: int) -> list[str]:
@@ -399,19 +390,21 @@ def _continuation(lines: list[str], start: int) -> list[str]:
 
 def declarations(root: Path, file: str) -> list[Declaration]:
     """Return the declarations at column 0 of a Lean file, in order."""
-    lines = (root / file).read_text(encoding="utf-8").splitlines()
+    text = (root / file).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    code = _code_only("\n".join(lines)).split("\n")
     frames: list[tuple[str, tuple[str, ...]]] = []
     scoped_vars: list[bool] = []
     file_vars = False
     found: list[Declaration] = []
     depth = 0
     for index, line in enumerate(lines):
-        if depth or line.startswith("/-"):
-            # code after a comment on its line, as in `/-- doc -/ def x`, counts
+        # code after comments on its line, as in `/-- doc -/ def x`, counts
+        while line.startswith("/-") or (depth and line):
             depth, end = _comment_end(line, 0 if depth else 2, depth or 1)
             line = "" if depth else line[end:].lstrip()
-            if not line:
-                continue
+        if not line:
+            continue
         match = _NAMESPACE_RE.match(line)
         if match:
             for part in _components(_plain_name(match.group(1))):
@@ -467,7 +460,9 @@ def declarations(root: Path, file: str) -> list[Declaration]:
                 prefixes,
                 file_vars or any(scoped_vars),
                 match.group("keyword"),
-                _proof_gap("\n".join([match.group("rest"), *_body(lines, index)])),
+                _proof_gap(
+                    "\n".join([match.group("rest"), *_body(lines, code, index)])
+                ),
                 "protected" in match.group("modifiers").split(),
             )
         )
@@ -479,10 +474,15 @@ _CHAR_RE = re.compile(r"'(?:\\[^']*|[^\\'\n])'")
 
 
 def _code_only(text: str) -> str:
-    """Return Lean text with its comments, strings and characters blanked."""
+    """Return Lean text with its comments, strings and characters blanked.
+
+    Each blanked stretch keeps its line breaks, so that the lines of the
+    result line up with the text's.
+    """
     out: list[str] = []
     index = 0
     while index < len(text):
+        begin = index
         after_name = index > 0 and (
             text[index - 1].isalnum() or text[index - 1] in "_'"
         )
@@ -490,6 +490,9 @@ def _code_only(text: str) -> str:
             end = text.find("\n", index)
             index = len(text) if end < 0 else end
             continue
+        literal = None
+        if not after_name:
+            literal = _RAW_STRING_RE.match(text, index) or _CHAR_RE.match(text, index)
         if text.startswith("/-", index):
             depth, index = 1, index + 2
             while index < len(text) and depth:
@@ -499,23 +502,18 @@ def _code_only(text: str) -> str:
                     depth, index = depth - 1, index + 2
                 else:
                     index += 1
-            out.append(" ")
-            continue
-        raw = None if after_name else _RAW_STRING_RE.match(text, index)
-        char = None if after_name else _CHAR_RE.match(text, index)
-        if raw or char:
-            index = (raw or char).end()  # type: ignore[union-attr]
-            out.append(" ")
-            continue
-        if text[index] == '"':
+        elif literal:
+            index = literal.end()
+        elif text[index] == '"':
             index += 1
             while index < len(text) and text[index] != '"':
                 index += 2 if text[index] == "\\" else 1
             index += 1
-            out.append(" ")
+        else:
+            out.append(text[index])
+            index += 1
             continue
-        out.append(text[index])
-        index += 1
+        out.append(" " + "\n" * text.count("\n", begin, index))
     return "".join(out)
 
 
