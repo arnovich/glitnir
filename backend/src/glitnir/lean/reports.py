@@ -8,6 +8,18 @@ from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.lean.results import Use
 
 
+def valid_statement_expansion(value: Any) -> bool:
+    """Accept only a bounded, explicitly descriptive statement expansion."""
+    return (
+        isinstance(value, dict)
+        and set(value) == {"text", "kind", "truncated"}
+        and isinstance(value["text"], str)
+        and len(value["text"]) <= 4096
+        and value["kind"] in ("definition", "constructor", "unavailable")
+        and isinstance(value["truncated"], bool)
+    )
+
+
 def declarations(
     value: Any,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -33,6 +45,10 @@ def declarations(
         ) or not isinstance(item.get("levels"), list):
             raise SnapshotError("The independent constant report is malformed.")
     for item in theorems.values():
+        if item.get(
+            "statement_expansion"
+        ) is not None and not valid_statement_expansion(item["statement_expansion"]):
+            raise SnapshotError("The independent statement display is malformed.")
         if not all(
             isinstance(item.get(key), str) for key in ("canonical", "type")
         ) or not isinstance(item.get("axioms"), list):

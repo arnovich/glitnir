@@ -26,12 +26,21 @@ class Use(TypedDict):
     in_notebook: bool
 
 
+class StatementExpansion(TypedDict):
+    """One bounded display expansion; never a checked proposition or status."""
+
+    text: str
+    kind: Literal["definition", "constructor", "unavailable"]
+    truncated: bool
+
+
 class Theorem(TypedDict):
     """One checked declaration: its status, what decided it, and where it is."""
 
     name: str
     type: str
     statement: str | None
+    statement_expansion: NotRequired[StatementExpansion]
     uses: list[Use]
     uses_truncated: NotRequired[Literal[True]]
     axioms: list[Axiom]

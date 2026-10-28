@@ -1215,12 +1215,15 @@ def test_live_fingerprint_is_portable_across_checkouts(
 
 # Saved results hold only this digest. These are deliberately repinned for v5's
 # full private replay inventory: v4 and earlier results become out of date once.
-# Within v5 these values must not change. They are of `_project`'s layout.
+# Within v5 these values must not change. They are of `_project`'s layout
+# with the frozen checker input in `pinned_checker_identity`.
 _LOCAL_PIN = "281d2b08237e72b1b0b2d3a69cf57ccccf9fd1136ea3e0f03f6871ae2eb98f48"
 _REMOTE_PIN = "4d2a81edae6df390059e3a593479b3294bc32a6b01681032607891189546f98f"
 
 
-def test_local_fingerprint_value_is_pinned(tmp_path, monkeypatch):
+def test_local_fingerprint_value_is_pinned(
+    tmp_path, monkeypatch, pinned_checker_identity
+):
     monkeypatch.delenv("GLITNIR_EXECUTION_BACKEND", raising=False)
     source = _project(tmp_path)
     found = environment_fingerprint(source, source.read_text())
@@ -1228,7 +1231,9 @@ def test_local_fingerprint_value_is_pinned(tmp_path, monkeypatch):
     assert "execution" not in found
 
 
-def test_remote_fingerprint_value_is_pinned(tmp_path, monkeypatch):
+def test_remote_fingerprint_value_is_pinned(
+    tmp_path, monkeypatch, pinned_checker_identity
+):
     """The caller-supplied remote identity hashes as it did when computed inside."""
     from glitnir.compute import client
 
@@ -1264,3 +1269,42 @@ def test_every_backend_fingerprint_call_passes_the_remote_identity():
             ):
                 missing.append(f"{path.relative_to(root)}:{node.lineno}")
     assert missing == []
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [
+        "ProjectRead.lean",
+        "ProjectReport.lean",
+        "ProjectReplay.lean",
+        "AxiomReport.lean",
+        "ViewElab.lean",
+    ],
+)
+def test_helper_bytes_change_the_environment_identity(tmp_path, monkeypatch, helper):
+    """Every actual helper's bytes, not only its name, invalidate saved checks."""
+    from glitnir.lean import fingerprint
+
+    source = _project(tmp_path)
+    before = environment_fingerprint(source, source.read_text())
+    read = fingerprint.read_regular
+    changed = []
+
+    def read_changed(path, limit):
+        content = read(path, limit)
+        if path.name == helper:
+            changed.append(content)
+            return content + b"\n-- changed helper\n"
+        return content
+
+    monkeypatch.setattr(fingerprint, "read_regular", read_changed)
+    after = environment_fingerprint(source, source.read_text())
+    assert changed
+    assert (
+        before["checker"]["programs"][helper] == hashlib.sha256(changed[0]).hexdigest()
+    )
+    assert (
+        after["checker"]["programs"][helper]
+        == hashlib.sha256(changed[0] + b"\n-- changed helper\n").hexdigest()
+    )
+    assert after["sha256"] != before["sha256"]

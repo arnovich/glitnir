@@ -379,7 +379,7 @@
         ${namespaceHTML(namespace)}
         ${reading?.doc ? `<div class="doc-line">${docHTML(reading.doc)}</div>` : ''}
         ${statement ? `<div class="claim-statement">${statement}</div>` : ''}${checked}
-        ${usesHTML(saved)}
+        ${statementExpansionHTML(saved)}${usesHTML(saved)}
         ${saved.status === 'admitted' ? '<p class="card-notice claim-notice">Unfinished: the statement’s proof contains a placeholder.</p>' : ''}
         <p class="small muted claim-axioms">Assumptions: ${axioms}</p>
         ${source}
@@ -387,6 +387,20 @@
         ${actions ? `<div class="claim-actions">${actions}</div>` : ''}
       </article></section>`;
   }
+  // Optional display from the last compiled observation, with the same currency
+  // as its claim. Never used for statuses, source binding or proof navigation.
+  function statementExpansionHTML(saved) {
+    const expansion = saved.statement_expansion;
+    if (!expansion) return '';
+    const label = expansion.kind === 'constructor' ? 'Constructor signature · display only'
+      : expansion.kind === 'unavailable' ? 'Statement expansion unavailable · display only'
+      : 'One definition unfolded · display only';
+    const bound = expansion.kind === 'unavailable' ? 'Expansion stopped; no expanded statement is available.'
+      : expansion.kind === 'constructor' ? 'The constructor describes the fields; their definitions are not unfolded.'
+      : 'Stopped after one definition; further names are not unfolded.';
+    return `<div class="statement-expansion">${fieldHTML(label, expansion.text)}<p class="small muted">${bound}${expansion.truncated ? ' Display shortened to 4096 characters.' : ''}</p></div>`;
+  }
+
   // The statement a checked example's status is about: as Lean prints it in
   // the example's own scope, with this project's notation (project code, so
   // its text is the project's), typeset like a theorem's Statement field, with

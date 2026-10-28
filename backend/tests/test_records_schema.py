@@ -22,6 +22,7 @@ def test_claim_record_optional_keys_match_the_validator():
     assert set(schema.ClaimRecord.__optional_keys__) == {
         "example",
         "statement",
+        "statement_expansion",
         "statement_shortened",
         "kernel_statement",
         "kernel_statement_shortened",

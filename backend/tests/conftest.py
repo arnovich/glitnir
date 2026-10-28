@@ -1377,3 +1377,32 @@ def handoff_session(stub_handoff, tmp_path, monkeypatch):
         module.serve_handoff(**{**arguments, **overrides})
 
     return run, root, events, ready
+
+
+@pytest.fixture
+def pinned_checker_identity(monkeypatch):
+    """Freeze checker input bytes for fingerprint-algorithm golden tests.
+
+    The fixture is the identity on which the v5 pins were established. Real
+    helper changes must invalidate saved checks without changing that algorithm.
+    Other tests continue to verify the actual helper digests and invalidation.
+    """
+    import json
+
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    identity = json.loads(
+        (Path(__file__).parent / "fixtures/fingerprint-checker-v5.json").read_text()
+    )
+    identity["toolchain"] = TOOLCHAIN
+    monkeypatch.setattr("glitnir.lean.fingerprint.checker_identity", lambda: identity)
+
+
+@pytest.fixture
+def proposition_display_project(tmp_path, project_toolchain):
+    """Build an imported proposition, as a walkthrough's upstream project would."""
+    return build_example_project(
+        tmp_path / "project",
+        project_toolchain,
+        EXAMPLE_HELPER + "\ndef Imported (n : Nat) : Prop := n = n ∧ True\n",
+    )

@@ -2351,3 +2351,34 @@ def test_records_from_check_accepts_theorems_without_optional_keys():
     (claim,) = records["claims"]
     optional = {"uses", "uses_truncated", "example", "statement", "kernel_statement"}
     assert not optional & set(claim)
+
+
+def test_named_statement_expansion_survives_records_and_freshness():
+    """Display data follows its saved claim, including historical observations."""
+    result = copy.deepcopy(RESULT)
+    expansion = {"text": "∀ n : Nat, n = n", "kind": "definition", "truncated": False}
+    result["theorems"][0]["statement_expansion"] = expansion
+    records = records_from_check(TEXT, result, FP)
+    assert records["claims"][0]["statement_expansion"] == expansion
+    views = claim_views(TEXT, records, "different")
+    assert views[0]["statement_expansion"] == expansion
+    assert views[0]["current"] is False
+    assert "statement_expansion" not in views[1]
+
+
+@pytest.mark.parametrize(
+    "expansion",
+    [
+        None,
+        {"text": "x", "kind": "definition"},
+        {"text": 1, "kind": "definition", "truncated": False},
+        {"text": "x" * 4097, "kind": "definition", "truncated": False},
+        {"text": "x", "kind": "proof", "truncated": False},
+        {"text": "x", "kind": "definition", "truncated": 1},
+    ],
+)
+def test_malformed_statement_displays_are_rejected(expansion):
+    """Untrusted saved display fields obey the same bound and shape as reports."""
+    records = records_from_check(TEXT, RESULT, FP)
+    records["claims"][0]["statement_expansion"] = expansion
+    assert not check_records.well_formed(records)

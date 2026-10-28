@@ -19,6 +19,11 @@ so like every claim it is found again by its exact text; identical examples are
 matched in order. Examples without a proposition claim nothing; they are saved
 under `non_claims` so the preview can say so.
 
+A claim may save `"statement_expansion"`, a bounded, display-only head expansion
+from its compiled module (or a constructor signature). It follows the same source
+and environment freshness as the claim; older records simply lack this display.
+It is never used for proposition identity, assumptions or statuses.
+
 Each claim saves the claims it uses (`"uses"`): the theorems its type and value
 name directly, each `{"module", "name", "in_notebook"}`, from this notebook or
 another notebook module of the project. They are display only, as the checker
@@ -116,7 +121,7 @@ from glitnir.lean.digest import fingerprint_ok
 from glitnir.lean.lexing import command_boundaries
 from glitnir.lean.project import read_regular
 from glitnir.lean.project_checking import MAX_USES
-from glitnir.lean.results import Axiom, CheckResult, Use
+from glitnir.lean.results import Axiom, CheckResult, StatementExpansion, Use
 from glitnir.notebook.records_schema import DECISION_FAILURE_KINDS  # noqa: F401
 from glitnir.notebook.records_schema import EVIDENCE_FAILURE_KINDS  # noqa: F401
 from glitnir.notebook.records_schema import (
@@ -193,6 +198,7 @@ class ClaimView(TypedDict):
     not_rechecked: NotRequired[Literal[True]]
     example: NotRequired[Literal[True]]
     statement: NotRequired[str]
+    statement_expansion: NotRequired[StatementExpansion]
     statement_shortened: NotRequired[Literal[True]]
     kernel_statement: NotRequired[str]
     kernel_statement_shortened: NotRequired[Literal[True]]
@@ -369,6 +375,8 @@ def records_from_check(
             "prefix_sha256": _sha("\n".join(lines[:last])),
             "proposition_sha256": theorem["proposition_sha256"],
         }
+        if "statement_expansion" in theorem:
+            claim["statement_expansion"] = theorem["statement_expansion"].copy()
         if isinstance(theorem.get("uses"), list):
             claim["uses"] = [use.copy() for use in theorem["uses"][:MAX_USES]]
             if theorem.get("uses_truncated") is True or (
@@ -527,6 +535,8 @@ def claim_views(
             "axioms": claim["axioms"],
             "current": current,
         }
+        if "statement_expansion" in claim:
+            view["statement_expansion"] = claim["statement_expansion"].copy()
         if "uses" in claim:
             view["uses"] = [{**use} for use in claim["uses"]]
             if claim.get("uses_truncated") is True:

@@ -2883,3 +2883,109 @@ def test_uses_beyond_the_cap_are_marked_truncated(tmp_path, monkeypatch):
         list(t).index("uses_truncated") == list(t).index("uses") + 1
         for t in result["theorems"]
     )
+
+
+@pytest.mark.parametrize("display_budget", [200000, 1])
+def test_live_named_proposition_display_is_one_step(
+    proposition_display_project, monkeypatch, display_budget
+):
+    """Named propositions display a bounded expansion without changing proof status."""
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    source = proposition_display_project / "src/Example.lean"
+    if display_budget == 1:
+        from glitnir.lean import project_checking
+
+        programs = project_checking._programs
+
+        def bounded_programs(directory):
+            paths = programs(directory)
+            report = paths[1]
+            text = report.read_text()
+            assert "maxHeartbeats := 200000" in text
+            report.write_text(
+                text.replace("maxHeartbeats := 200000", "maxHeartbeats := 1")
+            )
+            return paths
+
+        monkeypatch.setattr(project_checking, "_programs", bounded_programs)
+    long_literal = "a" * 5000
+    source.write_text(
+        "import Example.Helper\n"
+        "theorem imported (n : Nat) : Imported n := ⟨rfl, trivial⟩\n"
+        "def Inner (n : Nat) : Prop := n = n\n"
+        "def Named (n : Nat) : Prop := Inner n ∧ True\n"
+        "theorem named (n : Nat) : Named n := ⟨rfl, trivial⟩\n"
+        "structure Pieces (n : Nat) : Prop where\n"
+        "  equal : n = n\n"
+        "  truth : True\n"
+        "theorem pieces (n : Nat) : Pieces n := ⟨rfl, trivial⟩\n"
+        "theorem plain (n : Nat) : n = n := rfl\n"
+        "theorem iff_plain : True ↔ True := Iff.rfl\n"
+        "theorem not_plain : ¬False := False.elim\n"
+        "theorem ne_plain : (0 : Nat) ≠ 1 := by decide\n"
+        f'def Long : Prop := "{long_literal}" = "{long_literal}"\n'
+        "theorem long_display : Long := rfl\n"
+    )
+    result = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    claims = {t["name"]: t for t in result["theorems"]}
+    if display_budget == 1:
+        assert claims["named"]["statement_expansion"]["kind"] == "unavailable"
+        assert all(t["status"] == "checked" for t in claims.values())
+        return
+    imported = claims["imported"]["statement_expansion"]
+    assert imported["kind"] == "definition" and "True" in imported["text"]
+    named = claims["named"]["statement_expansion"]
+    assert named["kind"] == "definition"
+    assert "Inner" in named["text"] and "True" in named["text"]
+    assert "∀" in named["text"] and "Nat" in named["text"]
+    assert named["truncated"] is False
+    pieces = claims["pieces"]["statement_expansion"]
+    assert pieces["kind"] == "constructor"
+    assert "Pieces" in pieces["text"] and "True" in pieces["text"]
+    for name in ("plain", "iff_plain", "not_plain", "ne_plain"):
+        assert "statement_expansion" not in claims[name]
+    long_display = claims["long_display"]["statement_expansion"]
+    assert long_display["truncated"] is True
+    assert len(long_display["text"]) <= 4096
+    assert all(t["status"] == "checked" for t in claims.values())
+
+
+@pytest.mark.parametrize(
+    "display",
+    [
+        {"text": "x", "kind": "definition", "truncated": False},
+        {"text": "x", "kind": "constructor", "truncated": True},
+        {"text": "Limit reached", "kind": "unavailable", "truncated": False},
+        {"text": "x" * 4097, "kind": "definition", "truncated": False},
+        {"text": "x", "kind": "proof", "truncated": False},
+    ],
+)
+def test_statement_display_report_validation(display):
+    """Report display metadata is bounded and grants no additional authority."""
+    from glitnir.lean.project_snapshot import SnapshotError
+    from glitnir.lean.reports import declarations
+
+    report = {
+        "imports": [],
+        "constants": [],
+        "theorems": [
+            {
+                "name": "t",
+                "canonical": "t",
+                "type": "True",
+                "axioms": [],
+                "statement_expansion": display,
+            }
+        ],
+    }
+    if len(display["text"]) > 4096 or display["kind"] == "proof":
+        with pytest.raises(SnapshotError, match="statement display is malformed"):
+            declarations(report)
+    else:
+        assert declarations(report)[1]["t"]["statement_expansion"] == display

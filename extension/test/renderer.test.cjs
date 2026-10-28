@@ -4153,6 +4153,31 @@ test('the rendered workbench is pinned by a fixture', async () => {
   assert.equal(html, readFileSync(fixture, 'utf8'), 'the rendered page differs from extension/test/fixtures/workbench.html; set UPDATE_FIXTURES=1 only for a deliberate renderer change');
 });
 
+for (const kind of ['definition', 'constructor', 'unavailable']) {
+  test(`named proposition cards explain the ${kind} display bound and retain freshness`, async () => {
+    const snapshot = projectNotebook({current: false});
+    snapshot.project_claims[0].statement_expansion = {text: '∀ n : Nat, Inner n ∧ True <img src=x>', kind, truncated: true};
+    snapshot.project_claims[0].current = false;
+    const window = await renderSnapshot(snapshot, {katex: true});
+    try {
+      const d = window.document, card = d.querySelector('.project-claim');
+      const expansion = card.querySelector('.statement-expansion');
+      assert.match(expansion.textContent, /display only/i);
+      assert.match(expansion.textContent, /shortened/i);
+      assert.match(expansion.textContent, kind === 'unavailable' ? /unavailable/i : kind === 'constructor' ? /constructor/i : /one definition/i);
+      assert.equal(expansion.querySelectorAll('img').length, 0);
+      assert.match(card.textContent, /Out of date/);
+      assert.equal(d.querySelectorAll('.statement-expansion').length, 1);
+      let html;
+      window.glitnirHost.saveHTML = async value => { html = value; };
+      await d.getElementById('export-html').onclick();
+      const page = new JSDOM(html);
+      try { assert.match(page.window.document.querySelector('.statement-expansion').textContent, /display only/i); }
+      finally { page.window.close(); }
+    } finally { window.close(); }
+  });
+}
+
 for (const browser of [false, true]) {
   test(`the import header is one collapsed exact-source block (${browser ? 'browser' : 'editor'})`, async () => {
     const snapshot = projectNotebook();
