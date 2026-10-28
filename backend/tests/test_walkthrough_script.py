@@ -79,6 +79,7 @@ def snapshot_tree(folder: Path) -> dict[str, bytes]:
 def test_a_minimal_outline_passes(tmp_path: Path) -> None:
     result = run("check", str(write(tmp_path, outline())))
     assert result.returncode == 0, result.stdout
+    assert result.stdout.endswith("ok: 2 nodes, 0 Lean entries\n"), result.stdout
 
 
 @pytest.mark.parametrize(
@@ -267,7 +268,9 @@ def test_matching_entries_pass(tmp_path: Path) -> None:
     commit = make_project(tmp_path)
     data = lean_outline(commit, entry(), entry(name="S", line=9, type=": Prop"))
     result = run("check", str(write(tmp_path, data)))
-    assert result.returncode == 0 and result.stdout == "", result.stdout
+    assert (
+        result.returncode == 0 and result.stdout == "ok: 1 nodes, 2 Lean entries\n"
+    ), result.stdout
 
 
 def test_entry_at_another_line_is_reported(tmp_path: Path) -> None:
@@ -307,7 +310,9 @@ def test_commit_in_a_sibling_folder_gives_no_note(tmp_path: Path) -> None:
     git(tmp_path, "add", "other/y.txt")
     git(tmp_path, "commit", "-q", "-m", "sibling")
     result = run("check", str(write(tmp_path, lean_outline(commit, entry()))))
-    assert result.returncode == 0 and result.stdout == "", result.stdout
+    assert (
+        result.returncode == 0 and result.stdout == "ok: 1 nodes, 1 Lean entries\n"
+    ), result.stdout
 
 
 def test_commit_in_the_project_gives_a_note(tmp_path: Path) -> None:
@@ -418,7 +423,10 @@ def test_a_matching_claim_passes(tmp_path: Path) -> None:
     data = claim_outline(make_project(tmp_path))
     text = "import X\n\ntheorem w_one : True := by\n  exact A.B.one\n"
     result = notebook_run(tmp_path, data, text)
-    assert result.returncode == 0 and result.stdout == "", result.stdout
+    assert (
+        result.returncode == 0
+        and result.stdout == "ok: 1 nodes, 1 Lean entries, 1 claims\n"
+    ), result.stdout
 
 
 def test_a_multi_line_claim_header_passes(tmp_path: Path) -> None:
@@ -429,7 +437,10 @@ def test_a_multi_line_claim_header_passes(tmp_path: Path) -> None:
     data["nodes"][0]["claim"] = "w_three"
     text = "theorem w_three :\n    1 = 1 := by\n  exact A.three\n"
     result = notebook_run(tmp_path, data, text)
-    assert result.returncode == 0 and result.stdout == "", result.stdout
+    assert (
+        result.returncode == 0
+        and result.stdout == "ok: 1 nodes, 1 Lean entries, 1 claims\n"
+    ), result.stdout
 
 
 def binder_run(tmp_path: Path, binder: str) -> str:
@@ -462,7 +473,7 @@ def test_a_claim_citing_explicit_arguments_is_an_error(
 @pytest.mark.parametrize("binder", ["{n : Nat}", "{n : Nat} [inst : Inhabited Nat]"])
 def test_implicit_and_instance_binders_are_allowed(tmp_path: Path, binder: str) -> None:
     out = binder_run(tmp_path, binder)
-    assert out == "", out
+    assert out == "ok: 1 nodes, 1 Lean entries, 1 claims\n", out
 
 
 def test_explicit_binders_are_found_only_before_the_type() -> None:
@@ -601,7 +612,10 @@ def test_a_plain_notebook_passes(tmp_path: Path) -> None:
         "end N\n#print axioms w_one\n"
     )
     result = notebook_run(tmp_path, data, text)
-    assert result.returncode == 0 and result.stdout == "", result.stdout
+    assert (
+        result.returncode == 0
+        and result.stdout == "ok: 1 nodes, 1 Lean entries, 1 claims\n"
+    ), result.stdout
 
 
 def test_direct_uses_drops_a_use_reached_through_another() -> None:
@@ -806,7 +820,10 @@ def notebooks_run(tmp_path: Path, data: dict[str, Any], *texts: str) -> Any:
 def test_claims_may_be_split_across_notebooks(tmp_path: Path) -> None:
     data = split_outline(make_project(tmp_path))
     both = notebooks_run(tmp_path, data, claim_text("ca", "cb"), claim_text("cc"))
-    assert both.returncode == 0 and both.stdout == "", both.stdout
+    assert (
+        both.returncode == 0
+        and both.stdout == "ok: 3 nodes, 3 Lean entries, 3 claims\n"
+    ), both.stdout
     one = notebooks_run(tmp_path, data, claim_text("ca"), claim_text("cc"))
     assert one.returncode == 1 and "claim cb is not in" in one.stdout
     assert "ca" not in one.stdout and "cc" not in one.stdout
@@ -829,3 +846,59 @@ def test_each_notebook_must_not_define_or_open(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "Part1.lean" in result.stdout and "line 1: open" in result.stdout
+
+
+def qualified_project(tmp_path: Path) -> str:
+    """Create a project declaring `Q.P.X` and `Q.P.t : X`; commit it.
+
+    A `.lake` package declares `Q.X`, which the scan must not see.
+    """
+    (tmp_path / "proj/P").mkdir(parents=True)
+    (tmp_path / "proj/P/Defs.lean").write_text(
+        "namespace Q.P\ndef X : Prop := True\nend Q.P\n", encoding="utf-8"
+    )
+    (tmp_path / "proj/Main.lean").write_text(
+        "namespace Q.P\ntheorem t : X := trivial\nend Q.P\n", encoding="utf-8"
+    )
+    (tmp_path / "proj/.lake/packages/m").mkdir(parents=True)
+    (tmp_path / "proj/.lake/packages/m/M.lean").write_text(
+        "namespace Q\ndef X : Prop := True\nend Q\n", encoding="utf-8"
+    )
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", "proj/P", "proj/Main.lean")
+    git(tmp_path, "commit", "-q", "-m", "q")
+    return git(tmp_path, "rev-parse", "HEAD")
+
+
+def qualified_run(tmp_path: Path, written: str) -> Any:
+    """Check a claim restating `Q.P.t` as `: <written>`."""
+    data = lean_outline(
+        qualified_project(tmp_path),
+        entry(name="Q.P.t", file="Main.lean", line=2, type=": X"),
+    )
+    data["nodes"][0]["claim"] = "c"
+    return notebook_run(tmp_path, data, f"theorem c : {written} := by\n  exact Q.P.t\n")
+
+
+def test_a_qualification_the_project_declares_passes(tmp_path: Path) -> None:
+    result = qualified_run(tmp_path, "Q.P.X")
+    assert result.returncode == 0, result.stdout
+
+
+def test_a_qualification_the_project_does_not_declare_is_an_error(
+    tmp_path: Path,
+) -> None:
+    result = qualified_run(tmp_path, "Q.X")
+    assert result.returncode == 1
+    assert "claim c writes Q.X, which the project does not declare" in result.stdout
+
+
+def test_the_map_legend_explains_dashed_edges() -> None:
+    svg = load_script().map_svg(outline())
+    assert 'stroke-dasharray="5 4"' in svg and "used by an appendix" in svg
+
+
+def test_map_labels_keep_28_characters() -> None:
+    short = load_script()._short
+    assert short("x" * 28) == "x" * 28
+    assert short("x" * 29) == "x" * 27 + "…"

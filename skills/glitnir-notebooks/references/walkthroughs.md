@@ -29,7 +29,10 @@ rules in [SKILL.md](../SKILL.md) still apply; the outline format is in
 - **Restate, do not quote.** Restate statements and definitions in notation and
   the walkthrough's own words; formulas are not quotations. Keep any prose
   copied from a paper under about 15 words per quotation, whatever the paper's
-  licence. Keep the original's attribution and licence in the walkthrough.
+  licence.
+- **Credit the original.** Name its authors and its licence in the notebook's
+  opening prose, with a link to its `LICENSE` or `NOTICE` file. Copy those files
+  only into a copy published for others.
 - **Record every difference.** Where the Lean form differs from the paper, say
   so in the node's `note` and in the notebook, above all when the project's own
   index records the difference.
@@ -62,11 +65,14 @@ give it absolute paths:
   If those pass, it compares every `lean` entry's file, name, line and `type`
   with the project's source and reports where a declaration moved or how it
   changed. Last, it notes commits to the project folder since `commit`; that
-  note is not an error.
+  note is not an error. With no error it ends with one line, such as
+  `ok: 21 nodes, 57 Lean entries`.
 - `python3 -B scripts/walkthrough.py check OUTLINE --notebook FILE` also checks
   the notebook's claims (below), once the outline and its Lean entries have
   no errors. For a walkthrough in several files, repeat `--notebook` once per
   file in one run: together the files must hold each node's claim exactly once.
+  To confirm qualified names it scans every `.lean` file under the project
+  root, except in `.lake` folders.
 - `python3 -B scripts/walkthrough.py map OUTLINE` writes `assets/map.svg` and
   `map.html` beside the outline; `--out DIR` writes them elsewhere. Its links
   open this machine's files. `--links public` links to `repository` at `commit`
@@ -75,7 +81,9 @@ give it absolute paths:
   does not compare Lean entries, so run `check` first.
 
 `check` exits 0 when it reports no error, 1 when it reports any (it lists them
-all), and 2 when the outline cannot be read or the command is wrong.
+all), and 2 when the outline cannot be read or the command is wrong. In the map,
+an arrow points from a statement to each statement that uses it directly, and a
+dashed arrow leads into an appendix node.
 
 ## Claims
 
@@ -90,15 +98,24 @@ theorem theorem1 : OddSums.MainResults.OddSumIsSquare := by
 The shape is `theorem <id> : <the project's statement> := by`, then
 `exact <project theorem>` indented on the next line, and nothing else. Use `by`
 so that the preview shows the claim as a claim card. The node's `claim` is
-`<id>`, and `check --notebook` compares the statement with the project's text:
+`<id>`. A node has at most one claim: give a second statement, such as another
+sentence of the paper's statement or another form of an appendix's result, a
+node of its own. `check --notebook` compares the statement with the project's
+text:
 
 - Write the statement exactly as the project does. Whitespace may differ. A
   name may be qualified only with a namespace that encloses the project's
-  declaration: where the project writes `oddSum` inside `namespace OddSums`,
-  write `OddSums.oddSum`.
-- A name the project reaches through `open` is not accepted. Its exact text
-  would not elaborate in the walkthrough, which opens nothing, so explain that
-  theorem in prose and cite it by name.
+  declaration, and only when the project declares the qualified name: where
+  the project writes `oddSum` inside `namespace OddSums` and declares
+  `OddSums.oddSum`, write `OddSums.oddSum`. `check` reports a qualified name
+  the project does not declare.
+- A name the project reaches through `open` is not accepted: its exact text
+  would not elaborate in the walkthrough, which opens nothing. To tell, read
+  the `open` lines of the file that declares the theorem and find where the
+  name is declared. A name declared under an enclosing namespace is qualified
+  as above; one declared only under an opened namespace is reached through
+  `open`. If both declare it, the text cannot tell which Lean takes, so do not
+  restate it.
 - Writing an `abbrev` alias in place of what the project wrote, or unfolding
   one, differs textually and is reported as a mismatch. Restate the theorem's
   own declared type.
@@ -110,6 +127,17 @@ so that the preview shows the claim as a claim card. The node's `claim` is
   citing it is an error. Explain it in prose and cite it by name. Implicit
   `{ }` and instance `[ ]` binders are fine, and so is a `∀ (n : ℕ), …` after
   the colon.
+- In a project that uses the Lean module system (its files begin with
+  `module`), cite only public declarations: those under `public section` or
+  marked `public`. A private one would not elaborate in the walkthrough, and
+  the text check does not see this.
+- When a name is declared in two files, such as a statement-only file whose
+  proofs are `sorry` and the file that proves it, list and import the file that
+  proves it, never the `sorry` one.
+- Where a theorem cannot be restated, cite another project theorem that proves
+  the same proposition and can be, such as the trusted statement file's
+  version, listed as another `lean` entry of the node. Otherwise explain the
+  theorem in prose and cite it by name.
 
 The notebook defines and opens nothing. It contains only imports, prose,
 comments and docstrings, `namespace`, `section` and `end`, `#print axioms`, and
@@ -146,7 +174,8 @@ List the paper's statements in its order, each with its label, section and
 pages, kind, statement in your own words, the idea of its proof, the statements
 it uses, and its Lean declarations with how each differs from the paper. Prefer
 the project's own index for the paper-to-Lean mapping and its recorded
-differences. Outline a large project from the top: the main text first, each
+differences. An index may list `alias` entries, which `check` does not scan:
+follow each alias to the declaration it names and list that. Outline a large project from the top: the main text first, each
 appendix as one node, deeper levels only when asked.
 
 *Check:* `python3 -B scripts/walkthrough.py check OUTLINE` exits 0.
@@ -154,7 +183,8 @@ appendix as one node, deeper levels only when asked.
 ### 3. Draw the map
 
 Run `python3 -B scripts/walkthrough.py map OUTLINE`. The map shows direct uses
-only: a use also reached through another is not drawn.
+only: a use also reached through another is not drawn. Edges into appendix
+nodes are dashed.
 
 *Check:* look at the rendered map, by whatever means you have, and fix the
 outline, not the picture. If you cannot view it, say that it was not inspected.
@@ -162,19 +192,20 @@ outline, not the picture. If you cannot view it, say that it was not inspected.
 ### 4. Write the notebook
 
 Open with the title and scope; what is proved and which file a reader must
-trust; the original's attribution and licence; the map as
+trust; the original's authors and licence, as the rules say; the map as
 `![How the proof fits together](assets/map.svg)`, with a pointer to `map.html`;
 and the strategy in one page. If the walkthrough cannot be checked (step 6),
 say so here. Then write one `{fold}` section per part of the argument, in
 reading order, whose first paragraph is its summary. In each, give the
 statement, the idea, how Lean states it and where that differs, and the claim.
-Import only the modules the claims need. Say plainly where the project's final
+Import only the modules the claims need, each the file that proves the cited
+theorem. Say plainly where the project's final
 theorem does not follow the paper's route.
 
 *Check:* `python3 -B scripts/walkthrough.py check OUTLINE --notebook NOTEBOOK`
 exits 0, with one `--notebook` for each file of the walkthrough in the same run,
 and the preview shows the prose, and the claims as cards, rather than the whole
-file as source.
+file as source. If you cannot open the preview, say so in the report.
 
 ### 5. Add figures
 
@@ -198,6 +229,9 @@ matches the statement it illustrates.
 
 Report the sources used and their versions, the project commit, what is
 unchecked, every recorded paper-to-Lean difference, and any note from `check`.
+Name each check that could not run, such as the preview, a build or a Glitnir
+check. Give the report to the person in your reply; write it to a file only
+when asked and when you can.
 
 ## The Lake project
 
@@ -213,6 +247,9 @@ defaultTargets = ["Walkthrough"]
 name = "odd-sums"                   # the package name in the original's lakefile
 path = "../formal-proofs/odd-sums"  # the original, relative to this folder
 
+[leanOptions]                       # copied from the original's lakefile
+autoImplicit = false
+
 [[lean_lib]]
 name = "Walkthrough"
 roots = ["Walkthrough"]             # one module per notebook file
@@ -220,9 +257,11 @@ roots = ["Walkthrough"]             # one module per notebook file
 
 For a walkthrough in several files, list each file's module in `roots`, such
 as `roots = ["Walkthrough", "Appendices"]` for `Walkthrough.lean` and
-`Appendices.lean`. Copy the original's `lean-toolchain` beside it. Running Lake here may fetch the
-original's dependencies again and build the original: ask first, as for any
-build.
+`Appendices.lean`. Copy the original's `leanOptions` exactly, so that the
+restated statements elaborate as they do in the original, and leave the table
+out if it sets none. Copy the original's `lean-toolchain` beside the lakefile.
+Running Lake here may fetch the original's dependencies again and build the
+original: ask first, as for any build.
 
 ## Extending a walkthrough
 

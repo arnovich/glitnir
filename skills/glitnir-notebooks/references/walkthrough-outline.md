@@ -67,14 +67,16 @@ summarized as one node:
 | `label` | yes | the paper's name for it, such as `Lemma 2` |
 | `kind` | yes | `definition`, `lemma`, `proposition`, `theorem`, `corollary`, `algorithm` or `appendix` |
 | `section` | no | the paper's section, such as `§3` or `Appendix B` |
-| `pages` | no | the paper's pages, such as `14` or `14-15` |
+| `pages` | no | the PDF's page numbers, counted from its first page as the map's `#page=` links use them, such as `14` or `14-15`; where printed page numbers differ, give those in prose |
 | `statement` | yes | the statement in the walkthrough's own words; mathematics in `$…$` |
 | `idea` | yes | the idea of its proof, or what a definition is for, in a few sentences |
-| `uses` | yes | the ids of the statements its proof uses; `[]` for none. No cycles. |
+| `uses` | yes | the ids of the statements its proof uses, or for a definition the definitions it is built from; `[]` for none. No cycles. |
 | `lean` | yes | its Lean declarations (below); `[]` when it has none, which the notebook then says |
 | `claim` | no | the name of the notebook's claim that restates it (below) |
 
-List the uses the paper's proof states. The map draws only direct uses: a use
+List the uses the paper's proof states. Where the Lean proof takes another
+route, keep the paper's uses here and describe the Lean route in the `lean`
+entries' `note` and the notebook's prose. The map draws only direct uses: a use
 also reached through another listed use is not drawn, so listing it does no
 harm.
 
@@ -82,7 +84,7 @@ harm.
 
 | Key | Required | Value |
 |---|---|---|
-| `name` | yes | the declaration's full name, namespaces included, such as `OddSums.oddSum` |
+| `name` | yes | the declaration's full name, namespaces included, such as `OddSums.oddSum`; for an `alias`, the declaration it names |
 | `file` | yes | the file that declares it, relative to `root` |
 | `line` | yes | the line, counted from 1, on which its `theorem`, `def` or other keyword stands |
 | `type` | yes | the declaration's header as the project writes it (below) |
@@ -100,7 +102,8 @@ on that line, so an unnamed `instance` cannot be listed.
 
 The name exactly as written after `theorem` in the notebook, without the
 notebook's namespace. Each node has at most one claim, each claim belongs to
-one node, and it appears in exactly one of the walkthrough's files. The claim restates one of the node's `lean` entries;
+one node, and it appears in exactly one of the walkthrough's files. Give a
+second statement a node of its own. The claim restates one of the node's `lean` entries;
 [walkthroughs.md](walkthroughs.md) gives its shape and what can be restated.
 
 ## `figures`

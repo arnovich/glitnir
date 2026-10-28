@@ -21,6 +21,7 @@ unreadable outline or a usage error.
 import argparse
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -465,24 +466,54 @@ def _tokens(text: str) -> list[str]:
     return _TOKEN_RE.findall(text)
 
 
-def same_statement(written: str, declared: str, namespaces: Sequence[str]) -> bool:
-    """Tell whether a written header restates the declared one.
+def qualifications(
+    written: str, declared: str, namespaces: Sequence[str]
+) -> list[str] | None:
+    """Return the names a written header qualifies, or None if it differs.
 
     The headers match token by token. A declared name may be written in full,
-    or with any of the enclosing namespaces as its prefix.
+    or with any of the enclosing namespaces as its prefix; each name written
+    with such a prefix is returned, so the caller can confirm it is declared.
     """
     left, right = _tokens(written), _tokens(declared)
     if len(left) != len(right):
-        return False
+        return None
+    qualified: list[str] = []
     for token, wanted in zip(left, right):
         if token == wanted:
             continue
         if _IDENT_START_RE.match(wanted) and any(
             token == f"{space}.{wanted}" for space in namespaces
         ):
+            qualified.append(token)
             continue
-        return False
-    return True
+        return None
+    return qualified
+
+
+def same_statement(written: str, declared: str, namespaces: Sequence[str]) -> bool:
+    """Tell whether a written header restates the declared one, as text."""
+    return qualifications(written, declared, namespaces) is not None
+
+
+def project_names(root: Path) -> set[str]:
+    """Return the full name of every declaration in the project's Lean files.
+
+    Every `.lean` file under the root is scanned, except inside `.lake`
+    folders, which hold dependencies and build output.
+    """
+    names: set[str] = set()
+    for folder, subfolders, files in os.walk(root):
+        subfolders[:] = sorted(s for s in subfolders if s != ".lake")
+        for file in sorted(files):
+            if not file.endswith(".lean"):
+                continue
+            relative = str((Path(folder) / file).relative_to(root))
+            try:
+                names.update(d.name for d in declarations(root, relative))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return names
 
 
 def _claims_in(text: str) -> list[tuple[str, str, str]]:
@@ -515,6 +546,7 @@ def check_notebook(
     node's claim exactly once.
     """
     root = _project_root(outline, base)
+    known = project_names(root)
     nodes = {
         str(item["claim"]): item
         for item in outline.get("nodes", [])
@@ -536,7 +568,7 @@ def check_notebook(
                 )
                 continue
             written[name] = notebook
-            problems.extend(_check_claim(root, nodes, name, header, tail))
+            problems.extend(_check_claim(root, known, nodes, name, header, tail))
     for claim, item in nodes.items():
         if claim not in written:
             problems.append(
@@ -546,7 +578,12 @@ def check_notebook(
 
 
 def _check_claim(
-    root: Path, nodes: dict[str, dict[str, Any]], name: str, header: str, tail: str
+    root: Path,
+    known: set[str],
+    nodes: dict[str, dict[str, Any]],
+    name: str,
+    header: str,
+    tail: str,
 ) -> list[Problem]:
     """Check one claim's shape, its node and its statement."""
     exact = _EXACT_RE.fullmatch(tail)
@@ -561,7 +598,7 @@ def _check_claim(
         return [
             _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
         ]
-    return _compare_claim(root, name, header, target, entries[0])
+    return _compare_claim(root, known, name, header, target, entries[0])
 
 
 _FORBIDDEN_WORDS = frozenset(
@@ -617,7 +654,12 @@ def takes_explicit_arguments(header: str) -> bool:
 
 
 def _compare_claim(
-    root: Path, claim: str, header: str, target: str, entry: dict[str, Any]
+    root: Path,
+    known: set[str],
+    claim: str,
+    header: str,
+    target: str,
+    entry: dict[str, Any],
 ) -> list[Problem]:
     """Compare one claim's header with the declaration it cites."""
     file = str(entry["file"])
@@ -641,8 +683,20 @@ def _compare_claim(
                 "explain it in prose instead"
             )
         ]
-    if any(same_statement(header, d.type, d.namespaces) for d in found):
-        return []
+    undeclared: list[str] = []
+    for found_one in found:
+        qualified = qualifications(header, found_one.type, found_one.namespaces)
+        if qualified is None:
+            continue
+        missing = [name for name in qualified if name not in known]
+        if not missing:
+            return []
+        undeclared = undeclared or missing
+    if undeclared:
+        return [
+            _error(f"claim {claim} writes {name}, which the project does not declare")
+            for name in undeclared
+        ]
     return [
         _error(
             f"claim {claim}: statement {header!r} differs from "
@@ -743,7 +797,7 @@ def _positions(
     return pos
 
 
-def _short(label: str, limit: int = 20) -> str:
+def _short(label: str, limit: int = 28) -> str:
     """Shorten a label to fit a box."""
     return label if len(label) <= limit else label[: limit - 1] + "…"
 
@@ -751,7 +805,7 @@ def _short(label: str, limit: int = 20) -> str:
 def map_svg(outline: dict[str, Any]) -> str:
     """Draw the nodes as a dependency graph, statements on top of their uses."""
     nodes = [n for n in outline["nodes"] if isinstance(n, dict)]
-    row, top, box_w, box_h = 92, 110, 150, 46
+    row, top, box_w, box_h = 92, 110, 200, 46
     layers = _layers(nodes)
     widest = max(
         (list(layers.values()).count(d) for d in set(layers.values())), default=1
@@ -772,6 +826,9 @@ def map_svg(outline: dict[str, Any]) -> str:
         '<text x="24" y="56" font-size="13" fill="#555">An arrow runs from a '
         "statement to each statement whose proof uses it directly. "
         "Read from the top down.</text>",
+        '<line x1="24" y1="82" x2="58" y2="82" stroke="#9aa3ad" '
+        'stroke-width="1.4" stroke-dasharray="5 4"/><text x="64" y="86" font-size="12" '
+        'fill="#444">dashed: used by an appendix</text>',
     ]
     for n in nodes:
         x2, y2 = pos[n["id"]]
@@ -798,7 +855,7 @@ def map_svg(outline: dict[str, Any]) -> str:
             f'<text x="{x:.0f}" y="{y - 3:.0f}" font-size="13" font-weight="700" '
             f'text-anchor="middle" fill="#222">{_esc(_short(str(n.get("label", ""))))}'
             f'</text><text x="{x:.0f}" y="{y + 14:.0f}" font-size="11" '
-            f'text-anchor="middle" fill="{stroke}">{_esc(_short(sub, 26))}</text></g>'
+            f'text-anchor="middle" fill="{stroke}">{_esc(_short(sub, 32))}</text></g>'
         )
     for k, (name, (fill, stroke)) in enumerate(reversed(KIND_COLOUR.items())):
         x = width - 24 - (k + 1) * 104
@@ -1072,7 +1129,20 @@ def main(argv: list[str] | None = None) -> int:
             problems += check_notebook(outline, base, args.notebook)
     for problem in problems:
         print(f"{problem.level}: {problem.message}")
-    return 1 if any(p.level == "error" for p in problems) else 0
+    if any(p.level == "error" for p in problems):
+        return 1
+    print(_summary(outline, args.notebook is not None))
+    return 0
+
+
+def _summary(outline: dict[str, Any], with_claims: bool) -> str:
+    """Return the line `check` prints when it finds no error."""
+    nodes = outline["nodes"]
+    line = f"ok: {len(nodes)} nodes, {len(_lean_entries(outline))} Lean entries"
+    if with_claims:
+        claims = sum(1 for n in nodes if isinstance(n.get("claim"), str))
+        line += f", {claims} claims"
+    return line
 
 
 if __name__ == "__main__":

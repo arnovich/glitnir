@@ -173,6 +173,11 @@ it.
 
 ## Validate before finishing
 
+Steps 1 and 2 need the notebook's imports built (a loose file needs only Lean),
+and step 2 needs the Lean version Glitnir supports. When either is missing, as is usual for a walkthrough
+(follow step 6 of [references/walkthroughs.md](references/walkthroughs.md)),
+report that step as not run and why.
+
 1. Save the source. Run the project's existing Lean validation, usually
    `lake env lean path/to/Notebook.lean` from its Lake root. Read diagnostics:
    successful elaboration can still include `sorry` or declared axioms.
