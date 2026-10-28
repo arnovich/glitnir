@@ -164,7 +164,9 @@ cells:
   first paragraph as the summary.
 - **Images and links:** a prose line that is only `![caption](assets/figure.png)`
   shows that file from the `assets/` folder beside the notebook, and
-  `[Basics](Basics.lean)` links to a sibling notebook.
+  `[Basics](Basics.lean)` links to a sibling notebook. Standard emphasis,
+  HTTPS links and `mailto:` links also work in prose; other URL schemes remain
+  visible as text.
 - **Directives** are standalone comment lines: `-- @view circuit myCircuit`
   draws a view, `-- @evidence simulate dissipative (h := 1/100) (steps := 400)`
   shows a simulation that runs on click, and

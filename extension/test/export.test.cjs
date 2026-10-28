@@ -22,6 +22,9 @@ test('static export retains maths, claims and images offline without workbench c
       <pre>theorem first : True := by trivial</pre><div class="uses"><button data-act="goto" data-id="second">second</button></div>
       <div class="claim-actions"><button>Replay</button>Run Lean now</div><details><summary>Proof</summary><pre>trivial</pre></details></article></section>
       <a class="use-link" href="/?notebook=Other">Other:claim</a><script>alert(1)</script>
+      <a class="external-link" href="https://example.com/guide" target="_blank">guide</a>
+      <a class="external-link" href="mailto:help@example.com" target="_blank">email</a>
+      <a href="http://example.com">insecure</a><a href="file:///tmp/a">file</a>
       <img src="https://example.invalid/tracker" onerror="alert(1)"><a href="javascript:alert(1)">bad</a>`;
     const html = await window.glitnirExport({content, title: '</title><script>bad</script>', file: 'Example.lean', sha256: 'abc', css: 'body{color:black}'});
     const page = new JSDOM(html);
@@ -40,6 +43,12 @@ test('static export retains maths, claims and images offline without workbench c
       assert.equal(d.querySelector('.uses a').getAttribute('href'), '#cell-second');
       assert.equal(d.querySelectorAll('a[href^="/"]').length, 0);
       assert.equal(d.querySelectorAll('a[href^="javascript:"]').length, 0);
+      assert.deepEqual([...d.querySelectorAll('a.external-link')].map(link => [link.getAttribute('href'), link.getAttribute('target'), link.rel]), [
+        ['https://example.com/guide', null, 'noopener noreferrer'],
+        ['mailto:help@example.com', null, 'noopener noreferrer'],
+      ]);
+      assert.equal(d.querySelectorAll('a[href^="http:"] ,a[href^="file:"]').length, 0);
+      assert.match(d.body.textContent, /insecurefile\s+bad/);
       assert.equal(d.querySelector('img').src, 'data:image/svg+xml;base64,PHN2Zy8+');
       assert.equal(d.querySelectorAll('img').length, 1);
       assert.match(d.querySelector('meta[http-equiv]').content, /default-src 'none'/);
