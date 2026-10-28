@@ -160,10 +160,11 @@ each proof uses, and a notebook read from the top in which each key statement is
 restated as a claim proved by the project's own theorem. It lives in a folder of
 its own beside the repository that contains the original, never inside it, and
 never changes the original. Its source of truth is an `outline.json`, which the
-bundled helper checks against the project and draws as a map. Run it from this
-skill's folder with Glitnir's backend Python, the interpreter `glitnir.pythonPath`
-points to, as `python -B scripts/walkthrough.py check …` (`-B` writes no
-bytecode, so the folder stays unchanged). With no Glitnir backend installed, run
+bundled helper checks against the project and Glitnir reads directly for the
+Graph view and static export. Run it from this skill's folder with Glitnir's
+backend Python, the interpreter `glitnir.pythonPath` points to, as
+`python -B scripts/walkthrough.py check …` (`-B` writes no bytecode, so the
+folder stays unchanged). With no Glitnir backend installed, run
 `uv run --no-project --python ">=3.10" python -B scripts/walkthrough.py check …`
 instead. The helper needs Python 3.10 or newer, so never use the system Python:
 macOS ships 3.9.

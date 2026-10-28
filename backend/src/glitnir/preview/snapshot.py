@@ -63,6 +63,7 @@ from glitnir.preview.cards import (
     with_saved_evidence,
 )
 from glitnir.preview.linked import LEAN_NAME, Reference, sibling_references
+from glitnir.preview.walkthrough import WalkthroughMap, load_walkthrough
 from glitnir.providers import Providers
 
 NOTICE = (
@@ -199,6 +200,7 @@ class Snapshot(TypedDict):
     references: list[Reference]
     revisions: list[Any]
     assets: list[AssetStatus]
+    walkthrough: NotRequired[WalkthroughMap]
 
 
 @dataclass(frozen=True)
@@ -575,7 +577,7 @@ def build_snapshot(
     # Providers load only when a directive needs them.
     loaded = providers() if views or evidence or decisions else None
     project = describe_project(path)
-    return {
+    snapshot: Snapshot = {
         "file": path.name,
         "sha256": sha256,
         "preview": {
@@ -642,3 +644,7 @@ def build_snapshot(
         "revisions": [],
         "assets": assets.statuses(path, assets.references(prose(entries))),
     }
+    walkthrough = load_walkthrough(path)
+    if walkthrough is not None:
+        snapshot["walkthrough"] = walkthrough
+    return snapshot

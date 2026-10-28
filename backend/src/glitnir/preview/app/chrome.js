@@ -261,7 +261,7 @@
     }
     renderInspector();
     renderChrome();
-    typesetMath($('doc'), $('insp'), $('title'), $('outline'));
+    typesetMath($('doc'), $('insp'), $('title'), $('outline'), $('graph-view'));
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
     if (UI.mode === 'doc' && UI.documentLine?.sha === UI.data.sha256) {
@@ -465,7 +465,8 @@
         const node = graphNode(b.dataset.graphId);
         if (!node) break;
         UI.graphSelected = node.id;
-        if (node.kind === 'local') { UI.mode = 'doc'; select(node.name, true); break; }
+        if (node.kind === 'walkthrough' && node.sourceLine) { showDocument(node.sourceLine, UI.data.sha256); break; }
+        if (node.kind === 'local' || node.kind === 'walkthrough' && node.name) { UI.mode = 'doc'; select(node.name, true); break; }
         if (node.path) {
           const path = [...(linkedPath() || '').split('/').slice(0, -1), node.path].join('/');
           const link = path === UI.main?.file ? '' : path;
