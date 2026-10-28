@@ -16,15 +16,18 @@ from pathlib import Path
 
 import pytest
 
+from glitnir_forseti import figures
 from glitnir_forseti.claims.decide import Decision, decide, goal_kind, read_goal
 from glitnir_forseti.claims.text import parse_goal, render_goal
 from glitnir_forseti.entailment.limits import EntailmentLimits
-from glitnir_forseti.hedging import numbers, service
+from glitnir_forseti.hedging import examples, numbers, service
+from glitnir_forseti.hedging.examples import EXAMPLES, Example
 from glitnir_forseti.hedging.goal import HedgingGoal
+from glitnir_forseti.hedging.payoffs import PAYOFFS
 from glitnir_forseti.notebook.decisions import block
 
-#: The design's two goals: the call at the money over twenty steps of ±2 %,
-#: covered from 3.555; and the hedge built for ±1 % run on paths of ±2 %.
+#: The worked example's two goals: the call at the money over twenty steps of
+#: ±2 %, covered from 3.555; and the hedge built for ±1 % run on paths of ±2 %.
 COVERS = (
     "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
     " premium 3555/1000 covers"
@@ -100,7 +103,7 @@ def _covers(premium: Fraction) -> HedgingGoal:
 # ----- covers -------------------------------------------------------------------------
 
 
-def test_the_design_premium_is_covered() -> None:
+def test_the_worked_example_premium_is_covered() -> None:
     d = _decide(COVERS, "held")
     assert d.status == "PROVEN"
     assert {
@@ -184,13 +187,13 @@ def test_seven_halves_is_refuted_for_every_spot_feedback_strategy() -> None:
         " from a premium of 7/2."
     ) in d.block
     assert "(not_exists.mpr refuted) (bridge.mp claim)" in d.block
-    # The band's own hedge from 7/2 falls short on every extreme path; the
-    # search names the one its tie rule picks.
+    # From its price the band's own hedge ends at the payoff on every extreme
+    # path, so from 7/2 it ends the difference short on each.
     assert d.decision.stages[-1]["detail"] == (
         "the premium 7/2 is below the binomial price ≈ 3.5549, so no"
         " spot-feedback strategy covers from it; from it the band's own hedge"
-        " ends ≈ 0.0549 below the payoff on its worst extreme path"
-        " UUUUUUUUUUUUUUUUUUUU (U a rise of 1/50, D a fall of 1/50)"
+        " ends the difference, ≈ 0.0549, below the payoff on every extreme path"
+        " of the band, the all-up path of 20 rises of 1/50 among them"
     )
 
 
@@ -205,11 +208,37 @@ def test_exactly_the_price_is_covered_and_a_millionth_less_is_not() -> None:
     assert below.block is not None and "not_covers_of_lt" in below.block
 
 
-def test_a_long_horizon_skips_the_path_search() -> None:
-    """Past the shortfall cap the extreme-path search would cost minutes."""
+@pytest.fixture
+def no_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the extreme-path search raise, as a request out of time would."""
+
+    def interrupted(*args: object, **kwargs: object) -> None:
+        raise numbers.Interrupted
+
+    monkeypatch.setattr(numbers, "worst_extreme_path", interrupted)
+
+
+@pytest.mark.usefixtures("no_search")
+@pytest.mark.parametrize("steps", [20, 250])
+def test_a_covers_refutation_names_its_path_without_a_search(steps: int) -> None:
+    """The shortfall from the premium is the price less it, on every extreme path.
+
+    So no search runs, and nothing can interrupt an established refutation into
+    a timeout, at any number of steps up to the cap.
+    """
+    text = COVERS.replace("steps 20", f"steps {steps}").replace("3555/1000", "7/2")
+    d = _decide(text)
+    assert d.status == "REFUTED"
+    assert d.decision.stages[-1]["detail"].endswith(
+        " below the payoff on every extreme path of the band, the all-up path of"
+        f" {steps} rises of 1/50 among them"
+    )
+
+
+def test_a_long_horizon_is_decided_either_way() -> None:
     d = _decide(COVERS.replace("steps 20", "steps 250").replace("3555/1000", "12"))
     assert d.status == "REFUTED"
-    assert "the extreme-path search runs up to 60 steps" in d.reason
+    assert "the all-up path of 250 rises of 1/50" in d.reason
     held = _decide(COVERS.replace("steps 20", "steps 250").replace("3555/1000", "13"))
     assert held.status == "PROVEN"
 
@@ -463,18 +492,89 @@ def test_a_goal_of_the_wrong_type_is_an_error() -> None:
         service.decide_hedging(object())  # type: ignore[arg-type]
 
 
-#: One goal per template.
-TEMPLATE_GOALS = (
-    COVERS,
-    COVERS.replace("3555/1000", "7/2"),
-    OWN_BAND.replace("<= 4", "<= 0"),
-    SHORTFALL,
-)
+# ----- the examples -------------------------------------------------------------------
+
+#: The goal-only JSON fixtures, one per example, as the other lanes keep theirs.
+FIXTURES = Path(__file__).parents[1] / "benchmarks" / "hedging" / "goals"
+
+
+@pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
+def test_examples_round_trip(example: Example) -> None:
+    document = json.loads((FIXTURES / f"{example.name}.json").read_text())
+    goal = HedgingGoal.from_json(document)
+    assert goal == example.goal and goal.to_json() == document
+    text = render_goal(goal)
+    assert parse_goal(text) == goal and render_goal(parse_goal(text)) == text
+    d = _decide(text, example.name)
+    assert d.status == example.expected, d.reason
+    # A decided example proposes a block for the project's Lean to check, and
+    # an undecided one proposes none.
+    assert (d.block is None) == example.expected.startswith("UNKNOWN")
+
+
+def test_every_fixture_is_an_example() -> None:
+    names = [example.name for example in EXAMPLES]
+    assert len(set(names)) == len(names)
+    assert {path.stem for path in FIXTURES.glob("*.json")} == set(names)
+
+
+def test_the_examples_are_the_lanes_outcomes() -> None:
+    assert {example.name: example.expected for example in EXAMPLES} == {
+        "covered_from_price": "PROVEN",
+        "covered_exactly": "PROVEN",
+        "not_from_seven_halves": "REFUTED",
+        "narrow_hedge_loses_four": "REFUTED",
+        "narrow_hedge_five_unknown": "UNKNOWN:gap",
+        "same_band_no_shortfall": "PROVEN",
+        "put_covered": "PROVEN",
+        "too_many_steps": "UNKNOWN:resource-limit",
+        "band_too_wide": "UNKNOWN:unsupported",
+        "against_narrower": "UNKNOWN:unsupported",
+    }
+
+
+def test_the_examples_use_the_worked_example_texts() -> None:
+    texts = {example.name: render_goal(example.goal) for example in EXAMPLES}
+    assert texts["covered_from_price"] == COVERS.replace("3555/1000", "711/200")
+    assert texts["not_from_seven_halves"] == COVERS.replace("3555/1000", "7/2")
+    assert texts["narrow_hedge_loses_four"] == SHORTFALL
+    assert texts["narrow_hedge_five_unknown"] == SHORTFALL.replace("<= 4", "<= 5")
+    assert texts["same_band_no_shortfall"] == OWN_BAND.replace("<= 4", "<= 0")
+    assert texts["put_covered"] == texts["covered_from_price"].replace("call", "put")
+    assert texts["too_many_steps"] == texts["covered_from_price"].replace(
+        "steps 20", "steps 251"
+    )
+    assert texts["band_too_wide"] == texts["covered_from_price"].replace(
+        "down 1/50", "down 1"
+    )
+    assert texts["against_narrower"] == (
+        "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
+        " against down 1/100 up 1/100 shortfall <= 4"
+    )
+
+
+def test_covered_exactly_is_at_the_exact_price() -> None:
+    [exactly] = [e for e in EXAMPLES if e.name == "covered_exactly"]
+    goal = exactly.goal
+    payoff = PAYOFFS[goal.payoff]
+    fair = numbers.price(payoff, goal.strike, goal.spot, goal.up, goal.down, 20)
+    assert goal.premium == fair == PRICE_20
+
+
+def test_the_examples_name_the_lanes_import_set() -> None:
+    """The one import set a block needs, which the replay pin is to hold."""
+    assert examples.replay_imports() == (("Gimle.Forseti.Hedging",),)
+    for example in EXAMPLES:
+        d = _decide(example.goal, example.name)
+        if d.block is not None:
+            assert (block(example.name, d.decision).imports,) == (
+                examples.replay_imports()
+            )
 
 
 def test_the_examples_propose_every_block_template() -> None:
     """Each template is live-checked only if some example emits it."""
-    blocks = " ".join(_decide(text).block or "" for text in TEMPLATE_GOALS)
+    blocks = " ".join(_decide(e.goal, e.name).block or "" for e in EXAMPLES)
     templates = {
         "covered from the price": "exact Covers.mono hr (covers_hedge",
         "not from less": "exact not_covers_of_lt",
@@ -485,10 +585,13 @@ def test_the_examples_propose_every_block_template() -> None:
 
 
 def test_no_block_holds_a_float_literal() -> None:
-    for text in TEMPLATE_GOALS:
-        source = _decide(text).block
+    for example in EXAMPLES:
+        source = _decide(example.goal, example.name).block
+        if example.expected.startswith("UNKNOWN"):
+            assert source is None
+            continue
         assert source is not None
-        assert re.search(r"\d\.\d", source) is None, text
+        assert re.search(r"\d\.\d", source) is None, example.name
 
 
 def test_the_decider_uses_no_floating_point() -> None:
@@ -497,8 +600,12 @@ def test_the_decider_uses_no_floating_point() -> None:
     Only the wall clock is a float, and it decides nothing but a timeout.
     """
     package = Path(service.__file__).parent
-    for name in ("goal.py", "payoffs.py", "numbers.py", "service.py", "render.py"):
-        tree = ast.parse((package / name).read_text())
+    names = ("goal", "payoffs", "numbers", "service", "render", "examples")
+    # The rule a reason writes its figures by is shared with the stepped lane.
+    paths = [package / f"{name}.py" for name in names] + [Path(figures.__file__)]
+    for path in paths:
+        name = path.name
+        tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             assert not (
                 isinstance(node, ast.Constant) and type(node.value) is float
@@ -508,6 +615,16 @@ def test_the_decider_uses_no_floating_point() -> None:
                 and isinstance(node.func, ast.Name)
                 and node.func.id in ("float", "round")
             ), name
+
+
+def test_the_lane_imports_no_private_name() -> None:
+    """The lane shares other modules' helpers only through their public names."""
+    package = Path(service.__file__).parent
+    for path in sorted(package.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                private = [a.name for a in node.names if a.name.startswith("_")]
+                assert private == [], path.name
 
 
 def test_the_text_is_unchanged_by_deciding() -> None:

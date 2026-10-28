@@ -15,8 +15,10 @@ along a path of every step. Then one rule per claim:
 * ``covers``: the binomial price is computed exactly. A premium at least the
   price holds (`covers_hedge` from the price, then `Covers.mono`); a premium
   below it is refuted for every spot-feedback strategy (`not_covers_of_lt`).
-  The reason names the band's own hedge's worst extreme path from the premium,
-  when the steps are within `SHORTFALL_CAP`.
+  The reason says how far short the band's own hedge ends from the premium:
+  from the price it ends at the payoff on every extreme path of its band, so
+  from the premium it ends exactly the difference short on each, with no
+  search.
 * ``shortfall``: the hedge run on its own band with a bound of at least ``0``
   holds (`covers_hedge`). Otherwise the worst extreme path of the against band
   is found by `numbers.worst_extreme_path`; if the hedge ends more than the
@@ -25,9 +27,10 @@ along a path of every step. Then one rule per claim:
   other paths for a hedge built for a narrower band.
 
 Every figure is a `fractions.Fraction` (`hedging.numbers`), shown in a reason
-by the stepped lane's rule: exactly when short, with its decimal beside it
-when four places do not write it, and by its decimal alone when long. The
-path search stops as soon as the request is cancelled or out of time. A
+by the rule the stepped lane shares (`figures.figure`): exactly when short,
+with its decimal beside it when four places do not write it, and by its
+decimal alone when long. The path search, which only a ``shortfall`` claim
+runs, stops as soon as the request is cancelled or out of time. A
 decided goal carries the Lean application of its template (`hedging.render`),
 unchecked: it is a proposal for the project's Lean to check. There is no
 pinned replay for this lane, so a request that asks for one ends ``UNKNOWN:
@@ -47,7 +50,7 @@ from typing import Any
 
 from glitnir_forseti.entailment.limits import EntailmentLimits
 from glitnir_forseti.entailment.syntax import GoalError, check_rational_bits
-from glitnir_forseti.stepped.service import _figure
+from glitnir_forseti.figures import figure
 from glitnir_forseti.trajectory.render import RootApplication
 
 from . import numbers, render
@@ -221,7 +224,7 @@ def decide_hedging(
         Stage(
             "binding",
             "supported",
-            f"the {payoff.key} struck at {_figure(goal.strike)}, {goal.steps} steps",
+            f"the {payoff.key} struck at {figure(goal.strike)}, {goal.steps} steps",
         )
     ]
 
@@ -292,7 +295,7 @@ def supported(goal: HedgingGoal) -> tuple[Payoff, Band] | str:
     if goal.steps < 1:
         return f"a hedge runs over at least one step, got {goal.steps}"
     if goal.spot <= 0:
-        return f"the spot must be positive, got {_figure(goal.spot)}"
+        return f"the spot must be positive, got {figure(goal.spot)}"
     problem = _band_problem("the band", goal.up, goal.down)
     if problem is not None:
         return problem
@@ -303,9 +306,9 @@ def supported(goal: HedgingGoal) -> tuple[Payoff, Band] | str:
             return problem
         if goal.against_up < goal.up or goal.against_down < goal.down:
             return (
-                f"the against band, down {_figure(goal.against_down)} up"
-                f" {_figure(goal.against_up)}, does not contain the hedge's band,"
-                f" down {_figure(goal.down)} up {_figure(goal.up)}; a shortfall is"
+                f"the against band, down {figure(goal.against_down)} up"
+                f" {figure(goal.against_up)}, does not contain the hedge's band,"
+                f" down {figure(goal.down)} up {figure(goal.up)}; a shortfall is"
                 " decided for a hedge run on its own band or a wider one"
             )
     return payoff, Band(goal.up, goal.down)
@@ -314,12 +317,12 @@ def supported(goal: HedgingGoal) -> tuple[Payoff, Band] | str:
 def _band_problem(name: str, up: Fraction, down: Fraction) -> str | None:
     """Say why a band is not one `Band.ofRat` accepts, or return None."""
     if up <= 0:
-        return f"{name}'s up move must be positive, got {_figure(up)}"
+        return f"{name}'s up move must be positive, got {figure(up)}"
     if down <= 0:
-        return f"{name}'s down move must be positive, got {_figure(down)}"
+        return f"{name}'s down move must be positive, got {figure(down)}"
     if down >= 1:
         return (
-            f"{name}'s down move {_figure(down)} would take the spot to zero or"
+            f"{name}'s down move {figure(down)} would take the spot to zero or"
             " below; the band's theorems need a down move below 1"
         )
     return None
@@ -332,11 +335,11 @@ def _rule(goal: HedgingGoal, payoff: Payoff, hedged: Band, stop: Stop) -> _Verdi
         Interrupted: If ``stop`` asks the extreme-path search to stop.
     """
     if goal.claim == "covers":
-        return _covers(goal, payoff, hedged, stop)
+        return _covers(goal, payoff, hedged)
     return _shortfall(goal, payoff, hedged, stop)
 
 
-def _covers(goal: HedgingGoal, payoff: Payoff, hedged: Band, stop: Stop) -> _Verdict:
+def _covers(goal: HedgingGoal, payoff: Payoff, hedged: Band) -> _Verdict:
     assert goal.premium is not None
     premium = goal.premium
     fair = numbers.price(
@@ -346,48 +349,32 @@ def _covers(goal: HedgingGoal, payoff: Payoff, hedged: Band, stop: Stop) -> _Ver
         return _Verdict(
             "price",
             Status.PROVEN,
-            f"the binomial price {_figure(fair)} is at most the premium"
-            f" {_figure(premium)}",
+            f"the binomial price {figure(fair)} is at most the premium"
+            f" {figure(premium)}",
             application=render.covers_hold(goal, payoff),
         )
     return _Verdict(
         "price",
         Status.REFUTED,
-        f"the premium {_figure(premium)} is below the binomial price"
-        f" {_figure(fair)}, so no spot-feedback strategy covers from it;"
-        f" {_own_path(goal, payoff, hedged, fair, stop)}",
+        f"the premium {figure(premium)} is below the binomial price"
+        f" {figure(fair)}, so no spot-feedback strategy covers from it;"
+        f" {_own_paths(goal, hedged, fair - premium)}",
         application=render.covers_refutation(goal, payoff),
     )
 
 
-def _own_path(
-    goal: HedgingGoal, payoff: Payoff, hedged: Band, fair: Fraction, stop: Stop
-) -> str:
+def _own_paths(goal: HedgingGoal, hedged: Band, short: Fraction) -> str:
     """Say how far the band's own hedge from the premium ends below the payoff.
 
-    The search runs only within `SHORTFALL_CAP` steps, where it is cheap; the
-    refutation does not need it.
+    From the price the hedge ends at the payoff on every extreme path of its
+    band, the binomial tree's, so from the premium it ends ``short``, the
+    price less the premium, below it on each. No search runs: the all-up path
+    is named as one of them, so nothing can stop an established refutation.
     """
-    assert goal.premium is not None
-    if goal.steps > SHORTFALL_CAP:
-        return f"the extreme-path search runs up to {SHORTFALL_CAP} steps"
-    path, worst = numbers.worst_extreme_path(
-        payoff,
-        goal.strike,
-        goal.spot,
-        hedged.up,
-        hedged.down,
-        hedged.up,
-        hedged.down,
-        goal.steps,
-        stop,
-    )
-    # From the premium the wealth is the wealth from the price, moved by the
-    # difference, on every path.
-    short = fair - goal.premium - worst
     return (
-        f"from it the band's own hedge ends {_figure(short)} below the payoff on"
-        f" its worst extreme path {_moves(path, hedged)}"
+        f"from it the band's own hedge ends the difference, {figure(short)},"
+        " below the payoff on every extreme path of the band, the all-up path of"
+        f" {goal.steps} rises of {figure(hedged.up)} among them"
     )
 
 
@@ -400,7 +387,7 @@ def _shortfall(goal: HedgingGoal, payoff: Payoff, hedged: Band, stop: Stop) -> _
             "own-band",
             Status.PROVEN,
             "run on its own band the hedge covers the payoff from its price, so"
-            f" it ends at most 0 ≤ {_figure(bound)} below it",
+            f" it ends at most 0 ≤ {figure(bound)} below it",
             application=render.shortfall_hold(goal, payoff),
         )
     path, worst = numbers.worst_extreme_path(
@@ -420,15 +407,15 @@ def _shortfall(goal: HedgingGoal, payoff: Payoff, hedged: Band, stop: Stop) -> _
         return _Verdict(
             "extreme-path",
             Status.REFUTED,
-            f"on the extreme path {moves} the hedge ends {_figure(-worst)} below"
-            f" the payoff, more than {_figure(bound)}",
+            f"on the extreme path {moves} the hedge ends {figure(-worst)} below"
+            f" the payoff, more than {figure(bound)}",
             application=render.shortfall_refutation(goal, payoff, returns, worst),
         )
     return _Verdict(
         "extreme-path",
         Status.UNKNOWN,
-        f"the worst extreme path {moves} ends {_figure(-worst)} below the payoff,"
-        f" within the claimed {_figure(bound)}; no theorem in this version bounds"
+        f"the worst extreme path {moves} ends {figure(-worst)} below the payoff,"
+        f" within the claimed {figure(bound)}; no theorem in this version bounds"
         " the shortfall over the against band's other paths for a hedge built"
         " for a narrower band",
         UnknownReason.GAP,
@@ -444,8 +431,8 @@ def _moves(path: Sequence[bool], moved: Band) -> str:
     """Write an extreme path as ``UDUD (U a rise of 1/50, D a fall of 1/50)``."""
     letters = "".join("U" if rise else "D" for rise in path)
     return (
-        f"{letters} (U a rise of {_figure(moved.up)}, D a fall of"
-        f" {_figure(moved.down)})"
+        f"{letters} (U a rise of {figure(moved.up)}, D a fall of"
+        f" {figure(moved.down)})"
     )
 
 

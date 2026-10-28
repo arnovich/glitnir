@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shlex
 import threading
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable
 
@@ -36,9 +38,12 @@ from glitnir_forseti.entailment import replay as entailment_replay
 from glitnir_forseti.entailment import syntax as entailment_syntax
 from glitnir_forseti.entailment.limits import CEILINGS, EntailmentLimits
 from glitnir_forseti.entailment.syntax import Goal, GoalError, Tru
+from glitnir_forseti.hedging import numbers as hedging_numbers
 from glitnir_forseti.hedging import service as hedging_service
+from glitnir_forseti.hedging.examples import SPOT, STEPS, STRIKE, WIDE, covers_goal
 from glitnir_forseti.hedging.goal import HedgingGoal
 from glitnir_forseti.hedging.payoffs import PAYOFFS as HEDGING_PAYOFFS
+from glitnir_forseti.hedging.payoffs import Payoff
 from glitnir_forseti.stepped import service as stepped_service
 from glitnir_forseti.stepped.examples import BARRIER, VARIANCE, YEAR, breach_goal
 from glitnir_forseti.stepped.goal import SteppedGoal
@@ -488,13 +493,15 @@ def _declared(entry: Any, band: Any, post: Any) -> TrajectoryGoal:
 
 
 def examples() -> tuple[dict[str, str], ...]:
-    """Return one example goal per registered model, and one entailment.
+    """Return one example goal per registered model or payoff, and one entailment.
 
     Each is a goal the deciders accept as written, generated from the
     registries: a trajectory model's declared state, start and first proved
-    band in the short form, a stream model's field on the unit box, and a
-    stepped model's year-long breach claim at its exact horizon bound. They
-    are starting points for a person to edit, not claims anyone made.
+    band in the short form, a stream model's field on the unit box, a
+    stepped model's year-long breach claim at its exact horizon bound, and a
+    hedging payoff covered from its binomial price rounded up to a
+    thousandth. They are starting points for a person to edit, not claims
+    anyone made.
     """
     found = [
         {
@@ -524,6 +531,14 @@ def examples() -> tuple[dict[str, str], ...]:
                 "goal": render_goal(_stepped(stepped)),
             }
         )
+    for payoff in HEDGING_PAYOFFS.values():
+        found.append(
+            {
+                "kind": "hedging",
+                "model": payoff.key,
+                "goal": render_goal(_hedging(payoff)),
+            }
+        )
     return tuple(found)
 
 
@@ -540,6 +555,17 @@ def _stepped(entry: SteppedEntry) -> SteppedGoal:
         stepped_service.INITIAL_ENERGY, horizon, entry.delta, VARIANCE, BARRIER
     )
     return breach_goal(bound, entry=entry, horizon=horizon, observation=name)
+
+
+def _hedging(payoff: Payoff) -> HedgingGoal:
+    """Pose a payoff's covers claim from its price rounded up to a thousandth.
+
+    The option is the examples' (`hedging.examples`): struck at the spot of
+    100, over 20 steps of a band of ±2 % a step.
+    """
+    fair = hedging_numbers.price(payoff, STRIKE, SPOT, WIDE, WIDE, STEPS)
+    premium = Fraction(math.ceil(fair * 1000), 1000)
+    return covers_goal(premium, payoff=payoff.key)
 
 
 def _stream(model: StreamModel) -> str:

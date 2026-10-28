@@ -326,6 +326,7 @@ def test_the_catalog_names_every_hedging_payoff() -> None:
 
 def test_every_registered_model_has_an_example_that_reads() -> None:
     from glitnir_forseti.claims.decide import examples
+    from glitnir_forseti.hedging.payoffs import PAYOFFS as payoffs
     from glitnir_forseti.stepped.models import MODELS as steppeds
     from glitnir_forseti.streams.models import MODELS as streams
     from glitnir_forseti.trajectory.models import MODELS as trajectories
@@ -336,6 +337,7 @@ def test_every_registered_model_has_an_example_that_reads() -> None:
         *(("trajectory", key) for key in trajectories),
         *(("stream", key) for key in streams),
         *(("stepped", key) for key in steppeds),
+        *(("hedging", key) for key in payoffs),
     }
     for example in listed:
         goal = read_goal(example["goal"])
@@ -356,6 +358,18 @@ def test_every_registered_model_has_an_example_that_reads() -> None:
         "stepped hedged-spread from (0, 0) at 0 step 1/256 shocks variance 64"
         " within 256 observe s breach 1 probability <= 1/4"
     )
+    # A hedging example is covered from its binomial price rounded up to a
+    # thousandth, on the worked example's band.
+    hedging = {e["model"]: e["goal"] for e in listed if e["kind"] == "hedging"}
+    covers = (
+        "hedging {} strike 100 spot 100 band down 1/50 up 1/50 steps 20"
+        " premium {} covers"
+    )
+    assert hedging == {
+        "call": covers.format("call", "711/200"),
+        "put": covers.format("put", "711/200"),
+        "straddle": covers.format("straddle", "711/100"),
+    }
 
 
 @pytest.mark.parametrize(

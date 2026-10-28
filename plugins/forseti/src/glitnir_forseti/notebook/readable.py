@@ -166,7 +166,9 @@ class Readable:
             several lines.
         description: A sentence for the claim's docstring saying what the
             statement's names are.
-        lane: The lane's proposition the claim is equivalent to.
+        lane: The lane's proposition the claim is equivalent to. For a
+            refuted hedging ``covers`` claim it is the ``∃ δ, Covers …`` claim
+            itself, whose negation `refuted` reads off the lane's statement.
         root: The term for ``lane`` given the lane's proof as ``root``.
         refuted: The term for ``¬ lane`` given its refutation as ``refuted``.
         setup: Tactic lines both directions share (named equations).

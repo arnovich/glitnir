@@ -37,10 +37,8 @@ _ENTAILMENT = (
 #: The lane statements each readable bridge is written against. A stream
 #: refutation is the root's identities with the contract's negation, or, for
 #: a lane whose root has no identities (a field band), the root's negation. A
-#: stepped lane proves its claim, or its negation, as ``forsetiClaim``. So does
-#: a hedging lane, except that a refuted ``covers`` claim proves a positive
-#: ``forsetiClaim``, ``∀ δ, ¬ Covers …``: every spot-feedback strategy falls
-#: short, which its readable claim ``∃ δ, Covers …`` is bridged to.
+#: stepped lane proves its claim, or its negation, as ``forsetiClaim``. A
+#: hedging lane's statements depend on its claim (`_HEDGING_STATEMENTS`).
 _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
     Goal: {
         "PROVEN": (_ENTAILMENT,),
@@ -55,9 +53,21 @@ _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
         "PROVEN": (stepped_render.PROVED,),
         "REFUTED": (stepped_render.REFUTED,),
     },
-    HedgingGoal: {
+}
+#: A hedging lane proves its claim as ``forsetiClaim``, and refutes a
+#: ``shortfall`` claim as its negation. A refuted ``covers`` claim proves a
+#: positive ``forsetiClaim`` instead, ``∀ δ, ¬ Covers …``: every spot-feedback
+#: strategy falls short, which its readable claim ``∃ δ, Covers …`` is bridged
+#: to. Each refutation accepts only its own shape, so a block of the other
+#: claim's fails here rather than in Lean.
+_HEDGING_STATEMENTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "covers": {
         "PROVEN": (hedging_render.PROVED,),
-        "REFUTED": (hedging_render.PROVED, hedging_render.REFUTED),
+        "REFUTED": (hedging_render.PROVED,),
+    },
+    "shortfall": {
+        "PROVEN": (hedging_render.PROVED,),
+        "REFUTED": (hedging_render.REFUTED,),
     },
 }
 
@@ -175,7 +185,7 @@ def _as_readable(decision: Decision, stated: Readable) -> tuple[str, tuple[str, 
     """
     assert decision.lean is not None
     lane, script = decision.lean.statement, decision.lean.script
-    if lane not in _LANE_STATEMENTS[type(decision.goal)][decision.status]:
+    if lane not in _lane_statements(decision.goal)[decision.status]:
         raise DecisionError(f"no claim shape for the statement {lane!r}")
     nested = tuple("  " + line for line in script)
     if decision.status == "PROVEN":
@@ -186,6 +196,13 @@ def _as_readable(decision: Decision, stated: Readable) -> tuple[str, tuple[str, 
         "intro claim",
         *stated.to_root,
     )
+
+
+def _lane_statements(goal: object) -> dict[str, tuple[str, ...]]:
+    """Return the lane statements a goal's readable bridge is written against."""
+    if type(goal) is HedgingGoal:
+        return _HEDGING_STATEMENTS[goal.claim]
+    return _LANE_STATEMENTS[type(goal)]
 
 
 def _split_prelude(prelude: str) -> tuple[tuple[str, ...], str]:

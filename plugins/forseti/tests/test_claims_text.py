@@ -76,10 +76,7 @@ XY = Context(("x", "y"))
 
 
 def test_the_corpus_is_not_empty() -> None:
-    # A decoder may be registered before its lane has a corpus directory; once
-    # the directory exists it must hold goals.
-    with_a_directory = {k for k in DECODERS if (BENCHMARKS / k / "goals").is_dir()}
-    assert {kind for kind, _ in CORPUS} == with_a_directory
+    assert {kind for kind, _ in CORPUS} == set(DECODERS)
 
 
 @pytest.mark.parametrize(("kind", "path"), CORPUS, ids=lambda v: getattr(v, "stem", v))
