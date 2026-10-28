@@ -625,7 +625,7 @@
     checkThroughHTML, checkedStatementHTML, checking, claim, claimLabel, claimReading, claims, currencyNoted,
     currencyPillHTML, currencyText, esc, fetch, icon, inspectProject, inspecting, inspection, leanHTML,
     leanOff, leanVersion, linkedPath, load, markLiveChanges, nonClaimsHTML, openNotebook, post,
-    projectCheckHTML, projectClaimHTML, projectMode, projectResolutionHTML, readingFolds, recorded, reduced,
+    projectCheckHTML, projectClaimHTML, projectClaims, projectMode, projectResolutionHTML, readingFolds, recorded, reduced,
     refresh, renderTrail, requestedCut, showNotebookAt, statusOf, summariesOf, toneOf, useChipsHTML, useHTML,
     withheldBannerHTML, environmentEpoch: () => environmentEpoch, heldRendering: () => heldRendering});
 })();

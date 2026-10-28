@@ -21,6 +21,7 @@
       <div class="seg" role="group" aria-label="View">
         <button type="button" data-mode="doc" aria-pressed="true">Document</button>
         <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Graph</button>
       </div>
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"/></svg>History</summary>
@@ -60,7 +61,7 @@
     </nav>
 
     <main class="document">
-      <div class="doc-inner">
+      <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
         <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner" id="banner" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="banner-text"></span><button type="button" id="check-project" hidden>Check saved file</button><button type="button" id="inspect-project" hidden title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
@@ -70,6 +71,7 @@
         <div id="doc"></div>
         <div id="source" hidden></div>
       </div>
+      <div id="graph-view" hidden></div>
     </main>
 
     <aside class="inspector" aria-label="Claim inspector">
@@ -114,6 +116,7 @@
 <script src="/figures.js"></script>
 <script src="/reading.js"></script>
 <script src="/inspector.js"></script>
+<script src="/graph.js"></script>
 <script src="/chrome.js"></script>
 </body>
 </html>

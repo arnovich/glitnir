@@ -5,10 +5,10 @@
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
     currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, icon, images,
-    inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage,
+    graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
-    proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
-    renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI,
+    proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
+    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI,
     showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = workbench;
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
@@ -24,7 +24,7 @@
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.setAttribute('height', H);
     const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', muted: 'var(--faint)'})[t] || 'var(--blue)';
-    const arcs = cs.flatMap(c => c.uses.filter(u => pos.has(u) && u !== c.name).map(u => {
+    const arcs = cs.flatMap(c => (Array.isArray(c.uses) ? c.uses : []).filter(u => pos.has(u) && u !== c.name).map(u => {
       const y1 = pos.get(u), y2 = pos.get(c.name), bend = x - 10 - (y2 - y1) / 5;
       return `<path d="M${x - 7} ${y1}C${bend} ${y1} ${bend} ${y2} ${x - 9} ${y2}" fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#g-arr)"/>`;
     })).join('');
@@ -198,6 +198,8 @@
     document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === UI.mode)));
     $('doc').hidden = UI.mode !== 'doc';
     $('source').hidden = UI.mode !== 'source';
+    $('reading-view').hidden = UI.mode === 'graph';
+    $('graph-view').hidden = UI.mode !== 'graph';
     $('workspace').classList.toggle('no-panel', !UI.panel);
     $('panel-show').hidden = UI.panel;
     // Project records hold uses only from checks that recorded them: without
@@ -248,9 +250,15 @@
     const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
+    const activeGraphControl = UI.mode === 'graph' ? document.activeElement?.closest?.('#graph-view [data-act]') : null;
+    const graphFocus = activeGraphControl ? {...activeGraphControl.dataset} : null;
     const scroll = $('insp').scrollTop;
     const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
-    if (!heldRendering()) { if (UI.mode === 'doc') renderDoc(); else renderSource(); }
+    if (!heldRendering()) {
+      if (UI.mode === 'doc') renderDoc();
+      else if (UI.mode === 'source') renderSource();
+      else renderProofGraph();
+    }
     renderInspector();
     renderChrome();
     typesetMath($('doc'), $('insp'), $('title'), $('outline'));
@@ -263,6 +271,10 @@
     if (sourceFocus) $(sourceFocus)?.focus({preventScroll: true});
     if (sourceControl?.sha === UI.data.sha256) {
       const control = [...$('source').querySelectorAll('[data-act]')].find(el => el.dataset.act === sourceControl.act && el.dataset.line === sourceControl.line);
+      control?.focus({preventScroll: true});
+    }
+    if (graphFocus && UI.mode === 'graph') {
+      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail);
       control?.focus({preventScroll: true});
     }
     if (linkFocus && UI.mode === 'doc' && (!linkFocus.sha || linkFocus.sha === UI.data.sha256)) {
@@ -296,7 +308,7 @@
       renderedTitle.innerHTML = inlineHTML(exportTitle);
       const content = document.createElement('div');
       const scopes = namespaceScopes(snapshot.cells);
-      content.innerHTML = withheldBannerHTML(snapshot) + snapshot.cells.map(cell => cellView(cell, true, scopes)).join('');
+      content.innerHTML = proofGraphHTML(snapshot, {staticPage: true}) + withheldBannerHTML(snapshot) + snapshot.cells.map(cell => cellView(cell, true, scopes)).join('');
       proofSections(content, true);
       if (snapshot.preview?.check?.status === 'checked_snapshot') content.insertAdjacentHTML('beforeend', projectCheckHTML(snapshot.preview.check, snapshot.sha256));
       if (content.querySelector('.view-wait')) throw new Error('Wait for the diagrams to finish drawing, then export again.');
@@ -332,6 +344,7 @@
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
     {group: 'Navigate', keys: ['c', 't'], hint: 'claims / proof steps', editor: true, text: 'Claims / Proof steps'},
     {group: 'View', keys: ['s'], hint: 'document / source', text: 'Switch between document and Lean source'},
+    {group: 'View', keys: ['g'], hint: 'proof graph', text: 'Show the recorded proof graph'},
     {group: 'View', keys: ['i'], hint: 'inspector', text: 'Show or hide the claim inspector'},
     {group: 'Check and edit', keys: ['r'], hint: 'check through claim', text: 'Check the saved file through the selected claim',
       editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
@@ -356,10 +369,11 @@
   function select(name, scroll) {
     UI.sourceCell = null;
     UI.selected = name;
+    if (UI.mode === 'graph') UI.graphSelected = `local:${name}`;
     render();
     if (!scroll) return;
-    const el = UI.mode === 'doc' ? $('cell-' + name) : document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`);
-    if (el) { revealSection(el); el.scrollIntoView({behavior: reduced() ? 'auto' : 'smooth', block: UI.mode === 'doc' ? 'start' : 'center'}); }
+    const el = UI.mode === 'doc' ? $('cell-' + name) : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
+    if (el) { revealSection(el); el.scrollIntoView?.({behavior: reduced() ? 'auto' : 'smooth', block: UI.mode === 'doc' ? 'start' : 'center'}); }
   }
   function showSourceLines(start, end) {
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) return;
@@ -447,6 +461,21 @@
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'goto': closeDiagram(); select(id, true); break;
+      case 'graph-node': {
+        const node = graphNode(b.dataset.graphId);
+        if (!node) break;
+        UI.graphSelected = node.id;
+        if (node.kind === 'local') { UI.mode = 'doc'; select(node.name, true); break; }
+        if (node.path) {
+          const path = [...(linkedPath() || '').split('/').slice(0, -1), node.path].join('/');
+          const link = path === UI.main?.file ? '' : path;
+          UI.pendingClaim = node.name; openNotebook(link);
+        } else render();
+        break;
+      }
+      case 'graph-zoom-in': UI.graphZoom = Math.min(8, (UI.graphZoom || 1) + .25); render(); break;
+      case 'graph-zoom-out': UI.graphZoom = Math.max(.5, (UI.graphZoom || 1) - .25); render(); break;
+      case 'graph-fit': UI.graphZoom = 1; render(); break;
       case 'open-notebook': e.preventDefault(); closeDiagram(); UI.pendingClaim = b.dataset.claim || null; openNotebook(b.dataset.link || null); break;
       case 'notebook-back': showNotebookAt(UI.at - 1); break;
       case 'notebook-forward': showNotebookAt(UI.at + 1); break;
@@ -471,6 +500,12 @@
     }
   });
   $('source').addEventListener('click', e => { const tr = e.target.closest('tr[data-claim]'); if (tr && !e.target.closest('[data-act]')) select(tr.dataset.claim, false); });
+  $('graph-view').addEventListener('change', e => {
+    const picker = e.target.closest('[data-act="graph-detail-picker"]');
+    if (!picker) return;
+    UI.graphSelected = picker.value;
+    render();
+  });
   document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });
   $('inspect-project').onclick = inspectProject;
   $('check-project').onclick = () => checkProject();
@@ -486,10 +521,17 @@
       $('history').open = false;
       return;
     }
+    const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"]');
+    if (graphAction && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      graphAction.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+      return;
+    }
     if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
     const map = {
       j: () => move(1), k: () => move(-1), '?': () => keys(true),
       s: () => { if (UI.mode === 'source') showDocument(); else { UI.mode = 'source'; render(); } },
+      g: () => { UI.mode = 'graph'; render(); },
       i: () => { UI.panel = !UI.panel; render(); },
       // Check through the selected claim; Check saved file checks all of it.
       r: () => { const c = claim(UI.selected); if (c?.project && !linkedPath()) checkProject(c.project.end_line); },
