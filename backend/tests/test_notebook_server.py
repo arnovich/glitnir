@@ -82,7 +82,7 @@ def test_the_server_binds_to_localhost_only(server) -> None:
     "path",
     [
         "/",
-        "/app.js",
+        "/workbench.js",
         "/app.css",
         "/cards.css",
         "/cards.js",
@@ -92,7 +92,7 @@ def test_the_server_binds_to_localhost_only(server) -> None:
         "/katex/katex.min.css",
         "/katex/fonts/KaTeX_Main-Regular.woff2",
         "/../server.py",
-        "/app/app.js",
+        "/app/workbench.js",
         "/index.html",
         "/api/decide/catalog",
         "/api/goal?claim=energy_falls",

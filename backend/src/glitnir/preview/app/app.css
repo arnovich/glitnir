@@ -443,3 +443,8 @@ select{padding:3px 8px;border:1px solid var(--border);border-radius:4px;backgrou
 .notebook-reference[data-act=open-notebook]{color:var(--blue)}
 .glitnir-linked-view #history{display:none}
 @media(max-width:600px){.notebook-trail{padding:8px 16px}.notebook-own{margin-left:0}}
+
+.import-header{display:block;color:var(--muted);font-size:12px}
+.import-header>summary{cursor:pointer}
+.import-header>summary .source-controls{float:right}
+.import-header>pre{margin-top:10px}

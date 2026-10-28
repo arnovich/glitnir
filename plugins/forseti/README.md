@@ -80,7 +80,7 @@ proofs may unroll a recursion over every mark, only up to 1024 marks, four
 years. A longer claim is `UNKNOWN: unsupported`. `stepped` decisions and
 `sample` evidence need a Forseti Lean build that contains
 `Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the
-pinned release, Forseti Lean v0.5.0, does; an older build reports the missing
+pinned release, Forseti Lean v0.5.1, does; an older build reports the missing
 module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
@@ -96,9 +96,9 @@ unknown-identifier rejection. The package also contains the deciders' replay
 against a pinned Forseti Lean release and its command lines, which are not
 reachable from the editor.
 
-**Verified on 2026-10-26** against Forseti Lean v0.5.0 with Asgard Lean v0.4.0
+**Verified on 2026-10-28** against Forseti Lean v0.5.1 with Asgard Lean v0.4.1
 (Lean 4.35.0), the pinned release, by CI's `plugin-live` shards on Linux (run
-40361406695), every one green:
+40654470418), every one green:
 `streams` 88 passed (`tests/test_streams_lean.py` and
 `tests/test_mild_stream_lean.py`, kernel replay of the stream roots against
 the pinned release); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,

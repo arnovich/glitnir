@@ -223,6 +223,14 @@ def test_saved_results_are_shown_as_recorded(saved: Path, nothing_runs) -> None:
     assert card["snapshot"] == _evidence_body()
 
 
+def test_a_whole_source_export_says_why(saved: Path, nothing_runs) -> None:
+    saved.write_text("/-! never closed\n" + saved.read_text())
+    with SavedNotebook(saved) as notebook:
+        notice = notebook.snapshot()["preview"]["notice"]
+    assert notice.startswith(RECORDED_NOTICE)
+    assert "shown as source" in notice and "line 1: prose block" in notice
+
+
 def test_the_editor_preview_compares_the_same_results_with_its_environment(
     saved: Path, monkeypatch, patch_fingerprint
 ) -> None:

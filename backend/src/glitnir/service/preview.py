@@ -177,7 +177,7 @@ class SourcePreviewService:
         self._runs.close(deadline)
         self._views.close(deadline)
 
-    def inspect(self, sha256: str) -> dict[str, Any]:
+    def inspect(self, sha256: str) -> InspectionSummary:
         """Start inspecting the saved source's project setup; return its state.
 
         The inspection runs in a worker, one at a time and never beside a
@@ -218,7 +218,7 @@ class SourcePreviewService:
                 self._inspection_worker = None
                 self._inspection_cancel = None
                 self._inspection_lock.release()
-            return dict(self._inspection)
+            return self._inspection.copy()
 
     def cancel_inspection(self) -> None:
         """Stop the running inspection; it then reports that it was cancelled.

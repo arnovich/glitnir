@@ -3,6 +3,7 @@ const {readFileSync} = require('node:fs');
 const path = require('node:path');
 const {test} = require('node:test');
 const {JSDOM} = require('jsdom');
+const {previewPage} = require('./webview-page.cjs');
 
 function renderer() {
   const dom = new JSDOM('<!doctype html>', {runScripts: 'outside-only'});
@@ -61,16 +62,7 @@ test('export drops images that are not embedded data', async () => {
 });
 
 test('the packaged VS Code page gives the export script a local URI and script nonce', () => {
-  const Module = require('node:module');
-  const file = fsPath => ({fsPath});
-  const load = Module._load;
-  let previewHtml;
-  Module._load = function(name, parent, ...rest) {
-    if (name === 'vscode') return {Uri: {joinPath: (uri, ...parts) => file(path.join(uri.fsPath, ...parts))}};
-    return load.call(this, name, parent, ...rest);
-  };
-  try { ({previewHtml} = require('../../dist/webview')); } finally { Module._load = load; }
-  const html = previewHtml({cspSource: 'https://resource.invalid', asWebviewUri: uri => ({toString: () => 'https://resource.invalid/' + path.basename(uri.fsPath)})}, file(path.resolve(__dirname, '../../dist/media')));
+  const html = previewPage();
   const page = new JSDOM(html);
   try {
     assert.equal(page.window.document.title, 'Glitnir');
@@ -92,6 +84,6 @@ test('the packaged VS Code page gives the export script a local URI and script n
     assert.ok(page.window.document.querySelector('link[href="https://resource.invalid/circuits.css"]'));
     assert.equal(cards.src, 'https://resource.invalid/cards.js');
     assert.ok(page.window.document.querySelector('link[href="https://resource.invalid/cards.css"]'));
-    assert.ok([...page.window.document.scripts].indexOf(cards) < [...page.window.document.scripts].findIndex(el => el.src.endsWith('/app.js')));
+    assert.ok([...page.window.document.scripts].indexOf(cards) < [...page.window.document.scripts].findIndex(el => el.src.endsWith('/workbench.js')));
   } finally { page.window.close(); }
 });

@@ -2,7 +2,8 @@
 
 A notebook is one Lean module. Prose lives in ``/-! … -/`` module docs, each
 claim is a ``theorem`` or ``lemma`` proved by a tactic block, and everything
-else is ordinary Lean: imports, namespaces, definitions and directive comments.
+else is ordinary Lean: imports, namespaces, definitions, directive comments and
+theorems proved some other way, such as by a term.
 This module finds those cell boundaries line by line, asking the lexer only
 whether a claim's column-0 line lies inside a literal of its proof.
 It is not a grammar of Lean and understands nothing else inside a cell; Lean
@@ -147,8 +148,7 @@ def parse_notebook(text: str) -> Notebook:
 
     Raises:
         NotebookError: If a prose block, comment or docstring is not closed, a
-            claim is indented or not proved with a tactic block, or two
-            claims share a name.
+            claim is indented or has no proof, or two claims share a name.
     """
     if type(text) is not str:
         raise TypeError("notebook text must be a string")
@@ -200,7 +200,7 @@ def parse_notebook(text: str) -> Notebook:
         if line.startswith("/--"):
             end = _block_end(lines, index, "docstring")
             header = end + 1
-            if header < len(lines) and _CLAIM_HEADER.match(lines[header]):
+            if header < len(lines) and _tactic_header_end(lines, header) is not None:
                 flush()
                 docstring = "\n".join(lines[index : end + 1])
                 cell, index = _claim_cell(lines, index, header, docstring)
@@ -209,7 +209,7 @@ def parse_notebook(text: str) -> Notebook:
             pending.extend(range(index, end + 1))
             index = end + 1
             continue
-        if _CLAIM_HEADER.match(line):
+        if _tactic_header_end(lines, index) is not None:
             flush()
             cell, index = _claim_cell(lines, index, index, None)
             cells.append(cell)
@@ -233,16 +233,9 @@ def _claim_cell(
     match = _CLAIM_HEADER.match(lines[header])
     assert match is not None
     modifiers, keyword, name, first = match.groups()
-    statement = [first]
-    last = header
-    while not lines[last].rstrip(LEAN_WHITESPACE).endswith(":= by"):
-        last += 1
-        if last >= len(lines) or _unindented(lines[last]):
-            raise NotebookError(
-                f"line {header + 1}: claim {name} must be proved with a tactic "
-                "block ending the header in ':= by'"
-            )
-        statement.append(lines[last])
+    last = _tactic_header_end(lines, header)
+    assert last is not None
+    statement = [first, *lines[header + 1 : last + 1]]
     statement_text = (
         "\n".join(statement)
         .rstrip(LEAN_WHITESPACE)
@@ -272,6 +265,23 @@ def _claim_cell(
         claim,
     )
     return cell, body_end + 1
+
+
+def _tactic_header_end(lines: list[str], header: int) -> int | None:
+    """Return the index of the line ending a claim's header in ``:= by``.
+
+    None when the line at ``header`` is not a claim header, or its header
+    reaches the next column-0 line or the end of the file first: the theorem is
+    proved some other way, such as by a term, and is ordinary Lean here.
+    """
+    if not _CLAIM_HEADER.match(lines[header]):
+        return None
+    last = header
+    while not lines[last].rstrip(LEAN_WHITESPACE).endswith(":= by"):
+        last += 1
+        if last >= len(lines) or _unindented(lines[last]):
+            return None
+    return last
 
 
 def _body_end(lines: list[str], last: int) -> int:

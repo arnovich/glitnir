@@ -558,8 +558,9 @@ class ViewDrawing:
             "provider": record.provider,
             "provider_sha256": record.provider_sha256,
             "created": datetime.now(UTC).isoformat(timespec="seconds"),
-            # checked_drawing's result without its transient labels; with_view
-            # validates the entry, drawing included, before anything is saved.
+            # `drawing` is `checked_drawing`'s result plus the run's labels
+            # (`_finish_view` saves no drawing with an error), so without those
+            # labels it is a `Drawing`.
             "drawing": cast(
                 Drawing, {k: v for k, v in drawing.items() if k not in _TRANSIENT}
             ),

@@ -26,7 +26,12 @@ def read_regular(path: Path, limit: int = MAX_CONFIG_BYTES) -> bytes:
 
 
 class ProjectFile(TypedDict, total=False):
-    """One configuration file: its digest and declaration, or its read error."""
+    """One configuration file: its digest and declaration, or its read error.
+
+    `_file` produces `sha256` (with `declaration` for `lean-toolchain`) or
+    `error`, never both. The two forms share no key and readers use `.get`, so
+    one shape with optional keys serves where mypy could not narrow a union.
+    """
 
     sha256: str
     declaration: str

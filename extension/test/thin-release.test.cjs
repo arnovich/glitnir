@@ -445,9 +445,10 @@ test('the source plugin version equals the package version and admits the source
   const requirement = plugin.match(/^dependencies = \[(.*)\]$/m)[1].match(/"glitnir([^"\w.-][^"]*)"/);
   assert(requirement, 'The plugin must require the glitnir backend');
   assert(admitsVersion(requirement[1], version(backend)), `The plugin's glitnir${requirement[1]} excludes backend ${version(backend)}`);
-  // The plugin imports glitnir.providers.outcomes, which exists from 0.1.8; an older
-  // backend would make every Forseti provider fail to load.
-  assert(!admitsVersion(requirement[1], '0.1.7'), "The plugin imports glitnir.providers.outcomes (backend 0.1.8+); raise its glitnir floor to >=0.1.8");
+  // The plugin imports glitnir.lean.environment.SUPERVISOR_FAILED, which exists from
+  // 0.1.10 (and glitnir.providers.outcomes from 0.1.8); an older backend would make
+  // every Forseti provider fail to load.
+  assert(!admitsVersion(requirement[1], '0.1.9'), "The plugin imports glitnir.lean.environment.SUPERVISOR_FAILED (backend 0.1.10+); raise its glitnir floor to >=0.1.10");
 });
 
 async function replaceAsset(output, oldName, newName, bytes) {

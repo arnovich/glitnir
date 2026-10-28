@@ -51,7 +51,7 @@ test('installed wheel serves a notebook and offline fonts outside any source che
     const unauthenticated = await fetch(`http://127.0.0.1:${backend.port}/api/notebook`);
     assert.equal(unauthenticated.status, 403);
     const source = readFileSync(notebook, 'utf8');
-    for (const route of ['/', '/app.js', '/api/decide/catalog']) {
+    for (const route of ['/', '/workbench.js', '/api/decide/catalog']) {
       const response = await fetch(`http://127.0.0.1:${backend.port}${route}`, {
         headers: {'X-Glitnir': '1'},
       });
