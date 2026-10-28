@@ -25,14 +25,20 @@ rules in [SKILL.md](../SKILL.md) still apply; the outline format is in
   reported it. The helper's `check` compares text; it grants no status.
 - **Every Lean name, file, line and type is real.** Copy them from the source
   and let `check` confirm them. Never write a type that is not the project's
-  own.
+  own. `check` covers only the outline's Lean entries and the claims: confirm
+  every Lean name the prose mentions by searching the project for its
+  declaration.
 - **Restate, do not quote.** Restate statements and definitions in notation and
   the walkthrough's own words; formulas are not quotations. Keep any prose
   copied from a paper under about 15 words per quotation, whatever the paper's
   licence.
 - **Credit the original.** Name its authors and its licence in the notebook's
-  opening prose, with a link to its `LICENSE` or `NOTICE` file. Copy those files
-  only into a copy published for others.
+  opening prose, with a link to its `LICENSE` or `NOTICE` file. A relative path
+  is fine in a local walkthrough; in a copy meant for publishing, link the
+  repository at the recorded commit, as
+  `<repository>/blob/<commit>/<path>/LICENSE`, and the same for every other
+  link to the project's files. Copy those files only into a copy published for
+  others.
 - **Record every difference.** Where the Lean form differs from the paper, say
   so in the node's `note` and in the notebook, above all when the project's own
   index records the difference.
@@ -130,14 +136,19 @@ text:
 - In a project that uses the Lean module system (its files begin with
   `module`), cite only public declarations: those under `public section` or
   marked `public`. A private one would not elaborate in the walkthrough, and
-  the text check does not see this.
+  `check` does not see this: confirm it by reading the cited file, for
+  `public section` (possibly with attributes, as in `@[expose] public section`)
+  above the declaration or `public` on it.
 - When a name is declared in two files, such as a statement-only file whose
   proofs are `sorry` and the file that proves it, list and import the file that
   proves it, never the `sorry` one.
 - Where a theorem cannot be restated, cite another project theorem that proves
   the same proposition and can be, such as the trusted statement file's
   version, listed as another `lean` entry of the node. Otherwise explain the
-  theorem in prose and cite it by name.
+  theorem in prose and cite it by its full name, without a claim. This is
+  expected, sometimes for most of a project: statements about programs in a
+  project that opens its machine namespace, for example, are reached through
+  `open` and stay prose.
 
 The notebook defines and opens nothing. It contains only imports, prose,
 comments and docstrings, `namespace`, `section` and `end`, `#print axioms`, and
@@ -175,8 +186,17 @@ pages, kind, statement in your own words, the idea of its proof, the statements
 it uses, and its Lean declarations with how each differs from the paper. Prefer
 the project's own index for the paper-to-Lean mapping and its recorded
 differences. An index may list `alias` entries, which `check` does not scan:
-follow each alias to the declaration it names and list that. Outline a large project from the top: the main text first, each
-appendix as one node, deeper levels only when asked.
+follow each alias to the declaration it names and list that. Outline a large
+project from the top: the main text first, each appendix as one node, deeper
+levels only when asked. Node kinds are fixed:
+
+- An equation the claims rest on is a `lemma` node labelled with the paper's
+  equation number, such as `Equation (5)`.
+- A section of the main text outside the walkthrough's scope that the claims
+  depend on is one node, of its key statement's kind; the prose says that it
+  stands in for the section.
+- A paper item split into several nodes, one per claim, is labelled with the
+  paper's name and the part in parentheses, such as `Theorem 22 (3SUM)`.
 
 *Check:* `python3 -B scripts/walkthrough.py check OUTLINE` exits 0.
 
@@ -236,8 +256,9 @@ when asked and when you can.
 ## The Lake project
 
 Untested: this template and the compile step have not yet been run on a real
-project. Treat any failure as a limitation to report, not as a reason to change
-the original.
+project. Nor is it known whether a walkthrough file that is not a module may
+import the module files of a project that uses the Lean module system. Treat
+any failure as a limitation to report, not as a reason to change the original.
 
 ```toml
 name = "odd-sums-walkthrough"

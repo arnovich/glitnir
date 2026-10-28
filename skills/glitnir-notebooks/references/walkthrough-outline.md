@@ -58,19 +58,20 @@ first page.
 
 ## `nodes`
 
-Each node is one statement of the paper, an idea-level step or an appendix
-summarized as one node:
+Each node is one statement of the paper, an equation the claims rest on, an
+idea-level step, or an appendix or out-of-scope section summarized as one node
+([walkthroughs.md](walkthroughs.md), step 2):
 
 | Key | Required | Value |
 |---|---|---|
 | `id` | yes | short, unique and stable once published, such as `lem2`; never renumber |
-| `label` | yes | the paper's name for it, such as `Lemma 2` |
+| `label` | yes | the paper's name for it, such as `Lemma 2` or `Equation (5)`; for one of several nodes made from one paper item, that name followed by the part in parentheses, such as `Theorem 22 (3SUM)` |
 | `kind` | yes | `definition`, `lemma`, `proposition`, `theorem`, `corollary`, `algorithm` or `appendix` |
 | `section` | no | the paper's section, such as `§3` or `Appendix B` |
 | `pages` | no | the PDF's page numbers, counted from its first page as the map's `#page=` links use them, such as `14` or `14-15`; where printed page numbers differ, give those in prose |
 | `statement` | yes | the statement in the walkthrough's own words; mathematics in `$…$` |
 | `idea` | yes | the idea of its proof, or what a definition is for, in a few sentences |
-| `uses` | yes | the ids of the statements its proof uses, or for a definition the definitions it is built from; `[]` for none. No cycles. |
+| `uses` | yes | for a statement, the ids of the statements its proof uses and of the definitions its statement uses; for a definition, the definitions it is built from; `[]` for none. No cycles. |
 | `lean` | yes | its Lean declarations (below); `[]` when it has none, which the notebook then says |
 | `claim` | no | the name of the notebook's claim that restates it (below) |
 
@@ -222,7 +223,7 @@ project and names are illustrative.
       "pages": "4",
       "statement": "Every perfect square is the sum of the first few odd numbers.",
       "idea": "Write the square as $n^2$ and apply Theorem 1.",
-      "uses": ["thm1"],
+      "uses": ["def1", "thm1"],
       "lean": [
         {
           "name": "OddSums.square_is_oddSum",
