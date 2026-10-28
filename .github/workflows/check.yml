@@ -96,6 +96,10 @@ jobs:
           ../.venv/bin/isort --check-only src tests scripts experiments
           ../.venv/bin/flake8 src tests scripts experiments
           ../.venv/bin/mypy src scripts experiments
+          ../.venv/bin/black --check --config pyproject.toml --target-version py310 ../skills/glitnir-notebooks/scripts
+          ../.venv/bin/isort --check-only --settings-path pyproject.toml ../skills/glitnir-notebooks/scripts
+          ../.venv/bin/flake8 ../skills/glitnir-notebooks/scripts
+          ../.venv/bin/mypy --python-version 3.10 ../skills/glitnir-notebooks/scripts
       - name: Check the Forseti extension package
         working-directory: plugins/forseti
         run: |

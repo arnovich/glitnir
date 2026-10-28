@@ -1,14 +1,19 @@
 ---
 name: glitnir-notebooks
-description: Write or revise Lean notebooks for Glitnir, combining mathematical prose, definitions, and checked mathematical claims. Use for notebook authoring or converting a Lean file for Glitnir; not for extension development or unrelated Lean proof work.
+description: Write or revise Lean notebooks for Glitnir, combining mathematical prose, definitions, and checked mathematical claims, or write a guided walkthrough of an existing Lean formalization and its paper. Use for notebook authoring, converting a Lean file for Glitnir, or writing or extending a walkthrough of an existing project; not for extension development or unrelated Lean proof work.
 ---
 
 # Author Glitnir notebooks
 
 **Use when:** the user wants a mathematical notebook displayed by Glitnir,
-or wants to edit or convert an existing one.
+or wants to edit or convert an existing one (the sections below); or wants a
+guided walkthrough of an existing Lean formalization and its paper, or to
+extend one (see "Walk through an existing formalization"). Converting changes
+the user's file into a notebook; a walkthrough leaves the original untouched
+and restates its theorems in a separate notebook.
 **Don't use:** for ordinary Lean changes with no notebook requirement, VS Code
-extension implementation, or creating skills (use skill-creator for that).
+extension implementation, annotating or rewriting an existing project's files,
+or creating skills (use skill-creator for that).
 
 Write a readable mathematical argument in a normal `.lean` file. The source is
 authoritative; Glitnir renders it and reports checking observations.
@@ -147,7 +152,31 @@ decisions. Views, `-- @evidence` and `-- @decide` need the optional
 `glitnir-forseti` package (or another provider). Ordinary notebooks need none of
 these directives.
 
+## Walk through an existing formalization
+
+A walkthrough explains a finished Lean project, often too large to read file by
+file, through its paper's argument: a map of the paper's statements and what
+each proof uses, and a notebook read from the top in which each key statement is
+restated as a claim proved by the project's own theorem. It lives in a folder of
+its own beside the repository that contains the original, never inside it, and
+never changes the original. Its source of truth is an `outline.json`, which the
+bundled helper checks against the project and draws as a map; run it from this
+skill's folder as `python3 -B scripts/walkthrough.py check …` (`-B` keeps the
+folder unchanged).
+
+Follow [references/walkthroughs.md](references/walkthroughs.md) step by step,
+both to write a walkthrough and to extend one, and write the outline as
+[references/walkthrough-outline.md](references/walkthrough-outline.md)
+describes. Ask before building the original or downloading a paper. Never
+describe a claim as checked unless a Glitnir check of the walkthrough reported
+it.
+
 ## Validate before finishing
+
+Steps 1 and 2 need the notebook's imports built (a loose file needs only Lean),
+and step 2 needs the Lean version Glitnir supports. When either is missing, as is usual for a walkthrough
+(follow step 6 of [references/walkthroughs.md](references/walkthroughs.md)),
+report that step as not run and why.
 
 1. Save the source. Run the project's existing Lean validation, usually
    `lake env lean path/to/Notebook.lean` from its Lake root. Read diagnostics:
