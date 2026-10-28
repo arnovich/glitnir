@@ -77,9 +77,9 @@
     while (!entries[to - 1][1].trim()) to--;
     return entries.slice(at, to);
   }
-  function lineLinkHTML(start, end) {
+  function lineLinkHTML(start, end, editable = true) {
     const cell = UI.data.cells.find(c => c.start <= start && end <= c.end);
-    const edit = HOST && cell && !linkedPath() ? `<button type="button" class="source-edit" data-act="source" data-index="${cell.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" title="Edit in editor" aria-label="Edit in editor">${icon('edit')}</button>` : '';
+    const edit = editable && HOST && cell && !linkedPath() ? `<button type="button" class="source-edit" data-act="source" data-index="${cell.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" title="Edit in editor" aria-label="Edit in editor">${icon('edit')}</button>` : '';
     return `<span class="source-controls"><a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
   }
   const leanOf = entries => entries.map(e => e[1]).join('\n');
@@ -200,7 +200,31 @@
       const all = trimmed(entries);
       return all.length ? contextHTML(null, all, '') : '';
     }
-    return commands(entries).map(command => {
+    const listed = commands(entries);
+    let header = '';
+    const first = UI.data.cells.find(cell => cell.text.trim());
+    if (quiet && entries[0]?.[0] === first?.start) {
+      let count = 0, imports = 0, opens = 0;
+      for (const command of listed) {
+        const body = presentationCode(leanOf(command.body)).trim();
+        if (command.doc.length || presentationCode(leanOf(command.notes)).trim()) break;
+        if (!count && body === 'module') { count++; continue; }
+        const normalized = body.replace(/^(?:public\s+)?(?:meta\s+)?import(?:\s+all)?\s+/, 'import ');
+        if (kindOf({doc: [], notes: [], body: [[0, normalized]]}) !== 'setup'
+          || !/^(import|open)\b/.test(normalized) || (!imports && !normalized.startsWith('import '))) break;
+        if (normalized.startsWith('import ')) imports++; else opens++;
+        count++;
+      }
+      if (imports) {
+        const start = trimmed([...listed[0].notes, ...listed[0].body])[0][0];
+        const end = listed[count - 1].body.at(-1)[0];
+        const source = entries.filter(([n]) => n >= start && n <= end);
+        const label = `${imports} import${imports === 1 ? '' : 's'}${opens ? ` · ${opens} open${opens === 1 ? '' : 's'}` : ''}`;
+        header = `<details class="cell source-context import-header" data-fold-key="import-header:${esc(leanOf(source))}"><summary>${label}${lineLinkHTML(start, end, false)}</summary><pre>${leanHTML(leanOf(source))}</pre></details>`;
+        listed.splice(0, count);
+      }
+    }
+    return header + listed.map(command => {
       const list = trimmed([...command.notes, ...command.doc, ...command.body].sort((a, b) => a[0] - b[0]));
       if (!list.length) return '';
       if (quiet && command.body.length && kindOf({doc: [], notes: [], body: command.body}) === 'setup') {
@@ -529,7 +553,7 @@
 
   function revealSection(target) {
     for (let node = target; node; node = node.parentElement) {
-      if (node.matches('details.proof-section')) node.open = true;
+      if (node.matches('details.proof-section,details.import-header')) node.open = true;
     }
   }
 
@@ -563,7 +587,7 @@
       else if (cell.claim && claim(cell.claim)) UI.selected = cell.claim;
       render();
       const target = document.querySelector(`.cellwrap[data-index="${cell.index}"]`);
-      if (target) { revealSection(target); target.classList.add('source-selected'); target.scrollIntoView({block: 'center'}); }
+      if (target) { revealSection(target.querySelector('.import-header') || target); target.classList.add('source-selected'); target.scrollIntoView({block: 'center'}); }
       else showSourceLines(cell.start, cell.end);
     });
     if (HOST.pendingReveal) document.dispatchEvent(new CustomEvent('glitnir-reveal-cell', {detail: HOST.pendingReveal}));
@@ -580,8 +604,8 @@
       return body ? `<div class="cellwrap" data-index="${cell.index}">${toolsHTML(cell)}${body}</div>` : '';
     }).join('');
     proofSections($('doc'));
-    if (HOST) for (const wrap of $('doc').querySelectorAll('.cellwrap')) {
-      if (wrap.querySelector('.cell .source-controls')) wrap.querySelector(':scope > .cell-tools')?.remove();
+    for (const wrap of $('doc').querySelectorAll('.cellwrap')) {
+      if ((HOST && wrap.querySelector('.cell .source-controls')) || wrap.querySelector('.import-header')) wrap.querySelector(':scope > .cell-tools')?.remove();
     }
   }
 
