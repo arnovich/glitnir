@@ -254,3 +254,20 @@ notebooks and the claim graph.
   [invited collaborators](https://github.com/arnovich/glitnir/blob/main/CONTRIBUTING.md).
 
 For optional remote Lean checks, see [Taskvalet computation workers](https://github.com/arnovich/glitnir/blob/main/docs/taskvalet-compute.md). Execution options are available in VS Code Settings; credentials use SecretStorage.
+
+### Taskvalet research history
+
+A checked project claim can display the Taskvalet investigation that produced
+or tested it. Add a strict `<Notebook>.research.json` sidecar that pins the
+Taskvalet problem version, fully qualified declaration, checked type, source
+and context hashes, environment fingerprints, and allowed axioms. Set
+`GLITNIR_TASKVALET_URL` to an HTTPS origin (loopback HTTP is also accepted) and
+`GLITNIR_TASKVALET_TOKEN` to a read credential before opening the preview.
+
+The inspector loads the history only for a selected linked claim. It shows
+round approaches, assignments, decisions, obstacles, allocations, negative
+results and exact evidence receipts. Taskvalet campaign state and peer
+agreement never change Glitnir's project-check status. A green independent
+check requires a current local project check of the same saved source,
+declaration, type, environment and axiom policy. The integration issues GET
+requests only and has no launch, queue, approval or write route.

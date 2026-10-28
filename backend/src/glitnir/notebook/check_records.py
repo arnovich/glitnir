@@ -193,6 +193,9 @@ class ClaimView(TypedDict):
     status: str
     axioms: list[Axiom]
     current: bool | None
+    type: NotRequired[str]
+    type_sha256: NotRequired[str]
+    type_shortened: NotRequired[Literal[True]]
     uses: NotRequired[list[UseView]]
     uses_truncated: NotRequired[Literal[True]]
     not_rechecked: NotRequired[Literal[True]]
@@ -375,6 +378,12 @@ def records_from_check(
             "prefix_sha256": _sha("\n".join(lines[:last])),
             "proposition_sha256": theorem["proposition_sha256"],
         }
+        theorem_type = theorem.get("type")
+        if isinstance(theorem_type, str):
+            claim["type"] = _shortened(theorem_type)
+            claim["type_sha256"] = _sha(theorem_type)
+            if len(theorem_type) > MAX_TYPE:
+                claim["type_shortened"] = True
         if "statement_expansion" in theorem:
             claim["statement_expansion"] = theorem["statement_expansion"].copy()
         if isinstance(theorem.get("uses"), list):
@@ -535,6 +544,12 @@ def claim_views(
             "axioms": claim["axioms"],
             "current": current,
         }
+        if "type" in claim:
+            view["type"] = claim["type"]
+        if "type_sha256" in claim:
+            view["type_sha256"] = claim["type_sha256"]
+        if claim.get("type_shortened") is True:
+            view["type_shortened"] = True
         if "statement_expansion" in claim:
             view["statement_expansion"] = claim["statement_expansion"].copy()
         if "uses" in claim:

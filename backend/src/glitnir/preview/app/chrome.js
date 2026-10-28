@@ -5,9 +5,9 @@
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
     currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, icon, images,
-    graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage,
+    graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
-    proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector,
+    proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
     showNotebookAt, statusOf, title, toneOf, typesetMath, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
@@ -383,6 +383,7 @@
     UI.selected = name;
     if (UI.mode === 'graph') UI.graphSelected = `local:${name}`;
     render();
+    void loadResearch(name);
     if (!scroll) return;
     const el = UI.mode === 'doc' ? $('cell-' + name) : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
     if (el) { revealSection(el); el.scrollIntoView?.({behavior: reduced() ? 'auto' : 'smooth', block: UI.mode === 'doc' ? 'start' : 'center'}); }
@@ -454,6 +455,7 @@
     }
     if (b.closest('.proof-section > summary')) e.preventDefault();
     const id = b.dataset.id;
+    if (researchAction(b)) return;
     switch (b.dataset.act) {
       case 'git-refresh': void loadGitHistory(true); break;
       case 'git-diff': void showGitDiff(b.dataset.sha); break;

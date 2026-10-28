@@ -201,6 +201,8 @@ class Snapshot(TypedDict):
     revisions: list[Any]
     assets: list[AssetStatus]
     walkthrough: NotRequired[WalkthroughMap]
+    research: NotRequired[dict[str, dict[str, Any]]]
+    research_error: NotRequired[str]
 
 
 @dataclass(frozen=True)

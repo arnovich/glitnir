@@ -99,6 +99,9 @@ class ClaimRecord(TypedDict):
     declaration_sha256: str
     prefix_sha256: str
     proposition_sha256: str
+    type: NotRequired[str]
+    type_sha256: NotRequired[str]
+    type_shortened: NotRequired[Literal[True]]
     uses: NotRequired[list[Use]]
     uses_truncated: NotRequired[Literal[True]]
     example: NotRequired[Literal[True]]
@@ -421,11 +424,16 @@ def well_formed(records: dict[str, Any]) -> TypeGuard[Records]:
                 return False
         if "example" in claim and claim["example"] is not True:
             return False
-        for key in ("statement", "kernel_statement"):
+        for key in ("type", "statement", "kernel_statement"):
             if key in claim and not _statement_ok(claim[key]):
                 return False
             if claim.get(f"{key}_shortened", True) is not True:
                 return False
+        if "type_sha256" in claim and not (
+            isinstance(claim["type_sha256"], str)
+            and re.fullmatch(r"[0-9a-f]{64}", claim["type_sha256"])
+        ):
+            return False
         if "statement_expansion" in claim and not valid_statement_expansion(
             claim["statement_expansion"]
         ):
