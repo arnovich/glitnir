@@ -105,7 +105,7 @@ def shortfall_goal(
 
 
 def replay_imports() -> tuple[tuple[str, ...], ...]:
-    """Every import set a hedging block uses, for the replay pin."""
+    """Every import set a hedging block uses: the sets the replay pin tool pins."""
     return (IMPORTS,)
 
 
