@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).parents[2] / "examples/two-round-lean-evaluation"
 
 
@@ -56,7 +55,9 @@ def test_evidence_archive_is_complete_redacted_and_hash_bound() -> None:
     assert not list(evidence.glob("**/agent.json"))
     assert not list(evidence.glob("**/.taskvalet/**"))
     publication = "\n".join(
-        path.read_text(errors="replace") for path in evidence.rglob("*") if path.is_file()
+        path.read_text(errors="replace")
+        for path in evidence.rglob("*")
+        if path.is_file()
     )
     assert "/Users/" not in publication
     assert "/private/tmp" not in publication
@@ -98,11 +99,14 @@ def test_evidence_archive_is_complete_redacted_and_hash_bound() -> None:
     assert len(receipts) == 24
     for receipt_path, receipt in receipts.items():
         source_name = Path(receipt["command"][-1]).name
-        original_dir = Path(entries[str(receipt_path.relative_to(evidence))]["original_path"]).parent
+        original_dir = Path(
+            entries[str(receipt_path.relative_to(evidence))]["original_path"]
+        ).parent
         source_entry = original_entries[str(original_dir / source_name)]
-        assert receipt.get("source_sha256", receipt.get("sha256")) == source_entry[
-            "original_sha256"
-        ]
+        assert (
+            receipt.get("source_sha256", receipt.get("sha256"))
+            == source_entry["original_sha256"]
+        )
         log_sha256 = receipt.get("log_sha256")
         if log_sha256 is not None:
             log_entries = [
@@ -122,7 +126,9 @@ def test_evidence_archive_is_complete_redacted_and_hash_bound() -> None:
 def test_result_counts_and_record_ids_reconcile_with_the_archive() -> None:
     result = json.loads((ROOT / "result.json").read_text())
     evidence_text = "\n".join(
-        path.read_text(errors="replace") for path in (ROOT / "evidence").rglob("*") if path.is_file()
+        path.read_text(errors="replace")
+        for path in (ROOT / "evidence").rglob("*")
+        if path.is_file()
     )
     assert result["completed_model_calls"] == {"adaptive": 6, "baseline": 6}
     assert result["lean_submissions"] == {"adaptive": 12, "baseline": 12}
