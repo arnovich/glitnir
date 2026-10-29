@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/b2-elim/Attempt2.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T07:31:07.861215+00:00",
+  "finished_at": "2026-10-29T07:33:44.319191+00:00",
+  "elapsed_seconds": 156.455537,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 6509821952,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "3437c5bad4c1ee998fb84b4d5fd250f4cb504202be29831c5f5cefc13181dcec",
+  "log_sha256": "e19de69be81fa251a0dd8e688fa5003dddb11b55ae5e11d847fe13425c0b94ec"
+}

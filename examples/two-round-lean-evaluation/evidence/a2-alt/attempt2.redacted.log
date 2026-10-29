@@ -1,0 +1,47 @@
+${PILOT_WORKERS}/a2-alt/attempt2.lean:11:2: error: Tactic `rfl` failed: equality lhs
+  a * (a * b) +
+    (a * (a * c) +
+      (a * (b * b) +
+        (a * (b * c) +
+          (a * (b * c) +
+            (a * (b * c) +
+              (a * (c * c) + (b * (b * c) + (b * (c * c) + (a * (a * a) + (b * (b * b) + c * (c * c)))))))))))
+is not definitionally equal to rhs
+  a * (a * a) +
+    (a * (a * b) +
+      (a * (a * c) +
+        (a * (b * b) +
+          (a * (b * c) +
+            (a * (b * c) +
+              (a * (b * c) + (a * (c * c) + (b * (b * b) + (b * (b * c) + (b * (c * c) + c * (c * c)))))))))))
+
+R : Type u_1
+inst✝ : CommSemiring R
+a b c : R
+⊢ a * (a * b) +
+      (a * (a * c) +
+        (a * (b * b) +
+          (a * (b * c) +
+            (a * (b * c) +
+              (a * (b * c) +
+                (a * (c * c) + (b * (b * c) + (b * (c * c) + (a * (a * a) + (b * (b * b) + c * (c * c))))))))))) =
+    a * (a * a) +
+      (a * (a * b) +
+        (a * (a * c) +
+          (a * (b * b) +
+            (a * (b * c) +
+              (a * (b * c) +
+                (a * (b * c) + (a * (c * c) + (b * (b * b) + (b * (b * c) + (b * (c * c) + c * (c * c)))))))))))
+${PILOT_WORKERS}/a2-alt/attempt2.lean:10:33: warning: This simp argument is unused:
+  mul_one
+
+Hint: Omit it from the simp argument list.
+  [apply] simp only [pow_succ, pow_zero, one_mul, mul_add, add_mul]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+'TwoRoundTrial.balanced_factorization' depends on axioms: [propext, sorryAx, Quot.sound]
+'Real.commRing' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Real.semiring' depends on axioms: [propext, Classical.choice, Quot.sound]
+'two_add_one_eq_three' depends on axioms: [propext]
+'one_add_one_eq_two' depends on axioms: [propext]
+'TwoRoundTrial.target' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]

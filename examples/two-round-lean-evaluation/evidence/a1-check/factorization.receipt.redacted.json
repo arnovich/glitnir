@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a1-check/factorization.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T06:06:42.138221+00:00",
+  "finished_at": "2026-10-29T06:06:57.310405+00:00",
+  "elapsed_seconds": 15.171795,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 2159099904,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "0312afc20ad957c16e47a9d72afa1f7eae82a0764379efd51b05a5a3ba4d91c6",
+  "log_sha256": "dafe564e41d5155ab7b38f1100f20dfbdf7e0501a4cc9af9c752c8f2f85a27bb"
+}

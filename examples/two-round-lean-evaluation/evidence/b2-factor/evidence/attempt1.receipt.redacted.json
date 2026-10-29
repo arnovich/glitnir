@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/b2-factor/evidence/attempt1.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T07:05:20.434882+00:00",
+  "finished_at": "2026-10-29T07:06:48.374779+00:00",
+  "elapsed_seconds": 87.939288,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 6365495296,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "c58b1a7d79fcb5c5f1ac0369c560b06d5f5136c641bd9d5379962d3c8c8debe8",
+  "log_sha256": "89c5edd0a35e4d159642e12302bf0ae2255d20cd21b5a2a1578d5447326dfe4b"
+}

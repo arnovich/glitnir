@@ -1,0 +1,22 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a1-factor/attempt1.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "source": "${PILOT_WORKERS}/a1-factor/attempt1.lean",
+  "source_sha256": "aab172ddc83b95332e034824530a07f1b1fd8e6c8a46ff7fcdd335475898c9a9",
+  "log": "${PILOT_WORKERS}/a1-factor/attempt1.log",
+  "log_sha256": "96501e8eac762fbab35a09d370e59672f8c7c90cef29662b434dee2c660385ab",
+  "start_utc": "2026-10-29T05:58:50.659326+00:00",
+  "end_utc": "2026-10-29T06:02:20.390657+00:00",
+  "exit_code": 0,
+  "timed_out": false,
+  "memory_exceeded": false,
+  "timeout_seconds": 300,
+  "polled_rss_limit_mib": 8192,
+  "peak_polled_rss_kib": 6287344,
+  "output": "'target' depends on axioms: [propext, Classical.choice, Quot.sound]\n"
+}

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a1-check/elimination.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T06:07:10.194730+00:00",
+  "finished_at": "2026-10-29T06:07:18.077457+00:00",
+  "elapsed_seconds": 7.882383,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 2161065984,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "71e70531e3ef1969c320be366a25219759a4a0a7f331e675e0a0e0e9857a3c7d",
+  "log_sha256": "bf8ca1e03619d5e06003419f1c62f0479a4e4703697f8f3baed2467cac1bd44d"
+}

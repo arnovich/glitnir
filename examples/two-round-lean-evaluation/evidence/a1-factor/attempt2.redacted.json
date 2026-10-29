@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a1-factor/attempt2.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T06:01:39.755954+00:00",
+  "finished_at": "2026-10-29T06:02:34.787130+00:00",
+  "elapsed_seconds": 55.030803,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 2132541440,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "0312afc20ad957c16e47a9d72afa1f7eae82a0764379efd51b05a5a3ba4d91c6",
+  "log_sha256": "9eb8f7895d6c49723f6e2b956eeb5250ea7c35647b86ab81af02b5b78fb7cfeb"
+}
