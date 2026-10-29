@@ -25,6 +25,8 @@ adaptive-versus-baseline experiment.
 - Taskvalet protocol commit: `3ca2d8a3862260ab3dec1f57184957af66e7a121`
 - Admitted protocol SHA-256: `fc98d0da8a257e305e276c578bcea1098ffef569bb3b3f1852402da9d8c874e1`
 - Glitnir preparation commit: `00cd083dcad9f6c0e11945d6592052dbc795a59c`
+- Evidence archive commit: `b05d430652c1869ea19079ebcc80991af049ca54`
+- Completed report/test snapshot: `fa2da599f161b5c160c469d7bf9b2c07fae8bd32`
 - Glitnir source: `2c6238eff6de60d63e45e10c93cdc7239de7ad69`
 - Checker digest: `6e9fafb9cd397abaa610c3676e27f404ef63926486c131734fdaebe9fd1c1b40`
 - Context digest: `c33461ada7554b5d422bfb549ea40e0c83355f115d1de52bd75f2e1227908c7e`
@@ -141,15 +143,18 @@ contamination, this prevents declaring the planned comparison successful.
 The admitted protocol is fixed at Taskvalet commit
 `3ca2d8a3862260ab3dec1f57184957af66e7a121` and SHA-256
 `fc98d0da8a257e305e276c578bcea1098ffef569bb3b3f1852402da9d8c874e1`.
-The publication archive is fixed at Glitnir commit `b05d430652c1869ea19079ebcc80991af049ca54`. Verify the
-protocol and archive before constructing the Lean environment:
+The evidence bytes are fixed at Glitnir commit
+`b05d430652c1869ea19079ebcc80991af049ca54`; the completed report and all 24
+receipt-binding tests are present at
+`fa2da599f161b5c160c469d7bf9b2c07fae8bd32`. Verify the protocol and completed
+publication snapshot before constructing the Lean environment:
 
 ```bash
 git -C taskvalet checkout 3ca2d8a3862260ab3dec1f57184957af66e7a121
 printf '%s  %s\n' \
   fc98d0da8a257e305e276c578bcea1098ffef569bb3b3f1852402da9d8c874e1 \
   taskvalet/examples/two-round-lean-evaluation/protocol.json | shasum -a 256 -c -
-git -C glitnir checkout b05d430652c1869ea19079ebcc80991af049ca54
+git -C glitnir checkout fa2da599f161b5c160c469d7bf9b2c07fae8bd32
 cd glitnir/examples/two-round-lean-evaluation
 lake update
 lake build
