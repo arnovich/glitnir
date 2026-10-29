@@ -85,10 +85,18 @@ def test_evidence_archive_is_complete_redacted_and_hash_bound() -> None:
             assert entry["original_sha256"] == entry["published_sha256"]
 
     original_entries = {entry["original_path"]: entry for entry in entries.values()}
-    receipts = list(evidence.glob("**/*receipt*.json"))
-    assert len(receipts) == 22
-    for receipt_path in receipts:
-        receipt = json.loads(receipt_path.read_text())
+    json_files = {
+        path: json.loads(path.read_text()) for path in evidence.rglob("*.json")
+    }
+    receipts = {
+        path: value
+        for path, value in json_files.items()
+        if isinstance(value, dict)
+        and isinstance(value.get("command"), list)
+        and value["command"][:3] == ["lake", "env", "lean"]
+    }
+    assert len(receipts) == 24
+    for receipt_path, receipt in receipts.items():
         source_name = Path(receipt["command"][-1]).name
         original_dir = Path(entries[str(receipt_path.relative_to(evidence))]["original_path"]).parent
         source_entry = original_entries[str(original_dir / source_name)]
@@ -107,8 +115,8 @@ def test_evidence_archive_is_complete_redacted_and_hash_bound() -> None:
             assert any(entry["original_sha256"] == log_sha256 for entry in log_entries)
 
     forbidden_keys = {"access_token", "api_key", "authorization", "password", "secret"}
-    for path in evidence.rglob("*.json"):
-        assert not (_json_keys(json.loads(path.read_text())) & forbidden_keys)
+    for value in json_files.values():
+        assert not (_json_keys(value) & forbidden_keys)
 
 
 def test_result_counts_and_record_ids_reconcile_with_the_archive() -> None:
