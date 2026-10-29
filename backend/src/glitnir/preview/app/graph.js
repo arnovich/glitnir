@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   const workbench = window.glitnirWorkbench;
-  const {$, UI, claimLabel, esc, inlineHTML, projectClaims, recorded, statusOf, title} = workbench;
+  const {$, UI, claimLabel, esc, inlineHTML, projectClaims, recorded, statusOf, title, walkthroughCompatibility} = workbench;
 
   const shortName = name => String(name).split('.').pop();
   const importedTone = status => ({checked: 'green', refuted: 'red', conditional: 'amber', stale: 'amber', failed: 'red', open: 'blue'})[status] || 'muted';
@@ -148,6 +148,7 @@
   const walkthroughId = id => `walkthrough:${id}`;
   function walkthroughGraphModel(data) {
     const outline = data.walkthrough || {};
+    const compatibility = walkthroughCompatibility(data);
     const allNodes = Array.isArray(outline.nodes) ? outline.nodes : [];
     const rawNodes = allNodes.slice(0, MAX_GRAPH_NODES);
     const rendered = data.preview?.mode === 'project' ? projectClaims(data) : (Array.isArray(data.claims) ? data.claims : []);
@@ -169,8 +170,8 @@
       const matchedClaim = matchingClaim(typeof raw.claim === 'string' ? raw.claim : '');
       const saved = matchedClaim ? savedByName.get(matchedClaim.name) : null;
       const hasRecord = data.preview?.mode === 'project' ? Boolean(saved) : Boolean(matchedClaim?.record || matchedClaim?.refutation || matchedClaim?.status === 'stale');
-      const status = matchedClaim && hasRecord ? statusOf(matchedClaim, true) : {key: 'unknown', label: 'Unknown', tone: 'muted'};
-      const stale = saved?.current === false || matchedClaim?.status === 'stale';
+      const status = matchedClaim && hasRecord ? statusOf(matchedClaim, true, data) : {key: 'unknown', label: 'Unknown', tone: 'muted'};
+      const stale = compatibility.supported && (saved?.current === false || matchedClaim?.status === 'stale');
       if (raw.claim && !matchedClaim) claimProblems.push(`No saved walkthrough result matches ${raw.claim}.`);
       const statementKind = STATEMENT_KINDS.has(raw.kind) ? raw.kind : 'unknown';
       const node = {id: walkthroughId(raw.id), outlineId: raw.id, name: matchedClaim?.name || null,
@@ -206,7 +207,7 @@
     const problems = [...backendProblems,
       ...missingReferences.filter(item => !describedReferences.has(`${item.node}\0${item.reference}`)).map(item => `${item.node}: missing statement reference ${item.reference}.`), ...claimProblems];
     return finalizeGraph(nodes, byId, dependencies, new Map(), {omittedNodes: Math.max(0, allNodes.length - MAX_GRAPH_NODES), omittedEdges,
-      walkthrough: true, title: typeof outline.title === 'string' ? outline.title : 'Walkthrough statement map', overview: typeof outline.overview === 'string' ? outline.overview : '',
+      walkthrough: true, compatibility, title: typeof outline.title === 'string' ? outline.title : 'Walkthrough statement map', overview: typeof outline.overview === 'string' ? outline.overview : '',
       problems, missingReferences});
   }
 
@@ -334,6 +335,7 @@
     const cyclicNote = model.cyclic ? '<p class="small warn-text">A dependency cycle was recorded. All saved relationships are shown without transitive reduction.</p>' : '';
     const bounded = model.omittedNodes || model.omittedEdges ? `<p class="small warn-text">Graph limit reached: ${model.omittedNodes ? `${model.omittedNodes} additional node${model.omittedNodes === 1 ? '' : 's'}` : ''}${model.omittedNodes && model.omittedEdges ? ' and ' : ''}${model.omittedEdges ? `${model.omittedEdges} additional relationship${model.omittedEdges === 1 ? '' : 's'}` : ''} omitted.</p>` : '';
     const outlineProblems = model.walkthrough && model.problems.length ? `<p class="small warn-text">${esc(model.problems.join(' '))}</p>` : '';
+    const compatibility = model.walkthrough && !model.compatibility.supported ? `<p class="banner quiet walkthrough-compatibility" role="status">${esc(model.compatibility.message)}</p>` : '';
     const statementKinds = model.walkthrough ? [...new Set(model.nodes.map(node => node.statementKind))] : [];
     const legend = statementKinds.length ? `<div class="walkthrough-legend" aria-label="Statement kinds">${statementKinds.map(kind => `<span><i class="statement-swatch statement-${kind}" aria-hidden="true"></i>${esc(kind)}</span>`).join('')}</div>` : '';
     const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" aria-label="Graph size"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-fit">Fit width</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button></div>`;
@@ -344,10 +346,10 @@
     const svgRole = staticPage && !model.walkthrough ? ' role="img"' : ' role="group"';
     const svgWidth = staticPage ? layout.width : `${Math.round(zoom * 100)}%`;
     const heading = model.walkthrough ? model.title : 'Recorded proof graph';
-    const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows its mapped result status.` : 'Arrows run from a statement to each statement that directly uses it. Foundations are at the bottom; results rise to the top. This view does not check or update results.';
+    const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows the displayed walkthrough result status.` : 'Arrows run from a statement to each statement that directly uses it. Foundations are at the bottom; results rise to the top. This view does not check or update results.';
     const label = model.walkthrough ? `${model.title} statement map` : 'Recorded proof graph';
     return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2><p>${description}</p>${legend}</div>${toolbar}</header>
-      <div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}</section>`;
+      ${compatibility}<div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}</section>`;
   }
 
   function renderProofGraph() {

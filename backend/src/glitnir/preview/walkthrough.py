@@ -6,7 +6,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NotRequired, TypedDict
 from urllib.parse import quote, urlsplit
 
-from glitnir.lean.project import read_regular
+from glitnir.lean.project import read_regular, toolchain_declaration
+from glitnir.lean.project_inspection import (
+    TOOLCHAIN,
+    supported_version,
+    toolchain_version,
+)
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 OUTLINE = "outline.json"
@@ -15,6 +20,7 @@ MAX_NODES = 240
 MAX_USES = 240
 MAX_LEAN_ENTRIES = 32
 MAX_PROBLEMS = 80
+MAX_TOOLCHAIN_CHARACTERS = 256
 NODE_KINDS = frozenset(
     {
         "definition",
@@ -54,6 +60,15 @@ class WalkthroughNode(TypedDict):
     lean: list[WalkthroughLean]
 
 
+class WalkthroughFormalization(TypedDict):
+    """Whether the outlined formalization can use Glitnir's one Lean version."""
+
+    supported: bool
+    declared: str | None
+    toolchain: str
+    message: str | None
+
+
 class WalkthroughMap(TypedDict):
     """The outline fields the local renderer needs."""
 
@@ -62,6 +77,7 @@ class WalkthroughMap(TypedDict):
     overview: str
     paper: str
     paper_local: bool
+    formalization: WalkthroughFormalization
     nodes: list[WalkthroughNode]
     problems: list[str]
     source: NotRequired[str]
@@ -118,6 +134,45 @@ def _paper(sources: Any) -> tuple[str, bool]:
         if isinstance(source, dict) and source.get("kind") == "paper":
             return _https(source.get("url")), bool(_text(source.get("path"), 1024))
     return "", False
+
+
+def _formalization(project: Any) -> WalkthroughFormalization:
+    """Fail closed unless the outline declares Glitnir's supported Lean version."""
+    raw = project.get("toolchain") if isinstance(project, dict) else None
+    try:
+        declared = (
+            toolchain_declaration(raw)
+            if isinstance(raw, str) and len(raw) <= MAX_TOOLCHAIN_CHARACTERS
+            else None
+        )
+    except ValueError:
+        declared = None
+    if declared is None:
+        return {
+            "supported": False,
+            "declared": None,
+            "toolchain": TOOLCHAIN,
+            "message": (
+                "This walkthrough's formalization does not declare one valid Lean "
+                f"toolchain. Glitnir checks Lean {supported_version()}, so its claims "
+                "are unchecked."
+            ),
+        }
+    version = toolchain_version(declared)
+    supported = version == supported_version()
+    return {
+        "supported": supported,
+        "declared": declared,
+        "toolchain": TOOLCHAIN,
+        "message": (
+            None
+            if supported
+            else (
+                f"This walkthrough's formalization uses Lean {version}. Glitnir "
+                f"checks Lean {supported_version()}, so its claims are unchecked."
+            )
+        ),
+    }
 
 
 def _lean_entries(
@@ -232,6 +287,7 @@ def _empty(*problems: str) -> WalkthroughMap:
         "overview": "",
         "paper": "",
         "paper_local": False,
+        "formalization": _formalization(None),
         "nodes": [],
         "problems": list(problems)[:MAX_PROBLEMS],
         "source": OUTLINE,
@@ -276,6 +332,7 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
         "overview": _text(raw.get("overview"), 4096),
         "paper": paper,
         "paper_local": paper_local,
+        "formalization": _formalization(project),
         "nodes": nodes,
         "problems": problems[:MAX_PROBLEMS],
         "source": OUTLINE,

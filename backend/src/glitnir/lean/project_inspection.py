@@ -50,7 +50,7 @@ _OFF = (
 )
 
 
-def _version(declaration: str) -> str:
+def toolchain_version(declaration: str) -> str:
     """Name a declared toolchain as a Lean version, the way elan resolves it.
 
     The default origin is dropped, and the `v` of a release: elan picks the
@@ -63,7 +63,7 @@ def _version(declaration: str) -> str:
 
 def supported_version() -> str:
     """Return the Lean version Glitnir checks, such as `4.35.0`, from `TOOLCHAIN`."""
-    return _version(TOOLCHAIN)
+    return toolchain_version(TOOLCHAIN)
 
 
 class LeanSupport(TypedDict):
@@ -113,13 +113,13 @@ def lean_support(project: ProjectDescription) -> LeanSupport:
     declared = project["toolchain"]
     error = project["files"]["lean-toolchain"].get("error")
     if declared is not None:
-        supported = _version(declared) == supported_version()
+        supported = toolchain_version(declared) == supported_version()
     else:
         supported = project["kind"] == "loose" and error == "missing"
     message = None
     if not supported:
         if declared is not None:
-            first = f"This project uses Lean {_version(declared)}."
+            first = f"This project uses Lean {toolchain_version(declared)}."
         elif error is not None and error != "missing":
             first = f"This project's lean-toolchain could not be read: {error}."
         else:

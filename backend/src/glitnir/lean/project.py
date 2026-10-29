@@ -60,6 +60,14 @@ class LooseProject(TypedDict):
 ProjectDescription = LakeProject | LooseProject
 
 
+def toolchain_declaration(text: str) -> str:
+    """Return one non-empty Lean toolchain declaration from file-like text."""
+    declaration = text.strip()
+    if not declaration or len(declaration.splitlines()) != 1:
+        raise ValueError("expected one toolchain declaration")
+    return declaration
+
+
 def _file(path: Path) -> ProjectFile:
     """Describe one configuration file; errors are observations, never fallback."""
     try:
@@ -73,9 +81,7 @@ def _file(path: Path) -> ProjectFile:
                 raise ValueError("manifest must be a JSON object")
         result: ProjectFile = {"sha256": digest}
         if path.name == "lean-toolchain":
-            if not text.strip() or len(text.strip().splitlines()) != 1:
-                raise ValueError("expected one toolchain declaration")
-            result["declaration"] = text.strip()
+            result["declaration"] = toolchain_declaration(text)
         return result
     except FileNotFoundError:
         return {"error": "missing"}

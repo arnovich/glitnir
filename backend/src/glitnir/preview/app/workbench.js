@@ -62,11 +62,15 @@
     return null;
   }
   function useHTML(u) {
-    if (!u.includes(':')) return `<button type="button" data-act="goto" data-id="${esc(u)}"><span class="dot" data-tone="${TONE[(claim(u) || {}).status] || 'blue'}"></span> ${esc(u)}</button>`;
+    if (!u.includes(':')) {
+      const target = claim(u);
+      return `<button type="button" data-act="goto" data-id="${esc(u)}"><span class="dot" data-tone="${target ? statusOf(target).tone : 'blue'}"></span> ${esc(u)}</button>`;
+    }
     const found = importedClaim(u);
     const module = u.slice(0, u.indexOf(':'));
-    const title = found ? `${found.file}: ${LABEL[found.status] || found.status}${found.reason ? ' · ' + found.reason : ''}` : 'no longer in the imported notebook';
-    return `<a class="use-link" data-claim="${esc(u.slice(u.indexOf(':') + 1))}" href="/?${REFERENCE ? 'reference' : 'notebook'}=${encodeURIComponent(module)}" target="_blank" rel="noopener" title="${esc(title)}"><span class="dot" data-tone="${TONE[(found || {}).status] || 'amber'}"></span> ${esc(u)}</a>`;
+    const status = walkthroughUnchecked() ? {label: 'Unchecked', tone: 'muted'} : {label: LABEL[found?.status] || found?.status, tone: TONE[found?.status] || 'amber'};
+    const title = found ? `${found.file}: ${status.label}${found.reason ? ' · ' + found.reason : ''}` : 'no longer in the imported notebook';
+    return `<a class="use-link" data-claim="${esc(u.slice(u.indexOf(':') + 1))}" href="/?${REFERENCE ? 'reference' : 'notebook'}=${encodeURIComponent(module)}" target="_blank" rel="noopener" title="${esc(title)}"><span class="dot" data-tone="${status.tone}"></span> ${esc(u)}</a>`;
   }
 
   // ----- server ---------------------------------------------------------------
@@ -77,11 +81,41 @@
   // with its saved source only, never with an environment: its results are
   // shown as recorded, never called current, and nothing checks or runs them.
   const recorded = () => UI.data?.preview?.recorded === true;
+  const leanVersion = toolchain => String(toolchain || '').replace(/^leanprover\/lean4:/, '').replace(/^v(?=\d)/, '');
+  const toolchainDeclaration = value => typeof value === 'string' && value.length <= 256 && Boolean(value.trim()) && !/[\r\n]/.test(value.trim());
+  function walkthroughCompatibility(data = UI.data) {
+    if (!data?.walkthrough) return {supported: true, message: null};
+    const formalization = data.walkthrough.formalization;
+    const formalizationSupported = formalization?.supported === true
+      && toolchainDeclaration(formalization.declared)
+      && toolchainDeclaration(formalization.toolchain)
+      && leanVersion(formalization.declared) === leanVersion(formalization.toolchain)
+      && formalization.message === null;
+    if (!formalizationSupported) return {
+      supported: false,
+      message: formalization?.supported === false && typeof formalization.message === 'string' && formalization.message
+        ? formalization.message
+        : 'This walkthrough does not record a valid compatible Lean toolchain for its formalization. Its claims are unchecked.',
+    };
+    const notebook = data.preview?.lean;
+    const notebookSupported = notebook?.supported === true
+      && toolchainDeclaration(notebook.toolchain)
+      && (notebook.declared === null || toolchainDeclaration(notebook.declared)
+        && leanVersion(notebook.declared) === leanVersion(notebook.toolchain))
+      && notebook.message === null
+      && leanVersion(formalization.toolchain) === leanVersion(notebook.toolchain);
+    if (!notebookSupported) return {
+      supported: false,
+      message: `${notebook?.supported === false && typeof notebook.message === 'string' && notebook.message ? notebook.message + ' ' : ''}This walkthrough's claims are unchecked.`,
+    };
+    return {supported: true, message: null};
+  }
+  const walkthroughUnchecked = data => walkthroughCompatibility(data).supported === false;
+  const walkthroughMessage = data => walkthroughCompatibility(data).message || '';
   // Glitnir checks one Lean version; a project on another reads as usual but
   // runs no Lean (the server refuses every such request with the same words).
   // Saved results shown as recorded run nothing and say nothing about it.
   const leanOff = () => UI.data?.preview?.lean?.supported === false && !recorded();
-  const leanVersion = toolchain => String(toolchain || '').replace(/^leanprover\/lean4:/, '').replace(/^v(?=\d)/, '');
   const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
   let readableSnapshot, heldRendering = false, highlightTimer;
   let highlighted = new Set(), highlightUntil = 0;
@@ -289,7 +323,7 @@
   // A check of the whole saved file, or, with `throughLine`, of its lines 1
   // through that line only: the end of a chosen claim.
   async function checkProject(throughLine = null) {
-    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff()) return;
+    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff() || walkthroughUnchecked()) return;
     UI.checkRequested = true;
     render();
     const body = {sha256: UI.data.sha256};
@@ -303,7 +337,7 @@
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note) {
-    if (linkedPath() || recorded() || leanOff() || !projectMode()) return '';
+    if (linkedPath() || recorded() || leanOff() || walkthroughUnchecked() || !projectMode()) return '';
     return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button><span class="small muted">${note}</span>`;
   }
   // Where a check stopped because it was asked to, not at a failing command.
@@ -371,8 +405,9 @@
     const stale = currencyPillHTML(saved) + (saved.not_rechecked ? '<span class="pill" data-tone="muted">Not rechecked</span>' : '');
     const through = UI.data.project_withheld?.through_line;
     const notRechecked = saved.not_rechecked ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>Not rechecked: ${Number.isSafeInteger(through) ? `the last check covered lines 1–${esc(through)} only, so this` : 'this'} is the result of an earlier check.</span></div>` : '';
-    const note = notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
-      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : `the saved source above this claim or its environment changed since it was checked.${leanOff() ? '' : ' Check the saved file to update it.'}`}</span></div>`);
+    const compatibility = walkthroughUnchecked() ? `<div class="note-line walkthrough-compatibility" data-tone="muted">${icon('branch')}<span>${esc(walkthroughMessage())}</span></div>` : '';
+    const note = compatibility + notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
+      : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : `the saved source above this claim or its environment changed since it was checked.${leanOff() || walkthroughUnchecked() ? '' : ' Check the saved file to update it.'}`}</span></div>`);
     const actions = staticPage ? '' : checkThroughHTML(saved, 'Check through here', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
@@ -408,7 +443,7 @@
   // the kernel form (no notation, every name in full) one fold away. Records
   // of older checks hold only the kernel form. Both are display only. `kind`
   // is 'card', 'inspector' or 'panel'.
-  const PRINTED_LABEL = 'Checked statement, as this project’s notation prints it';
+  const statementLabel = () => walkthroughUnchecked() ? 'Recorded statement, display only' : 'Checked statement';
   function statementFormsHTML({printed, kernel, printedCut, kernelCut, key}, kind) {
     printed = typeof printed === 'string' ? printed : null;
     kernel = typeof kernel === 'string' ? kernel : null;
@@ -416,9 +451,10 @@
     const cut = shortened => (shortened ? ' (shortened)' : '');
     const label = text => (kind === 'inspector' ? `<h5>${text}</h5>` : `<p class="small muted">${text}</p>`);
     const kernelHTML = kernel ? `<pre class="checked-statement">${esc(kernel)}</pre>` : '';
-    if (!printed) return label(`Checked statement, kernel form${cut(kernelCut)}`) + kernelHTML;
+    if (!printed) return label(`${statementLabel()}, kernel form${cut(kernelCut)}`) + kernelHTML;
     const fold = kernel && kernel !== printed ? `<details class="def-lean checked-kernel" data-fold-key="kernel:${esc(key)}"><summary>Kernel form, without notation${cut(kernelCut)}</summary>${kernelHTML}</details>` : '';
-    const shown = kind === 'card' ? fieldHTML(`${PRINTED_LABEL}${cut(printedCut)}`, printed) : `${label(`${PRINTED_LABEL}${cut(printedCut)}`)}<pre class="checked-statement">${esc(printed)}</pre>`;
+    const printedLabel = `${statementLabel()}, as this project’s notation prints it`;
+    const shown = kind === 'card' ? fieldHTML(`${printedLabel}${cut(printedCut)}`, printed) : `${label(`${printedLabel}${cut(printedCut)}`)}<pre class="checked-statement">${esc(printed)}</pre>`;
     return shown + fold;
   }
   const checkedStatementHTML = (saved, heading = false) => statementFormsHTML({printed: saved.statement, kernel: saved.kernel_statement,
@@ -452,6 +488,7 @@
       .map(n => `<p class="small muted project-non-claim">Line ${esc(n.start_line)}: example without a proposition; not a claim.</p>`).join('');
   }
   function projectCheckHTML(result, sourceSha) {
+    if (walkthroughUnchecked()) return `<p class="banner quiet walkthrough-compatibility" role="status">${esc(walkthroughMessage())}</p>`;
     if (!result) return '';
     const through = Number.isSafeInteger(result.through_line) ? result.through_line : null;
     if (result.status === 'running') return `<p role="status">${through ? `Checking lines 1–${esc(through)} · ` : ''}${esc(result.message)}… <button type="button" class="secondary" data-act="check-cancel">${icon('x')}Stop</button></p>`;
@@ -592,7 +629,8 @@
   // A long Lean name in the narrow contents wraps after its `_` and `.` parts.
   const breakableName = name => esc(name).replace(/[_.]/g, '$&<wbr>');
   const checking = name => UI.data && UI.data.checking.includes(name);
-  function statusOf(c, staticPage = false) {
+  function statusOf(c, staticPage = false, data = UI.data) {
+    if (c?.name && walkthroughUnchecked(data)) return {key: 'unchecked', label: 'Unchecked', tone: 'muted'};
     if (c.project) {
       const [tone, label] = Object.hasOwn(PROJECT_STATUS, c.status) ? PROJECT_STATUS[c.status] : ['blue', c.status];
       return {key: c.status, label, tone};
@@ -610,7 +648,7 @@
   const currencyPillHTML = saved => saved.current === null ? '<span class="pill" data-tone="muted">Not compared</span>' : asRecorded(saved) ? '<span class="pill" data-tone="muted">As recorded</span>' : saved.current ? '' : '<span class="pill" data-tone="amber">Out of date</span>';
   const currencyNoted = saved => saved.current !== true || recorded();
   const currencyText = saved => (saved.current === null ? 'not compared' : saved.current ? (recorded() ? 'as recorded' : 'current') : 'out of date') + (saved.not_rechecked ? ' · not rechecked by the last check' : '');
-  const toneOf = c => (c.project && !c.project.current ? 'amber' : c.project && asRecorded(c.project) ? 'muted' : statusOf(c).tone);
+  const toneOf = c => walkthroughUnchecked() ? statusOf(c).tone : (c.project && !c.project.current ? 'amber' : c.project && asRecorded(c.project) ? 'muted' : statusOf(c).tone);
   // Section summaries count a project result's status and, apart, whether it
   // is out of date.
   const summariesOf = (c, staticPage) => [statusOf(c, staticPage), ...(c.project && c.project.current === false ? [{key: 'out-of-date', label: 'Out of date', tone: 'amber'}] : []),
@@ -628,5 +666,6 @@
     leanOff, leanVersion, linkedPath, load, markLiveChanges, nonClaimsHTML, openNotebook, post,
     projectCheckHTML, projectClaimHTML, projectClaims, projectMode, projectResolutionHTML, readingFolds, recorded, reduced,
     refresh, renderTrail, requestedCut, showNotebookAt, statusOf, summariesOf, toneOf, useChipsHTML, useHTML,
-    withheldBannerHTML, environmentEpoch: () => environmentEpoch, heldRendering: () => heldRendering});
+    withheldBannerHTML, walkthroughCompatibility, walkthroughMessage, walkthroughUnchecked,
+    environmentEpoch: () => environmentEpoch, heldRendering: () => heldRendering});
 })();

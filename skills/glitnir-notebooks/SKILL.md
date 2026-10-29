@@ -174,7 +174,8 @@ both to write a walkthrough and to extend one, and write the outline as
 [references/walkthrough-outline.md](references/walkthrough-outline.md)
 describes. Ask before building the original or downloading a paper. Never
 describe a claim as checked unless a Glitnir check of the walkthrough reported
-it.
+it. The helper must first confirm that the outline's toolchain pin matches the
+formalization checkout; that textual validation still grants no proof status.
 
 ## Validate before finishing
 

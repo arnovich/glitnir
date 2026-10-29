@@ -66,6 +66,18 @@ def write(tmp_path: Path, data: Any) -> Path:
     """Write the data as `outline.json` under tmp_path and return the path."""
     path = tmp_path / "outline.json"
     path.write_text(json.dumps(data), encoding="utf-8")
+    project = data.get("project") if isinstance(data, dict) else None
+    toolchain = project.get("toolchain") if isinstance(project, dict) else None
+    root = project.get("root") if isinstance(project, dict) else None
+    if isinstance(toolchain, str) and toolchain.strip() and isinstance(root, str):
+        project_root = (tmp_path / root).resolve()
+        try:
+            project_root.relative_to(tmp_path.resolve())
+        except ValueError:
+            pass
+        else:
+            project_root.mkdir(parents=True, exist_ok=True)
+            (project_root / "lean-toolchain").write_text(toolchain, encoding="utf-8")
     return path
 
 
@@ -136,6 +148,23 @@ def test_notebook_option_is_accepted(tmp_path: Path) -> None:
     notebook = tmp_path / "x.lean"
     notebook.write_text("import Mathlib\n", encoding="utf-8")
     assert run("check", str(path), "--notebook", str(notebook)).returncode == 0
+
+
+def test_check_refuses_a_stale_or_missing_project_toolchain_pin(tmp_path: Path) -> None:
+    path = write(tmp_path, outline())
+    (tmp_path / "lean-toolchain").write_text(
+        "leanprover/lean4:v4.33.1\n", encoding="utf-8"
+    )
+    mismatch = run("check", str(path))
+    assert mismatch.returncode == 1
+    assert (
+        "project toolchain" in mismatch.stdout and "outline declares" in mismatch.stdout
+    )
+
+    (tmp_path / "lean-toolchain").unlink()
+    missing = run("check", str(path))
+    assert missing.returncode == 1
+    assert "project lean-toolchain cannot be read" in missing.stdout
 
 
 def test_running_leaves_the_skill_folder_unchanged(tmp_path: Path) -> None:
@@ -258,6 +287,9 @@ def make_project(tmp_path: Path, init: bool = True) -> str:
     (tmp_path / "proj").mkdir()
     (tmp_path / "other").mkdir()
     (tmp_path / "proj/Main.lean").write_text(LEAN_SOURCE, encoding="utf-8")
+    (tmp_path / "proj/lean-toolchain").write_text(
+        "leanprover/lean4:v4.35.0", encoding="utf-8"
+    )
     (tmp_path / "other/x.txt").write_text("x", encoding="utf-8")
     if not init:
         return ""

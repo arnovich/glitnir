@@ -66,6 +66,8 @@ SOURCE_KINDS = ("paper", "index", "readme", "note", "other")
 
 _TOP_KEYS = ("format", "title", "project", "sources", "nodes")
 _PROJECT_KEYS = ("root", "commit", "toolchain", "trusted")
+_TOOLCHAIN_ORIGIN = "leanprover/lean4:"
+_TOOLCHAIN_RELEASE = re.compile(r"v(\d+\.\d+\.\d+\S*)")
 _NODE_KEYS = ("id", "label", "kind", "statement", "idea", "uses", "lean")
 _LEAN_KEYS = ("name", "file", "line", "type")
 
@@ -118,6 +120,46 @@ def _check_project(project: Any) -> list[Problem]:
             _error("project commit must be 7 to 40 lowercase hex characters")
         )
     return problems
+
+
+def _toolchain_declaration(text: str) -> str:
+    """Parse a lean-toolchain file exactly as Glitnir's project reader does."""
+    declaration = text.strip()
+    if not declaration or len(declaration.splitlines()) != 1:
+        raise ValueError("expected one toolchain declaration")
+    return declaration
+
+
+def _toolchain_version(declaration: str) -> str:
+    """Normalize the release spellings that elan resolves to one version."""
+    name = declaration.removeprefix(_TOOLCHAIN_ORIGIN)
+    release = _TOOLCHAIN_RELEASE.fullmatch(name)
+    return release.group(1) if release else name
+
+
+def check_project_toolchain(outline: dict[str, Any], base: Path) -> list[Problem]:
+    """Require the outline pin to match the formalization checkout's actual pin."""
+    root = _project_root(outline, base)
+    try:
+        actual = _toolchain_declaration(
+            (root / "lean-toolchain").read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        return [_error(f"project lean-toolchain cannot be read: {error}")]
+    raw = outline["project"].get("toolchain")
+    try:
+        declared = _toolchain_declaration(raw) if isinstance(raw, str) else ""
+    except ValueError:
+        declared = ""
+    if not declared:
+        return [_error("outline project toolchain is not one valid declaration")]
+    if _toolchain_version(declared) != _toolchain_version(actual):
+        return [
+            _error(
+                f"project toolchain is {actual}, but the outline declares {declared}"
+            )
+        ]
+    return []
 
 
 def _check_sources(sources: Any) -> list[Problem]:
@@ -1756,7 +1798,11 @@ def main(argv: list[str] | None = None) -> int:
         return _run_map(args, outline, problems)
     if not any(p.level == "error" for p in problems):
         base = args.outline.parent
-        problems += check_lean_entries(outline, base) + check_commit(outline, base)
+        problems += (
+            check_project_toolchain(outline, base)
+            + check_lean_entries(outline, base)
+            + check_commit(outline, base)
+        )
         if args.notebook is not None and not any(p.level == "error" for p in problems):
             problems += check_notebook(outline, base, args.notebook)
     for problem in problems:
