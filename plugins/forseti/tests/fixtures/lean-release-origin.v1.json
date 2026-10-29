@@ -1,9 +1,9 @@
 {
   "schema": "gimle.forseti.lean-release-origin/v1",
   "comment": "Which revisions the packaged pin was cut from. The pin itself is by content; this records the answer to 'which checkout satisfies it?' so it is not lost.",
-  "forseti_lean_tag": "v0.5.1",
+  "forseti_lean_tag": "v0.6.0",
   "asgard_lean_tag": "v0.4.1",
   "lockfile_sha256": "e7e0322cd2e8ce73a26e56e5baa90e1f21a272039c3609a0b8df7b80dca83380",
   "asgard_revision": "e5e098d5bce80c3907a6acd4e2beb904309a1709",
-  "verified_on": "2026-10-28"
+  "verified_on": "2026-10-29"
 }

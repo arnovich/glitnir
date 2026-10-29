@@ -24,6 +24,7 @@ from glitnir_forseti.hedging import examples, numbers, service
 from glitnir_forseti.hedging.examples import EXAMPLES, Example
 from glitnir_forseti.hedging.goal import HedgingGoal
 from glitnir_forseti.hedging.payoffs import PAYOFFS
+from glitnir_forseti.lean.closure import closure_identity, replay_pin
 from glitnir_forseti.notebook.decisions import block
 
 #: The worked example's two goals: the call at the money over twenty steps of
@@ -562,7 +563,7 @@ def test_covered_exactly_is_at_the_exact_price() -> None:
 
 
 def test_the_examples_name_the_lanes_import_set() -> None:
-    """The one import set a block needs, which the replay pin is to hold."""
+    """The one import set a block needs, which the replay pin holds."""
     assert examples.replay_imports() == (("Gimle.Forseti.Hedging",),)
     for example in EXAMPLES:
         d = _decide(example.goal, example.name)
@@ -570,6 +571,19 @@ def test_the_examples_name_the_lanes_import_set() -> None:
             assert (block(example.name, d.decision).imports,) == (
                 examples.replay_imports()
             )
+
+
+def test_every_hedging_import_set_is_pinned() -> None:
+    """The replay pin holds the hedging lane's import set.
+
+    The live gate verifies every import set the pin holds against the project's
+    build, so a set missing from the pin is never checked for the hedging
+    module.
+    """
+    pinned = [tuple(entry["imports"]) for entry in replay_pin()["closures"]]
+    for imports in examples.replay_imports():
+        assert imports in pinned
+        assert len(closure_identity(imports)) == 64
 
 
 def test_the_examples_propose_every_block_template() -> None:

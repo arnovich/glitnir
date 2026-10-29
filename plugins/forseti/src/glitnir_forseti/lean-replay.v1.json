@@ -256,6 +256,64 @@
     },
     {
       "imports": [
+        "Gimle.Forseti.Hedging"
+      ],
+      "modules": 2928,
+      "packages": [
+        {
+          "name": "LeanSearchClient",
+          "modules": 4,
+          "digest": "7d437f479310193a5431253ef4d41ac8e6f5f4ad06b9bf1957a2ea0f3b0521f4"
+        },
+        {
+          "name": "Qq",
+          "modules": 14,
+          "digest": "42ee8dd7bf94a201c08a06a288302f9ad099cc679ca5762695e4c1e1ffeb17e1"
+        },
+        {
+          "name": "aesop",
+          "modules": 132,
+          "digest": "ea5ded73c70d73956362b9bac73bd7ce310b568dae64d0f91aa61eb5bd052d8a"
+        },
+        {
+          "name": "batteries",
+          "modules": 71,
+          "digest": "7ec94fa7e4d1948291ba0545ffc99926f0ed8feadc5c9ac5edef0193b3bd8d60"
+        },
+        {
+          "name": "forseti",
+          "modules": 1,
+          "digest": "bb9453179799f21349d07b470a50c3da304c29dc83a894bdfa440f1c246c2028"
+        },
+        {
+          "name": "importGraph",
+          "modules": 35,
+          "digest": "0f46097697048c8474cec33c868827120e790143c0db435d1b8a2bb2d375b8f1"
+        },
+        {
+          "name": "mathlib",
+          "modules": 1055,
+          "digest": "620038df1c18ba956c16cab6b118f915ddc5c9f57c3f39a297ab9960b8b35a41"
+        },
+        {
+          "name": "plausible",
+          "modules": 13,
+          "digest": "bc6769eb8267777a0e72dd09fe38a66d0a0f89b0fecb69e9cef26fd0dd6a7033"
+        },
+        {
+          "name": "proofwidgets",
+          "modules": 10,
+          "digest": "f486c7e4498bdd674966866b4b0e392006494272c71e8f54d97ea43c2d575fb3"
+        },
+        {
+          "name": "toolchain",
+          "modules": 1593,
+          "digest": "8d77b125c0acd8972e7c8f418c6bdc6c23b710ba63848688cdf588175ecaecc7"
+        }
+      ]
+    },
+    {
+      "imports": [
         "Gimle.Forseti.MildVorticity"
       ],
       "modules": 5230,
