@@ -236,9 +236,10 @@ claim) checks only lines 1 through that claim's last line: the same sandboxed
 compile and kernel replay of that prefix. Every checked prefix, also the one
 before a failing command, ends where Glitnir's own lexer finds a command end: the
 next code is a word that never occurs inside a command (a declaration keyword,
-`namespace`, `section`, `end`, `variable`, `private`, … at any column), or at
-column 0 `open`/`set_option` (not their `… in` forms), `#print`, a module doc,
-or a doc comment or `@[…]` followed by a command word; or the file ends. A
+`namespace`, `section`, `end`, `variable`, `include`, `private`, … at any column),
+or at column 0 `omit`, `open`/`set_option` (not their `… in` forms), `#print`, a
+module doc, or a doc comment or `@[…]` followed by a command word; or the file
+ends. A
 `mutual … end` block is one command. A cut inside a command moves back to the
 end of the command before it, so no command is ever checked shortened. Claims
 after it are not checked: each keeps its earlier saved result, marked "Not
@@ -255,7 +256,8 @@ proof. Other scoped commands, including `open ... in` and scoped anonymous
 `example` declarations, remain unsupported and withhold the check from there.
 
 Besides declarations, `namespace`/`section`/`end`, `open`, `export`, `variable`,
-`set_option`, `attribute` and module docs, a notebook may use `#print axioms c`.
+`include`, `omit`, `set_option`, `attribute` and module docs, a notebook may use
+`#print axioms c`.
 It only prints and decides nothing: statuses come from the kernel replay's own
 axiom lists, described below. A `#print axioms` of a missing name fails like any
 command, and one naming a lemma Lean generates on demand (such as `f.eq_1`)

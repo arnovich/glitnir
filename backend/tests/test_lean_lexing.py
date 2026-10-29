@@ -183,6 +183,15 @@ def test_only_comments_allows_one_docstring(text, result) -> None:
         ("structure S where\n  x : Nat\nderiving instance Repr for S\n", 2, True),
         # Words that never occur inside a command start one at any column.
         ("theorem t : P := h\n  theorem u : P := h\n", 1, True),
+        ("theorem t : P := h\n  include h\n", 1, True),
+        ("theorem t : P := h\nomit h\n", 1, True),
+        (
+            "def_eval_config_item f for Config where\n"
+            "  omit field\n"
+            "  default := true\n",
+            1,
+            False,
+        ),
         (
             "namespace N\n  def a : Nat := 1\n  theorem b : a = 1 := rfl\nend N\n",
             2,
@@ -319,3 +328,22 @@ def test_command_boundaries_find_the_command_around_a_line():
     assert found.last_end_before(3) == 1
     assert found.last_end_before(1) == 0
     assert found.end_from(2) == 4
+
+
+def test_include_and_omit_are_complete_commands():
+    """Scope commands end both the command before them and themselves."""
+    from glitnir.lean.lexing import command_boundaries
+
+    text = (
+        "section\n"
+        "variable (h : True)\n"
+        "include h\n"
+        "theorem a : True := h\n"
+        "omit h\n"
+        "theorem b : True := trivial\n"
+        "end\n"
+    )
+    found = command_boundaries(text)
+    assert [found.ends_at(line) for line in range(1, 8)] == [True] * 7
+    assert found.end_from(3) == 3
+    assert found.end_from(5) == 5

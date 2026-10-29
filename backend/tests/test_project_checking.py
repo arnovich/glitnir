@@ -1652,6 +1652,62 @@ def test_live_examples_are_checked_as_theorems(prepared_lean_project):
     assert source.read_bytes() == before
 
 
+def test_live_named_theorems_keep_leans_exact_section_variables(
+    prepared_lean_project,
+):
+    """Claims retain Lean's binders and cannot stand for their omission."""
+    import hashlib
+
+    from glitnir.lean.project_checking import check_project
+
+    source = prepared_lean_project / "src/Example.lean"
+    source.write_text(
+        "section\n"
+        "variable {α : Type} (chosen : Nonempty α) (ignored : α) [Inhabited α]\n"
+        "include chosen\n"
+        "theorem included : ∃ x : α, x = x := by\n"
+        "  let ⟨x⟩ := chosen\n"
+        "  exact ⟨x, rfl⟩\n"
+        "omit chosen\n"
+        "theorem later (h : Nonempty α) : ∃ x : α, x = x := included h\n"
+        "include ignored\n"
+        "theorem otherIncluded : ∃ x : α, x = x := ⟨ignored, rfl⟩\n"
+        "end\n"
+        "theorem stronger : ∀ {α : Type}, ∃ x : α, x = x := @included\n"
+    )
+    result = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert result["withheld"]["from_line"] == 12
+    assert "type mismatch" in result["withheld"]["message"].lower()
+    assert [theorem["status"] for theorem in result["theorems"]] == [
+        "checked",
+        "checked",
+        "checked",
+    ]
+    included, later, other = result["theorems"]
+
+    # `chosen` is present because `include` made it part of Lean's theorem.
+    # The dependent instance is also present even though the proof does not use
+    # it. The unrelated section variable is absent.
+    assert included["type"] == (
+        "∀ {α : Type}, Nonempty α → ∀ [Inhabited α], Exists fun x => Eq x x"
+    )
+
+    # A later claim consumes precisely that theorem: its own hypothesis and the
+    # retained instance appear, while neither earlier section hypothesis leaks.
+    assert later["type"].count("Nonempty α") == 1, later
+    assert "Inhabited α" in later["type"], later
+    assert later["type"].count(" → ") == 1, later
+    assert "chosen" not in later["type"] and "ignored" not in later["type"], later
+
+    # Changing the included variable changes the kernel proposition accordingly.
+    assert other["type"] == (
+        "∀ {α : Type} (ignored : α) [Inhabited α], Exists fun x => Eq x x"
+    )
+
+
 def test_live_example_statements_are_printed_in_their_scope(prepared_lean_project):
     """An example's statement reads as Lean prints it where it stands.
 
@@ -1956,6 +2012,8 @@ def test_reader_accepts_print_axioms_and_no_other_hash_command():
         "open",
         "export",
         "variable",
+        "include",
+        "omit",
         "set_option",
         "attribute",
         "moduleDoc",
@@ -2707,6 +2765,25 @@ def test_a_check_through_a_line_checks_only_that_prefix(tmp_path, monkeypatch):
         "through_line": 2,
     }
     assert result["source_sha256"] == hashlib.sha256(_TWO.encode()).hexdigest()
+
+
+@pytest.mark.parametrize("scope_command", ["include h", "omit h"])
+def test_a_check_before_a_scope_command_keeps_the_claim(
+    tmp_path, monkeypatch, scope_command
+):
+    """An include or omit after a theorem cannot pull it out of the prefix."""
+    text = (
+        "section\n"
+        "variable (h : True)\n"
+        "theorem a : True := trivial\n"
+        f"{scope_command}\n"
+        "theorem b : True := trivial\n"
+        "end\n"
+    )
+    result, asked = _partial(tmp_path, monkeypatch, text, 3)
+    prefix = "section\nvariable (h : True)\ntheorem a : True := trivial\n"
+    assert asked == [(prefix, text[len(prefix) :])]
+    assert result["withheld"]["through_line"] == 3
 
 
 @pytest.mark.parametrize("line", [3, 4, 99])
