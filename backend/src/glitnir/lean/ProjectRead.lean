@@ -77,7 +77,8 @@ private def allowed (kind : Name) : Bool :=
   [``Lean.Parser.Command.declaration, ``Lean.Parser.Command.namespace,
    ``Lean.Parser.Command.section,
    ``Lean.Parser.Command.end, ``Lean.Parser.Command.open, ``Lean.Parser.Command.export,
-   ``Lean.Parser.Command.variable, ``Lean.Parser.Command.set_option,
+   ``Lean.Parser.Command.variable, ``Lean.Parser.Command.include, ``Lean.Parser.Command.omit,
+   ``Lean.Parser.Command.set_option,
    ``Lean.Parser.Command.attribute, ``Lean.Parser.Command.moduleDoc, `lemma].contains kind
 
 /-- `#print axioms c`; every other `#print` form is a different syntax kind. -/
