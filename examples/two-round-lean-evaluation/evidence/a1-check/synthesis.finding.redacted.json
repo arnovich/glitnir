@@ -1,0 +1,18 @@
+{
+  "action": "research_finding",
+  "problem": "2dddfbd8-61d5-4809-9be5-f9009e498eee",
+  "problem_version": 1,
+  "assignment": "92f708f3-4650-497f-ae6a-a1f0b294083f",
+  "kind": "note",
+  "references": [
+    "a97d8d71-ba09-4a32-a3a6-6b9843032bc5",
+    "6910262c-b7d4-47f2-ba13-4ad589535e2d"
+  ],
+  "artifacts": [
+    {
+      "uri": "https://github.com/arnovich/glitnir/blob/00cd083dcad9f6c0e11945d6592052dbc795a59c/examples/two-round-lean-evaluation/REPORT.md",
+      "revision": "00cd083dcad9f6c0e11945d6592052dbc795a59c"
+    }
+  ],
+  "text": "Adaptive R1 independent synthesis: both exact peer candidate replays compile under Lean 4.35.0 but have target axiom set [propext, Classical.choice, Quot.sound], so neither is an admitted proof under the unchanged empty-axiom policy. Exactly two native Lean checks were performed with the prescribed 300s/8192MiB sampled-RSS guard. Factorization source SHA-256 0312afc20ad957c16e47a9d72afa1f7eae82a0764379efd51b05a5a3ba4d91c6: exit 0, 15.171795s, peak sampled 2159099904 bytes; additionally root target mismatches required TwoRoundTrial.target and byte-for-byte header. Elimination source SHA-256 71e70531e3ef1969c320be366a25219759a4a0a7f331e675e0a0e0e9857a3c7d: exit 0, 7.882383s, peak sampled 2161065984 bytes; qualified target and declaration header match template. Timings are sequential single samples with possible cache effects, not evidence of intrinsic speed superiority.\n\nRecommend elimination for adaptive Round 2 because it preserves the exact target and its narrow-import algebraic proof avoids linarith, providing a concise starting point for a dependency audit. Select this as diagnostic evidence, not as an admissible checked helper. Deepen by tracing dependencies of the real-number operations, equality lemmas and ring proof to determine whether an allowed-axiom-empty helper and final target are achievable without changing the theorem or gate. Preserve factorization as the alternative, correcting its namespace/header before any final admission claim. Do not spend Round 2 merely repeating broad-versus-narrow imports: both directions already reproduce the same three axioms. No proof of impossibility was established by these checks; if the audit produces no admissible construction, record a negative strict-gate outcome and stop rather than silently allowing the standard three axioms.\n\nThe linked pinned report is protocol/context provenance only, not hosted live evidence. All new sources/logs/receipts and exact JSON publication payloads reside in ${PILOT_WORKERS}/a1-check; verification records include exact commands, hashes, receipts and logs. No additional Lean invocation, acceptance, owner summary or global skill modification was performed."
+}

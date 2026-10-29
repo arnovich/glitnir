@@ -1,0 +1,7 @@
+'TwoRoundTrial.generic_elimination' depends on axioms: [propext, Quot.sound]
+'TwoRoundTrial.required_type' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Real.commRing' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Real.ofCauchy_add' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Real.cauchy_mul' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Real.ext_cauchy' depends on axioms: [propext, Classical.choice, Quot.sound]
+'TwoRoundTrial.target' depends on axioms: [propext, Classical.choice, Quot.sound]

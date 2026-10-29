@@ -1,0 +1,62 @@
+{
+  "format": "taskvalet.two-round-lean-evaluation-result/v1",
+  "status": "invalidated",
+  "target": "TwoRoundTrial.target",
+  "allowed_axioms": [],
+  "completed_model_calls": {
+    "adaptive": 6,
+    "baseline": 6
+  },
+  "lean_submissions": {
+    "adaptive": 12,
+    "baseline": 12
+  },
+  "compiling_submissions": {
+    "adaptive": 11,
+    "baseline": 12
+  },
+  "admitted_targets": {
+    "adaptive": 0,
+    "baseline": 0
+  },
+  "observed_windows_seconds": {
+    "adaptive": 5310,
+    "baseline": 6045
+  },
+  "max_elapsed_seconds": 3600,
+  "violations": [
+    "Adaptive and baseline execution windows exceeded the precommitted elapsed limit.",
+    "A baseline Round 1 problem read exposed adaptive findings before derivation.",
+    "The isolated run used assignments rather than formal linked-round campaign records.",
+    "No Glitnir compute worker or Glitnir compute receipt was used for participant submissions."
+  ],
+  "adaptive_final": {
+    "verifications": [
+      "078b90a9-31da-441a-a99a-298fee3fd9b5",
+      "7a8684c1-ca5c-4516-a6d1-761ff46bfa77"
+    ],
+    "synthesis": "cc15944a-88dd-40fa-85f3-431d420f952c",
+    "verdict": "no_admitted_proof"
+  },
+  "baseline_final": {
+    "verifications": [
+      "33d5ee47-7776-48a7-9ebf-9e29cfea85f7",
+      "b8b3c5af-2a3c-4e01-97f7-f01dbee5e0a5"
+    ],
+    "synthesis": "0e98a3d4-9adf-49c4-8081-700d44f750c1",
+    "verdict": "no_admitted_proof_and_noncomparable"
+  },
+  "proof_authority": false,
+  "owner_acceptance": false,
+  "protocol_sha256": "fc98d0da8a257e305e276c578bcea1098ffef569bb3b3f1852402da9d8c874e1",
+  "model_call_accounting": "operator_reported",
+  "replay_scope": "published_evidence_audit_only",
+  "axiom_gate_observation": "The frozen target type alone reports propext, Classical.choice, and Quot.sound in the pinned environment; a repeat must predeclare a type-level baseline or measure proof-introduced axioms.",
+  "recommendations": [
+    "Use arm-scoped evidence visibility.",
+    "Enforce the investigation-wide elapsed deadline.",
+    "Admit formal linked rounds before paid calls.",
+    "Prepare and verify the Glitnir compute worker before execution.",
+    "Replace the empty target-axiom gate with a predeclared type-level baseline or proof-introduced-axiom measure."
+  ]
+}

@@ -1,0 +1,6 @@
+${PILOT_WORKERS}/b2-factor/evidence/attempt2.lean:1:0: warning: 
+'Mathlib.Data.Real.Basic' has been deprecated: please replace this import by
+
+import Mathlib.Basic.Real.Basic
+'TwoRoundTrial.cubic_factorization' depends on axioms: [propext, Quot.sound]
+'TwoRoundTrial.target' depends on axioms: [propext, Classical.choice, Quot.sound]

@@ -1,0 +1,3 @@
+'TwoRoundTrial.cauchy_elimination' depends on axioms: [propext, Classical.choice, Quot.sound]
+'Real.ringEquivCauchy' depends on axioms: [propext, Classical.choice, Quot.sound]
+'TwoRoundTrial.target' depends on axioms: [propext, Classical.choice, Quot.sound]

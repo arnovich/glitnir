@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a2-deepen/GenericElimination.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T06:12:46.527954+00:00",
+  "finished_at": "2026-10-29T06:13:30.327345+00:00",
+  "elapsed_seconds": 43.797294,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 2160443392,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "f874879b4630f289570eec740d2999f116ee90059de7d576ac2eddf3ad8f94f1",
+  "log_sha256": "18b8aea8db946ad3b3ae18a66c158934a5f9dc18f84228196df22959c85e8e0a"
+}

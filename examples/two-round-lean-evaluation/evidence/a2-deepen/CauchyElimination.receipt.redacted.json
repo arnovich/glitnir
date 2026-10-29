@@ -1,0 +1,19 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a2-deepen/CauchyElimination.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "started_at": "2026-10-29T06:58:34.622401+00:00",
+  "finished_at": "2026-10-29T06:59:10.041711+00:00",
+  "elapsed_seconds": 35.41869,
+  "returncode": 0,
+  "termination_reason": "completed",
+  "maximum_observed_process_tree_rss_bytes": 2161442816,
+  "memory_limit_bytes": 8589934592,
+  "time_limit_seconds": 300,
+  "source_sha256": "44168a7008ebacf26cfaf901678cceed6cf7637d39378fd59c79676e19ccb2fb",
+  "log_sha256": "c8fd2e532d5e5bad03d5224ad6be0f16b5c9eee5cb7fa665ad1585454f218287"
+}

@@ -1,0 +1,6 @@
+'TwoRoundTrial.factorization' depends on axioms: [propext, Quot.sound]
+'Real.commRing' depends on axioms: [propext, Classical.choice, Quot.sound]
+'congrArg' does not depend on any axioms
+'MulZeroClass.zero_mul' does not depend on any axioms
+'zero_add' does not depend on any axioms
+'TwoRoundTrial.target' depends on axioms: [propext, Classical.choice, Quot.sound]

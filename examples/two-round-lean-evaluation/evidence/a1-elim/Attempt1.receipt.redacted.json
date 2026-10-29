@@ -1,0 +1,21 @@
+{
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "${PILOT_WORKERS}/a1-elim/Attempt1.lean"
+  ],
+  "cwd": "${WORKSPACE}/task031-lean-env",
+  "source": "${PILOT_WORKERS}/a1-elim/Attempt1.lean",
+  "sha256": "d1ad6de1039ddfd79562fb3f639d62bdd32d5995ecdcf63088e3bac344aac928",
+  "started_at": "2026-10-29T05:59:22.004152+00:00",
+  "ended_at": "2026-10-29T06:02:20.395653+00:00",
+  "exit_code": 0,
+  "terminated_reason": null,
+  "wall_time_limit_seconds": 300,
+  "memory_watchdog_limit_mib": 8192,
+  "peak_sampled_tree_rss_kib": 6306784,
+  "memory_watchdog_poll_seconds": 0.1,
+  "stdout": "'TwoRoundTrial.target' depends on axioms: [propext, Classical.choice, Quot.sound]\n",
+  "stderr": ""
+}
