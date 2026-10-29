@@ -5,8 +5,9 @@ per-step moves, in exact rationals, and `-- @evidence hedge` shows how that
 hedge fares on seeded random paths. The decider runs no Lean and no solver: it
 picks a proof template and its constants, and the project's Lean checks the
 block against `Gimle.Forseti.Hedging`. Only that check makes a decision a
-proof. The lane needs a Forseti Lean release that carries
-`Gimle.Forseti.Hedging`; an older build reports the missing module.
+proof. The lane needs a Forseti Lean build that contains
+`Gimle.Forseti.Hedging`, as the pinned release, Forseti Lean v0.6.0, does; an
+older build reports the missing module.
 
 ## Goals
 
@@ -24,6 +25,9 @@ and 1) and one claim. Numbers are plain decimals or fractions and stay exact.
 The hedge is the binomial hedge for the band: it starts from the payoff's
 binomial price at the band and holds the binomial hedge ratio at each step, a
 function of the step and the spot.
+
+The band is the user's assumption. A path that leaves it is outside every
+guarantee here, and which band real moves keep to is not addressed.
 
 ## Rules
 
@@ -46,13 +50,16 @@ function of the step and the spot.
   the zigzag path of the plus or minus 2 % band, its worst extreme path, so
   `<= 4` is refuted and `<= 5` is a gap.
 
-What the lane cannot speak of is `UNKNOWN: unsupported`: a payoff it does not
-register, a non-positive spot or step count, a band with a non-positive move or
-a down move of 1 or more (the spot would reach zero), and an against band that
+Some inputs cannot be written in a notebook, and the directive is a parse
+error: a payoff other than `call`, `put` or `straddle`, a spot or step count
+that is not positive, and a move, in either band, that is not positive. Two
+goals reach the decider and end `UNKNOWN: unsupported`: a down move of 1 or
+more, in either band (the spot would reach zero), and an `against` band that
 does not contain the hedge's band. Past the caps below, or with a number longer
 than the coefficient limit, a goal is `UNKNOWN: resource-limit`; the path search
-stops at its time limit (`timeout`) or when cancelled (`cancelled`). The lane keeps no artifact and has no pinned
-replay, so a request for one ends `UNKNOWN: lean-unavailable`.
+stops at its time limit (`timeout`) or when cancelled (`cancelled`). The lane
+keeps no artifact and has no pinned replay, so a request for one ends
+`UNKNOWN: lean-unavailable`.
 
 | Claim | Most steps |
 |-------|-----------:|
@@ -85,10 +92,15 @@ hedge built for the band from that premium on `paths` seeded random paths of
 
 `strike`, `spot`, `down`, `up` and `steps` are required. `paths` defaults to
 4000 (at most 100000) and `seed` to 7. `(against_down := …) (against_up := …)`,
-given together, draw the paths in a wider band than the hedge's own: the
-sampled counterpart of a `shortfall` claim. A run that would take more than
-20 million payoff evaluations and draws is refused on the card before anything
-runs, as are steps above 250.
+given together, draw the paths in another band than the hedge's own, usually a
+wider one: the sampled counterpart of a `shortfall` claim. A run that would take
+more than 20 million payoff evaluations and draws is refused on the card before
+anything runs, as are steps above 250. A path evaluates `steps × (steps + 1)`
+payoffs and draws at most `draws` numbers for each of its `steps` returns, where
+`draws` is 1, or 100 for `gaussian`, so `paths × steps × (steps + 1 + draws)`
+must stay within the 20 000 000 cap. With the default 4000 paths that allows at
+most 69 steps for `uniform` and `twopoint` and 36 for `gaussian`; fewer paths
+allow more steps.
 
 ## What a card never shows
 
@@ -98,6 +110,6 @@ least, median and greatest outcome and the number of paths that end more than
 a billionth of the spot below zero (a path the hedge replicates exactly ends
 within rounding of zero, on either side). It shows no proved number and no
 status for any claim: the premium is the binomial price Lean printed and the
-provider recomputed, not a bound on any path. A sampled run cannot establish
-`covers` or `shortfall`, however many paths end above zero, and a claim's
-status comes from the project's Lean check alone.
+provider recomputed, and the card asserts no bound. A sampled run cannot
+establish `covers` or `shortfall`, however many paths end above zero, and a
+claim's status comes from the project's Lean check alone.

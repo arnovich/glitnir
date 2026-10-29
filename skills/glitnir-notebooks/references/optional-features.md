@@ -81,11 +81,13 @@ and needs no extra package. `hedge` targets `Gimle.Forseti.Hedging.call`, `.put`
 `.straddle`, requires `strike`, `spot`, `down`, `up` and `steps` (at most 250), and
 takes `law` (`uniform`, the default, `twopoint` or `gaussian`, which requires
 `sigma`), `paths` (4000, at most 100000), `seed` (7) and, given together,
-`against_down` and `against_up`, which draw the paths in a wider band than the
-hedge's; it needs no extra package. Its card is the hedge's profit and loss at expiry
-by quantiles, with the premium and the paths that end below zero, and shows no
-proved number. Numbers are plain decimals or
-fractions of at most 40 digits per part; write `1/100` or `0.01`, not `1e-2`.
+`against_down` and `against_up`, which draw the paths in another band than the
+hedge's, usually a wider one; a run of more than 20 million payoff evaluations
+and draws is refused, which with the default 4000 paths allows at most 69 steps
+for `uniform` and `twopoint` and 36 for `gaussian`. It needs no extra package.
+Its card is the hedge's profit and loss at expiry by quantiles, with the premium
+and the paths that end below zero, and shows no proved number. Numbers are plain
+decimals or fractions of at most 40 digits per part; write `1/100` or `0.01`, not `1e-2`.
 Without a provider the line shows why, and saved results stay viewable. A bad
 option is reported on the card. CI's `plugin-live` job runs the plugin's live Lean
 tests in shards against the pinned Forseti Lean release, so Forseti evidence is
@@ -107,13 +109,13 @@ of the goal. `glitnir-forseti` decides kinds `entailment`, `trajectory`, `stream
 Forseti/Asgard modules the goal uses (a missing one shows as an unknown-identifier
 rejection on the card). Forseti `entailment`, `trajectory` and `stepped` decision
 blocks and the `simulate` and `sample` cards pass Glitnir's check in the plugin's
-live tests against Forseti Lean v0.5.1 on Lean 4.35.0, the pinned release (Linux
-CI, 2026-10-28, run 40654470418); CI also covers `stream` decisions
+live tests against Forseti Lean v0.5.1 on Lean 4.35.0 (Linux CI, 2026-10-28, run
+40654470418); CI also covers `stream` decisions
 (`tests/test_stream_decision_lean.py`). `stepped` decisions and `sample` need a
 Forseti Lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`, as Forseti Lean v0.5.1, the pinned release, does. The first check of a Forseti
-project takes about 18 minutes (a one-time import replay); later checks take a
-few minutes.
+`Gimle.Forseti.Examples.HedgedSpreadStepped`, as Forseti Lean v0.6.0, the pinned
+release, does. The first check of a Forseti project takes about 18 minutes (a
+one-time import replay); later checks take a few minutes.
 
 ```lean
 -- @decide disk : entailment x, y : x^2 + y^2 <= 1 |- x^2 <= 1 and y^2 <= 1
@@ -132,11 +134,15 @@ spot-feedback strategy covers the payoff from it). `against down d up u
 shortfall <= X` compares a hedge built for one band with paths of a wider band: it
 is proven only for equal bands with a nonnegative bound, refuted by one exhibited
 extreme path of the wider band, and otherwise Unknown, since no theorem bounds the
-shortfall over the band's other paths. A `covers` claim is decided up to 250 steps
-and a `shortfall` claim up to 60. The notebook must import `Gimle.Forseti.Hedging`,
-and `hedging` decisions and `hedge` evidence need a Forseti Lean build that
-contains it, as the Forseti Lean release that carries `Gimle.Forseti.Hedging`
-does; an older build reports the missing module.
+shortfall over the band's other paths. A payoff other than `call`, `put` or
+`straddle`, a spot or step count that is not positive and a move that is not
+positive cannot be written (the directive is a parse error). A down move of 1 or
+more, and an `against` band that does not contain the hedge's band, are Unknown
+(unsupported). A `covers` claim is decided up to 250 steps and a `shortfall`
+claim up to 60. The notebook must import `Gimle.Forseti.Hedging`, and `hedging`
+decisions and `hedge` evidence need a Forseti Lean build that contains it, as the
+pinned release, Forseti Lean v0.6.0, does; an older build reports the missing
+module.
 
 Nothing runs when the preview opens. **Run** asks the provider (one provider run
 at a time, evidence included); Glitnir then checks the saved text up to the

@@ -66,16 +66,18 @@ and the notebook must import `Gimle.Forseti.Hedging`, which defines the price
 Lean prints. `strike`, `spot`, `down`, `up` and `steps` (at most 250) are
 required; `law` (`uniform`, the default, `twopoint` or `gaussian`), `paths`
 (4000, at most 100000) and `seed` (7) are optional, as are `against_down` and
-`against_up`, which are given together and draw the paths in a wider band than
-the hedge's, and `sigma`, which `gaussian` requires and the other laws refuse.
-A run of more than 20 million payoff evaluations and draws is refused on the
-card. Lean prints the library's binomial price at the band, the provider checks
-it against the same price in exact arithmetic, and the hedge built for the band
-is run from that premium. Its card shows the profit and loss at expiry by its
-quantiles, with the premium, the least, median and greatest outcome and the
-paths that end below zero in the provenance. It shows no proved number: it is
-sampled evidence beside a `hedging` decision, never the decision. Both are
-described in [the hedging lane](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/src/glitnir_forseti/hedging/README.md).
+`against_up`, which are given together and draw the paths in another band than
+the hedge's, usually a wider one, and `sigma`, which `gaussian` requires and the
+other laws refuse. A run of more than 20 million payoff evaluations and draws is
+refused on the card: with the default 4000 paths, at most 69 steps for `uniform`
+and `twopoint` and 36 for `gaussian` (fewer paths allow more steps). Lean prints
+the library's binomial price at the band, the provider checks it against the
+same price in exact arithmetic, and the hedge built for the band is run from
+that premium. Its card shows the profit and loss at expiry by its quantiles,
+with the premium, the least, median and greatest outcome and the paths that end
+below zero in the provenance. It shows no proved number: it is sampled evidence
+beside a `hedging` decision, never the decision. Both are described in
+[the hedging lane](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/docs/hedging.md).
 
 It also decides `-- @decide <name> : <goal>` directives whose goal starts with
 `entailment`, `trajectory`, `stream`, `stepped` or `hedging`, in the goal
@@ -103,25 +105,30 @@ proofs may unroll a recursion over every mark, only up to 1024 marks, four
 years. A longer claim is `UNKNOWN: unsupported`. `stepped` decisions and
 `sample` evidence need a Forseti Lean build that contains
 `Gimle.Forseti.Stepped` and `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the
-pinned release, Forseti Lean v0.5.1, does; an older build reports the missing
+pinned release, Forseti Lean v0.6.0, does; an older build reports the missing
 module.
 
 A `hedging` goal names a payoff (`call`, `put` or `straddle`), a strike, a spot,
-a band of per-step moves (`down` and `up`, as fractions of the spot), a number
-of steps and one claim, in exact rationals. `premium P covers` is PROVEN when
-the premium is at least the binomial price at the band's ends, so the hedge
-from it covers the payoff on every path whose simple returns stay in the band,
-and REFUTED when it is below, since then no spot-feedback strategy covers the
-payoff from it. `against down d up u shortfall <= X` compares a hedge built for
-one band with paths of a wider band: it is PROVEN only for equal bands with a
-nonnegative bound, REFUTED by one exhibited extreme path of the wider band that
-leaves the hedge more than `X` below the payoff, and otherwise
+a band of per-step moves (`down` and `up`, simple returns between `-down` and
+`up`), a number of steps and one claim, in exact rationals. `premium P covers`
+is PROVEN when the premium is at least the binomial price at the band's ends, so
+the hedge from it covers the payoff on every path whose simple returns stay in
+the band, and REFUTED when it is below, since then no spot-feedback strategy
+covers the payoff from it. `against down d up u shortfall <= X` compares a hedge
+built for one band with paths of a wider band: it is PROVEN only for equal bands
+with a nonnegative bound, REFUTED by one exhibited extreme path of the wider
+band that leaves the hedge more than `X` below the payoff, and otherwise
 `UNKNOWN: gap`, since no theorem bounds the shortfall over the band's other
-paths. A `covers` claim is decided up to 250 steps and a `shortfall` claim up
-to 60; a longer one is `UNKNOWN: resource-limit`. `hedging` decisions and
-`hedge` evidence need a Forseti Lean build that contains `Gimle.Forseti.Hedging`,
-as the Forseti Lean release that carries `Gimle.Forseti.Hedging` does; an older
-build reports the missing module.
+paths. PROVEN and REFUTED are the decider's proposals: it runs no Lean, and the
+notebook's Lean check of the proposed block decides. A payoff other than `call`,
+`put` or `straddle`, a spot or step count that is not positive and a move that
+is not positive cannot be written in a notebook (the directive is a parse
+error). A down move of 1 or more, and an `against` band that does not contain
+the hedge's band, are `UNKNOWN: unsupported`. A `covers` claim is decided up to
+250 steps and a `shortfall` claim up to 60; a longer one is
+`UNKNOWN: resource-limit`. `hedging` decisions and `hedge` evidence need a
+Forseti Lean build that contains `Gimle.Forseti.Hedging`, as the pinned release,
+Forseti Lean v0.6.0, does; an older build reports the missing module.
 
 Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
 so before anything runs. **Run** searches for a certificate or a counterexample and proposes a self-contained Lean block: a `Decided_<name>`

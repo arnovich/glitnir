@@ -198,9 +198,9 @@ use `fresh_replay_cache`.
 Each project check a backend live test runs through
 `project_checking.check_project` or `check_candidate` (looked up when called,
 so not those made through the editor service or the compute worker), and each
-block the plugin's stepped and hedging live tests check, writes a `check stages <test>
-<file>: resolve 4.2 s, capture …` line after the test's outcome, so CI logs
-show where each check's time goes.
+block the plugin's stepped and hedging live tests check, writes a
+`check stages <test> <file>: resolve 4.2 s, capture …` line after the test's
+outcome, so CI logs show where each check's time goes.
 The stages are those of the result's `stage_ms` (see
 `project_checking.StageTimes`), which is never saved in `.glitnir.json`.
 
@@ -245,12 +245,12 @@ them in the `hedging` shard of `plugin-live`. The
 CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
 pinned release; run them locally for macOS. Its first all-green run was run
 39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
-Lean 4.35.0. Against the current pin, forseti-lean v0.5.1 with asgard-lean
-v0.4.1, every shard passed in run 40654470418 (2026-10-28). `stream` decisions and `iterate` evidence were verified on
-2026-10-23, locally on macOS (Glitnir 0.1.5, Lean 4.35.0). CI covers `stream`
-decisions in `tests/test_stream_decision_lean.py`; `iterate` needs Python
-Asgard, which CI does not install, so it stays a local check. The plugin README
-records the runs.
+Lean 4.35.0. Against the previous pin, forseti-lean v0.5.1 with asgard-lean
+v0.4.1, every shard passed in run 40654470418 (2026-10-28). `stream` decisions
+and `iterate` evidence were verified on 2026-10-23, locally on macOS (Glitnir
+0.1.5, Lean 4.35.0). CI covers `stream` decisions in
+`tests/test_stream_decision_lean.py`; `iterate` needs Python Asgard, which CI
+does not install, so it stays a local check. The plugin README records the runs.
 
 ## Continuous integration
 
@@ -269,7 +269,7 @@ jobs are:
 - **helpers** elaborates every Lean helper program on that Lean with
   `backend/scripts/check_helpers.py`, requiring no output.
 - **plugin-live** builds the Forseti Lean release the plugin pins (forseti-lean
-  `v0.5.1`, checked against its commit) and runs the plugin's whole test suite
+  `v0.6.0`, checked against its commit) and runs the plugin's whole test suite
   against it with `FORSETI_REQUIRE_LEAN_PROJECT=1`, so a Lean test that cannot
   run or skips fails (a `skipif` it declares, or the optional `simulation`
   input, stays a skip). It runs as a matrix of shards, each building the release
@@ -300,7 +300,7 @@ manually dispatched **Regenerate Forseti Lean pins** workflow
 
 ```sh
 gh workflow run forseti-pins.yml -R arnovich/glitnir \
-  -f forseti_ref=v0.5.1 -f asgard_ref=v0.4.1   # -f bump_support=false to keep the version
+  -f forseti_ref=v0.6.0 -f asgard_ref=v0.4.1   # -f bump_support=false to keep the version
 ```
 
 It has read-only permissions and no secrets, and it never pushes or opens a pull

@@ -539,9 +539,12 @@ and needs nothing more. Its target is `Gimle.Forseti.Hedging.call`, `.put` or
 (at most 250), and takes `law` (`uniform`, the default, `twopoint` or
 `gaussian`, which requires `(sigma := …)`), `paths` (4000, at most 100000),
 `seed` (7) and, given together, `against_down` and `against_up`, which draw the
-paths in a wider band than the hedge's. Its card shows the profit and loss at
-expiry by its quantiles and the paths that end below zero. It is sampled
-evidence beside a `hedging` decision, never a proved number.
+paths in another band than the hedge's, usually a wider one. A run of more than
+20 million payoff evaluations and draws is refused: with the default 4000 paths,
+at most 69 steps for `uniform` and `twopoint` and 36 for `gaussian`. Its card
+shows the profit and loss at expiry by its quantiles and the paths that end
+below zero. It is sampled evidence beside a `hedging` decision, never a proved
+number.
 Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 
 **Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
@@ -551,7 +554,7 @@ the goal uses imported in the notebook; a missing one shows as the check's
 unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
 Forseti Lean build that contains `Gimle.Forseti.Stepped` and
 `Gimle.Forseti.Examples.HedgedSpreadStepped`, as the pinned release, Forseti Lean
-v0.5.1, does; an older build reports the missing module.
+v0.6.0, does; an older build reports the missing module.
 
 A `hedging` goal asks whether the binomial hedge of a `call`, `put` or
 `straddle` over a band of per-step moves covers the payoff, for example
@@ -564,11 +567,17 @@ and REFUTED when it is below, since no spot-feedback strategy covers the payoff
 from there. A `shortfall` claim compares a hedge built for one band with paths of
 a wider band: it is PROVEN only for equal bands with a nonnegative bound, REFUTED
 by one exhibited extreme path of the wider band, and otherwise UNKNOWN, since no
-theorem bounds the shortfall over the band's other paths. Numbers are exact
-rationals; a `covers` claim is decided up to 250 steps and a `shortfall` claim up
-to 60. `hedging` decisions and `hedge` evidence need a Forseti Lean build that
-contains `Gimle.Forseti.Hedging`, as the Forseti Lean release that carries
-`Gimle.Forseti.Hedging` does; an older build reports the missing module.
+theorem bounds the shortfall over the band's other paths. PROVEN and REFUTED are
+the decider's proposals: it runs no Lean, and the notebook's Lean check of the
+proposed block decides. Numbers are exact rationals. A payoff other than `call`,
+`put` or `straddle`, a spot or step count that is not positive and a move that
+is not positive cannot be written in a notebook (the directive is a parse
+error). A down move of 1 or more, and an `against` band that does not contain
+the hedge's band, are `UNKNOWN: unsupported`. A `covers` claim is decided up to
+250 steps and a `shortfall` claim up to 60. `hedging` decisions and `hedge`
+evidence need a Forseti Lean build that contains `Gimle.Forseti.Hedging`, as the
+pinned release, Forseti Lean v0.6.0, does; an older build reports the missing
+module.
 
 `entailment`, `trajectory` and `stepped` decisions and `simulate` and `sample`
 evidence pass Glitnir's check in the plugin's live tests against Forseti Lean
