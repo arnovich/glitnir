@@ -1,4 +1,4 @@
-${PILOT_WORKERS}/a1-factor/attempt2.lean:1:0: warning: 
+${PILOT_WORKERS}/a1-factor/attempt2.lean:1:0: warning:
 'Mathlib.Data.Real.Basic' has been deprecated: please replace this import by
 
 import Mathlib.Basic.Real.Basic

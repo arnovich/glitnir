@@ -24,10 +24,11 @@
       "original_path": "a1-check/elimination.log",
       "original_sha256": "bf8ca1e03619d5e06003419f1c62f0479a4e4703697f8f3baed2467cac1bd44d",
       "published_path": "a1-check/elimination.redacted.log",
-      "published_sha256": "78b74dfcff7ab64e41d2ea885272d4e56cdb067267f6e3227b508ed9b3cabfcd",
+      "published_sha256": "296930be7618cb039853056617e0b86d1804da347ff44742421d6ad31768637e",
       "redacted": true,
       "replacement_counts": {
-        "${PILOT_WORKERS}": 1
+        "${PILOT_WORKERS}": 1,
+        "trailing whitespace normalization": 1
       }
     },
     {
@@ -66,10 +67,11 @@
       "original_path": "a1-check/factorization.log",
       "original_sha256": "dafe564e41d5155ab7b38f1100f20dfbdf7e0501a4cc9af9c752c8f2f85a27bb",
       "published_path": "a1-check/factorization.redacted.log",
-      "published_sha256": "b6eed93258dceee5b7da317ed6ac9faad1f825395cba4aa81a65f720eac6d79c",
+      "published_sha256": "1e3dda9676b907233ad90f5fce999027f9457cda83e191794cf60f4c6328d3f7",
       "redacted": true,
       "replacement_counts": {
-        "${PILOT_WORKERS}": 1
+        "${PILOT_WORKERS}": 1,
+        "trailing whitespace normalization": 1
       }
     },
     {
@@ -154,10 +156,11 @@
       "original_path": "a1-elim/Attempt2.log",
       "original_sha256": "13a4288810adf7676524640ceb4f21fb2c9e31d831e285a971a8f98bf857c5fe",
       "published_path": "a1-elim/Attempt2.redacted.log",
-      "published_sha256": "4f3a0c2ac5009cb783273f27ec79c85b87e1565b645da489a15f59e4f258d0b3",
+      "published_sha256": "1325b2ca2a5ecb8e9b8939147aacaeba184b69153d328b138fd8468388a5f589",
       "redacted": true,
       "replacement_counts": {
-        "${PILOT_WORKERS}": 1
+        "${PILOT_WORKERS}": 1,
+        "trailing whitespace normalization": 1
       }
     },
     {
@@ -233,10 +236,11 @@
       "original_path": "a1-factor/attempt2.log",
       "original_sha256": "9eb8f7895d6c49723f6e2b956eeb5250ea7c35647b86ab81af02b5b78fb7cfeb",
       "published_path": "a1-factor/attempt2.redacted.log",
-      "published_sha256": "590deb5e51c3ec8eb804c06cad6732938c42510b5943271705088115a7296652",
+      "published_sha256": "6360166976697cd41c51926ed07ea79f08dac21947f952fc00aa336ab8365690",
       "redacted": true,
       "replacement_counts": {
-        "${PILOT_WORKERS}": 1
+        "${PILOT_WORKERS}": 1,
+        "trailing whitespace normalization": 1
       }
     },
     {
@@ -772,10 +776,11 @@
       "original_path": "b2-check/evidence/factorization.log",
       "original_sha256": "ffaed11226d9b96bbd497adebd2a1e2aedac061bc4ecf90284b076ea254ad06b",
       "published_path": "b2-check/evidence/factorization.redacted.log",
-      "published_sha256": "293d6526dedc2ea8b4b9271229201c81ae01c51b9225249159634cdb5f984b66",
+      "published_sha256": "a673e4c81d6a332898df93113fa6fde0b03a423ca1138bcef660373dd4068c1e",
       "redacted": true,
       "replacement_counts": {
-        "${PILOT_WORKERS}": 1
+        "${PILOT_WORKERS}": 1,
+        "trailing whitespace normalization": 1
       }
     },
     {
@@ -918,10 +923,11 @@
       "original_path": "b2-factor/evidence/attempt2.log",
       "original_sha256": "17a468556305848f09a00b9503dd52f98fd2b3a6e7da9be1ae466ef6e6dc3424",
       "published_path": "b2-factor/evidence/attempt2.redacted.log",
-      "published_sha256": "3ffe3c345d39aa8daf1512444cf84bde346d6cedbc25ad882321635b35a57723",
+      "published_sha256": "ef821c6e6e4b103151f16c34d433c5a2a475b5790d76dfa020cd1c0ba943c713",
       "redacted": true,
       "replacement_counts": {
-        "${PILOT_WORKERS}": 1
+        "${PILOT_WORKERS}": 1,
+        "trailing whitespace normalization": 1
       }
     },
     {
@@ -1011,6 +1017,10 @@
     {
       "class": "internal publication-control mechanics",
       "replacement": "publication-control wording"
+    },
+    {
+      "class": "trailing whitespace in compiler diagnostics",
+      "replacement": "normalized line ending"
     }
   ]
 }

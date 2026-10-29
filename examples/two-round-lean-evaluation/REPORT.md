@@ -144,8 +144,7 @@ The admitted protocol is fixed at Taskvalet commit
 `3ca2d8a3862260ab3dec1f57184957af66e7a121` and SHA-256
 `fc98d0da8a257e305e276c578bcea1098ffef569bb3b3f1852402da9d8c874e1`.
 The evidence bytes are fixed at Glitnir commit
-`b05d430652c1869ea19079ebcc80991af049ca54`; the completed report and all 24
-receipt-binding tests are present at
+`b05d430652c1869ea19079ebcc80991af049ca54`; the completed report and receipt bindings for all 24 submissions are present at
 `fa2da599f161b5c160c469d7bf9b2c07fae8bd32`. Verify the protocol and completed
 publication snapshot before constructing the Lean environment:
 
