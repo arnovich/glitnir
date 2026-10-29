@@ -274,9 +274,9 @@ def test_the_plan_is_exact() -> None:
     assert plan.barrier == Fraction(1, 3) and type(plan.barrier) is Fraction
 
 
-def test_an_unknown_verb_lists_all_three() -> None:
+def test_an_unknown_verb_lists_every_verb() -> None:
     simulation = read_directive("fly", HEDGED, REQUIRED)
-    assert "use simulate, iterate or sample" in simulation.error
+    assert "use simulate, iterate, sample or hedge" in simulation.error
 
 
 def test_an_omitted_show_is_at_most_the_paths() -> None:

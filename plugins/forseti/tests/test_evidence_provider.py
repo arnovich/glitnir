@@ -50,9 +50,12 @@ def _simulated(options: str = "(h := 1/100) (steps := 400)", payload=None):
 # ----- the provider -----------------------------------------------------------------
 
 
-def test_the_providers_run_simulate_sample_and_iterate() -> None:
+def test_the_providers_run_simulate_sample_hedge_and_iterate() -> None:
     simulate, iterate = forseti.evidence_providers()
-    assert (simulate.verbs, iterate.verbs) == ({"simulate", "sample"}, {"iterate"})
+    assert (simulate.verbs, iterate.verbs) == (
+        {"simulate", "sample", "hedge"},
+        {"iterate"},
+    )
     for provider in (simulate, iterate):
         assert isinstance(provider, EvidenceProvider) and provider.name == "forseti"
         assert provider.imports == (
@@ -66,7 +69,7 @@ def test_the_providers_run_simulate_sample_and_iterate() -> None:
 def test_glitnir_finds_it_through_the_entry_point() -> None:
     found = load_providers()
     assert "forseti" not in found.errors
-    verbs = ("simulate", "iterate", "sample")
+    verbs = ("simulate", "iterate", "sample", "hedge")
     assert {found.evidence[verb].name for verb in verbs} == {"forseti"}
 
 
@@ -131,7 +134,7 @@ def test_parse_keeps_exact_options_as_json(fake_asgard) -> None:
         (
             "plot",
             "",
-            "Unknown evidence 'plot'; use simulate, iterate or sample.",
+            "Unknown evidence 'plot'; use simulate, iterate, sample or hedge.",
         ),
     ],
 )

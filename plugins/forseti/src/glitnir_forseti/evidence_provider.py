@@ -1,4 +1,4 @@
-"""Run `-- @evidence simulate|iterate|sample <target>` directives for Glitnir.
+"""Run `-- @evidence simulate|iterate|sample|hedge <target>` directives for Glitnir.
 
 Glitnir's core elaborates the notebook up to the directive in its sandbox,
 followed by the Lean `command` returns, and passes the JSON printed after the
@@ -16,7 +16,21 @@ with ``simulate``: it reads a registered stepped model's field the way
 ``simulate`` does and draws seeded shock paths through it
 (`glitnir_forseti.stepped.sampler`). Its card shows a few paths and the running
 breach fraction, with the final fraction and its sampling interval in the
-provenance; it never shows a proved bound. Evidence is never a proof and
+provenance; it never shows a proved bound.
+
+``hedge`` is served with them too and needs nothing beyond this package; like
+theirs, its run loads the provider's `IMPORTS` from the project's build. Its
+Lean evaluates the hedging library's binomial price of a registered payoff at
+the directive's band, in the scope of a notebook that imports
+``Gimle.Forseti.Hedging``, and prints it exactly with the parameters it was
+evaluated at. The price is checked here against the same price in exact
+arithmetic (`glitnir_forseti.hedging.numbers`), and the hedge the library
+builds for the band is run from it on seeded random paths in the band, or in a
+wider one (`glitnir_forseti.hedging.sampler`). Its card shows the seller's
+profit and loss at expiry by its quantiles, over the quantile level rather
+than time, with the premium, the least, median and greatest outcome and the
+paths that end below zero, with a sampling interval for their fraction, in the
+provenance; it never shows a proved number. Evidence is never a proof and
 changes no claim's status.
 """
 
@@ -33,9 +47,17 @@ from typing import Any
 from glitnir.providers import EvidenceProvider, EvidenceRequest
 from glitnir.providers.outcomes import MAX_SERIES, MAX_TEXT
 
+from glitnir_forseti.figures import figure
+from glitnir_forseti.hedging import sampler as hedging_sampler
 from glitnir_forseti.notebook import evidence
-from glitnir_forseti.notebook.evidence import EvidenceError, SamplePlan, Simulation
+from glitnir_forseti.notebook.evidence import (
+    EvidenceError,
+    HedgePlan,
+    SamplePlan,
+    Simulation,
+)
 from glitnir_forseti.stepped import sampler
+from glitnir_forseti.stepped.sampler import wilson
 
 IMPORTS = ("Gimle.Asgard.Compile.RationalInterchange", "Gimle.Asgard.Model.Continuous")
 #: Without the optional decoder, `iterate` cannot run.
@@ -80,13 +102,16 @@ def parse(verb: str, target: str, options: str) -> EvidenceRequest:
 
     The request carries the options as exact numbers written as text, so it
     is plain JSON and `compute` reads back exactly what was declared. A
-    ``sample`` request carries its plan, with the defaults filled in.
+    ``sample`` or ``hedge`` request carries its plan, with the defaults
+    filled in.
     """
     simulation = evidence.read_directive(verb, target, options)
     if simulation.error:
         raise ValueError(_sentence(simulation.error))
     if simulation.sample is not None:
         return EvidenceRequest(verb, target, _plan_options(simulation.sample))
+    if simulation.hedge is not None:
+        return EvidenceRequest(verb, target, _hedge_options(simulation.hedge))
     if verb == "iterate" and len(simulation.state) > MAX_SERIES:
         raise ValueError(f"Evidence shows at most {MAX_SERIES} states.")
     return EvidenceRequest(
@@ -119,9 +144,55 @@ def _plan_options(plan: SamplePlan) -> dict[str, Any]:
     }
 
 
+def _hedge_options(plan: HedgePlan) -> dict[str, Any]:
+    """Write a ``hedge`` plan as JSON, its exact numbers as text."""
+
+    def text(value: Fraction | None) -> str | None:
+        return None if value is None else str(value)
+
+    return {
+        "payoff": plan.payoff,
+        "strike": str(plan.strike),
+        "spot": str(plan.spot),
+        "up": str(plan.up),
+        "down": str(plan.down),
+        "against_up": text(plan.against_up),
+        "against_down": text(plan.against_down),
+        "steps": plan.steps,
+        "law": plan.law,
+        "sigma": text(plan.sigma),
+        "paths": plan.paths,
+        "seed": plan.seed,
+    }
+
+
+def _hedge_plan(options: dict[str, Any]) -> HedgePlan:
+    """Rebuild the ``hedge`` plan `_hedge_options` wrote."""
+
+    def exact(value: str | None) -> Fraction | None:
+        return None if value is None else Fraction(value)
+
+    return HedgePlan(
+        payoff=options["payoff"],
+        strike=Fraction(options["strike"]),
+        spot=Fraction(options["spot"]),
+        up=Fraction(options["up"]),
+        down=Fraction(options["down"]),
+        against_up=exact(options["against_up"]),
+        against_down=exact(options["against_down"]),
+        steps=options["steps"],
+        law=options["law"],
+        sigma=exact(options["sigma"]),
+        paths=options["paths"],
+        seed=options["seed"],
+    )
+
+
 def _simulation(request: EvidenceRequest) -> Simulation:
     """Rebuild the directive `parse` read from its request."""
     options = request.options
+    if request.verb == "hedge":
+        return Simulation(request.target, verb="hedge", hedge=_hedge_plan(options))
     if request.verb == "sample":
         plan = SamplePlan(
             law=options["law"],
@@ -153,13 +224,16 @@ def _simulation(request: EvidenceRequest) -> Simulation:
 
 
 def command(request: EvidenceRequest) -> str:
-    """Return the Lean that prints the target's field or update circuit.
+    """Return the Lean that prints what the directive's run reads.
 
-    Only the target, a Lean name, is written into the template; option text
-    never reaches Lean.
+    That is the target's field or update circuit, or for ``hedge`` the
+    payoff's binomial price. Only the target, a Lean name, and a hedge's exact
+    numbers, written from their values, reach the template; option text never
+    reaches Lean.
     """
+    plan = _hedge_plan(request.options) if request.verb == "hedge" else None
     try:
-        return evidence.emission_command(request.verb, request.target)
+        return evidence.emission_command(request.verb, request.target, plan)
     except EvidenceError as error:
         raise ValueError(_sentence(str(error))) from None
 
@@ -375,6 +449,79 @@ def _sampled(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
     return _snapshot(trajectory, [*names, "breach fraction"], provenance)
 
 
+def _band(down: Fraction, up: Fraction) -> str:
+    """Write a band as a hedging goal does: ``down 1/50 up 1/50``."""
+    return f"down {down} up {up}"
+
+
+#: The hedge card's one series and its premium's provenance label.
+HEDGE_SERIES = (
+    "seller's profit and loss at expiry, by quantile (0 = worst sampled path,"
+    " 1 = best)"
+)
+HEDGE_PREMIUM = "premium (binomial price at the band, Lean `priceQ`, checked exactly)"
+
+
+def _hedged(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
+    """Run a hedge from the premium Lean printed; return its snapshot.
+
+    The card's series is the seller's profit and loss at expiry, the hedge's
+    final wealth less the payoff, by its quantiles at the levels ``0, 1/40,
+    …, 1`` (`hedging.sampler.quantiles`), which the card's time axis carries,
+    as its provenance says. The premium, checked against the exact binomial
+    price, the least, median and greatest outcome and the paths that end
+    below zero, with the 95 % Wilson interval of their fraction, are in the
+    provenance; no proved number is.
+    """
+    plan = simulation.hedge
+    if plan is None:
+        raise EvidenceError("only a hedge directive can be hedged")
+    premium = hedging_sampler.checked_premium(emitted, plan)
+    result = hedging_sampler.sample(plan, premium)
+    if not result.pnl:
+        raise EvidenceError(
+            "the hedge's first path left what float64 holds; use a narrower band"
+            " or fewer steps"
+        )
+    shown = hedging_sampler.quantiles(result.pnl)
+    trajectory = {
+        "times": hedging_sampler.levels(),
+        "values": [shown],
+        "finite": result.finite,
+    }
+    threshold = hedging_sampler.below_threshold(plan)
+    low, high = wilson(result.below_zero, len(result.pnl))
+    provenance = [
+        ("verb", "hedge"),
+        ("x axis", "quantile level, not time"),
+        ("payoff", plan.payoff),
+        ("strike", str(plan.strike)),
+        ("spot", str(plan.spot)),
+        ("band", _band(plan.down, plan.up)),
+    ]
+    if plan.against_up is not None and plan.against_down is not None:
+        provenance.append(("against", _band(plan.against_down, plan.against_up)))
+    provenance += [("steps", str(plan.steps)), ("law", plan.law)]
+    if plan.sigma is not None:
+        provenance.append(("sigma", str(plan.sigma)))
+    provenance += [
+        ("paths", str(plan.paths)),
+        ("seed", str(plan.seed)),
+        (HEDGE_PREMIUM, figure(premium)),
+        ("minimum", f"{shown[0]:.6g}"),
+        ("median", f"{shown[hedging_sampler.LEVELS // 2]:.6g}"),
+        ("maximum", f"{shown[-1]:.6g}"),
+        (
+            "paths below zero",
+            f"{result.below_zero} of {len(result.pnl)}, by more than"
+            f" {threshold:g} (a billionth of the spot); fraction {low:.4g} to"
+            f" {high:.4g} (95 %, Wilson)",
+        ),
+        ("arithmetic", "float64"),
+    ]
+    return _snapshot(trajectory, [HEDGE_SERIES], provenance)
+
+
 def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:
     """Run the directive on what Lean printed; return a ``glitnir.evidence/v1`` body.
 
@@ -382,17 +529,21 @@ def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:
         EvidenceError: If the payload cannot be read or the run is refused.
     """
     if not isinstance(payload, dict):
+        if request.verb == "hedge":
+            raise EvidenceError("Lean printed a hedge that is not an object")
         raise EvidenceError("Lean printed a malformed field")
     simulation = _simulation(request)
     if simulation.verb == "iterate":
         return _iterated(simulation, payload)
     if simulation.verb == "sample":
         return _sampled(simulation, payload)
+    if simulation.verb == "hedge":
+        return _hedged(simulation, payload)
     return _simulated(simulation, payload)
 
 
 def unavailable() -> str | None:
-    """Nothing is missing for ``simulate`` or ``sample``."""
+    """Nothing is missing for ``simulate``, ``sample`` or ``hedge``."""
     return None
 
 
@@ -416,7 +567,7 @@ def _provider(verbs: frozenset[str], missing: Any) -> EvidenceProvider:
 
 
 def evidence_providers() -> tuple[EvidenceProvider, EvidenceProvider]:
-    """Return one Forseti provider for ``simulate`` and ``sample``, one for ``iterate``.
+    """Return one Forseti provider for every verb but ``iterate``, one for it.
 
     They differ only in what they lack: ``iterate``'s provider is unavailable
     without Python Asgard, so Glitnir shows why on its cards and never runs it.

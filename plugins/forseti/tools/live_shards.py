@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 #: The slow Lean modules, grouped so each shard finishes well within CI's limit.
 SHARDS: dict[str, tuple[str, ...]] = {
     "stepped": ("tests/test_stepped_lean.py",),
+    "hedging": ("tests/test_hedging_lean.py",),
     "streams": (
         "tests/test_streams_lean.py",
         "tests/test_mild_stream_lean.py",

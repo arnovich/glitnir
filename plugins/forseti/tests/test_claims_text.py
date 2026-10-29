@@ -43,6 +43,7 @@ from glitnir_forseti.entailment.syntax import (
     Tru,
     Var,
 )
+from glitnir_forseti.hedging.goal import HedgingGoal
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams import goal as stream
 from glitnir_forseti.streams.goal import FieldClaim, StreamGoal, TrigBandClaim, band_of
@@ -63,6 +64,7 @@ DECODERS = {
     "trajectory": trajectory.decode_goal,
     "streams": stream.decode_goal,
     "stepped": SteppedGoal.from_json,
+    "hedging": HedgingGoal.from_json,
 }
 CORPUS = sorted(
     (kind, path)

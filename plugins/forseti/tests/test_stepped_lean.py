@@ -22,9 +22,11 @@ marks, where the hold does no work that long. The proofs of a fixed-date bound
 and an expectation may unroll a recursion over every mark (``proxyRec``,
 ``geomSum``), so their cap is lower, and each is checked at it.
 
-A check is held to a budget of `CHECK_BUDGET_MS`, five minutes unless the
-environment variable ``FORSETI_CHECK_BUDGET_MS`` names another number of
-milliseconds, as a loaded or slower machine may need.
+A check is held to a budget of `block_checking.CHECK_BUDGET_MS`, five minutes
+unless the environment variable ``FORSETI_CHECK_BUDGET_MS`` names another
+number of milliseconds, as a loaded or slower machine may need. The check
+itself is the shared `conftest.check_block` fixture, which the hedging lane's
+live test uses too.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
@@ -37,15 +39,10 @@ provider turns it into the card Glitnir would save.
 
 import hashlib
 import json
-import os
 import threading
-import time
-from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
-from glitnir.lean.project_checking import check_candidate
+from block_checking import CHECK_BUDGET_MS, STANDARD_AXIOMS, read_check_budget_ms
 from glitnir.providers.outcomes import checked_decision, checked_evidence
 
 from glitnir_forseti import evidence_provider
@@ -56,13 +53,8 @@ from glitnir_forseti.stepped import service
 from glitnir_forseti.stepped.examples import EXAMPLES, Example
 from glitnir_forseti.stepped.models import HEDGED_SPREAD_STEPPED
 
-#: The axioms Lean itself provides; a block may rest on nothing else.
-STANDARD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
-#: The longest a block may take to check, in milliseconds, unless the
-#: environment says otherwise (`_check_budget_ms`).
-CHECK_BUDGET_MS = 300_000
-#: A block that needs nothing, to have the checker replay a notebook's imports.
-WARM_BLOCK = "theorem warm_up : True := trivial"
+#: A bad budget fails every test here at once, not only those that read it.
+pytestmark = pytest.mark.usefixtures("check_budget_ms")
 #: The compiled hedged spread a ``sample`` directive names, and its options. The
 #: notebook imports the modules the evidence provider declares for every verb
 #: too, though Glitnir's runner loads them from the project's build either way.
@@ -78,131 +70,6 @@ import Gimle.Forseti.Examples.HedgedSpreadStepped
 
 {SAMPLE_DIRECTIVE}
 """
-
-
-def _check_budget_ms() -> int:
-    """Return the budget a check is held to.
-
-    An unset or empty ``FORSETI_CHECK_BUDGET_MS`` means `CHECK_BUDGET_MS`.
-
-    Raises:
-        pytest.fail.Exception: If the variable is not a positive whole number.
-    """
-    value = os.environ.get("FORSETI_CHECK_BUDGET_MS", "").strip()
-    if not value:
-        return CHECK_BUDGET_MS
-    try:
-        budget = int(value)
-    except ValueError:
-        budget = 0
-    if budget <= 0:
-        pytest.fail(
-            "FORSETI_CHECK_BUDGET_MS must be a positive whole number of"
-            f" milliseconds, got {value!r}",
-            pytrace=False,
-        )
-    return budget
-
-
-@pytest.fixture(autouse=True)
-def check_budget_ms() -> int:
-    """Return the check budget, failing a test at once if the variable is bad."""
-    return _check_budget_ms()
-
-
-@dataclass(frozen=True)
-class Checked:
-    """What the project's Lean said about a proposed block.
-
-    Attributes:
-        ok: Whether Glitnir reports the block's theorem as checked.
-        message: Glitnir's message, which names the failing line otherwise.
-        axioms: The axioms the theorem depends on.
-        check_ms: How long the check took, in milliseconds.
-        stage_ms: How long each of the check's stages took, in milliseconds.
-    """
-
-    ok: bool
-    message: str
-    axioms: tuple[str, ...]
-    check_ms: int
-    stage_ms: dict[str, int]
-
-
-def _check(
-    write: Callable[[str, str], Path], imports: str, block: str, theorem: str
-) -> Checked:
-    """Check a block as the editor does, in a scratch notebook of the project.
-
-    The notebook holds the imports, then a directive line; the block is checked
-    right after it. ``write`` is the ``scratch_notebook`` fixture's, so no file
-    of the checkout is overwritten and only the scratch file is removed.
-    """
-    header = "".join(f"{line}\n" for line in imports.split("\n"))
-    text = f"{header}\n-- @decide {theorem} : (scratch)\n"
-    path = write("GlitnirSteppedLive", text)
-    stage_ms: dict[str, int] = {}
-    started = time.monotonic()
-    verdict = check_candidate(
-        path,
-        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
-        insert_after_line=text.count("\n"),
-        block=block,
-        theorem=theorem,
-        cancel=threading.Event(),
-        stage_ms=stage_ms,
-    )
-    elapsed = round((time.monotonic() - started) * 1000)
-    return Checked(
-        verdict["status"] == "checked",
-        verdict["message"],
-        tuple(verdict["axioms"]),
-        elapsed,
-        stage_ms,
-    )
-
-
-@pytest.fixture(scope="module")
-def replayed() -> set[str]:
-    """The import sets whose one-off kernel replay the session cache holds."""
-    return set()
-
-
-@pytest.fixture
-def check_block(scratch_notebook, replayed: set[str], record_check_stages):
-    """Return a function that checks a decision outcome's block, timed.
-
-    The outcome's own last stage lists the imports the block needs, so a block
-    whose imports are wrong fails here. The first check of an import set
-    replays its whole closure in the kernel, which takes minutes and is cached
-    for the session (`conftest.private_replay_cache`); a trivial block is
-    checked first, untimed, so that a block's time is its own, and the block's
-    check must reuse that replay rather than replay the imports again. Each
-    check's stage times are written to the log (`record_check_stages`).
-    """
-
-    def check(outcome: dict) -> Checked:
-        assert outcome["stages"][-1][:2] == ["imports", "needed"], outcome["stages"]
-        imports = outcome["stages"][-1][2]
-        if imports not in replayed:
-            warm = _check(scratch_notebook, imports, WARM_BLOCK, "warm_up")
-            record_check_stages("warm_up", warm.stage_ms)
-            assert warm.ok, warm.message
-            replayed.add(imports)
-            print(f"replay of {imports!r}: {warm.check_ms} ms")
-        checked = _check(
-            scratch_notebook, imports, outcome["block"], outcome["theorem"]
-        )
-        record_check_stages(outcome["theorem"], checked.stage_ms)
-        # The warm-up's import replay was recorded, so this check reuses it:
-        # a refused record would replay the closure (minutes) on every check.
-        assert "replay_imports" not in checked.stage_ms, checked.stage_ms
-        if checked.ok:
-            # A checked block was replayed over the recorded imports.
-            assert "replay" in checked.stage_ms, checked.stage_ms
-        return checked
-
-    return check
 
 
 def _decided(example: Example) -> dict:
@@ -322,14 +189,14 @@ def test_an_unset_or_empty_budget_is_the_default(
         monkeypatch.delenv("FORSETI_CHECK_BUDGET_MS", raising=False)
     else:
         monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
-    assert _check_budget_ms() == CHECK_BUDGET_MS == 300_000
+    assert read_check_budget_ms() == CHECK_BUDGET_MS == 300_000
 
 
 def test_a_budget_is_a_whole_number_of_milliseconds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", " 600000 ")
-    assert _check_budget_ms() == 600_000
+    assert read_check_budget_ms() == 600_000
 
 
 @pytest.mark.parametrize("value", ["abc", "1.5", "10s", "0", "-5"])
@@ -338,7 +205,7 @@ def test_any_other_budget_fails_with_a_message(
 ) -> None:
     monkeypatch.setenv("FORSETI_CHECK_BUDGET_MS", value)
     with pytest.raises(pytest.fail.Exception) as raised:
-        _check_budget_ms()
+        read_check_budget_ms()
     message = str(raised.value)
     assert "FORSETI_CHECK_BUDGET_MS" in message and repr(value) in message
     assert "positive whole number of milliseconds" in message

@@ -1,9 +1,21 @@
-"""Shared fixtures for the Forseti release, session and provider tests."""
+"""Shared fixtures for the Forseti release, session and provider tests.
+
+The live lane tests (``test_stepped_lean.py``, ``test_hedging_lean.py``) check
+each proposed block the way the editor does, through `check_block`; the
+constants, the budget they are held to and the check itself are in the plain
+module ``block_checking.py``, which they import.
+"""
 
 import os
 from pathlib import Path
 
 import pytest
+from block_checking import (
+    WARM_BLOCK,
+    Checked,
+    check_in_scratch,
+    read_check_budget_ms,
+)
 
 #: The fixtures that give a test a built Forseti Lean checkout.
 _LEAN_FIXTURES = frozenset({"lean_test_project", "forseti_lake_project"})
@@ -217,6 +229,55 @@ def scratch_notebook(forseti_lake_project):
         for path in written:
             path.unlink(missing_ok=True)
             records_path(path).unlink(missing_ok=True)
+
+
+@pytest.fixture
+def check_budget_ms() -> int:
+    """Return the check budget, failing a test at once if the variable is bad."""
+    return read_check_budget_ms()
+
+
+@pytest.fixture(scope="module")
+def replayed() -> set[str]:
+    """The import sets whose one-off kernel replay the session cache holds."""
+    return set()
+
+
+@pytest.fixture
+def check_block(scratch_notebook, replayed: set[str], record_check_stages):
+    """Return a function that checks a decision outcome's block, timed.
+
+    The outcome's own last stage lists the imports the block needs, so a block
+    whose imports are wrong fails here. The first check of an import set
+    replays its whole closure in the kernel, which takes minutes and is cached
+    for the session (`private_replay_cache`); a trivial block is checked
+    first, untimed, so that a block's time is its own, and the block's check
+    must reuse that replay rather than replay the imports again. Each check's
+    stage times are written to the log (`record_check_stages`).
+    """
+
+    def check(outcome: dict) -> Checked:
+        assert outcome["stages"][-1][:2] == ["imports", "needed"], outcome["stages"]
+        imports = outcome["stages"][-1][2]
+        if imports not in replayed:
+            warm = check_in_scratch(scratch_notebook, imports, WARM_BLOCK, "warm_up")
+            record_check_stages("warm_up", warm.stage_ms)
+            assert warm.ok, warm.message
+            replayed.add(imports)
+            print(f"replay of {imports!r}: {warm.check_ms} ms")
+        checked = check_in_scratch(
+            scratch_notebook, imports, outcome["block"], outcome["theorem"]
+        )
+        record_check_stages(outcome["theorem"], checked.stage_ms)
+        # The warm-up's import replay was recorded, so this check reuses it:
+        # a refused record would replay the closure (minutes) on every check.
+        assert "replay_imports" not in checked.stage_ms, checked.stage_ms
+        if checked.ok:
+            # A checked block was replayed over the recorded imports.
+            assert "replay" in checked.stage_ms, checked.stage_ms
+        return checked
+
+    return check
 
 
 @pytest.fixture

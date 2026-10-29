@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from glitnir_forseti import figures
 from glitnir_forseti.claims.decide import Decision, decide, goal_kind, read_goal
 from glitnir_forseti.claims.text import parse_goal, render_goal
 from glitnir_forseti.entailment.limits import EntailmentLimits
@@ -336,7 +337,7 @@ def test_a_fractional_proxy_is_refused() -> None:
     ],
 )
 def test_a_figure_is_exact_when_short_and_a_decimal_otherwise(value, shown) -> None:
-    assert service._figure(value) == shown
+    assert figures.figure(value) == shown
 
 
 def test_a_tiny_bound_never_reads_as_a_larger_one() -> None:
@@ -750,8 +751,12 @@ def test_the_decider_uses_no_floating_point() -> None:
     Only the wall clock is a float, and it decides nothing but a timeout.
     """
     package = Path(service.__file__).parent
-    for name in ("models.py", "service.py", "render.py", "examples.py"):
-        tree = ast.parse((package / name).read_text())
+    names = ("models.py", "service.py", "render.py", "examples.py")
+    # The rule a reason writes its figures by is shared with the hedging lane.
+    paths = [package / name for name in names] + [Path(figures.__file__)]
+    for path in paths:
+        name = path.name
+        tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             assert not (
                 isinstance(node, ast.Constant) and type(node.value) is float

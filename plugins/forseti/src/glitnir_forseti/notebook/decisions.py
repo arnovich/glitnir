@@ -20,7 +20,9 @@ from dataclasses import dataclass
 from glitnir_forseti.claims.decide import Decision
 from glitnir_forseti.claims.text import render_goal
 from glitnir_forseti.entailment.syntax import Goal
-from glitnir_forseti.notebook.readable import Readable, readable
+from glitnir_forseti.hedging import render as hedging_render
+from glitnir_forseti.hedging.goal import HedgingGoal
+from glitnir_forseti.notebook.readable import Readable, hedging_figures, readable
 from glitnir_forseti.stepped import render as stepped_render
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.streams.goal import StreamGoal
@@ -35,7 +37,8 @@ _ENTAILMENT = (
 #: The lane statements each readable bridge is written against. A stream
 #: refutation is the root's identities with the contract's negation, or, for
 #: a lane whose root has no identities (a field band), the root's negation. A
-#: stepped lane proves its claim, or its negation, as ``forsetiClaim``.
+#: stepped lane proves its claim, or its negation, as ``forsetiClaim``. A
+#: hedging lane's statements depend on its claim (`_HEDGING_STATEMENTS`).
 _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
     Goal: {
         "PROVEN": (_ENTAILMENT,),
@@ -49,6 +52,24 @@ _LANE_STATEMENTS: dict[type, dict[str, tuple[str, ...]]] = {
     SteppedGoal: {
         "PROVEN": (stepped_render.PROVED,),
         "REFUTED": (stepped_render.REFUTED,),
+    },
+}
+#: A hedging lane proves its claim as ``forsetiClaim``, and refutes a
+#: ``shortfall`` claim as its negation. A refuted ``covers`` claim proves a
+#: positive ``forsetiClaim`` instead, ``∀ δ, ¬ Covers …``: every spot-feedback
+#: strategy falls short, which its readable claim ``∃ δ, Covers …`` is bridged
+#: to. Each refutation accepts only its own shape, so a block of the other
+#: claim's fails here rather than in Lean; for a ``covers`` claim, whose two
+#: statements are alike, the prelude's ``forsetiClaim`` must also start with
+#: ``∀ δ`` exactly when the claim is refuted (`_check_hedging`).
+_HEDGING_STATEMENTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "covers": {
+        "PROVEN": (hedging_render.PROVED,),
+        "REFUTED": (hedging_render.PROVED,),
+    },
+    "shortfall": {
+        "PROVEN": (hedging_render.PROVED,),
+        "REFUTED": (hedging_render.REFUTED,),
     },
 }
 
@@ -88,8 +109,11 @@ def block(name: str, decision: Decision) -> Block:
     The claim is stated readably when the goal has a readable form
     (`readable.readable`): its proof first proves the lane's statement with
     the lane's script, as ``root``, then derives the claim from it. A
-    refutation is the theorem ``<name>_refuted : ¬ (claim)``, which proves the
-    lane's negated statement, as ``refuted``, then ``¬ claim`` from it. Other
+    refutation is the theorem ``<name>_refuted : ¬ (claim)``, with the claim
+    the readable form states for a refutation: it proves the lane's refuting
+    statement, as ``refuted``, then ``¬ claim`` from it. That statement is the
+    negation of the lane's proposition, or for a hedging ``covers`` claim the
+    positive proposition that no spot-feedback strategy covers. Other
     goals keep the lane's statement as the claim. The block carries every
     definition it uses, so it relies on nothing else in the notebook.
 
@@ -103,8 +127,10 @@ def block(name: str, decision: Decision) -> Block:
     goal = render_goal(decision.goal)
     if "-/" in goal:
         raise DecisionError("the goal text would close the claim's docstring")
+    _check_hedging(decision)
     try:
-        stated = readable(decision.goal)
+        stated = readable(decision.goal, refuted=decision.status == "REFUTED")
+        figures = _figures(decision)
     except (KeyError, ValueError) as error:
         raise DecisionError(f"no readable statement: {error}") from error
     if stated is None:
@@ -112,7 +138,9 @@ def block(name: str, decision: Decision) -> Block:
         note = _note(decision, "Stated as the decider states it.")
     else:
         statement, proof = _as_readable(decision, stated)
-        note = _note(decision, stated.description)
+        note = _note(decision, stated.description, figures)
+    if "-/" in note:
+        raise DecisionError("the claim's sentence would close its docstring")
     theorem = name
     if decision.status == "REFUTED":
         statement, theorem = _negated(statement), f"{name}_refuted"
@@ -137,10 +165,11 @@ def _negated(statement: str) -> str:
     return f": ¬ ({statement.removeprefix(':').strip()})"
 
 
-def _note(decision: Decision, what: str) -> str:
+def _note(decision: Decision, what: str, figures: str = "") -> str:
     # Provenance only: whether the theorem holds is its check's to say.
-    verb = "proved" if decision.status == "PROVEN" else "refuted"
-    return f"{what} The {decision.kind} decider {verb} it."
+    verdict = "proved" if decision.status == "PROVEN" else "refuted"
+    note = f"{what} The {decision.kind} decider {verdict} it."
+    return f"{note} {figures}" if figures else note
 
 
 def _as_lane(decision: Decision) -> tuple[str, tuple[str, ...]]:
@@ -160,7 +189,7 @@ def _as_readable(decision: Decision, stated: Readable) -> tuple[str, tuple[str, 
     """
     assert decision.lean is not None
     lane, script = decision.lean.statement, decision.lean.script
-    if lane not in _LANE_STATEMENTS[type(decision.goal)][decision.status]:
+    if lane not in _lane_statements(decision.goal)[decision.status]:
         raise DecisionError(f"no claim shape for the statement {lane!r}")
     nested = tuple("  " + line for line in script)
     if decision.status == "PROVEN":
@@ -171,6 +200,51 @@ def _as_readable(decision: Decision, stated: Readable) -> tuple[str, tuple[str, 
         "intro claim",
         *stated.to_root,
     )
+
+
+def _check_hedging(decision: Decision) -> None:
+    """Refuse a ``covers`` block whose ``forsetiClaim`` does not fit its status.
+
+    A proof and a refutation of a ``covers`` claim both prove ``forsetiClaim``;
+    only the refutation's starts with ``∀ δ``, so a proof that carries the
+    refutation's application, or the reverse, fails here rather than in Lean.
+    """
+    goal, lean = decision.goal, decision.lean
+    if type(goal) is not HedgingGoal or goal.claim != "covers" or lean is None:
+        return
+    no_cover = hedging_render.claim_body(lean.prelude).startswith(
+        hedging_render.NO_COVER
+    )
+    if no_cover != (decision.status == "REFUTED"):
+        raise DecisionError(
+            f"a {decision.status} covers claim's forsetiClaim"
+            f" {'starts' if no_cover else 'does not start'} with"
+            f" {hedging_render.NO_COVER}"
+        )
+
+
+def _figures(decision: Decision) -> str:
+    """Return the figures a hedging verdict's docstring gives, or ``""``.
+
+    A refuted ``shortfall`` claim's are those of the path its prelude lists.
+
+    Raises:
+        KeyError: If the goal names an unknown payoff.
+        ValueError: If the figures disagree with the verdict
+            (`readable.hedging_figures`).
+    """
+    goal, lean = decision.goal, decision.lean
+    if type(goal) is not HedgingGoal or lean is None:
+        return ""
+    returns = hedging_render.listed_returns(lean.prelude)
+    return hedging_figures(goal, decision.status, returns)
+
+
+def _lane_statements(goal: object) -> dict[str, tuple[str, ...]]:
+    """Return the lane statements a goal's readable bridge is written against."""
+    if type(goal) is HedgingGoal:
+        return _HEDGING_STATEMENTS[goal.claim]
+    return _LANE_STATEMENTS[type(goal)]
 
 
 def _split_prelude(prelude: str) -> tuple[tuple[str, ...], str]:

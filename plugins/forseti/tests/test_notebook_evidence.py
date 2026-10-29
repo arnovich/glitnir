@@ -187,7 +187,7 @@ def test_an_iterate_directive_is_read_with_its_ports() -> None:
             f"-- @evidence iterate u (state := 1, 2) (names := x, {'n' * 201})",
             "the name of state 2 ('nnnnnnnnnnnnnnnnnnnn…') is longer than 200",
         ),
-        ("-- @evidence fly u (state := 1)", "use simulate, iterate or sample"),
+        ("-- @evidence fly u (state := 1)", "use simulate, iterate, sample or hedge"),
     ],
 )
 def test_malformed_iterate_directives_carry_an_error(directive, error) -> None:

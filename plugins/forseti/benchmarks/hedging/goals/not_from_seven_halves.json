@@ -1,0 +1,26 @@
+{
+  "schema": "gimle.forseti.hedging-goal/v1",
+  "payoff": "call",
+  "strike": [
+    100,
+    1
+  ],
+  "spot": [
+    100,
+    1
+  ],
+  "up": [
+    1,
+    50
+  ],
+  "down": [
+    1,
+    50
+  ],
+  "steps": 20,
+  "claim": "covers",
+  "premium": [
+    7,
+    2
+  ]
+}

@@ -36,6 +36,7 @@ import sys
 from pathlib import Path
 
 from glitnir_forseti.entailment.render import ALGEBRAIC_IMPORTS, IMPORTS, PSATZ_IMPORTS
+from glitnir_forseti.hedging.examples import replay_imports as hedging_imports
 from glitnir_forseti.lean.closure import (
     TOOLCHAIN_BINARIES,
     ClosureObservation,
@@ -94,6 +95,7 @@ def main() -> int:
         *replay_imports(),
         *stream_imports(),
         *stepped_imports(),
+        *hedging_imports(),
     }
     for imports in sorted(import_sets):
         observed = observe_closure(

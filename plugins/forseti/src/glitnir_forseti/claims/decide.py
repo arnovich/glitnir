@@ -1,12 +1,13 @@
-"""One front door to the four deciders, for the agent and the notebook.
+"""One front door to the five deciders, for the agent and the notebook.
 
 `read_goal` accepts a goal as text (`glitnir_forseti.claims.text`) or as its
 JSON encoding; `decide` hands it to the decider for its kind, unchanged, and
 reports that decider's own answer: ``PROVEN`` or ``REFUTED`` with a replayable
 artifact, or ``UNKNOWN`` with a reason. Nothing here searches, checks or
-decides; a status is only ever copied from a service result. The stepped
-decider keeps no artifact: it answers only without a replay, below, and a
-replayed request about a stepped goal ends ``UNKNOWN: lean-unavailable``.
+decides; a status is only ever copied from a service result. The stepped and
+hedging deciders keep no artifact: they answer only without a replay, below,
+and a replayed request about a stepped or hedging goal ends ``UNKNOWN:
+lean-unavailable``.
 
 For a decided goal the checked Lean statement and script are regenerated from
 the artifact by the kind's ``regenerate_application``, the same regeneration a
@@ -17,17 +18,22 @@ this record, is what replays.
 ``decide(..., replay=False)`` runs no Lean at all: the decider stops at the
 first evidence it finds and reports the Lean application of that evidence,
 unchecked and without an artifact. Its ``PROVEN`` or ``REFUTED`` is then only a
-proposal, which the caller must have Lean check.
+proposal, which the caller must have Lean check. A refuted hedging ``covers``
+goal proves ``forsetiClaim`` rather than its negation, its body being
+``∀ δ, ¬ Covers …``, so its ``lean.statement`` is ``: forsetiClaim`` with the
+status ``REFUTED``.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shlex
 import threading
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,6 +41,12 @@ from glitnir_forseti.entailment import replay as entailment_replay
 from glitnir_forseti.entailment import syntax as entailment_syntax
 from glitnir_forseti.entailment.limits import CEILINGS, EntailmentLimits
 from glitnir_forseti.entailment.syntax import Goal, GoalError, Tru
+from glitnir_forseti.hedging import numbers as hedging_numbers
+from glitnir_forseti.hedging import service as hedging_service
+from glitnir_forseti.hedging.examples import SPOT, STEPS, STRIKE, WIDE, covers_goal
+from glitnir_forseti.hedging.goal import HedgingGoal
+from glitnir_forseti.hedging.payoffs import PAYOFFS as HEDGING_PAYOFFS
+from glitnir_forseti.hedging.payoffs import Payoff
 from glitnir_forseti.stepped import service as stepped_service
 from glitnir_forseti.stepped.examples import BARRIER, VARIANCE, YEAR, breach_goal
 from glitnir_forseti.stepped.goal import SteppedGoal
@@ -137,11 +149,20 @@ _KINDS: dict[type, _Kind] = {
         stepped_service.decide_stepped,
         stepped_service.regenerate_application,
     ),
+    HedgingGoal: _Kind(
+        "hedging",
+        "glitnir_forseti.hedging",
+        HedgingGoal.SCHEMA,
+        HedgingGoal.from_json,
+        HedgingGoal.to_json,
+        hedging_service.decide_hedging,
+        hedging_service.regenerate_application,
+    ),
 }
 
 
 def goal_kind(goal: AnyGoal) -> str:
-    """Name a parsed goal's kind: entailment, trajectory, stream or stepped."""
+    """Name a parsed goal's kind: entailment, trajectory, stream, stepped or hedging."""
     return _KINDS[type(goal)].name
 
 
@@ -190,7 +211,8 @@ class Decision:
     """A decider's answer about one goal, as that decider gave it.
 
     Attributes:
-        kind: ``entailment``, ``trajectory``, ``stream`` or ``stepped``.
+        kind: ``entailment``, ``trajectory``, ``stream``, ``stepped`` or
+            ``hedging``.
         goal: The goal decided.
         status: ``PROVEN``, ``REFUTED`` or ``UNKNOWN``.
         reason: For ``UNKNOWN``, the decider's reason.
@@ -255,7 +277,7 @@ def decide(
     kind = _KINDS.get(type(goal))
     if kind is None:
         raise TypeError(
-            "goal must be an entailment, trajectory, stream or stepped goal"
+            "goal must be an entailment, trajectory, stream, stepped or hedging goal"
         )
     if replay:
         result = kind.decide(goal, limits, project=project, cancel=cancel)
@@ -438,6 +460,18 @@ def catalog() -> str:
             f" ({stepped.unrolled_cap} for fixed-date and expected claims);"
             f" observe {observed}"
         )
+    lines.append(
+        "Hedging payoffs (`hedging <payoff> strike K spot S band down d up u"
+        f" steps N`, then `premium P covers`, up to {hedging_service.COVERS_CAP}"
+        " steps, or `against down d' up u' shortfall <= X`, up to"
+        f" {hedging_service.SHORTFALL_CAP} steps, for an against band containing"
+        " the band; 0 < u and 0 < d < 1 for either band, simple returns as"
+        " fractions of the spot, so ±2 % a step is `down 1/50 up 1/50`):"
+    )
+    for payoff in HEDGING_PAYOFFS.values():
+        lines.append(
+            f"  {payoff.key}: {payoff.lean_name}, convex by {payoff.convexity}"
+        )
     return "\n".join(lines)
 
 
@@ -463,13 +497,15 @@ def _declared(entry: Any, band: Any, post: Any) -> TrajectoryGoal:
 
 
 def examples() -> tuple[dict[str, str], ...]:
-    """Return one example goal per registered model, and one entailment.
+    """Return one example goal per registered model or payoff, and one entailment.
 
     Each is a goal the deciders accept as written, generated from the
     registries: a trajectory model's declared state, start and first proved
-    band in the short form, a stream model's field on the unit box, and a
-    stepped model's year-long breach claim at its exact horizon bound. They
-    are starting points for a person to edit, not claims anyone made.
+    band in the short form, a stream model's field on the unit box, a
+    stepped model's year-long breach claim at its exact horizon bound, and a
+    hedging payoff covered from its binomial price rounded up to a
+    thousandth. They are starting points for a person to edit, not claims
+    anyone made.
     """
     found = [
         {
@@ -499,6 +535,14 @@ def examples() -> tuple[dict[str, str], ...]:
                 "goal": render_goal(_stepped(stepped)),
             }
         )
+    for payoff in HEDGING_PAYOFFS.values():
+        found.append(
+            {
+                "kind": "hedging",
+                "model": payoff.key,
+                "goal": render_goal(_hedging(payoff)),
+            }
+        )
     return tuple(found)
 
 
@@ -515,6 +559,17 @@ def _stepped(entry: SteppedEntry) -> SteppedGoal:
         stepped_service.INITIAL_ENERGY, horizon, entry.delta, VARIANCE, BARRIER
     )
     return breach_goal(bound, entry=entry, horizon=horizon, observation=name)
+
+
+def _hedging(payoff: Payoff) -> HedgingGoal:
+    """Pose a payoff's covers claim from its price rounded up to a thousandth.
+
+    The option is the examples' (`hedging.examples`): struck at the spot of
+    100, over 20 steps of a band of ±2 % a step.
+    """
+    fair = hedging_numbers.price(payoff, STRIKE, SPOT, WIDE, WIDE, STEPS)
+    premium = Fraction(math.ceil(fair * 1000), 1000)
+    return covers_goal(premium, payoff=payoff.key)
 
 
 def _stream(model: StreamModel) -> str:
@@ -557,6 +612,8 @@ def check_names(goal: AnyGoal) -> None:
             )
     elif type(goal) is StreamGoal and goal.model not in STREAM_MODELS:
         raise GoalTextError(f"no stream model {goal.model!r}\n{catalog()}")
+    elif type(goal) is HedgingGoal and goal.payoff not in HEDGING_PAYOFFS:
+        raise GoalTextError(f"no hedging payoff {goal.payoff!r}\n{catalog()}")
     elif type(goal) is SteppedGoal:
         stepped = STEPPED_MODELS.get(goal.model)
         if stepped is None:

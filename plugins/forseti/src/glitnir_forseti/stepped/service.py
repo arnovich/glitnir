@@ -24,11 +24,11 @@ observation. Then, for each law class and claim, one rule:
 * ``expected``, sub-Gaussian: unsupported.
 
 Every figure is a `fractions.Fraction` (`stepped.numbers`). A reason shows each
-by one rule (`_figure`): exactly when it is short, with its decimal beside it
-when four places do not already write it, and by its decimal alone when it is
-long; a decimal too small or too large for four places takes two significant
-digits, ``1.3e-111``. The recursions over the horizon stop as soon as the
-request is cancelled or out of time. A decided goal carries the
+by one rule (`figures.figure`): exactly when it is short, with its decimal
+beside it when four places do not already write it, and by its decimal alone
+when it is long; a decimal too small or too large for four places takes two
+significant digits, ``1.3e-111``. The recursions over the horizon stop as soon
+as the request is cancelled or out of time. A decided goal carries the
 Lean application of its template (`stepped.render`), unchecked: it is a
 proposal for the project's Lean to check. There is no pinned replay for this
 lane, so a request that asks for one ends ``UNKNOWN: lean-unavailable``
@@ -48,6 +48,7 @@ from typing import Any
 
 from glitnir_forseti.entailment.limits import EntailmentLimits
 from glitnir_forseti.entailment.syntax import GoalError, check_rational_bits
+from glitnir_forseti.figures import equals, figure
 from glitnir_forseti.trajectory.render import RootApplication
 
 from . import render
@@ -73,14 +74,6 @@ EXP_CAP = 256
 _UNROLLED = {"fixed-date": "a fixed-date claim", "expected": "an expected claim"}
 #: The model's theorems start from its initial state, where the energy is 0.
 INITIAL_ENERGY = Fraction(0)
-_PLACES = 4
-#: Longer exact figures are shown by their decimal alone.
-_SHORT = 40
-#: A numerator or denominator of more bits than this has more than `_SHORT`
-#: digits, so its figure is long without writing it out.
-_SHORT_BITS = 4 * _SHORT
-#: A decimal of four places is used for values from ``0.00005`` up to this.
-_FIXED_BELOW = 10**9
 
 
 class Status(str, Enum):
@@ -278,16 +271,16 @@ def supported(goal: SteppedGoal) -> tuple[SteppedEntry, SteppedObservation] | st
         known = ", ".join(sorted(MODELS))
         return f"no stepped model {goal.model!r}; the stepped models are {known}"
     if goal.step <= 0:
-        return f"the step must be positive, got {_figure(goal.step)}"
+        return f"the step must be positive, got {figure(goal.step)}"
     if goal.step != entry.delta:
         return (
-            f"{entry.key} is stepped by {_figure(entry.delta)}, the step its"
-            f" theorems are about, not {_figure(goal.step)}"
+            f"{entry.key} is stepped by {figure(entry.delta)}, the step its"
+            f" theorems are about, not {figure(goal.step)}"
         )
     if goal.start != entry.start:
         return (
-            f"{entry.key} starts at {_figure(entry.start)}, not at the start"
-            f" {_figure(goal.start)}"
+            f"{entry.key} starts at {figure(entry.start)}, not at the start"
+            f" {figure(goal.start)}"
         )
     if goal.initial != entry.initial:
         return (
@@ -310,7 +303,7 @@ def supported(goal: SteppedGoal) -> tuple[SteppedEntry, SteppedObservation] | st
             f" mark`) goes up to {entry.horizon_cap}"
         )
     if goal.barrier is not None and goal.barrier <= 0:
-        return f"the barrier must be positive, got {_figure(goal.barrier)}"
+        return f"the barrier must be positive, got {figure(goal.barrier)}"
     observation = entry.observations.get(goal.observation)
     if observation is None:
         names = ", ".join(entry.observations)
@@ -343,7 +336,7 @@ def _rule(
         return _Verdict(
             "trivial-bound",
             Status.PROVEN,
-            f"a bound of at least 1 ({_figure(goal.bound)}) holds for every"
+            f"a bound of at least 1 ({figure(goal.bound)}) holds for every"
             " probability law",
             application=render.at_most_one(goal, entry),
         )
@@ -381,17 +374,17 @@ def _horizon(goal: SteppedGoal, entry: SteppedEntry) -> _Verdict:
         return _Verdict(
             "horizon",
             Status.PROVEN,
-            f"N·Δ²·v/B² {_equals(bound)} ≤ {_figure(q)}",
+            f"N·Δ²·v/B² {equals(bound)} ≤ {figure(q)}",
             application=render.horizon_hold(goal, entry),
         )
     above = (
-        f"the horizon bound N·Δ²·v/B² {_equals(bound)} is above the claimed"
-        f" {_figure(q)}"
+        f"the horizon bound N·Δ²·v/B² {equals(bound)} is above the claimed"
+        f" {figure(q)}"
     )
     if barrier != 1:
         return _gap(
             f"{above}; the three-point refutation is stated for the barrier 1"
-            f" only, not {_figure(barrier)}"
+            f" only, not {figure(barrier)}"
         )
     try:
         reach, eps = three_point(goal.step, goal.variance, barrier)
@@ -403,17 +396,17 @@ def _horizon(goal: SteppedGoal, entry: SteppedEntry) -> _Verdict:
         return _Verdict(
             "three-point",
             Status.REFUTED,
-            f"the three-point law with jumps ±{reach} and ε {_equals(eps)}"
+            f"the three-point law with jumps ±{reach} and ε {equals(eps)}"
             f" breaches with probability at least 1 − (1 − 2ε)^{n}"
-            f" {_equals(exact)}, above {_figure(q)}",
+            f" {equals(exact)}, above {figure(q)}",
             application=render.horizon_refutation(
                 goal, entry, reach, exact=q >= bernoulli
             ),
         )
     return _gap(
         f"{above}, and not below the three-point threshold 1 − (1 − 2ε)^{n}"
-        f" {_equals(exact)} at ε {_equals(eps)}, nor Bernoulli's 2εN/(1 + 2εN)"
-        f" {_equals(bernoulli)}"
+        f" {equals(exact)} at ε {equals(eps)}, nor Bernoulli's 2εN/(1 + 2εN)"
+        f" {equals(bernoulli)}"
     )
 
 
@@ -429,7 +422,7 @@ def _fixed_date(
         return _refused(
             "fixed-date",
             "the sub-Gaussian route reads the proxy as a whole number"
-            f" (`exceeds_at_proxy` takes v : ℕ), got {_figure(v)}",
+            f" (`exceeds_at_proxy` takes v : ℕ), got {figure(v)}",
         )
     if v == 0:
         return _refused(
@@ -446,19 +439,19 @@ def _fixed_date(
     )
     c_up, level, bound = fixed_date_bound(c, goal.barrier, cap=EXP_CAP)
     source = (
-        f"at r {_equals(level)}, from the proxy bound c_up {_equals(c_up)} on the"
-        f" proxy at mark {goal.horizon}, which is {_figure(c)}"
+        f"at r {equals(level)}, from the proxy bound c_up {equals(c_up)} on the"
+        f" proxy at mark {goal.horizon}, which is {figure(c)}"
     )
     if bound <= goal.bound:
         return _Verdict(
             "fixed-date",
             Status.PROVEN,
-            f"2/E(r) {_equals(bound)} ≤ {_figure(goal.bound)} {source}",
+            f"2/E(r) {equals(bound)} ≤ {figure(goal.bound)} {source}",
             application=render.fixed_date_hold(goal, entry, c_up, level),
         )
     return _gap(
-        f"the fixed-date bound 2/E(r) {_equals(bound)} is above the claimed"
-        f" {_figure(goal.bound)} {source}; no refutation of a claim at each mark"
+        f"the fixed-date bound 2/E(r) {equals(bound)} is above the claimed"
+        f" {figure(goal.bound)} {source}; no refutation of a claim at each mark"
         " is in this version",
         "fixed-date",
     )
@@ -468,21 +461,21 @@ def _expected(goal: SteppedGoal, entry: SteppedEntry, stop: Stop) -> _Verdict:
     value = expected_energy(
         INITIAL_ENERGY, rho(goal.step), goal.step, goal.variance, goal.horizon, stop
     )
-    figure = f"Δ²·v·∑_(k<{goal.horizon}) ρ^k {_equals(value)}"
+    formula = f"Δ²·v·∑_(k<{goal.horizon}) ρ^k {equals(value)}"
     if value <= goal.bound:
         return _Verdict(
             "expected",
             Status.PROVEN,
-            f"{figure} ≤ {_figure(goal.bound)}",
+            f"{formula} ≤ {figure(goal.bound)}",
             application=render.expected_hold(goal, entry),
         )
     reach = _reach(goal.step, goal.variance)
     return _Verdict(
         "expected",
         Status.REFUTED,
-        f"{figure} > {_figure(goal.bound)}, the exact expectation under the"
+        f"{formula} > {figure(goal.bound)}, the exact expectation under the"
         f" three-point law with jumps ±{reach}, which has variance"
-        f" {_figure(goal.variance)}",
+        f" {figure(goal.variance)}",
         application=render.expected_refutation(goal, entry, reach),
     )
 
@@ -513,70 +506,8 @@ def _check_bits(goal: SteppedGoal, limits: EntailmentLimits) -> None:
         check_rational_bits(value, limits)
 
 
-def _figure(value: Fraction) -> str:
-    """Show a figure as every reason does: exact when short, else a decimal.
-
-    A figure of at most `_SHORT` characters is shown exactly, followed by its
-    `_decimal` in parentheses unless four places already write it exactly:
-    ``1/4``, ``16384/82433 (0.1988)``, ``1/10000000000 (1.0e-10)``. A longer
-    one is shown by its decimal alone, ``≈ 0.0084`` or ``≈ 1.3e-111``.
-    """
-    if not _short(value):
-        return f"≈ {_decimal(value)}"
-    if (value * 10**_PLACES).denominator == 1:
-        return str(value)
-    return f"{value} ({_decimal(value)})"
-
-
-def _equals(value: Fraction) -> str:
-    """`_figure` after a formula: ``= 1/4``, or ``≈ 0.0084`` if long."""
-    shown = _figure(value)
-    return shown if shown.startswith("≈") else f"= {shown}"
-
-
-def _short(value: Fraction) -> bool:
-    """Whether ``value`` is written in at most `_SHORT` characters.
-
-    A part of more than `_SHORT_BITS` bits is too long to write out at all,
-    and may be past the digits `str` writes for an integer.
-    """
-    bits = max(value.numerator.bit_length(), value.denominator.bit_length())
-    return bits <= _SHORT_BITS and len(str(value)) <= _SHORT
-
-
-def _decimal(value: Fraction) -> str:
-    """Approximate a rational in decimal, exactly computed, rounding half up.
-
-    Four places, ``0.1988``, for a magnitude from ``0.00005`` up to
-    `_FIXED_BELOW`; any other nonzero value takes two significant digits,
-    ``1.3e-111``, so that no figure reads as zero or as a bound on itself.
-    """
-    if value < 0:
-        return f"-{_decimal(-value)}"
-    scale = 10**_PLACES
-    scaled = math.floor(value * scale + Fraction(1, 2))
-    if value == 0 or 0 < scaled < _FIXED_BELOW * scale:
-        return f"{scaled // scale}.{scaled % scale:0{_PLACES}d}"
-    return _scientific(value)
-
-
-def _scientific(value: Fraction) -> str:
-    """Write a positive rational with two significant digits, ``1.3e-111``."""
-    # ``2^(b − 1) ≤ value < 2^(b + 1)`` for the bit lengths' difference ``b``,
-    # and ``0.3 < log₁₀ 2 < 0.31``: start at a power of ten at or below the
-    # value's, then climb to it.
-    low = value.numerator.bit_length() - value.denominator.bit_length() - 1
-    exponent = low * 3 // 10 if low >= 0 else low * 31 // 100
-    while value >= Fraction(10) ** (exponent + 1):
-        exponent += 1
-    digits = math.floor(value / Fraction(10) ** exponent * 10 + Fraction(1, 2))
-    if digits == 100:
-        digits, exponent = 10, exponent + 1
-    return f"{digits // 10}.{digits % 10}e{exponent}"
-
-
 def _point(values: tuple[Fraction, ...]) -> str:
-    return "(" + ", ".join(_figure(value) for value in values) + ")"
+    return "(" + ", ".join(figure(value) for value in values) + ")"
 
 
 def _unknown(
