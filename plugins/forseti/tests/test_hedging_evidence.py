@@ -38,6 +38,7 @@ from glitnir_forseti.notebook.evidence import (
     hedge_plan,
     read_directive,
 )
+from glitnir_forseti.stepped.sampler import wilson
 
 CALL = PAYOFFS["call"].lean_name
 REQUIRED = "(strike := 100) (spot := 100) (down := 1/50) (up := 1/50) (steps := 20)"
@@ -199,6 +200,12 @@ def test_the_laws_are_uniform_two_point_and_gaussian() -> None:
         (
             REQUIRED.replace("(down := 1/50)", "(down := 1)"),
             "the band's down move must be below 1",
+        ),
+        # Written in percent: the refusal says how a move is written.
+        (
+            REQUIRED.replace("(down := 1/50)", "(down := 2)"),
+            "moves are simple returns as fractions of the spot: ±2 % a step is"
+            " (down := 1/50) (up := 1/50) or 0.02",
         ),
         (
             REQUIRED.replace("(down := 1/50)", "(down := 0)"),
@@ -613,7 +620,11 @@ def test_the_card_shows_the_quantiles_of_the_profit_and_loss() -> None:
     card = _card(f"{REQUIRED} (paths := 400)")
     assert checked_evidence(card) == card and "plane" not in card
     series = card["series"]
-    assert series["names"] == ["profit and loss at expiry"]
+    assert series["names"] == [
+        "seller's profit and loss at expiry, by quantile (0 = worst sampled path,"
+        " 1 = best)"
+    ]
+    assert series["names"] == [forseti.HEDGE_SERIES]
     assert series["times"] == [i / 40 for i in range(41)]
     assert len(series["values"]) == 41 and all(
         len(row) == 1 for row in series["values"]
@@ -627,6 +638,7 @@ def test_the_card_names_its_provenance() -> None:
     card = _card(f"{REQUIRED} (paths := 400)")
     assert [label for label, _ in card["provenance"]] == [
         "verb",
+        "x axis",
         "payoff",
         "strike",
         "spot",
@@ -635,7 +647,7 @@ def test_the_card_names_its_provenance() -> None:
         "law",
         "paths",
         "seed",
-        "premium",
+        forseti.HEDGE_PREMIUM,
         "minimum",
         "median",
         "maximum",
@@ -645,8 +657,12 @@ def test_the_card_names_its_provenance() -> None:
         "created",
     ]
     provenance = _provenance(card)
-    assert {k: provenance[k] for k in list(provenance)[:10]} == {
+    assert forseti.HEDGE_PREMIUM == (
+        "premium (binomial price at the band, Lean `priceQ`, checked exactly)"
+    )
+    assert {k: provenance[k] for k in list(provenance)[:11]} == {
         "verb": "hedge",
+        "x axis": "quantile level, not time",
         "payoff": "call",
         "strike": "100",
         "spot": "100",
@@ -655,13 +671,20 @@ def test_the_card_names_its_provenance() -> None:
         "law": "uniform",
         "paths": "400",
         "seed": "7",
-        "premium": "≈ 3.5549",
+        forseti.HEDGE_PREMIUM: "≈ 3.5549",
     }
     values = [row[0] for row in card["series"]["values"]]
     assert float(provenance["minimum"]) == pytest.approx(values[0], rel=1e-5)
     assert float(provenance["median"]) == pytest.approx(values[20], rel=1e-5)
     assert float(provenance["maximum"]) == pytest.approx(values[-1], rel=1e-5)
-    assert provenance["paths below zero"] == "0 of 400, by more than 1e-07"
+    # The fraction below zero is sampled: its 95 % Wilson interval is given.
+    # With none below, the interval is [0, z² / (n + z²)], z the 95 % quantile.
+    low, high = wilson(0, 400)
+    assert low == 0.0 and high == pytest.approx(1.959964**2 / (400 + 1.959964**2))
+    assert provenance["paths below zero"] == (
+        "0 of 400, by more than 1e-07 (a billionth of the spot); fraction 0 to"
+        f" {high:.4g} (95 %, Wilson)"
+    )
     assert provenance["arithmetic"] == "float64"
     assert provenance["provider"].startswith("glitnir-forseti ")
     assert all(len(value) <= MAX_TEXT for value in provenance.values())
@@ -683,12 +706,12 @@ def test_the_card_names_the_against_band_and_the_gaussian_spread() -> None:
     )
     assert checked_evidence(card) == card
     labels = [label for label, _ in card["provenance"]]
-    assert labels[4:9] == ["band", "against", "steps", "law", "sigma"]
+    assert labels[5:10] == ["band", "against", "steps", "law", "sigma"]
     provenance = _provenance(card)
     assert provenance["band"] == "down 1/100 up 1/100"
     assert provenance["against"] == "down 1/50 up 1/50"
     assert provenance["sigma"] == "1/100"
-    assert provenance["premium"] == "≈ 1.7702"
+    assert provenance[forseti.HEDGE_PREMIUM] == "≈ 1.7702"
 
 
 def test_the_card_carries_no_proved_number() -> None:

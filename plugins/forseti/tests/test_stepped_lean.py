@@ -22,7 +22,7 @@ marks, where the hold does no work that long. The proofs of a fixed-date bound
 and an expectation may unroll a recursion over every mark (``proxyRec``,
 ``geomSum``), so their cap is lower, and each is checked at it.
 
-A check is held to a budget of `conftest.CHECK_BUDGET_MS`, five minutes
+A check is held to a budget of `block_checking.CHECK_BUDGET_MS`, five minutes
 unless the environment variable ``FORSETI_CHECK_BUDGET_MS`` names another
 number of milliseconds, as a loaded or slower machine may need. The check
 itself is the shared `conftest.check_block` fixture, which the hedging lane's
@@ -42,7 +42,7 @@ import json
 import threading
 
 import pytest
-from conftest import CHECK_BUDGET_MS, STANDARD_AXIOMS, read_check_budget_ms
+from block_checking import CHECK_BUDGET_MS, STANDARD_AXIOMS, read_check_budget_ms
 from glitnir.providers.outcomes import checked_decision, checked_evidence
 
 from glitnir_forseti import evidence_provider

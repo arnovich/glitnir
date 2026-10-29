@@ -68,15 +68,20 @@ required; `law` (`uniform`, the default, `twopoint` or `gaussian`), `paths`
 (4000, at most 100000) and `seed` (7) are optional, as are `against_down` and
 `against_up`, which are given together and draw the paths in another band than
 the hedge's, usually a wider one, and `sigma`, which `gaussian` requires and the
-other laws refuse. A run of more than 20 million payoff evaluations and draws is
-refused on the card: with the default 4000 paths, at most 69 steps for `uniform`
-and `twopoint` and 36 for `gaussian` (fewer paths allow more steps). Lean prints
-the library's binomial price at the band, the provider checks it against the
-same price in exact arithmetic, and the hedge built for the band is run from
-that premium. Its card shows the profit and loss at expiry by its quantiles,
-with the premium, the least, median and greatest outcome and the paths that end
-below zero in the provenance. It shows no proved number: it is sampled evidence
-beside a `hedging` decision, never the decision. Both are described in
+other laws refuse. `sigma` is the per-step standard deviation of the simple
+return, in the units of `down` and `up` (1/100 is 1 % a step), not an
+annualised volatility. A run of more than 20 million payoff evaluations and
+draws is refused on the card: with the default 4000 paths, at most 69 steps for
+`uniform` and `twopoint` and 36 for `gaussian` (fewer paths allow more steps).
+Lean prints the library's binomial price at the band, the provider checks it
+against the same price in exact arithmetic, and the hedge built for the band is
+run from that premium. Its card shows the seller's profit and loss at expiry,
+the hedge's wealth less the payoff, by its quantiles (the x axis is the quantile
+level, 0 the worst sampled path and 1 the best, not time), with the premium, the
+least, median and greatest outcome and the paths that end below zero, with a
+95 % Wilson interval for their fraction, in the provenance. It shows no proved
+number: it is sampled evidence beside a `hedging` decision, never the decision.
+Both are described in
 [the hedging lane](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/docs/hedging.md).
 
 It also decides `-- @decide <name> : <goal>` directives whose goal starts with
@@ -110,28 +115,45 @@ module.
 
 A `hedging` goal names a payoff (`call`, `put` or `straddle`), a strike, a spot,
 a band of per-step moves (`down` and `up`, simple returns between `-down` and
-`up`), a number of steps and one claim, in exact rationals. `premium P covers`
+`up`), a number of steps and one claim, in exact rationals. Moves are simple
+returns as fractions of the spot: ±2 % a step is `down 1/50 up 1/50` or
+`down 0.02 up 0.02`; `2`, `2%` and `1e-2` do not mean 2 %. `premium P covers`
 is PROVEN when the premium is at least the binomial price at the band's ends, so
 the hedge from it covers the payoff on every path whose simple returns stay in
 the band, and REFUTED when it is below, since then no spot-feedback strategy
 covers the payoff from it. `against down d up u shortfall <= X` compares a hedge
-built for one band with paths of a wider band: it is PROVEN only for equal bands
-with a nonnegative bound, REFUTED by one exhibited extreme path of the wider
-band that leaves the hedge more than `X` below the payoff, and otherwise
-`UNKNOWN: gap`, since no theorem bounds the shortfall over the band's other
-paths. PROVEN and REFUTED are the decider's proposals: it runs no Lean, and the
-notebook's Lean check of the proposed block decides. A payoff other than `call`,
-`put` or `straddle`, a spot or step count that is not positive and a move that
-is not positive cannot be written in a notebook (the directive is a parse
-error). A down move of 1 or more, and an `against` band that does not contain
-the hedge's band, are `UNKNOWN: unsupported`. A `covers` claim is decided up to
-250 steps and a `shortfall` claim up to 60; a longer one is
-`UNKNOWN: resource-limit`. `hedging` decisions and `hedge` evidence need a
-Forseti Lean build that contains `Gimle.Forseti.Hedging`, as the pinned release,
-Forseti Lean v0.6.0, does; an older build reports the missing module.
+built for one band with paths of a band that contains the hedge's, equal or
+wider: it is PROVEN only for equal bands with a nonnegative bound, REFUTED by
+one exhibited extreme path of the wider band that leaves the hedge more than `X`
+below the payoff, and otherwise `UNKNOWN: gap`, since no theorem bounds the
+shortfall over the band's other paths. PROVEN and REFUTED are the decider's
+proposals: it runs no Lean, and the notebook's Lean check of the proposed block
+decides. A payoff other than `call`, `put` or `straddle`, a spot or step count
+that is not positive and a move that is not positive cannot be written in a
+notebook (the directive is a parse error). A down move of 1 or more, and an
+`against` band that does not contain the hedge's band, are
+`UNKNOWN: unsupported`. A `covers` claim is decided up to 250 steps and a
+`shortfall` claim up to 60; a longer one is `UNKNOWN: resource-limit`.
+`hedging` decisions and `hedge` evidence need a Forseti Lean build that
+contains `Gimle.Forseti.Hedging`, as the pinned release, Forseti Lean v0.6.0,
+does; an older build reports the missing module.
 
-Deciding needs the `z3` extra (`glitnir-forseti[z3]`); without it the card says
-so before anything runs. **Run** searches for a certificate or a counterexample and proposes a self-contained Lean block: a `Decided_<name>`
+Read as a sale: the seller takes in the premium and holds the hedge, borrowing
+or lending at zero interest with no transaction costs, so wealth is the premium
+plus the trading gains; the account is self-financing and rebalanced only at the
+steps, and the payoff is European, paid on the spot after the last step. The
+binomial price at the band's ends is the Cox–Ross–Rubinstein price with up
+factor `1 + u`, down factor `1 - d` and weight `q = d/(u + d)`. By the two
+`covers` rules (`covers_hedge` and `not_covers_of_lt`) it is the least premium
+from which any spot-feedback strategy covers the payoff on every path in the
+band: the band's super-hedging price, the discrete, bounded-move form of
+uncertain-volatility pricing. A spot-feedback strategy holds, over each step, a
+number of units set by the step and the current spot; a strategy that depends
+on the path so far is outside the refutation theorem.
+
+Deciding needs the `z3` extra (`glitnir-forseti[z3]`) for every kind, although
+the stepped and hedging deciders use none; without it the card says so before
+anything runs. **Run** searches for a certificate or a counterexample and proposes a self-contained Lean block: a `Decided_<name>`
 namespace with the definitions it uses and the theorem `<name>` (a proof) or
 `<name>_refuted` (a refutation, stating `¬ (claim)`). The search runs no Lean;
 Glitnir checks the block with the project's Lean, and only that check makes it
@@ -144,11 +166,11 @@ against a pinned Forseti Lean release and its command lines, which are not
 reachable from the editor.
 
 **Verified on 2026-10-28** against Forseti Lean v0.5.1 with Asgard Lean v0.4.1
-(Lean 4.35.0), the pinned release, by CI's `plugin-live` shards on Linux (run
-40654470418), every one green:
+(Lean 4.35.0), the release pinned then, by CI's `plugin-live` shards on Linux
+(run 40654470418), every one green:
 `streams` 88 passed (`tests/test_streams_lean.py` and
 `tests/test_mild_stream_lean.py`, kernel replay of the stream roots against
-the pinned release); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,
+the release pinned then); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,
 every example goal and both driven models, and
 `tests/test_classical_euler_lean.py`); `decisions` 56 passed and one skipped
 (`tests/test_decision_provider_lean.py`, proven and refuted `entailment` and
@@ -161,7 +183,9 @@ checked in 71–76 s, the first after a one-time import replay); and `rest`
 1559 passed with 14 skipped, all Python Asgard simulations or macOS-only
 sandbox probes (`tests/test_lean_release.py`,
 `tests/test_live_lean_gate.py`, `tests/test_lean_independent.py`,
-`tests/test_lean_sandbox_attacks.py` and the unit tests). The view preamble
+`tests/test_lean_sandbox_attacks.py` and the unit tests). The pin is now
+Forseti Lean v0.6.0, which this release's pull request runs the same shards
+against, the `hedging` shard included. The view preamble
 drew a circuit and a model in `tests/test_views_lean.py` on macOS against
 Forseti Lean v0.4.0 on 2026-10-22; CI runs it from then on. `stream` decisions and
 `iterate` evidence were verified on 2026-10-23, locally on macOS with Glitnir

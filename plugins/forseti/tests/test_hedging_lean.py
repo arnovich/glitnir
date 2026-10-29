@@ -21,9 +21,10 @@ twenty steps), variants reach what those constants do not: the lane's caps,
 where a ``shortfall`` refutation has the kernel evaluate the hedge along a
 path of 60 steps and a ``covers`` block evaluates a price over 250, and the
 straddle, whose names no example cites. A check is the shared
-`conftest.check_block` fixture, held to the budget `conftest.CHECK_BUDGET_MS`
-(five minutes unless ``FORSETI_CHECK_BUDGET_MS`` names another number of
-milliseconds), as the stepped lane's live test is.
+`conftest.check_block` fixture, held to the budget
+`block_checking.CHECK_BUDGET_MS` (five minutes unless
+``FORSETI_CHECK_BUDGET_MS`` names another number of milliseconds), as the
+stepped lane's live test is.
 
 Each scratch notebook is a new module of the checkout's ``Gimle.Forseti.Tests``
 library, written by the ``scratch_notebook`` fixture, which creates it
@@ -41,7 +42,7 @@ import json
 import threading
 
 import pytest
-from conftest import STANDARD_AXIOMS
+from block_checking import STANDARD_AXIOMS
 from glitnir.providers.outcomes import checked_decision, checked_evidence
 
 from glitnir_forseti import evidence_provider
@@ -50,6 +51,8 @@ from glitnir_forseti.decision_provider import decide, parse
 from glitnir_forseti.hedging.examples import EXAMPLES, PRICE, Example
 from glitnir_forseti.hedging.payoffs import PAYOFFS
 
+#: A bad budget fails every test here at once, not only those that read it.
+pytestmark = pytest.mark.usefixtures("check_budget_ms")
 #: The worked example's goals, as the variants below change them.
 COVERS = (
     "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
@@ -251,7 +254,8 @@ def test_live_hedge_emission_prints_the_exact_premium(scratch_notebook) -> None:
     assert checked_evidence(card) == card and card["finite"] is True
     provenance = dict(card["provenance"])
     print(f"provenance: {provenance}")
-    assert provenance["premium"] == "≈ 3.5549" and provenance["paths"] == "4000"
+    assert provenance[evidence_provider.HEDGE_PREMIUM] == "≈ 3.5549"
+    assert provenance["paths"] == "4000"
     assert provenance["paths below zero"].startswith("0 of 4000")
     assert float(provenance["minimum"]) >= -1e-9
     assert not any(

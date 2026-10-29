@@ -18,7 +18,10 @@ this record, is what replays.
 ``decide(..., replay=False)`` runs no Lean at all: the decider stops at the
 first evidence it finds and reports the Lean application of that evidence,
 unchecked and without an artifact. Its ``PROVEN`` or ``REFUTED`` is then only a
-proposal, which the caller must have Lean check.
+proposal, which the caller must have Lean check. A refuted hedging ``covers``
+goal proves ``forsetiClaim`` rather than its negation, its body being
+``∀ δ, ¬ Covers …``, so its ``lean.statement`` is ``: forsetiClaim`` with the
+status ``REFUTED``.
 """
 
 from __future__ import annotations
@@ -462,7 +465,8 @@ def catalog() -> str:
         f" steps N`, then `premium P covers`, up to {hedging_service.COVERS_CAP}"
         " steps, or `against down d' up u' shortfall <= X`, up to"
         f" {hedging_service.SHORTFALL_CAP} steps, for an against band containing"
-        " the band; 0 < u and 0 < d < 1 for either band):"
+        " the band; 0 < u and 0 < d < 1 for either band, simple returns as"
+        " fractions of the spot, so ±2 % a step is `down 1/50 up 1/50`):"
     )
     for payoff in HEDGING_PAYOFFS.values():
         lines.append(

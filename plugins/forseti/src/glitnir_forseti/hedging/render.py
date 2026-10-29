@@ -34,6 +34,10 @@ template proves. Four templates:
 The decider's arithmetic chooses the template and its constants. Lean is the
 authority: a template whose constants are wrong fails to check, and never
 proves another claim, because the claim is restated from the goal.
+
+A refuting path is also written in words (`path_words`), for the decider's
+reason and the block's docstring, and its returns are read back from the
+prelude that lists them (`listed_returns`).
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from fractions import Fraction
 
+from glitnir_forseti.figures import move
 from glitnir_forseti.trajectory.render import RootApplication
 
 from .goal import HedgingGoal
@@ -65,6 +70,17 @@ _SPOT_IN_BAND = f"{_HEDGING}.spotQ_inBand"
 #: The refuting path's returns, read as a function of the step.
 _RETURNS_FUN = "fun k => forsetiReturns.getD k 0"
 _RETURNS = f"({_RETURNS_FUN})"
+#: How the prelude defines ``forsetiClaim`` and the refuting path's returns,
+#: and how a ``covers`` refutation's proposition starts: ``∀ δ``.
+CLAIM_DEFINITION = "def forsetiClaim : Prop :=\n"
+_RETURNS_DEFINITION = "def forsetiReturns : List ℚ := ["
+NO_COVER = "∀ δ"
+#: The longest repeating unit a path is written by, ``UUD`` or ``UUDD``.
+_PERIOD = 4
+#: A path with no such pattern is written out up to this many steps, and
+#: past it by its length and its first `_SHOWN_MOVES` moves.
+_WRITTEN_MOVES = 24
+_SHOWN_MOVES = 12
 
 
 def numeral(value: Fraction) -> str:
@@ -163,6 +179,78 @@ def prelude(proposition: str, definitions: tuple[str, ...] = ()) -> str:
     # templates' declarations sees that the name is reserved.
     definition = "def forsetiClaim : Prop :=\n"
     return f"{imports}\n{opens}\n{defined}{definition}  {proposition}\n"
+
+
+def claim_body(prelude: str) -> str:
+    """Return the proposition a prelude defines as ``forsetiClaim``, or ``""``."""
+    _, found, body = prelude.partition(CLAIM_DEFINITION)
+    return body.strip() if found else ""
+
+
+def listed_returns(prelude: str) -> tuple[Fraction, ...] | None:
+    """Read back the returns a refutation's prelude lists, or None if it lists none.
+
+    They are the ``forsetiReturns`` that `shortfall_refutation` defines, one
+    numeral per step.
+    """
+    for line in prelude.split("\n"):
+        if line.startswith(_RETURNS_DEFINITION) and line.endswith("]"):
+            listed = line.removeprefix(_RETURNS_DEFINITION).removesuffix("]")
+            try:
+                return tuple(Fraction(part) for part in listed.split(", "))
+            except (ValueError, ZeroDivisionError):
+                return None
+    return None
+
+
+def path_words(path: Sequence[bool], up: Fraction, down: Fraction) -> str:
+    """Write an extreme path in words, by its pattern when it has a short one.
+
+    ``True`` marks a rise of ``up``, ``False`` a fall of ``down``, each a
+    simple return written as a percentage with its exact value beside
+    (`figures.move`). The path of only rises or only falls, the zigzag (up and
+    down by turns) and a path repeating a unit of at most `_PERIOD` moves are
+    written by that pattern; any other by its moves, ``UDDU…`` with U a rise
+    and D a fall, and past `_WRITTEN_MOVES` steps by its length and first
+    moves.
+    """
+    steps = len(path)
+    rise, fall = move(up), move(-down)
+    letters = "".join("U" if moved_up else "D" for moved_up in path)
+    if all(path):
+        return f"the path of {_count(steps, 'rise')} of {rise}"
+    if not any(path):
+        return f"the path of {_count(steps, 'fall')} of {fall}"
+    legend = f"U a rise of {rise}, D a fall of {fall}"
+    period = _period(letters)
+    if period == 2:
+        first, second = (rise, fall) if path[0] else (fall, rise)
+        turns = "up and down" if path[0] else "down and up"
+        return f"the zigzag ({turns} by turns) of {steps} steps of {first} and {second}"
+    if period is not None:
+        unit = letters[:period]
+        return f"the path repeating {unit} over {steps} steps ({legend})"
+    if steps <= _WRITTEN_MOVES:
+        return f"the path {letters} ({legend})"
+    return f"a path of {steps} steps starting {letters[:_SHOWN_MOVES]}… ({legend})"
+
+
+def _period(letters: str) -> int | None:
+    """Return the shortest unit, of at most `_PERIOD` moves, that the path repeats.
+
+    It must repeat at least twice; the path may end inside a repetition.
+    """
+    for period in range(1, _PERIOD + 1):
+        if len(letters) < 2 * period:
+            return None
+        if all(letters[i] == letters[i % period] for i in range(len(letters))):
+            return period
+    return None
+
+
+def _count(steps: int, word: str) -> str:
+    """Write ``1 rise`` or ``20 rises``."""
+    return f"{steps} {word}" if steps == 1 else f"{steps} {word}s"
 
 
 def _application(

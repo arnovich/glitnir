@@ -24,7 +24,10 @@ along a path of every step. Then one rule per claim:
   is found by `numbers.worst_extreme_path`; if the hedge ends more than the
   bound below the payoff on it, that path refutes the claim, and if not the
   claim is ``UNKNOWN: gap``: no theorem bounds the shortfall over the band's
-  other paths for a hedge built for a narrower band.
+  other paths for a hedge built for a narrower band. A refutation's block
+  states the path's exact shortfall, so one whose numerator or denominator
+  has more than `MAX_SHORTFALL_BITS` bits is ``UNKNOWN: resource-limit``
+  instead.
 
 Every figure is a `fractions.Fraction` (`hedging.numbers`), shown in a reason
 by the rule the stepped lane shares (`figures.figure`): exactly when short,
@@ -35,6 +38,10 @@ decided goal carries the Lean application of its template (`hedging.render`),
 unchecked: it is a proposal for the project's Lean to check. There is no
 pinned replay for this lane, so a request that asks for one ends ``UNKNOWN:
 lean-unavailable`` instead of claiming what nothing checked.
+
+A band's moves are simple returns as fractions of the spot: ``down 1/50 up
+1/50`` is ±2 % a step. A down move of ``1`` or more is refused with that hint,
+since a goal written in percent (``down 2``) reaches the decider as one.
 """
 
 from __future__ import annotations
@@ -66,6 +73,22 @@ COVERS_CAP = 250
 #: hedge along a path of every step.
 SHORTFALL_CAP = 60
 _CAPS = {"covers": COVERS_CAP, "shortfall": SHORTFALL_CAP}
+#: Most bits in the numerator or denominator of the shortfall a refutation's
+#: block states exactly: about 3900 decimal digits, below Python's default
+#: limit of 4300 on writing an integer in decimal. The search compounds the
+#: band's numbers over every step, so a band written with long numbers can
+#: exceed it well within the step cap.
+MAX_SHORTFALL_BITS = 13_000
+#: What a search that ran out of time was doing, for its reason.
+_WORK = {
+    "price": "computing the binomial price",
+    "extreme-path": "searching for the worst extreme path",
+}
+#: How a band's moves are written, for a refusal of a down move of 1 or more.
+_UNITS = (
+    "moves are simple returns as fractions of the spot: ±2 % a step is"
+    " `down 1/50 up 1/50` or `down 0.02 up 0.02`"
+)
 
 
 class Status(str, Enum):
@@ -247,11 +270,20 @@ def decide_hedging(
     elif interrupted or time.monotonic() > deadline:
         stopped = UnknownReason.TIMEOUT
     if stopped is not None:
-        stages.append(Stage(verdict.stage, stopped.value, "", search_ms))
+        detail = ""
+        if stopped is UnknownReason.TIMEOUT:
+            work = _WORK.get(verdict.stage, "deciding")
+            detail = (
+                f"{work} over {goal.steps} steps ran out of time"
+                f" ({limits.wall_time_ms} ms); use fewer steps or a larger wall"
+                " time"
+            )
+        stages.append(Stage(verdict.stage, stopped.value, detail, search_ms))
         return _unknown(stopped, stages, limits)
     if verdict.application is None:
-        assert verdict.reason is UnknownReason.GAP
-        stages.append(Stage(verdict.stage, "none", verdict.detail, search_ms))
+        assert verdict.reason in (UnknownReason.GAP, UnknownReason.RESOURCE_LIMIT)
+        outcome = "none" if verdict.reason is UnknownReason.GAP else "resource-limit"
+        stages.append(Stage(verdict.stage, outcome, verdict.detail, search_ms))
         return _unknown(verdict.reason, stages, limits)
     if replay:
         stages.append(
@@ -323,7 +355,7 @@ def _band_problem(name: str, up: Fraction, down: Fraction) -> str | None:
     if down >= 1:
         return (
             f"{name}'s down move {figure(down)} would take the spot to zero or"
-            " below; the band's theorems need a down move below 1"
+            f" below; the band's theorems need a down move below 1, and {_UNITS}"
         )
     return None
 
@@ -367,14 +399,16 @@ def _own_paths(goal: HedgingGoal, hedged: Band, short: Fraction) -> str:
     """Say how far the band's own hedge from the premium ends below the payoff.
 
     From the price the hedge ends at the payoff on every extreme path of its
-    band, the binomial tree's, so from the premium it ends ``short``, the
-    price less the premium, below it on each. No search runs: the all-up path
-    is named as one of them, so nothing can stop an established refutation.
+    band, the binomial tree's, by the replication identity, which no block
+    states; so from the premium it ends ``short``, the price less the premium,
+    below it on each. No search runs: the all-up path is named as one of them,
+    so nothing can stop an established refutation.
     """
     return (
         f"from it the band's own hedge ends the difference, {figure(short)},"
-        " below the payoff on every extreme path of the band, the all-up path of"
-        f" {goal.steps} rises of {figure(hedged.up)} among them"
+        " below the payoff on every extreme path of the band, by the replication"
+        " identity, which the block does not state; the all-up path of"
+        f" {goal.steps} rises of {figure(hedged.up)} is one of them"
     )
 
 
@@ -401,39 +435,79 @@ def _shortfall(goal: HedgingGoal, payoff: Payoff, hedged: Band, stop: Stop) -> _
         goal.steps,
         stop,
     )
-    moves = _moves(path, against)
+    moves = render.path_words(path, against.up, against.down)
     if worst < -bound:
+        if max(worst.numerator.bit_length(), worst.denominator.bit_length()) > (
+            MAX_SHORTFALL_BITS
+        ):
+            return _Verdict(
+                "extreme-path",
+                Status.UNKNOWN,
+                f"the worst extreme path, {moves}, would refute the claim: the"
+                f" hedge ends {_ends(worst)} on it; but that shortfall is too"
+                " large to state exactly in a block (more than"
+                f" {MAX_SHORTFALL_BITS} bits in its numerator or denominator);"
+                " use fewer steps or a band written with shorter numbers",
+                UnknownReason.RESOURCE_LIMIT,
+            )
         returns = _returns(path, against)
+        if bound >= 0 and worst < 0:
+            found = (
+                f"the hedge ends {figure(-worst)} below the payoff, more than"
+                f" {figure(bound)}"
+            )
+        else:
+            found = (
+                f"the seller's account less the payoff ends at {figure(worst)},"
+                f" below the claimed {figure(-bound)}"
+            )
         return _Verdict(
             "extreme-path",
             Status.REFUTED,
-            f"on the extreme path {moves} the hedge ends {figure(-worst)} below"
-            f" the payoff, more than {figure(bound)}",
+            f"on {moves}, {found}",
             application=render.shortfall_refutation(goal, payoff, returns, worst),
         )
     return _Verdict(
         "extreme-path",
         Status.UNKNOWN,
-        f"the worst extreme path {moves} ends {figure(-worst)} below the payoff,"
-        f" within the claimed {figure(bound)}; no theorem in this version bounds"
-        " the shortfall over the against band's other paths for a hedge built"
-        " for a narrower band",
+        f"the worst extreme path, {moves}, ends {_ends(worst)}, within the claimed"
+        f" {figure(bound)}: bounds below {figure(-worst)} are refuted on this"
+        " path; no bound for a wider band is proved in this version;"
+        f" `{_sampling(goal, payoff)}` samples the band's other paths",
         UnknownReason.GAP,
     )
+
+
+def _ends(worst: Fraction) -> str:
+    """Say where the hedge ends against the payoff: ``≈ 4.1129 below the payoff``."""
+    if worst < 0:
+        return f"{figure(-worst)} below the payoff"
+    if worst > 0:
+        return f"{figure(worst)} above the payoff"
+    return "at the payoff"
+
+
+def _sampling(goal: HedgingGoal, payoff: Payoff) -> str:
+    """Write the ``hedge`` directive that samples a shortfall goal's against band."""
+    assert goal.against_up is not None and goal.against_down is not None
+    numbers_written = (
+        ("strike", goal.strike),
+        ("spot", goal.spot),
+        ("down", goal.down),
+        ("up", goal.up),
+    )
+    options = [f"({key} := {render.numeral(value)})" for key, value in numbers_written]
+    options += [
+        f"(steps := {goal.steps})",
+        f"(against_down := {render.numeral(goal.against_down)})",
+        f"(against_up := {render.numeral(goal.against_up)})",
+    ]
+    return f"-- @evidence hedge {payoff.lean_name} {' '.join(options)}"
 
 
 def _returns(path: Sequence[bool], against: Band) -> tuple[Fraction, ...]:
     """Read an extreme path's returns: ``+up`` for a rise, ``-down`` for a fall."""
     return tuple(against.up if rise else -against.down for rise in path)
-
-
-def _moves(path: Sequence[bool], moved: Band) -> str:
-    """Write an extreme path as ``UDUD (U a rise of 1/50, D a fall of 1/50)``."""
-    letters = "".join("U" if rise else "D" for rise in path)
-    return (
-        f"{letters} (U a rise of {figure(moved.up)}, D a fall of"
-        f" {figure(moved.down)})"
-    )
 
 
 def _check_bits(goal: HedgingGoal, limits: EntailmentLimits) -> None:

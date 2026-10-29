@@ -12,7 +12,7 @@ import pytest
 from glitnir.notebook.document import parse_notebook
 from glitnir.providers.outcomes import checked_decision
 
-from glitnir_forseti.claims.decide import Decision, LeanApplication
+from glitnir_forseti.claims.decide import Decision, LeanApplication, decide
 from glitnir_forseti.claims.text import parse_goal
 from glitnir_forseti.entailment.evidence import Certificate, Row, SquareSum
 from glitnir_forseti.entailment.limits import EntailmentLimits
@@ -295,53 +295,96 @@ HEDGING_COVERS = (
     "hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20"
     " premium 7/2 covers"
 )
+HEDGING_HELD = HEDGING_COVERS.replace("7/2", "3555/1000")
 HEDGING_SHORTFALL = (
     "hedging call strike 100 spot 100 band down 1/100 up 1/100 steps 20"
     " against down 1/50 up 1/50 shortfall <= 4"
 )
 
 
+def _hedging(text: str) -> Decision:
+    """The decision the hedging decider proposes for ``text``, unchecked."""
+    return decide(parse_goal(text), replay=False)
+
+
+def _with_lean(decision: Decision, statement: str, prelude: str | None = None):
+    """The decision with its statement, and its prelude, replaced; script ``x``."""
+    assert decision.lean is not None
+    lean = LeanApplication(
+        decision.lean.prelude if prelude is None else prelude, statement, ("x",)
+    )
+    return dataclasses.replace(decision, lean=lean)
+
+
 def test_a_hedging_refutation_may_prove_a_positive_statement() -> None:
     """``∀ δ, ¬ Covers …`` is the lane's ``forsetiClaim``, proved as it is."""
-    goal = parse_goal(HEDGING_COVERS)
-    positive = Decision(
-        "hedging", goal, "REFUTED", lean=LeanApplication("", ": forsetiClaim", ("x",))
-    )
+    positive = _with_lean(_hedging(HEDGING_COVERS), ": forsetiClaim")
+    assert positive.status == "REFUTED"
     proposed = _valid(block("low", positive), "refuted")
     assert proposed.theorem == "low_refuted"
     assert "  have refuted : forsetiClaim := by\n    x\n  intro claim\n" in (
         proposed.source
     )
     for statement in (": something else", ": ¬ forsetiClaim"):
-        odd = dataclasses.replace(positive, lean=LeanApplication("", statement, ("x",)))
         with pytest.raises(DecisionError, match="no claim shape"):
-            block("low", odd)
+            block("low", _with_lean(positive, statement))
+
+
+def test_a_covers_block_fits_its_status() -> None:
+    """A proof and a refutation of ``covers`` both prove ``forsetiClaim``.
+
+    Only the refutation's starts with ``∀ δ``, so a status carrying the other
+    application fails here, before Lean is asked to check it.
+    """
+    refuted = _hedging(HEDGING_COVERS)
+    held = _hedging(HEDGING_HELD)
+    assert (refuted.status, held.status) == ("REFUTED", "PROVEN")
+    # Each as decided becomes a block.
+    _valid(block("low", refuted), "refuted")
+    _valid(block("held", held), "proven")
+    # A proof of the held goal that carries the refutation's application.
+    refutation_as_proof = dataclasses.replace(held, lean=refuted.lean)
+    with pytest.raises(DecisionError, match="PROVEN covers claim's forsetiClaim"):
+        block("held", refutation_as_proof)
+    # A refutation of the low goal that carries the proof's application.
+    proof_as_refutation = dataclasses.replace(refuted, lean=held.lean)
+    with pytest.raises(DecisionError, match="does not start with ∀ δ"):
+        block("low", proof_as_refutation)
+
+
+def test_a_hedging_verdict_the_figures_contradict_is_refused() -> None:
+    """The docstring's figures are recomputed from the goal, never trusted."""
+    refuted = _hedging(HEDGING_COVERS)
+    claimed = dataclasses.replace(refuted, goal=parse_goal(HEDGING_HELD))
+    with pytest.raises(DecisionError, match="disagrees with the binomial price"):
+        block("held", claimed)
+    narrow = _hedging(HEDGING_SHORTFALL)
+    assert narrow.lean is not None
+    pathless = _with_lean(
+        narrow,
+        narrow.lean.statement,
+        "\n".join(
+            line
+            for line in narrow.lean.prelude.split("\n")
+            if not line.startswith("def forsetiReturns")
+        ),
+    )
+    with pytest.raises(DecisionError, match="a path of every step"):
+        block("wide", pathless)
 
 
 def test_a_hedging_shortfall_refutation_proves_only_the_negation() -> None:
     """A wrong template fails here, before Lean is asked to check it."""
-    goal = parse_goal(HEDGING_SHORTFALL)
-    negated = Decision(
-        "hedging",
-        goal,
-        "REFUTED",
-        lean=LeanApplication("", ": ¬ forsetiClaim", ("x",)),
-    )
+    negated = _with_lean(_hedging(HEDGING_SHORTFALL), ": ¬ forsetiClaim")
+    assert negated.status == "REFUTED"
     proposed = _valid(block("wide", negated), "refuted")
     assert "  have refuted : ¬ forsetiClaim := by\n    x\n  intro claim\n" in (
         proposed.source
     )
-    positive = dataclasses.replace(
-        negated, lean=LeanApplication("", ": forsetiClaim", ("x",))
-    )
     with pytest.raises(DecisionError, match="no claim shape"):
-        block("wide", positive)
-    for claim in (HEDGING_COVERS, HEDGING_SHORTFALL):
-        proof = Decision(
-            "hedging",
-            parse_goal(claim),
-            "PROVEN",
-            lean=LeanApplication("", ": ¬ forsetiClaim", ("x",)),
-        )
+        block("wide", _with_lean(negated, ": forsetiClaim"))
+    for claim in (HEDGING_HELD, HEDGING_SHORTFALL.replace("1/100", "1/50")):
+        held = _hedging(claim.replace("<= 4", "<= 0"))
+        assert held.status == "PROVEN"
         with pytest.raises(DecisionError, match="no claim shape"):
-            block("held", proof)
+            block("held", _with_lean(held, ": ¬ forsetiClaim"))

@@ -318,7 +318,8 @@ def test_the_catalog_names_every_hedging_payoff() -> None:
         "Hedging payoffs (`hedging <payoff> strike K spot S band down d up u"
         " steps N`, then `premium P covers`, up to 250 steps, or `against down d'"
         " up u' shortfall <= X`, up to 60 steps, for an against band containing"
-        " the band; 0 < u and 0 < d < 1 for either band):"
+        " the band; 0 < u and 0 < d < 1 for either band, simple returns as"
+        " fractions of the spot, so ±2 % a step is `down 1/50 up 1/50`):"
     ) in text
     for key, payoff in PAYOFFS.items():
         assert f"  {key}: {payoff.lean_name}, convex by {payoff.convexity}" in text

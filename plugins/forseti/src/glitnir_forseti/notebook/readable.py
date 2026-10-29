@@ -45,7 +45,14 @@ refutation proves that no spot-feedback strategy covers the payoff from the
 premium, ``∀ δ, ¬ Covers …``, which is more than the band's own hedge failing.
 Its claim is stated as ``∃ δ, Covers …``, so the block's ``¬ (claim)`` says all
 of that, and its bridge reads the negation off the lane's statement with
-``not_exists``.
+``not_exists``. Its sentence reads the claim as a sale, with the financial
+assumptions the library makes (zero interest, no costs, a self-financing
+account rebalanced at each step, a European payoff on the final spot), and
+writes numbers decimal first with the exact value beside. The figures a desk
+reads after the verdict (`hedging_figures`) are the binomial price for a
+``covers`` claim, and for a refuted ``shortfall`` claim the path the block
+exhibits and its exact shortfall, recomputed from the goal and that path, and
+checked against the verdict.
 """
 
 from __future__ import annotations
@@ -73,9 +80,12 @@ from glitnir_forseti.entailment.syntax import (
     Var,
     walk,
 )
+from glitnir_forseti.figures import exact, percent, rounded_up, stated
+from glitnir_forseti.hedging import numbers as hedging_numbers
 from glitnir_forseti.hedging import render as hedging_render
 from glitnir_forseti.hedging.goal import HedgingGoal
 from glitnir_forseti.hedging.payoffs import PAYOFFS as HEDGING_PAYOFFS
+from glitnir_forseti.hedging.payoffs import Payoff as HedgingPayoff
 from glitnir_forseti.stepped import render as stepped_render
 from glitnir_forseti.stepped.goal import SteppedGoal
 from glitnir_forseti.stepped.models import MODELS as STEPPED_MODELS
@@ -177,10 +187,6 @@ class Readable:
         identities: Whether the bridge uses ``forsetiIdentities``, which a
             rooted lane proves beside its contract; it is then taken, as
             ``identities``, from ``root`` or ``refuted`` before ``setup``.
-        refutation: What a refutation proves beyond the description's claim,
-            a clause ending in a period that the block's docstring puts after
-            its verdict; empty when it proves the claim's negation and no
-            more.
     """
 
     statement: str
@@ -192,7 +198,6 @@ class Readable:
     to_lane: tuple[str, ...]
     from_lane: tuple[str, ...]
     identities: bool = False
-    refutation: str = ""
 
     def _bridge(self, use: str, identities: str) -> tuple[str, ...]:
         given = (
@@ -664,23 +669,30 @@ def _stepped(goal: SteppedGoal) -> Readable:
 
 
 def _hedging(goal: HedgingGoal, refuted: bool) -> Readable:
-    """State a hedging claim as the lane's proposition, with what it says."""
+    """State a hedging claim as the lane's proposition, with what it says.
+
+    The sentence reads the claim as a sale, with the library's assumptions:
+    the seller takes in the premium and holds the hedge in a self-financing
+    account, rebalanced at each step with zero interest and no costs, against
+    a European payoff on the final spot.
+    """
     payoff = HEDGING_PAYOFFS[goal.payoff]
-    struck = f"{goal.payoff} struck at {number(goal.strike)}"
+    paid = f"the payoff of the {goal.payoff} struck at {stated(goal.strike)}"
+    rebalanced = (
+        f"rebalanced at each of {goal.steps} steps with zero interest and no costs"
+    )
     if goal.claim == "covers":
         assert goal.premium is not None
-        premium = number(goal.premium)
-        said = (
-            f"Re-hedged at each of {goal.steps} steps at the binomial ratio from a"
-            f" premium of {premium}, the {struck} on a spot of {number(goal.spot)}"
-            " is covered at expiry on every path whose step returns stay within"
-            f" −{number(goal.down)} and +{number(goal.up)}."
-        )
+        premium = stated(goal.premium)
+        paths = _paths(goal, goal.down, goal.up)
         if refuted:
             some = hedging_render.some_cover_claim(goal, payoff, "      ")
             return Readable(
                 ":\n    " + some,
-                said,
+                "Some spot-feedback strategy, holding over each step a number of"
+                " units set by the step and the spot, keeps the seller's account"
+                f" at least at {paid} {paths}, from a premium of {premium},"
+                f" {rebalanced}.",
                 lane=" ".join(line.strip() for line in some.split("\n")),
                 root="root",
                 # The lane proves `∀ δ, ¬ Covers …`; `not_exists` makes it `¬ lane`.
@@ -688,23 +700,28 @@ def _hedging(goal: HedgingGoal, refuted: bool) -> Readable:
                 setup=(),
                 to_lane=("exact claim",),
                 from_lane=("exact lane",),
-                refutation=(
-                    "no spot-feedback strategy, holding over each step a number of"
-                    " units set by the step and the spot, covers it from a premium"
-                    f" of {premium}."
-                ),
             )
+        said = (
+            f"Sold for a premium of {premium} and hedged at the band's binomial"
+            f" hedge ratio, {rebalanced}, the seller's account ends at least at"
+            f" {paid} {paths}."
+        )
         statement = hedging_render.covers_claim(goal, payoff, "      ")
     else:
-        assert goal.against_up is not None and goal.against_down is not None
         assert goal.bound is not None
+        bound = goal.bound
+        if bound > 0:
+            ends = f"ends at most {stated(bound)} below {paid}"
+        elif bound < 0:
+            ends = f"ends at least {stated(-bound)} above {paid}"
+        else:
+            ends = f"ends at least at {paid}"
+        assert goal.against_up is not None and goal.against_down is not None
         said = (
-            f"The hedge built for returns within −{number(goal.down)} and"
-            f" +{number(goal.up)}, from its own price, run on every path whose"
-            f" returns stay within −{number(goal.against_down)} and"
-            f" +{number(goal.against_up)}, ends at most {number(goal.bound)} below"
-            f" the payoff. The payoff is the {struck}, at expiry after"
-            f" {goal.steps} steps from a spot of {number(goal.spot)}."
+            f"The hedge built for returns within {_returns(goal.down, goal.up)} a"
+            f" step, started from its own price and {rebalanced}, {ends} (the"
+            f" seller's account less the payoff is at least {exact(-bound)})"
+            f" {_paths(goal, goal.against_down, goal.against_up)}."
         )
         statement = hedging_render.shortfall_claim(goal, payoff, "      ")
     return Readable(
@@ -716,6 +733,106 @@ def _hedging(goal: HedgingGoal, refuted: bool) -> Readable:
         setup=(),
         to_lane=("exact claim",),
         from_lane=("exact lane",),
+    )
+
+
+def hedging_figures(
+    goal: HedgingGoal, status: str, returns: tuple[Fraction, ...] | None = None
+) -> str:
+    """State the figures behind a hedging verdict, recomputed from the goal.
+
+    A ``covers`` verdict gives the binomial price at the band, with, for a
+    proof, the price rounded up to four places as a premium that covers. A
+    refuted ``shortfall`` claim names the path its block exhibits, whose
+    ``returns`` its prelude lists, and that path's exact shortfall. Any other
+    verdict has none, and the result is empty.
+
+    Raises:
+        KeyError: If the goal names an unknown payoff.
+        ValueError: If the verdict disagrees with the figures: a proved
+            premium below the binomial price, or a refuted one at least it; or
+            a refuted ``shortfall`` claim with no path of its steps, with a
+            return off the against band's ends, or whose path does not break
+            the bound.
+    """
+    payoff = HEDGING_PAYOFFS[goal.payoff]
+    if goal.claim == "covers":
+        assert goal.premium is not None
+        fair = hedging_numbers.price(
+            payoff, goal.strike, goal.spot, goal.up, goal.down, goal.steps
+        )
+        if (fair > goal.premium) != (status == "REFUTED"):
+            raise ValueError(
+                f"a {status} premium of {stated(goal.premium)} disagrees with the"
+                f" binomial price {stated(fair)}"
+            )
+        if status == "REFUTED":
+            return (
+                "The premium is below the binomial price at the band,"
+                f" {stated(fair)}, the least premium from which any spot-feedback"
+                " strategy covers the payoff."
+            )
+        up = rounded_up(fair)
+        covering = (
+            f", {up} (the price rounded up to four places) among them" if up else ""
+        )
+        return (
+            f"The binomial price at the band is {stated(fair)}; any premium of at"
+            f" least the price covers the payoff{covering}."
+        )
+    if status != "REFUTED":
+        return ""
+    return _exhibited(goal, payoff, returns)
+
+
+def _returns(down: Fraction, up: Fraction) -> str:
+    """Write a band's returns: ``−2 % and +2 % (−1/50 and +1/50)``."""
+    return (
+        f"{percent(-down)} and {percent(up)} ({exact(-down)} and"
+        f" {exact(up, plus=True)})"
+    )
+
+
+def _paths(goal: HedgingGoal, down: Fraction, up: Fraction) -> str:
+    """Write the paths a claim speaks of: from the spot, each return in a band."""
+    return (
+        f"on every path from a spot of {stated(goal.spot)} whose simple returns"
+        f" stay within {_returns(down, up)} a step"
+    )
+
+
+def _exhibited(
+    goal: HedgingGoal, payoff: HedgingPayoff, returns: tuple[Fraction, ...] | None
+) -> str:
+    """Name the path a ``shortfall`` refutation exhibits, and its exact shortfall.
+
+    The shortfall is recomputed from the goal and the path, exactly.
+
+    Raises:
+        ValueError: If there is no path of the goal's steps, a return is not
+            an end of the against band, or the path does not break the bound.
+    """
+    assert goal.against_up is not None and goal.against_down is not None
+    assert goal.bound is not None
+    if returns is None or len(returns) != goal.steps:
+        raise ValueError("a shortfall refutation exhibits a path of every step")
+    if any(r not in (goal.against_up, -goal.against_down) for r in returns):
+        raise ValueError("the exhibited path leaves the against band's ends")
+    wealth, final = hedging_numbers.wealth(
+        payoff, goal.strike, goal.spot, goal.up, goal.down, goal.steps, returns
+    )
+    shortfall = wealth - payoff.value(goal.strike, final)
+    if not shortfall < -goal.bound:
+        raise ValueError(
+            f"the exhibited path ends at {stated(shortfall)}, which does not"
+            f" break the bound {exact(goal.bound)}"
+        )
+    path = hedging_render.path_words(
+        [r > 0 for r in returns], goal.against_up, goal.against_down
+    )
+    return (
+        f"On {path}, the seller's account less the payoff ends at"
+        f" {stated(shortfall)}, below {exact(-goal.bound)}."
     )
 
 

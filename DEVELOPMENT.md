@@ -246,7 +246,9 @@ CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
 pinned release; run them locally for macOS. Its first all-green run was run
 39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
 Lean 4.35.0. Against the previous pin, forseti-lean v0.5.1 with asgard-lean
-v0.4.1, every shard passed in run 40654470418 (2026-10-28). `stream` decisions
+v0.4.1, every shard passed in run 40654470418 (2026-10-28); the pin is now
+forseti-lean v0.6.0, which this release's pull request runs the same shards
+against, the `hedging` shard included. `stream` decisions
 and `iterate` evidence were verified on 2026-10-23, locally on macOS (Glitnir
 0.1.5, Lean 4.35.0). CI covers `stream` decisions in
 `tests/test_stream_decision_lean.py`; `iterate` needs Python Asgard, which CI

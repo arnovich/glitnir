@@ -26,11 +26,12 @@ the directive's band, in the scope of a notebook that imports
 evaluated at. The price is checked here against the same price in exact
 arithmetic (`glitnir_forseti.hedging.numbers`), and the hedge the library
 builds for the band is run from it on seeded random paths in the band, or in a
-wider one (`glitnir_forseti.hedging.sampler`). Its card shows the profit and
-loss at expiry by its quantiles, with the premium, the least, median and
-greatest outcome and the paths that end below zero in the provenance; it never
-shows a proved number. Evidence is never a proof and changes no claim's
-status.
+wider one (`glitnir_forseti.hedging.sampler`). Its card shows the seller's
+profit and loss at expiry by its quantiles, over the quantile level rather
+than time, with the premium, the least, median and greatest outcome and the
+paths that end below zero, with a sampling interval for their fraction, in the
+provenance; it never shows a proved number. Evidence is never a proof and
+changes no claim's status.
 """
 
 import hashlib
@@ -56,6 +57,7 @@ from glitnir_forseti.notebook.evidence import (
     Simulation,
 )
 from glitnir_forseti.stepped import sampler
+from glitnir_forseti.stepped.sampler import wilson
 
 IMPORTS = ("Gimle.Asgard.Compile.RationalInterchange", "Gimle.Asgard.Model.Continuous")
 #: Without the optional decoder, `iterate` cannot run.
@@ -452,14 +454,24 @@ def _band(down: Fraction, up: Fraction) -> str:
     return f"down {down} up {up}"
 
 
+#: The hedge card's one series and its premium's provenance label.
+HEDGE_SERIES = (
+    "seller's profit and loss at expiry, by quantile (0 = worst sampled path,"
+    " 1 = best)"
+)
+HEDGE_PREMIUM = "premium (binomial price at the band, Lean `priceQ`, checked exactly)"
+
+
 def _hedged(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
     """Run a hedge from the premium Lean printed; return its snapshot.
 
-    The card's series is the profit and loss at expiry, by its quantiles at
-    the levels ``0, 1/40, …, 1`` (`hedging.sampler.quantiles`), which the
-    card's time axis carries. The premium, checked against the exact binomial
+    The card's series is the seller's profit and loss at expiry, the hedge's
+    final wealth less the payoff, by its quantiles at the levels ``0, 1/40,
+    …, 1`` (`hedging.sampler.quantiles`), which the card's time axis carries,
+    as its provenance says. The premium, checked against the exact binomial
     price, the least, median and greatest outcome and the paths that end
-    below zero are in the provenance; no proved number is.
+    below zero, with the 95 % Wilson interval of their fraction, are in the
+    provenance; no proved number is.
     """
     plan = simulation.hedge
     if plan is None:
@@ -478,8 +490,10 @@ def _hedged(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
         "finite": result.finite,
     }
     threshold = hedging_sampler.below_threshold(plan)
+    low, high = wilson(result.below_zero, len(result.pnl))
     provenance = [
         ("verb", "hedge"),
+        ("x axis", "quantile level, not time"),
         ("payoff", plan.payoff),
         ("strike", str(plan.strike)),
         ("spot", str(plan.spot)),
@@ -493,17 +507,19 @@ def _hedged(simulation: Simulation, emitted: dict[str, Any]) -> dict[str, Any]:
     provenance += [
         ("paths", str(plan.paths)),
         ("seed", str(plan.seed)),
-        ("premium", figure(premium)),
+        (HEDGE_PREMIUM, figure(premium)),
         ("minimum", f"{shown[0]:.6g}"),
         ("median", f"{shown[hedging_sampler.LEVELS // 2]:.6g}"),
         ("maximum", f"{shown[-1]:.6g}"),
         (
             "paths below zero",
-            f"{result.below_zero} of {len(result.pnl)}, by more than {threshold:g}",
+            f"{result.below_zero} of {len(result.pnl)}, by more than"
+            f" {threshold:g} (a billionth of the spot); fraction {low:.4g} to"
+            f" {high:.4g} (95 %, Wilson)",
         ),
         ("arithmetic", "float64"),
     ]
-    return _snapshot(trajectory, ["profit and loss at expiry"], provenance)
+    return _snapshot(trajectory, [HEDGE_SERIES], provenance)
 
 
 def compute(request: EvidenceRequest, payload: Any) -> dict[str, Any]:

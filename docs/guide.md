@@ -539,12 +539,14 @@ and needs nothing more. Its target is `Gimle.Forseti.Hedging.call`, `.put` or
 (at most 250), and takes `law` (`uniform`, the default, `twopoint` or
 `gaussian`, which requires `(sigma := …)`), `paths` (4000, at most 100000),
 `seed` (7) and, given together, `against_down` and `against_up`, which draw the
-paths in another band than the hedge's, usually a wider one. A run of more than
+paths in another band than the hedge's, usually a wider one. `sigma` is the
+per-step standard deviation of the simple return, in the units of `down` and
+`up` (1/100 is 1 % a step), not an annualised volatility. A run of more than
 20 million payoff evaluations and draws is refused: with the default 4000 paths,
 at most 69 steps for `uniform` and `twopoint` and 36 for `gaussian`. Its card
-shows the profit and loss at expiry by its quantiles and the paths that end
-below zero. It is sampled evidence beside a `hedging` decision, never a proved
-number.
+shows the seller's profit and loss at expiry by its quantiles (the x axis is the
+quantile level, not time) and the paths that end below zero. It is sampled
+evidence beside a `hedging` decision, never a proved number.
 Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
 
 **Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
@@ -560,14 +562,20 @@ A `hedging` goal asks whether the binomial hedge of a `call`, `put` or
 `straddle` over a band of per-step moves covers the payoff, for example
 `hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20 premium
 3555/1000 covers`, or `hedging call strike 100 spot 100 band down 1/100 up 1/100
-steps 20 against down 1/50 up 1/50 shortfall <= 4`. A `covers` claim is PROVEN
-when the premium is at least the binomial price at the band's ends, so the hedge
-from it covers the payoff on every path whose simple returns stay in the band,
-and REFUTED when it is below, since no spot-feedback strategy covers the payoff
-from there. A `shortfall` claim compares a hedge built for one band with paths of
-a wider band: it is PROVEN only for equal bands with a nonnegative bound, REFUTED
-by one exhibited extreme path of the wider band, and otherwise UNKNOWN, since no
-theorem bounds the shortfall over the band's other paths. PROVEN and REFUTED are
+steps 20 against down 1/50 up 1/50 shortfall <= 4`. Moves are simple returns as
+fractions of the spot: ±2 % a step is `down 1/50 up 1/50` or
+`down 0.02 up 0.02`; `2`, `2%` and `1e-2` do not mean 2 %. A `covers` claim is
+PROVEN when the premium is at least the binomial price at the band's ends, so
+the hedge from it covers the payoff on every path whose simple returns stay in
+the band, and REFUTED when it is below, since no spot-feedback strategy covers
+the payoff from there. A `shortfall` claim compares a hedge built for one band
+with paths of a band that contains the hedge's, equal or wider: it is PROVEN
+only for equal bands with a nonnegative bound, REFUTED by one exhibited extreme
+path of the wider band, and otherwise UNKNOWN, since no theorem bounds the
+shortfall over the band's other paths. Read as a sale: the seller takes in the
+premium and holds the hedge, borrowing or lending at zero interest with no
+transaction costs, so wealth is the premium plus the trading gains; the payoff
+is European, paid on the spot after the last step. PROVEN and REFUTED are
 the decider's proposals: it runs no Lean, and the notebook's Lean check of the
 proposed block decides. Numbers are exact rationals. A payoff other than `call`,
 `put` or `straddle`, a spot or step count that is not positive and a move that
@@ -580,8 +588,10 @@ pinned release, Forseti Lean v0.6.0, does; an older build reports the missing
 module.
 
 `entailment`, `trajectory` and `stepped` decisions and `simulate` and `sample`
-evidence pass Glitnir's check in the plugin's live tests against Forseti Lean
-v0.5.1 on Lean 4.35.0 (Linux CI, 2026-10-28, run 40654470418). `stream`
+evidence passed Glitnir's check in the plugin's live tests against Forseti Lean
+v0.5.1, the release pinned then, on Lean 4.35.0 (Linux CI, 2026-10-28, run
+40654470418); the pin is now v0.6.0, which this release's pull request runs the
+same shards against, the `hedging` shard included. `stream`
 decisions and `iterate` evidence were run through Glitnir's checker locally on
 macOS on 2026-10-23 (Glitnir 0.1.5, Lean 4.35.0); CI covers `stream` decisions
 only, as `iterate` needs Python Asgard. The first check of a Forseti project replays Mathlib and

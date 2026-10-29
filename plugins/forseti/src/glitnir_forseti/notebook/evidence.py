@@ -1023,7 +1023,9 @@ def _check_band(name: str, up: Fraction, down: Fraction) -> None:
         raise EvidenceError(f"{name}'s down move must be positive")
     if down >= 1:
         raise EvidenceError(
-            f"{name}'s down move must be below 1, or the spot would reach zero"
+            f"{name}'s down move must be below 1, or the spot would reach zero;"
+            " moves are simple returns as fractions of the spot: ±2 % a step is"
+            " (down := 1/50) (up := 1/50) or 0.02"
         )
 
 

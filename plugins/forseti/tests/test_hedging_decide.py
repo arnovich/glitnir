@@ -26,6 +26,7 @@ from glitnir_forseti.hedging.goal import HedgingGoal
 from glitnir_forseti.hedging.payoffs import PAYOFFS
 from glitnir_forseti.lean.closure import closure_identity, replay_pin
 from glitnir_forseti.notebook.decisions import block
+from glitnir_forseti.notebook.evidence import read_directive
 
 #: The worked example's two goals: the call at the money over twenty steps of
 #: ±2 %, covered from 3.555; and the hedge built for ±1 % run on paths of ±2 %.
@@ -120,11 +121,16 @@ def test_the_worked_example_premium_is_covered() -> None:
         f"  Covers ({WIDE}) (call 100) 20\n"
         f"    (hedge ({WIDE}) (call 100) 20)\n"
         "    (711/200) 100\n\n"
-        "/-- Re-hedged at each of 20 steps at the binomial ratio from a premium of"
-        " 711/200, the call struck at 100 on a spot of 100 is covered at expiry on"
-        " every path whose step returns stay within −1/50 and +1/50. The hedging"
-        " decider proved it. Goal (hedging): hedging call strike 100 spot 100"
-        " band down 1/50 up 1/50 steps 20 premium 711/200 covers -/\n"
+        "/-- Sold for a premium of 3.555 (711/200) and hedged at the band's"
+        " binomial hedge ratio, rebalanced at each of 20 steps with zero interest"
+        " and no costs, the seller's account ends at least at the payoff of the"
+        " call struck at 100 on every path from a spot of 100 whose simple"
+        " returns stay within −2 % and +2 % (−1/50 and +1/50) a step. The"
+        " hedging decider proved it. The binomial price at the band is"
+        f" {PRICE_20.numerator}/{PRICE_20.denominator} (≈ 3.5549); any premium"
+        " of at least the price covers the payoff, 3.5549 (the price rounded up"
+        " to four places) among them. Goal (hedging): hedging call strike 100"
+        " spot 100 band down 1/50 up 1/50 steps 20 premium 711/200 covers -/\n"
         "theorem held :\n"
         f"    Covers ({WIDE}) (call 100) 20\n"
         f"      (hedge ({WIDE}) (call 100) 20)\n"
@@ -182,10 +188,18 @@ def test_seven_halves_is_refuted_for_every_spot_feedback_strategy() -> None:
         f"      Covers ({WIDE}) (call 100) 20 δ (7/2) 100) := by\n"
         "  have refuted : forsetiClaim := by\n"
     ) in d.block
+    # The claim stated is what is refuted: that some spot-feedback strategy,
+    # defined where it is named, covers from 7/2.
     assert (
-        "The hedging decider refuted it: no spot-feedback strategy, holding over"
-        " each step a number of units set by the step and the spot, covers it"
-        " from a premium of 7/2."
+        "/-- Some spot-feedback strategy, holding over each step a number of"
+        " units set by the step and the spot, keeps the seller's account at least"
+        " at the payoff of the call struck at 100 on every path from a spot of"
+        " 100 whose simple returns stay within −2 % and +2 % (−1/50 and +1/50) a"
+        " step, from a premium of 3.5 (7/2), rebalanced at each of 20 steps with"
+        " zero interest and no costs. The hedging decider refuted it. The premium"
+        " is below the binomial price at the band,"
+        f" {PRICE_20.numerator}/{PRICE_20.denominator} (≈ 3.5549), the least"
+        " premium from which any spot-feedback strategy covers the payoff."
     ) in d.block
     assert "(not_exists.mpr refuted) (bridge.mp claim)" in d.block
     # From its price the band's own hedge ends at the payoff on every extreme
@@ -194,7 +208,8 @@ def test_seven_halves_is_refuted_for_every_spot_feedback_strategy() -> None:
         "the premium 7/2 is below the binomial price ≈ 3.5549, so no"
         " spot-feedback strategy covers from it; from it the band's own hedge"
         " ends the difference, ≈ 0.0549, below the payoff on every extreme path"
-        " of the band, the all-up path of 20 rises of 1/50 among them"
+        " of the band, by the replication identity, which the block does not"
+        " state; the all-up path of 20 rises of 1/50 is one of them"
     )
 
 
@@ -231,8 +246,9 @@ def test_a_covers_refutation_names_its_path_without_a_search(steps: int) -> None
     d = _decide(text)
     assert d.status == "REFUTED"
     assert d.decision.stages[-1]["detail"].endswith(
-        " below the payoff on every extreme path of the band, the all-up path of"
-        f" {steps} rises of 1/50 among them"
+        " below the payoff on every extreme path of the band, by the replication"
+        " identity, which the block does not state; the all-up path of"
+        f" {steps} rises of 1/50 is one of them"
     )
 
 
@@ -341,17 +357,168 @@ def test_the_narrow_hedge_loses_more_than_four_on_the_zigzag() -> None:
         "  have refuted : ¬ forsetiClaim := by\n"
     ) in d.block
     assert d.decision.stages[-1]["detail"] == (
-        "on the extreme path UDUDUDUDUDUDUDUDUDUD (U a rise of 1/50, D a fall of"
-        " 1/50) the hedge ends ≈ 4.1129 below the payoff, more than 4"
+        "on the zigzag (up and down by turns) of 20 steps of +2 % (+1/50) and −2 %"
+        " (−1/50), the hedge ends ≈ 4.1129 below the payoff, more than 4"
     )
+    # The docstring names the path and its exact shortfall, recomputed.
+    assert (
+        "The hedging decider refuted it. On the zigzag (up and down by turns) of"
+        " 20 steps of +2 % (+1/50) and −2 % (−1/50), the seller's account less"
+        f" the payoff ends at −{-ZIGZAG_SHORTFALL.numerator}/"
+        f"{ZIGZAG_SHORTFALL.denominator} (≈ −4.1129), below −4."
+    ) in d.block
 
 
 def test_five_is_a_gap_not_a_proof() -> None:
-    """No theorem bounds the mis-banded hedge's shortfall over every path."""
+    """No theorem bounds the mis-banded hedge's shortfall over every path.
+
+    The reason says what can be done: which bounds the path refutes, that no
+    bound for the wider band is proved, and the directive that samples it.
+    """
     d = _decide(SHORTFALL.replace("<= 4", "<= 5"))
     assert d.status == "UNKNOWN:gap" and d.block is None
-    assert "≈ 4.1129" in d.reason and "within the claimed 5" in d.reason
-    assert "no theorem" in d.reason
+    directive = (
+        "-- @evidence hedge Gimle.Forseti.Hedging.call (strike := 100)"
+        " (spot := 100) (down := 1/100) (up := 1/100) (steps := 20)"
+        " (against_down := 1/50) (against_up := 1/50)"
+    )
+    assert d.decision.stages[-1]["detail"] == (
+        "the worst extreme path, the zigzag (up and down by turns) of 20 steps of"
+        " +2 % (+1/50) and −2 % (−1/50), ends ≈ 4.1129 below the payoff, within"
+        " the claimed 5: bounds below ≈ 4.1129 are refuted on this path; no bound"
+        f" for a wider band is proved in this version; `{directive}` samples the"
+        " band's other paths"
+    )
+    # The provider shows a stage's detail up to 500 characters.
+    assert len(d.decision.stages[-1]["detail"]) <= 500
+    # The directive it suggests is one the evidence provider runs.
+    target, _, options = directive.removeprefix("-- @evidence hedge ").partition(" ")
+    sampled = read_directive("hedge", target, options)
+    assert sampled.error == "" and sampled.hedge is not None
+    assert sampled.hedge.path_band == (Fraction(1, 50), Fraction(1, 50))
+
+
+@pytest.mark.parametrize(
+    ("path", "words"),
+    [
+        ((True,) * 3, "the path of 3 rises of +2 % (+1/50)"),
+        ((False,), "the path of 1 fall of −1 % (−1/100)"),
+        (
+            (False, True) * 3,
+            "the zigzag (down and up by turns) of 6 steps of −1 % (−1/100) and"
+            " +2 % (+1/50)",
+        ),
+        (
+            (True, True, False) * 3,
+            "the path repeating UUD over 9 steps (U a rise of +2 % (+1/50), D a"
+            " fall of −1 % (−1/100))",
+        ),
+        (
+            (True, False, False),
+            "the path UDD (U a rise of +2 % (+1/50), D a fall of −1 % (−1/100))",
+        ),
+        (
+            (True, False, False, True, True) * 6,
+            "a path of 30 steps starting UDDUUUDDUUUD… (U a rise of +2 % (+1/50),"
+            " D a fall of −1 % (−1/100))",
+        ),
+    ],
+)
+def test_a_path_is_written_by_its_pattern(path: tuple[bool, ...], words: str) -> None:
+    from glitnir_forseti.hedging.render import path_words
+
+    assert path_words(path, Fraction(1, 50), Fraction(1, 100)) == words
+
+
+def test_a_block_reads_back_its_claim_and_its_path() -> None:
+    """The prelude's ``forsetiClaim`` and listed returns read back exactly."""
+    from glitnir_forseti.hedging import render
+
+    assert render.claim_body(render.prelude("∀ δ : ℕ → ℝ → ℝ, True")) == (
+        "∀ δ : ℕ → ℝ → ℝ, True"
+    )
+    assert render.claim_body("") == ""
+    d = _decide(SHORTFALL)
+    assert d.decision.lean is not None
+    zigzag = tuple(Fraction(1, 50) * (-1) ** k for k in range(20))
+    assert render.listed_returns(d.decision.lean.prelude) == zigzag
+    assert render.listed_returns(render.prelude("True")) is None
+
+
+def test_an_exhibited_shortfall_too_large_to_write_is_a_resource_limit() -> None:
+    """A band of long numbers compounds past what a block can state exactly.
+
+    Over 40 steps the ±(about 1/2) paths leave the hedge for ±(about 3/32)
+    short by a rational of thousands of digits, past Python's limit on
+    writing an integer: the decider says so instead of failing.
+    """
+    up = Fraction(3 * 2**250 + 1, 2**255)
+    down = Fraction(3 * 2**250 - 1, 2**255)
+    goal = HedgingGoal(
+        payoff="call",
+        strike=Fraction(100),
+        spot=Fraction(100),
+        up=up,
+        down=down,
+        steps=40,
+        claim="shortfall",
+        against_up=Fraction(1, 2) + Fraction(1, 2**255),
+        against_down=Fraction(1, 2) - Fraction(1, 2**255),
+        bound=Fraction(0),
+    )
+    d = _decide(goal)
+    assert d.status == "UNKNOWN:resource-limit" and d.block is None
+    detail = d.decision.stages[-1]["detail"]
+    assert d.decision.stages[-1]["outcome"] == "resource-limit"
+    assert "would refute the claim" in detail
+    assert "too large to state exactly in a block" in detail
+    assert f"more than {service.MAX_SHORTFALL_BITS} bits" in detail
+
+
+# ----- how sentences show numbers -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        (Fraction(100), "100"),
+        (Fraction(711, 200), "3.555 (711/200)"),
+        (Fraction(-1, 2), "−0.5 (−1/2)"),
+        (Fraction(1, 3), "1/3 (≈ 0.3333)"),
+        (Fraction(-1, 3), "−1/3 (≈ −0.3333)"),
+        (PRICE_20, f"{PRICE_20.numerator}/{PRICE_20.denominator} (≈ 3.5549)"),
+        # Too long to write in a sentence: its decimal alone.
+        (Fraction(1, 3**400), "≈ 1.4e-191"),
+    ],
+)
+def test_a_sentence_writes_a_decimal_first_and_the_exact_value_beside(
+    value: Fraction, shown: str
+) -> None:
+    assert figures.stated(value) == shown
+
+
+@pytest.mark.parametrize(
+    ("value", "shown", "moved"),
+    [
+        (Fraction(1, 50), "+2 %", "+2 % (+1/50)"),
+        (Fraction(-1, 80), "−1.25 %", "−1.25 % (−1/80)"),
+        (Fraction(1, 300), "≈ +0.3333 %", "≈ +0.3333 % (+1/300)"),
+        # A return of a long numeral is shown by its percentage alone.
+        (Fraction(1, 3**100), "≈ +1.9e-46 %", "≈ +1.9e-46 %"),
+    ],
+)
+def test_a_return_is_a_signed_percentage(
+    value: Fraction, shown: str, moved: str
+) -> None:
+    assert figures.percent(value) == shown
+    assert figures.move(value) == moved
+
+
+def test_a_premium_that_covers_is_the_price_rounded_up() -> None:
+    assert figures.rounded_up(PRICE_20) == "3.5549"
+    assert figures.rounded_up(Fraction(35548, 10000)) == "3.5548"
+    assert figures.rounded_up(Fraction(355481, 100000)) == "3.5549"
+    assert figures.rounded_up(Fraction(10**9)) is None
 
 
 # ----- refusals -----------------------------------------------------------------------
@@ -362,6 +529,16 @@ def test_a_whole_step_down_is_unsupported() -> None:
     assert d.status == "UNKNOWN:unsupported"
     assert "down move 1 would take the spot to zero or below" in d.reason
     assert d.block is None and d.decision.lean is None
+
+
+def test_a_band_written_in_percent_is_told_its_units() -> None:
+    """``down 2 up 2`` meant ±2 %: the refusal says how to write that."""
+    d = _decide(COVERS.replace("down 1/50 up 1/50", "down 2 up 2"))
+    assert d.status == "UNKNOWN:unsupported"
+    assert d.reason.endswith(
+        "moves are simple returns as fractions of the spot: ±2 % a step is"
+        " `down 1/50 up 1/50` or `down 0.02 up 0.02`"
+    )
 
 
 @pytest.mark.parametrize(
@@ -460,6 +637,10 @@ def test_the_wall_time_stops_the_path_search() -> None:
     limits = EntailmentLimits(wall_time_ms=100)
     decision = decide(parse_goal(text), limits, replay=False)
     assert (decision.status, decision.reason) == ("UNKNOWN", "timeout")
+    assert decision.stages[-1]["detail"] == (
+        "searching for the worst extreme path over 60 steps ran out of time"
+        " (100 ms); use fewer steps or a larger wall time"
+    )
 
 
 def test_with_a_replay_nothing_is_claimed() -> None:
@@ -599,13 +780,16 @@ def test_the_examples_propose_every_block_template() -> None:
 
 
 def test_no_block_holds_a_float_literal() -> None:
+    """The Lean is exact; only the docstring writes decimals, exactly computed."""
     for example in EXAMPLES:
         source = _decide(example.goal, example.name).block
         if example.expected.startswith("UNKNOWN"):
             assert source is None
             continue
         assert source is not None
-        assert re.search(r"\d\.\d", source) is None, example.name
+        lean = re.sub(r"/--.*?-/", "", source, flags=re.S)
+        assert lean != source
+        assert re.search(r"\d\.\d", lean) is None, example.name
 
 
 def test_the_decider_uses_no_floating_point() -> None:
