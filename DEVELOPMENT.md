@@ -236,8 +236,9 @@ declares with a `skipif` mark (another platform's sandbox probes) or for the
 optional `simulation` input stays a skip. Plugin
 tests marked `simulation` need Python Asgard (`gimle.asgard`). The stepped and
 hedging live tests allow each block 300 s to check (on CI's Linux runners a
-stepped block takes 69–75 s); on a loaded or slower machine raise that with
-`FORSETI_CHECK_BUDGET_MS` (a whole number of milliseconds). The hedging tests
+stepped block takes 27–53 s and a hedging block 28–58 s); on a loaded or
+slower machine raise that with `FORSETI_CHECK_BUDGET_MS` (a whole number of
+milliseconds). The hedging tests
 need a Forseti Lean checkout that holds `Gimle.Forseti.Hedging`, and CI runs
 them in the `hedging` shard of `plugin-live`. The
 [plugin README](plugins/forseti/README.md) shows how to run them.
@@ -245,10 +246,9 @@ them in the `hedging` shard of `plugin-live`. The
 CI's `plugin-live` job runs all of the plugin's Lean tests on Linux against the
 pinned release; run them locally for macOS. Its first all-green run was run
 39731807284 on commit `cb59769` (2026-10-22), against forseti-lean v0.4.0 on
-Lean 4.35.0. Against the previous pin, forseti-lean v0.5.1 with asgard-lean
-v0.4.1, every shard passed in run 40654470418 (2026-10-28); the pin is now
-forseti-lean v0.6.0, which this release's pull request runs the same shards
-against, the `hedging` shard included. `stream` decisions
+Lean 4.35.0. Against the current pin, forseti-lean v0.6.0 with asgard-lean
+v0.4.1, every shard passed in run 40847259729 (2026-10-29), the `hedging`
+shard (hedging decisions and `hedge` evidence) included. `stream` decisions
 and `iterate` evidence were verified on 2026-10-23, locally on macOS (Glitnir
 0.1.5, Lean 4.35.0). CI covers `stream` decisions in
 `tests/test_stream_decision_lean.py`; `iterate` needs Python Asgard, which CI

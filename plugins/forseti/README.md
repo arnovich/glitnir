@@ -165,12 +165,12 @@ unknown-identifier rejection. The package also contains the deciders' replay
 against a pinned Forseti Lean release and its command lines, which are not
 reachable from the editor.
 
-**Verified on 2026-10-28** against Forseti Lean v0.5.1 with Asgard Lean v0.4.1
-(Lean 4.35.0), the release pinned then, by CI's `plugin-live` shards on Linux
-(run 40654470418), every one green:
+**Verified on 2026-10-29** against Forseti Lean v0.6.0 with Asgard Lean v0.4.1
+(Lean 4.35.0), the pinned release, by CI's `plugin-live` shards on Linux
+(run 40847259729), every one green:
 `streams` 88 passed (`tests/test_streams_lean.py` and
 `tests/test_mild_stream_lean.py`, kernel replay of the stream roots against
-the release pinned then); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,
+the pinned release); `trajectory` 81 passed (`tests/test_trajectory_lean.py`,
 every example goal and both driven models, and
 `tests/test_classical_euler_lean.py`); `decisions` 56 passed and one skipped
 (`tests/test_decision_provider_lean.py`, proven and refuted `entailment` and
@@ -179,13 +179,16 @@ claim; `tests/test_entailment_lean.py`; `tests/test_evidence_provider_lean.py`
 `simulate`; the skip is `iterate`, which needs Python Asgard); `stepped` 27
 passed (`tests/test_stepped_lean.py`: the lane's ten examples, its template
 variants and caps, a rejected false block and the `sample` card, each block
-checked in 71–76 s, the first after a one-time import replay); and `rest`
-1559 passed with 14 skipped, all Python Asgard simulations or macOS-only
-sandbox probes (`tests/test_lean_release.py`,
-`tests/test_live_lean_gate.py`, `tests/test_lean_independent.py`,
-`tests/test_lean_sandbox_attacks.py` and the unit tests). The pin is now
-Forseti Lean v0.6.0, which this release's pull request runs the same shards
-against, the `hedging` shard included. The view preamble
+checked in 27–53 s, after a one-time import replay of about 523 s);
+`hedging` 16 passed (`tests/test_hedging_lean.py`: the lane's ten examples,
+seven blocks checked and three `UNKNOWN`, the caps in both directions, the
+straddle, a hand-lowered premium the kernel rejects, and the `hedge` emission
+printing the exact premium; each block checked in 28–58 s, after a one-time
+import replay of about 183 s); and `rest` 1881 passed with 14 skipped, all
+Python Asgard simulations or macOS-only sandbox probes
+(`tests/test_lean_release.py`, `tests/test_live_lean_gate.py`,
+`tests/test_lean_independent.py`, `tests/test_lean_sandbox_attacks.py` and the
+unit tests). The view preamble
 drew a circuit and a model in `tests/test_views_lean.py` on macOS against
 Forseti Lean v0.4.0 on 2026-10-22; CI runs it from then on. `stream` decisions and
 `iterate` evidence were verified on 2026-10-23, locally on macOS with Glitnir

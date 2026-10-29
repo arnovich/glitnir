@@ -587,14 +587,13 @@ evidence need a Forseti Lean build that contains `Gimle.Forseti.Hedging`, as the
 pinned release, Forseti Lean v0.6.0, does; an older build reports the missing
 module.
 
-`entailment`, `trajectory` and `stepped` decisions and `simulate` and `sample`
-evidence passed Glitnir's check in the plugin's live tests against Forseti Lean
-v0.5.1, the release pinned then, on Lean 4.35.0 (Linux CI, 2026-10-28, run
-40654470418); the pin is now v0.6.0, which this release's pull request runs the
-same shards against, the `hedging` shard included. `stream`
-decisions and `iterate` evidence were run through Glitnir's checker locally on
-macOS on 2026-10-23 (Glitnir 0.1.5, Lean 4.35.0); CI covers `stream` decisions
-only, as `iterate` needs Python Asgard. The first check of a Forseti project replays Mathlib and
+`entailment`, `trajectory`, `stepped` and `hedging` decisions and `simulate`,
+`sample` and `hedge` evidence passed Glitnir's check in the plugin's live tests
+against Forseti Lean v0.6.0, the pinned release, on Lean 4.35.0 (Linux CI,
+2026-10-29, run 40847259729). `stream` decisions and `iterate` evidence were
+run through Glitnir's checker locally on macOS on 2026-10-23 (Glitnir 0.1.5,
+Lean 4.35.0); CI covers `stream` decisions only, as `iterate` needs Python
+Asgard. The first check of a Forseti project replays Mathlib and
 Forseti once (about 18 minutes on a laptop); later checks take a few minutes. The
 [plugin README](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/README.md)
 lists every option and goal form.
