@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # Both test jobs install these exact wheels, and the extension job retains
@@ -34,8 +34,10 @@ jobs:
             exit 1
           fi
           echo "exists=$([ "$kept" != 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         if: steps.wheels.outputs.exists != 'true'
+        with:
+          enable-cache: false
       - name: Build the backend and plugin wheels
         if: steps.wheels.outputs.exists != 'true'
         run: |
@@ -43,7 +45,7 @@ jobs:
           uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
       - name: Share the wheels with both test jobs
         if: steps.wheels.outputs.exists != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: glitnir-wheels
           path: |
@@ -56,16 +58,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
       - name: Retrieve this run's wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: glitnir-wheels
       - name: Install runtime and extension dependencies
@@ -135,7 +139,7 @@ jobs:
         run: node extension/scripts/release-candidate.cjs artifact glitnir-tested-backend
       - name: Retain the tested backend for this main candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.backend-artifact.outputs.exists != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: glitnir-tested-backend
           path: backend/dist/*.whl
@@ -149,7 +153,7 @@ jobs:
         run: node extension/scripts/release-candidate.cjs artifact glitnir-tested-plugin
       - name: Retain the tested plugin wheel for this main candidate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.plugin-artifact.outputs.exists != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: glitnir-tested-plugin
           path: plugins/forseti/dist/*.whl
@@ -163,7 +167,7 @@ jobs:
         run: node extension/scripts/release-candidate.cjs artifact glitnir-tested-vsix
       - name: Retain the tested extension for release verification
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.vsix-artifact.outputs.exists != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: glitnir-tested-vsix
           path: glitnir-*.vsix
@@ -174,12 +178,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
       - name: Retrieve this run's wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: glitnir-wheels
       - name: Install the backend as the extension job does
@@ -233,12 +239,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
       - name: Retrieve this run's wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: glitnir-wheels
       - name: Install the backend and Lean
@@ -271,7 +279,7 @@ jobs:
     outputs:
       names: ${{ steps.shards.outputs.names }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: List the shards
@@ -289,12 +297,14 @@ jobs:
         shard: ${{ fromJSON(needs.plugin-live-shards.outputs.names) }}
     name: plugin-live (${{ matrix.shard }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
       - name: Retrieve this run's wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: glitnir-wheels
       - name: Install the backend and plugin as the extension job does
