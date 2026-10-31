@@ -3248,6 +3248,41 @@ test('export renders project notebooks as the preview does', async () => {
   } finally { window.close(); }
 });
 
+test('routine explainers live behind focusable help icons', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims.forEach(c => { c.uses = []; });
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    const hovered = d.querySelector('#graph-note .help-icon');
+    const tooltipId = hovered.getAttribute('aria-describedby');
+    hovered.dispatchEvent(new window.MouseEvent('mouseover', {bubbles: true}));
+    assert.equal(d.getElementById(tooltipId).hidden, false);
+    await window.glitnirPoll();
+    assert.equal(d.getElementById(tooltipId).hidden, false, 'hovered help survives polling');
+    d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    for (const selector of ['#graph-note', '#insp .goal-section', '#insp .insp-check']) {
+      const root = d.querySelector(selector), help = root.querySelector('.help-icon');
+      assert.equal(help?.textContent, '?');
+      const tip = d.getElementById(help.getAttribute('aria-describedby'));
+      assert.equal(tip.getAttribute('role'), 'tooltip');
+      assert.equal(tip.hidden, true);
+      help.focus();
+      assert.equal(tip.hidden, false);
+      help.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+      assert.equal(tip.hidden, true);
+      await window.glitnirPoll();
+      const refreshed = [...d.querySelectorAll('.help-icon')].find(button => button.dataset.helpKey === help.dataset.helpKey);
+      assert.equal(d.activeElement, refreshed, 'polling retains focus');
+      assert.equal(d.getElementById(refreshed.getAttribute('aria-describedby')).hidden, true, 'polling keeps dismissed help closed');
+    }
+    assert.equal(d.querySelector('#insp .goal-caption'), null);
+    assert.equal(d.querySelector('#insp .insp-check > .small'), null);
+    assert.ok(d.querySelector('#insp [data-act="goal"]'));
+    assert.ok(d.querySelector('#insp [data-act="check-through"]'));
+  } finally { window.close(); }
+});
+
 test('project claims drive the inspector, summary, contents, chips, keys, sections and gutter', async () => {
   const window = await renderSnapshot(projectNotebook({current: false}), {browser: true});
   try {

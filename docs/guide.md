@@ -159,6 +159,9 @@ editor and shows the saved file, not unsaved edits. **Contents** lists the
 sections, `s` switches between the rendered document and the Lean source, and
 `g` opens the recorded proof graph.
 
+Hover or focus a small **?** icon for an explanation of the adjacent graph or
+action. Escape dismisses the explanation.
+
 - **Edit in VS Code** on a cell jumps to its source. **Glitnir: Reveal in
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
