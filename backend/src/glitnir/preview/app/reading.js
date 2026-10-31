@@ -448,7 +448,7 @@
   function cellView(cell, staticPage = false, scopes = new Map()) {
     if (cell.kind === 'prose') {
       const html = markdown(cell.markdown, `notebook-heading-${cell.index}`);
-      return html ? `<section class="cell prose">${html}</section>` : '<section class="cell prose"><p class="muted">(empty prose)</p></section>';
+      return html ? `<section class="cell prose">${html}</section>` : '';
     }
     // Blank lines between cells stay in the data for exact line ranges but are not shown.
     if (cell.kind === 'source' && !cell.text.trim()) return '';

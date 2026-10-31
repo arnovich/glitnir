@@ -251,7 +251,7 @@
     const diagramUI = saveDiagramUI();
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
     const foldFocus = saveReadingFolds();
-    const linkSelector = '.source-link,.source-edit,.notebook-reference,.external-link';
+    const linkSelector = '.source-link,.source-edit,.notebook-reference,.external-link,img[data-act="image-expand"]';
     const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
@@ -539,6 +539,7 @@
       $('history').open = false;
       return;
     }
+    if (e.target.closest('#image-dialog')) return;
     const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();

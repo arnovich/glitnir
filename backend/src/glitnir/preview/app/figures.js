@@ -43,7 +43,7 @@
   }
   // Code and math remain atomic; only exact sibling names and explicitly safe
   // external schemes are navigable.
-  function inlineHTML(text) {
+  function inlineHTML(text, links = true) {
     const plain = s => esc(s)
       .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
       .replace(/(^|[^\w])\*([^*]+)\*(?=$|[^\w])/g, '$1<em>$2</em>')
@@ -54,10 +54,10 @@
       out += plain(text.slice(at, m.index));
       if (m[1] !== undefined) {
         const code = `<code>${esc(m[1])}</code>`;
-        out += notebookReference(m[1], code) || code;
+        out += (links && notebookReference(m[1], code)) || code;
       } else if (m[4] !== undefined) {
-        const label = plain(m[4]);
-        out += notebookReference(m[5], label) || externalReference(m[5], label) || plain(m[0]);
+        const label = inlineHTML(m[4], false);
+        out += (links && (notebookReference(m[5], label) || externalReference(m[5], label))) || plain(m[0]);
       } else out += mathHTML((m[2] ?? m[3]).trim(), m[2] !== undefined);
       at = m.index + m[0].length;
     }
@@ -586,8 +586,39 @@
     const image = images.get(path);
     if (image.error) return note('red', `<code>${esc(src)}</code> could not be shown: ${esc(image.error)}.`);
     if (!image.url) return `<figure class="figure image-wait"><p class="small muted">Loading image <code>${esc(src)}</code>…</p>${caption}</figure>`;
-    return `<figure class="figure"><img alt="${esc(alt || src)}" src="${esc(image.url)}">${caption}</figure>`;
+    return `<figure class="figure"><img alt="${esc(alt || src)}" src="${esc(image.url)}" role="button" tabindex="0" data-act="image-expand" aria-label="Expand image: ${esc(alt || src)}" title="Expand image">${caption}</figure>`;
   }
+
+  function expandImage(image) {
+    let dialog = $('image-dialog');
+    if (!dialog) {
+      dialog = document.createElement('dialog');
+      dialog.id = 'image-dialog';
+      dialog.className = 'image-dialog';
+      dialog.setAttribute('aria-label', 'Expanded image');
+      document.body.append(dialog);
+    }
+    const copy = image.cloneNode();
+    for (const name of ['role', 'tabindex', 'data-act', 'aria-label', 'title']) copy.removeAttribute(name);
+    const close = document.createElement('button');
+    close.type = 'button'; close.className = 'secondary'; close.textContent = 'Close image';
+    close.onclick = () => dialog.close();
+    dialog.replaceChildren(close, copy);
+    dialog.onclose = () => {
+      const current = [...$('doc').querySelectorAll('[data-act="image-expand"]')].find(el => el.src === image.src && el.alt === image.alt);
+      current?.focus({preventScroll: true});
+    };
+    dialog.showModal();
+  }
+  document.addEventListener('click', event => {
+    const image = event.target.closest('[data-act="image-expand"]');
+    if (image) expandImage(image);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.target.matches('[data-act="image-expand"]') && ['Enter', ' '].includes(event.key)) {
+      event.preventDefault(); expandImage(event.target);
+    }
+  });
 
   // Without a provider the snapshot carries no decision or evidence data:
   // the directive stays visible as its own source, with a neutral note.
