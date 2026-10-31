@@ -4845,3 +4845,49 @@ test('module headers and ordinary comments stay exact inside the import fold', a
     assert.match(d.querySelector('#doc .definition').textContent, /open Nat in/);
   } finally { window.close(); }
 });
+
+test('proof atlas preserves selection across layouts, references and navigation', async () => {
+  const snapshot = projectNotebook();
+  const nodes = ['result', 'support', 'deep'].map(id => ({id, label: id, kind: 'lemma', statement: 'Statement', idea: 'Idea', uses: [], lean: [{name: `Paper.${id}`, file: 'Paper.lean', line: 1, href: 'https://example.org/source', note: 'Related counterpart, not the exact internal theorem.'}]}));
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Atlas test', formalization: supportedWalkthroughFormalization, nodes, problems: [], atlas: {format: 'glitnir.proof-atlas/v1', commit: 'a'.repeat(40), nodes: nodes.map(n => ({id: n.id, label: n.label, statement: n.id, declarations: [], goal: 'Goal', scope: 'Scope', role: 'Role', idea: 'Idea', difference: 'Decision differs from counting'})), routes: [{id: 'lean', label: 'Lean argument', root: 'result', supports: {result: ['support'], support: ['deep']}}, {id: 'paper', label: 'Paper argument', root: 'support', supports: {support: ['deep']}}]}};
+  const messages = [];
+  const window = await renderSnapshot(snapshot, {katex: true, onMessage: message => messages.push(message)});
+  const d = window.document;
+  let scroll = 420;
+  Object.defineProperty(window, 'scrollY', {get: () => scroll});
+  window.scrollTo = (_x, y) => {scroll = y;};
+  const click = (action, value) => d.querySelector(`[data-atlas="${action}"]${value === undefined ? '' : `[data-value="${value}"]`}`).click();
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'result');
+    click('node', 'support'); click('node', 'deep');
+    scroll = 420;
+    click('layout', 'map');
+    assert.equal(scroll, 420, 'same-node layout switching preserves scroll');
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'deep');
+    assert.ok(d.querySelector('.atlas-map-first'));
+    click('pane', 'sources');
+    assert.equal(scroll, 420, 'source switching preserves scroll');
+    d.querySelector('[data-atlas-route]').focus();
+    window.glitnirWorkbench.render();
+    assert.ok(d.activeElement.hasAttribute('data-atlas-route'), 'poll render restores route control focus');
+    assert.match(d.querySelector('.proof-atlas').textContent, /Related counterpart/);
+    click('back');
+    assert.match(d.querySelector('.atlas-body').textContent, /What this establishes/);
+    click('forward');
+    assert.match(d.querySelector('.atlas-body').textContent, /Declaration references/);
+    click('layout', 'graph'); assert.ok(d.querySelector('.proof-map'));
+    click('layout', 'reading'); assert.equal(d.querySelector('#atlas-selected').textContent, 'deep');
+    assert.equal(d.activeElement.id, 'atlas-selected');
+    const exported = window.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true});
+    assert.match(exported, /id="atlas-deep"/);
+    assert.match(exported, /Related counterpart/);
+    assert.doesNotMatch(exported, /data-atlas=/);
+    d.getElementById('export-html').click();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const saved = messages.find(message => message.type === 'export');
+    assert.ok(saved, 'the full export was produced');
+    const page = new JSDOM(saved.body).window.document;
+    for (const link of page.querySelectorAll('a[href^="#atlas-"]')) assert.ok(page.getElementById(link.hash.slice(1)), `export target ${link.hash} exists`);
+  } finally {window.close();}
+});

@@ -9,7 +9,7 @@ const {previewPage} = require('./webview-page.cjs');
 
 const media = path.resolve(__dirname, '../../dist/media');
 const app = path.resolve(__dirname, '../../backend/src/glitnir/preview/app');
-const WORKBENCH = ['workbench.js', 'figures.js', 'reading.js', 'research.js', 'inspector.js', 'graph.js', 'chrome.js'];
+const WORKBENCH = ['workbench.js', 'figures.js', 'reading.js', 'research.js', 'inspector.js', 'atlas.js', 'graph.js', 'chrome.js'];
 
 function pageFiles() {
   const html = readFileSync(path.join(media, 'index.html'), 'utf8');
