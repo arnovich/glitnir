@@ -4,7 +4,7 @@
   const workbench = window.glitnirWorkbench;
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
-    currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, icon, images,
+    currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, helpHTML, icon, images,
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
@@ -12,6 +12,38 @@
     showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
+  let helpTimer;
+  function hideHelp() {
+    clearTimeout(helpTimer);
+    document.querySelectorAll('.help-tooltip').forEach(tip => { tip.hidden = true; });
+  }
+  function showHelp(help) {
+    hideHelp();
+    const button = help.querySelector('.help-icon'), tip = help.querySelector('.help-tooltip');
+    tip.hidden = false;
+    const rect = button.getBoundingClientRect();
+    tip.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - tip.offsetWidth - 12))}px`;
+    tip.style.top = `${Math.max(12, rect.bottom + tip.offsetHeight + 8 < window.innerHeight ? rect.bottom + 6 : rect.top - tip.offsetHeight - 6)}px`;
+  }
+  document.addEventListener('focusin', event => {
+    const help = event.target.closest('.context-help');
+    if (help) showHelp(help);
+  });
+  document.addEventListener('focusout', event => {
+    const help = event.target.closest('.context-help');
+    if (help && !help.contains(event.relatedTarget) && !help.matches(':hover')) hideHelp();
+  });
+  document.addEventListener('mouseover', event => {
+    const help = event.target.closest('.context-help');
+    if (help) clearTimeout(helpTimer);
+    if (help && !help.contains(event.relatedTarget)) showHelp(help);
+  });
+  document.addEventListener('mouseout', event => {
+    const help = event.target.closest('.context-help');
+    if (help && !help.contains(event.relatedTarget) && !help.contains(document.activeElement)) helpTimer = setTimeout(hideHelp, 200);
+  });
+  document.addEventListener('scroll', hideHelp, true);
+  window.addEventListener('resize', hideHelp);
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
     const busy = UI.data && UI.data.checking.length;
@@ -211,9 +243,9 @@
     // any, show no graph rather than a graph without its arcs.
     const graph = !project || cs.some(c => Array.isArray(c.project?.uses));
     for (const id of ['graph-label', 'graph', 'graph-note']) $(id).hidden = !graph;
-    $('graph-note').textContent = project
+    $('graph-note').innerHTML = helpHTML('claim-graph', 'About the claim graph', project
       ? 'Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.'
-      : 'Arcs come from Lean: the earlier claims a proof\'s axioms name.';
+      : 'Arcs come from Lean: the earlier claims a proof\'s axioms name.');
     if (graph) drawGraph();
     renderConnection();
   }
@@ -249,6 +281,9 @@
   function render() {
     if (!UI.data) return;
     const diagramUI = saveDiagramUI();
+    const helpFocus = document.activeElement?.dataset.helpKey;
+    const helpOpen = helpFocus && !$(helpFocus)?.hidden;
+    const openHelpKey = document.querySelector('.help-tooltip:not([hidden])')?.id;
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
     const foldFocus = saveReadingFolds();
     const linkSelector = '.source-link,.source-edit,.notebook-reference,.external-link,img[data-act="image-expand"]';
@@ -289,6 +324,13 @@
     $('insp').scrollTop = scroll;
     if (goalFocus) $('insp').querySelector('.goal-section [data-act]')?.focus({preventScroll: true});
     restoreDiagramUI(diagramUI);
+    if (helpFocus) {
+      [...document.querySelectorAll('.help-icon')].find(button => button.dataset.helpKey === helpFocus)?.focus({preventScroll: true});
+      if (!helpOpen) hideHelp();
+    } else if (openHelpKey) {
+      const help = $(openHelpKey)?.closest('.context-help');
+      if (help) showHelp(help);
+    }
     markLiveChanges();
 
   }
@@ -535,11 +577,12 @@
   $('keys').onclick = e => { if (e.target === $('keys')) keys(false); };
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      hideHelp();
       keys(false);
       $('history').open = false;
       return;
     }
-    if (e.target.closest('#image-dialog')) return;
+    if (e.target.closest('#image-dialog,.context-help')) return;
     const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();

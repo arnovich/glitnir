@@ -338,7 +338,11 @@
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note) {
     if (linkedPath() || recorded() || leanOff() || walkthroughUnchecked() || !projectMode()) return '';
-    return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button><span class="small muted">${note}</span>`;
+    return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button>${helpHTML(`check-${saved.name}-${label}`, 'About checking through a claim', note)}`;
+  }
+  function helpHTML(key, label, text) {
+    const id = `help-${encodeURIComponent(key)}`;
+    return `<span class="context-help"><button type="button" class="help-icon" data-help-key="${esc(id)}" aria-label="${esc(label)}" aria-describedby="${esc(id)}">?</button><span class="help-tooltip" id="${esc(id)}" role="tooltip" hidden>${esc(text)}</span></span>`;
   }
   // Where a check stopped because it was asked to, not at a failing command.
   const requestedCut = w => Number.isSafeInteger(w?.through_line) && w.from_line === w.through_line + 1;
@@ -662,7 +666,7 @@
 
   Object.assign(workbench, {$, API, DECLARATION, HOST, LABEL, UI, breakableName, checkBusy, checkProject,
     checkThroughHTML, checkedStatementHTML, checking, claim, claimLabel, claimReading, claims, currencyNoted,
-    currencyPillHTML, currencyText, esc, fetch, icon, inspectProject, inspecting, inspection, leanHTML,
+    currencyPillHTML, currencyText, esc, fetch, helpHTML, icon, inspectProject, inspecting, inspection, leanHTML,
     leanOff, leanVersion, linkedPath, load, markLiveChanges, nonClaimsHTML, openNotebook, post,
     projectCheckHTML, projectClaimHTML, projectClaims, projectMode, projectResolutionHTML, readingFolds, recorded, reduced,
     refresh, renderTrail, requestedCut, showNotebookAt, statusOf, summariesOf, toneOf, useChipsHTML, useHTML,

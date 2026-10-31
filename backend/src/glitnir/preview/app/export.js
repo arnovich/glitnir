@@ -46,7 +46,7 @@
     for (const image of all('img[data-act="image-expand"]')) {
       for (const name of ['role', 'tabindex', 'data-act', 'aria-label', 'title']) image.removeAttribute(name);
     }
-    all('.diagram-toolbar,.claim-actions,.copy-result,.cell-tools,.section-tools,.lean-tabs,.lean-pane,script,style,link,meta,iframe,object,embed,form,input,textarea,select').forEach(el => el.remove());
+    all('.context-help,.diagram-toolbar,.claim-actions,.copy-result,.cell-tools,.section-tools,.lean-tabs,.lean-pane,script,style,link,meta,iframe,object,embed,form,input,textarea,select').forEach(el => el.remove());
     for (const scene of all('.circuit-scene')) { scene.classList.add('diagram-fit'); scene.setAttribute('width', scene.getAttribute('viewBox').split(' ')[2]); }
     for (const button of all('button')) {
       if (button.dataset.act === 'goto') {

@@ -3,7 +3,7 @@
   'use strict';
   const workbench = window.glitnirWorkbench;
   const {$, API, UI, cellEntries, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
-    currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, icon, inlineHTML,
+    currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, helpHTML, icon, inlineHTML,
     leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
     researchHTML, useChipsHTML, walkthroughMessage, walkthroughUnchecked} = workbench;
   // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
@@ -29,7 +29,7 @@
         <dl><dt>name</dt><dd>${esc(saved.example === true ? c.label : c.name)}</dd><dt>lines</dt><dd>${cell ? lineLinkHTML(saved.start_line, saved.end_line) : '—'}</dd><dt>result</dt><dd>${currencyText(saved)}</dd><dt>uses</dt><dd class="insp-uses">${!Array.isArray(saved.uses) ? '<span class="muted">not recorded by this check</span>' : saved.uses.length ? `<span class="uses">${useChipsHTML(saved)}</span>` : '—'}</dd></dl></div>
       ${compatibility}${checked}
       ${researchHTML(c)}
-      ${linkedPath() ? '' : `<div class="insp-section insp-check">${checkThroughHTML(saved, 'Check through this claim', `<kbd>r</kbd> · compiles and kernel-replays lines 1–${esc(saved.end_line)} of the saved file; later claims are not rechecked. <b>Check saved file</b> checks all of it.`)}</div>`}
+      ${linkedPath() ? '' : `<div class="insp-section insp-check">${checkThroughHTML(saved, 'Check through this claim', `r: compiles and kernel-replays lines 1–${saved.end_line} of the saved file; later claims are not rechecked. Check saved file checks all of it.`)}</div>`}
       <div class="insp-section"><h5>Assumptions from the last check</h5>${modules.size ? [...modules].map(([module, names]) => `<p class="small muted axiom-module">${esc(module)}</p><div class="axioms">${names.map(name => `<code>${esc(name)}</code>`).join('')}</div>`).join('') : '<p class="small muted">None.</p>'}</div>
       ${goalSectionHTML(c)}`;
   }
@@ -126,16 +126,15 @@
     ? goals.map(goal => `<pre class="goal goal-block">${esc(goal)}</pre>`).join('')
     : '<pre class="goal" data-tone="green">No goals remain in this tactic’s scope.</pre>';
   function goalSectionHTML(c) {
-    const head = '<h5>Proof goals</h5>';
+    const head = `<h5>Proof goals ${helpHTML('proof-goals', 'About proof goals', 'Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.')}</h5>`;
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
     if (leanOff()) return `<div class="insp-section goal-section">${head}<p class="small muted">Proof steps need Lean ${esc(leanVersion(UI.data.preview.lean.toolchain))}. The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
     const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}>${label}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
-    const historical = '<p class="small muted goal-caption">A historical observation of the saved proof: it never changes a status.</p>';
     let body;
-    if (!trace) body = `${button('Inspect proof goals')}<p class="small muted goal-caption">Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.</p>`;
-    else if (traceRunning(trace)) body = `<p class="small muted goal-state" role="status">Asking Lean… ${esc(trace.message || '')}</p><button type="button" class="secondary" data-act="goal-cancel">Cancel</button>${historical}`;
+    if (!trace) body = button('Inspect proof goals');
+    else if (traceRunning(trace)) body = `<p class="small muted goal-state" role="status">Asking Lean… ${esc(trace.message || '')}</p><button type="button" class="secondary" data-act="goal-cancel">Cancel</button>`;
     else if (trace.source_sha256 !== UI.data.sha256) body = note('amber', 'The saved source changed since these goals were recorded.') + button('Refresh proof goals');
     else if (goals.environment !== environmentEpoch()) body = note('amber', 'The source or its dependencies changed since these goals were recorded.') + button('Refresh proof goals');
     else if (trace.status === 'detached') body = note('muted', 'Stopped following the proof observation Proof steps started; it keeps running there.') + button('Inspect proof goals');
