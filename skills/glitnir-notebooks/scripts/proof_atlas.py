@@ -28,7 +28,8 @@ def main() -> int:
         print(f"Invalid proof atlas: {error}", file=sys.stderr)
         return 1
     print(
-        f"Valid proof atlas: {len(atlas['nodes'])} arguments, {len(atlas['routes'])} curated routes. No proof status granted."
+        f"Valid proof atlas: {len(atlas['nodes'])} arguments, "
+        f"{len(atlas['routes'])} curated routes. No proof status granted."
     )
     return 0
 
