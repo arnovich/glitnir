@@ -1,6 +1,6 @@
 ---
 name: glitnir-notebooks
-description: Write or revise Lean notebooks for Glitnir, combining mathematical prose, definitions, and checked mathematical claims, or write a guided walkthrough of an existing Lean formalization and its paper. Use for notebook authoring, converting a Lean file for Glitnir, or writing or extending a walkthrough of an existing project; not for extension development or unrelated Lean proof work.
+description: Write or revise Lean notebooks for Glitnir, combining mathematical prose, definitions, and checked mathematical claims, or write a guided walkthrough or proof atlas of an existing Lean formalization and its paper. Use for notebook authoring, converting a Lean file for Glitnir, or writing or extending a walkthrough of an existing project; not for extension development or unrelated Lean proof work.
 ---
 
 # Author Glitnir notebooks
@@ -176,6 +176,16 @@ describes. Ask before building the original or downloading a paper. Never
 describe a claim as checked unless a Glitnir check of the walkthrough reported
 it. The helper must first confirm that the outline's toolchain pin matches the
 formalization checkout; that textual validation still grants no proof status.
+
+## Build a proof atlas
+
+For larger walkthroughs needing linked argument exploration, read
+[references/proof-atlases.md](references/proof-atlases.md). Author an optional
+`atlas.json` beside the outline; Glitnir presents the same curated argument in
+Reading-first and Map-first layouts. Keep paper and Lean routes distinct where
+they differ, preserve source qualification notes, and validate with the bundled
+`scripts/proof_atlas.py` using the matching runtime Python. An atlas never
+grants proof status or replaces the outline/source checks.
 
 ## Validate before finishing
 

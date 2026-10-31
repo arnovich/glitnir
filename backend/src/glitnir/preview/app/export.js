@@ -53,7 +53,7 @@
     }
     // Keep per-card source optional; expand supporting replay information.
     for (const details of all('details')) {
-      if (details.matches('.proof-section')) { details.open = true; continue; }
+      if (details.matches('.proof-section,.atlas-argument')) { details.open = true; continue; }
       if (details.matches('.def-lean,.export-source,.import-header')) { details.open = false; continue; }
       const section = page.createElement('section'); section.className = details.className + ' export-fold';
       section.append(...details.childNodes); details.replaceWith(section);

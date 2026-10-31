@@ -1406,3 +1406,34 @@ def proposition_display_project(tmp_path, project_toolchain):
         project_toolchain,
         EXAMPLE_HELPER + "\ndef Imported (n : Nat) : Prop := n = n ∧ True\n",
     )
+
+
+@pytest.fixture
+def atlas() -> dict:
+    """Return a minimal atlas with a non-extracted route."""
+    return {
+        "format": "glitnir.proof-atlas/v1",
+        "commit": "a" * 40,
+        "nodes": [
+            {
+                "id": key,
+                "label": key,
+                "statement": "result",
+                "declarations": [],
+                "goal": "Goal",
+                "scope": "Scope",
+                "role": "Role",
+                "idea": "Idea",
+                "difference": "Difference",
+            }
+            for key in ["result", "support"]
+        ],
+        "routes": [
+            {
+                "id": "lean",
+                "label": "Lean argument",
+                "root": "result",
+                "supports": {"result": ["support"]},
+            }
+        ],
+    }

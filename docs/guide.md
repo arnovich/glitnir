@@ -611,3 +611,19 @@ an earlier copy: **Codex** uses `.agents/skills/glitnir-notebooks` and **Claude
 Code** uses `.claude/skills/glitnir-notebooks`. **Export for another agent**
 writes it to a folder you choose; give its `SKILL.md` to your agent. Agents can
 check a notebook with the command from **Glitnir: Copy Validation Command**.
+
+
+## Explore a proof atlas
+
+A walkthrough with an `atlas.json` sidecar offers **Reading first** and **Map first**
+in Graph view. Both show the same curated argument, scope, proof idea, and mapped
+source notes. Follow supporting arguments, inspect source references, and use
+Back/Forward to return. Switching layouts keeps the selected step; switching routes
+starts at the selected route’s result. **Statement graph** retains the existing map.
+
+Atlas routes are curated explanations, not extracted Lean dependencies. A boundary
+means further explanation has not been authored. Source references name the
+outline’s pinned revision; their notes distinguish related counterparts and differing
+formal statements. Navigation never checks a claim or changes its status. Unsupported
+Lean toolchains remain unchecked. Static export includes expandable atlas explanations
+and links. Malformed atlases produce diagnostics without removing the statement map.

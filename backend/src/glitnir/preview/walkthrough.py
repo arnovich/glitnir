@@ -12,6 +12,7 @@ from glitnir.lean.project_inspection import (
     supported_version,
     toolchain_version,
 )
+from glitnir.preview.atlas import ProofAtlas, load_atlas
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 OUTLINE = "outline.json"
@@ -81,6 +82,7 @@ class WalkthroughMap(TypedDict):
     nodes: list[WalkthroughNode]
     problems: list[str]
     source: NotRequired[str]
+    atlas: NotRequired[ProofAtlas]
 
 
 def _text(value: Any, limit: int = 4096) -> str:
@@ -326,7 +328,29 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
     project = raw.get("project")
     nodes = _nodes(raw.get("nodes"), project, problems)
     paper, paper_local = _paper(raw.get("sources"))
-    return {
+    atlas = None
+    try:
+        atlas = load_atlas(path, raw)
+        if atlas is not None:
+            rendered_ids = {node["id"] for node in nodes}
+            rendered_nodes = {node["id"]: node for node in nodes}
+            if any(node["statement"] not in rendered_ids for node in atlas["nodes"]):
+                raise ValueError(
+                    "atlas binds a statement unavailable in the rendered outline"
+                )
+            for argument in atlas["nodes"]:
+                names = {
+                    entry["name"]
+                    for entry in rendered_nodes[argument["statement"]]["lean"]
+                }
+                if any(name not in names for name in argument["declarations"]):
+                    raise ValueError(
+                        "atlas declaration unavailable in rendered source mappings"
+                    )
+    except (OSError, ValueError) as error:
+        atlas = None
+        problems.append(f"atlas.json: {error}")
+    result: WalkthroughMap = {
         "format": FORMAT,
         "title": title,
         "overview": _text(raw.get("overview"), 4096),
@@ -337,3 +361,6 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
         "problems": problems[:MAX_PROBLEMS],
         "source": OUTLINE,
     }
+    if atlas is not None:
+        result["atlas"] = atlas
+    return result

@@ -257,6 +257,8 @@
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
     const activeGraphControl = UI.mode === 'graph' ? document.activeElement?.closest?.('#graph-view [data-act]') : null;
     const graphFocus = activeGraphControl ? {...activeGraphControl.dataset} : null;
+    const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
+    const atlasFocus = atlasActive ? {heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route')} : null;
     const scroll = $('insp').scrollTop;
     const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
     if (!heldRendering()) {
@@ -276,6 +278,11 @@
     if (sourceFocus) $(sourceFocus)?.focus({preventScroll: true});
     if (sourceControl?.sha === UI.data.sha256) {
       const control = [...$('source').querySelectorAll('[data-act]')].find(el => el.dataset.act === sourceControl.act && el.dataset.line === sourceControl.line);
+      control?.focus({preventScroll: true});
+    }
+    if (atlasFocus && UI.mode === 'graph') {
+      const controls = [...$('graph-view').querySelectorAll('[data-atlas]')];
+      const control = atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value);
       control?.focus({preventScroll: true});
     }
     if (graphFocus && UI.mode === 'graph') {

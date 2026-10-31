@@ -349,18 +349,19 @@
     const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows the displayed walkthrough result status.` : 'Arrows run from a statement to each statement that directly uses it. Foundations are at the bottom; results rise to the top. This view does not check or update results.';
     const label = model.walkthrough ? `${model.title} statement map` : 'Recorded proof graph';
     return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2><p>${description}</p>${legend}</div>${toolbar}</header>
-      ${compatibility}<div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}</section>`;
+      ${compatibility}<div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}${staticPage ? workbench.atlasStaticHTML?.(data) || '' : ''}</section>`;
   }
 
   function renderProofGraph() {
     const root = document.getElementById('graph-view');
     if (!root || !UI.data) return;
+    if (workbench.renderAtlas?.(UI.data)) return;
     const model = graphModel(UI.data);
     if (!model.byId.has(UI.graphSelected)) {
       const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }
-    root.innerHTML = proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1});
+    root.innerHTML = (UI.data.walkthrough?.atlas ? '<button type="button" class="secondary" data-atlas="layout" data-value="reading">Return to proof atlas</button>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1});
   }
   const graphNode = id => graphModel(UI.data).byId.get(id);
 
