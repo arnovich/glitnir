@@ -44,9 +44,11 @@ The detailed argument follows, with its supporting lemmas below.
 ### Images and links
 
 A prose line that is only an image, such as `![caption](assets/figure.png)`,
-shows that file from the `assets/` folder beside the notebook. Images must be
-PNG, JPEG, GIF, WebP or SVG files of at most 10 MB, named by a relative path
-inside `assets/`; the preview says why any other reference, or a missing,
+shows that file from the `assets/` folder beside the notebook.
+Click an image (or focus it and press Enter or Space) to inspect it at the full
+preview width. Close the image viewer with **Close image** or Escape.
+Images must be PNG, JPEG, GIF, WebP or SVG files of at most 10 MB, named by a
+relative path inside `assets/`; the preview says why any other reference, or a missing,
 changed or oversized file, is not shown. SVG files are shown only as images, so
 any scripts in them do not run, and **Export HTML** embeds the images so the
 snapshot works offline. Images are illustrations: they do not affect checking

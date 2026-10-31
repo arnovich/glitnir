@@ -2950,6 +2950,46 @@ test('a withheld banner from an older version of the file says so', async () => 
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
 const svgReply = {status: 200, data: Buffer.from(SVG).toString('base64'), contentType: 'image/svg+xml'};
+test('code labels remain formatted inside external links', async () => {
+  const window = await renderSnapshot(illustrated('[`anthropics/formal-math`](https://github.com/anthropics/formal-math/tree/e1a4e6508154ea59f030480661590a9fe3018011/3sum-apsp)', []));
+  try {
+    assert.equal(window.document.querySelector('#doc a.external-link code')?.textContent, 'anthropics/formal-math');
+  } finally { window.close(); }
+});
+
+test('title-only and empty prose create no empty rows or source controls', async () => {
+  const snapshot = illustrated('# Pictured', []);
+  snapshot.cells.push({index: 1, kind: 'prose', start: 10, end: 12, text: '/-! -/', markdown: '  \n'});
+  const window = await renderSnapshot(snapshot);
+  try {
+    assert.equal(window.document.querySelectorAll('#doc .cellwrap').length, 0);
+  } finally { window.close(); }
+});
+
+test('prose images open an inert full-width image dialog and return focus on close', async () => {
+  const snapshot = illustrated('![Sketch](assets/a.svg)', [{path: 'assets/a.svg', status: 'ok', sha256: 'b'.repeat(64)}]);
+  let poll;
+  const window = await renderSnapshot(snapshot, {onAsset: () => svgReply, onPoll: fn => { poll = fn; }});
+  try {
+    await new Promise(resolve => setTimeout(resolve, 30));
+    window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+    window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')); };
+    let opener = window.document.querySelector('#doc [data-act="image-expand"]');
+    assert.ok(opener);
+    opener.focus();
+    await poll();
+    opener = window.document.querySelector('#doc [data-act="image-expand"]');
+    assert.equal(window.document.activeElement, opener);
+    opener.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    const dialog = window.document.getElementById('image-dialog');
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.querySelector('img').src, window.document.querySelector('#doc .figure img').src);
+    assert.equal(dialog.querySelectorAll('svg,script').length, 0);
+    dialog.querySelector('button').click();
+    assert.equal(dialog.open, false);
+    assert.equal(window.document.activeElement, opener);
+  } finally { window.close(); }
+});
 function illustrated(markdown, assets) {
   return {file: 'Pictured.lean', sha256: 'a'.repeat(64), checking: [], check_errors: {}, claims: [], links: [], revisions: [], assets,
     cells: [{index: 0, kind: 'prose', start: 1, end: 9, text: '/-! -/', markdown}]};
