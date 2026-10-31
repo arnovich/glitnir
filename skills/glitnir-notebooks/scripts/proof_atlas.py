@@ -1,6 +1,7 @@
 """Validate an atlas sidecar with the installed Glitnir backend's own validator."""
 
 import argparse
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -12,7 +13,8 @@ def main() -> int:
     parser.add_argument("outline", type=Path)
     args = parser.parse_args()
     try:
-        from glitnir.preview.atlas import load_atlas
+        # The optional runtime is checked separately with its Python 3.12 target.
+        load_atlas = importlib.import_module("glitnir.preview.atlas").load_atlas
     except ImportError:
         parser.error(
             "use the Python interpreter of a Glitnir runtime with proof atlas support"
