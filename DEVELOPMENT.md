@@ -111,7 +111,7 @@ With Python 3.12+, uv and Node 22+, run from the repository root:
 uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
-  'backend/dist/glitnir-0.1.10-py3-none-any.whl[dev]'
+  'backend/dist/glitnir-0.1.11-py3-none-any.whl[dev]'
 (cd backend && ../.venv/bin/python -m pytest \
   && ../.venv/bin/black --check src tests scripts experiments \
   && ../.venv/bin/isort --check-only src tests scripts experiments \
@@ -122,7 +122,7 @@ uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
 uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
 uv pip install --python .venv/bin/python --no-deps \
-  plugins/forseti/dist/glitnir_forseti-0.1.10-py3-none-any.whl
+  plugins/forseti/dist/glitnir_forseti-0.1.11-py3-none-any.whl
 (cd plugins/forseti && ../../.venv/bin/python -m pytest -q && ../../.venv/bin/black --check src tests tools \
   && ../../.venv/bin/isort --check-only src tests tools && ../../.venv/bin/flake8 src tests tools \
   && ../../.venv/bin/mypy src)
@@ -368,6 +368,11 @@ including [Marketplace publication](AGENTS.md#marketplace-publication): publishi
 a GitHub release publishes its exact VSIX after verification and the owner's
 approval. Package versions are explicit in `package.json` and `package-lock.json`;
 bump `plugins/forseti/pyproject.toml` with them.
+
+Keep version-specific release notes in `docs/releases/vVERSION.md`. Candidate
+uploads generate installation and validation instructions; the publication
+handoff must also link the reviewed version-specific notes at the candidate's
+source commit. Leave draft notes untouched while upload retries are possible.
 
 The Marketplace icon `extension/icon/glitnir-128.png` is rendered from
 `extension/icon/glitnir-icon.svg` by `extension/icon/render-icon.sh` (needs
