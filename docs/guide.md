@@ -361,10 +361,14 @@ recorded relationships out from foundations at the bottom to results at the
 top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
 reads its notebook in the same panel when that notebook is available. Node
-colours are recorded claim statuses, with out-of-date results shown in amber.
+colours are recorded claim statuses, with out-of-date results shown in amber
+and results not compared with this project's environment muted and labelled
+**Not compared**.
 Claims without a saved result remain visible as unknown, and a missing `uses`
 observation is labelled unknown rather than treated as an empty dependency
-list. The graph can be fitted to the available width or zoomed and scrolled,
+list. Maps start at readable node size; **Fit width** shows the overview and
+**Actual size** restores readable labels. Zoomed maps retain their scroll
+position through refreshes. The graph can be zoomed and scrolled,
 and the static HTML export includes an inert copy.
 
 For a guided paper walkthrough, an `outline.json` beside the Lean notebook is
@@ -373,8 +377,9 @@ notebook. The same **Graph** view shows the
 paper's definitions, lemmas, theorems and appendices instead of the claim-only
 graph. Box colours distinguish statement kinds; the status dot comes from the
 saved walkthrough claim named by the outline. **Statement details** gives the
-paper page and pinned public Lean declarations, and a mapped node returns to
-its walkthrough claim. A local-only paper is identified without exposing a
+paper page and pinned public Lean declarations. Selecting a mapped node opens
+its details; **Show in Document** returns to its walkthrough claim.
+A local-only paper is identified without exposing a
 filesystem path; links require a public HTTPS URL. Static export includes the
 same self-contained map and safe public links. It loads no map script, font or
 other external resource.
@@ -389,8 +394,10 @@ Glitnir does not port or build another-version formalization on a laptop. A
 future port is separate work: its upstream commit and port diff must remain
 visible, and only current Glitnir checks of that port may supply claim statuses.
 
-The **Statement details** selector shows a node's recorded uses and users.
-Opening a local node returns to its highlighted claim in **Document**; its exact
+Selecting a node opens **Statement details**, highlighting its adjacent arrows.
+The details list every recorded use and user even when an implied arrow is
+hidden; select a relationship to inspect that statement. **Show in Document**
+returns to the highlighted claim and places keyboard focus there; its exact
 Lean source remains available from the claim's existing source action. None of
 these graph actions runs Lean, updates a record, or changes proof authority.
 Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in `simp`),

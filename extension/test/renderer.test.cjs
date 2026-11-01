@@ -3628,16 +3628,80 @@ test('the Graph view layers recorded direct uses, includes linked claims, and na
     window.glitnirWorkbench.render();
     assert.equal(d.activeElement.dataset.act, 'graph-detail-picker', 'detail focus survives polling');
     click(d.querySelector('[data-graph-id="local:Demo.k_pos"]'));
-    assert.equal($('doc').hidden, false, 'a local node returns to the Document view');
+    assert.equal($('graph-view').hidden, false, 'a node selects its details without leaving the graph');
+    click(d.querySelector('#graph-detail [data-act="graph-node"]'));
+    assert.equal($('doc').hidden, false, 'the explicit document action opens the claim');
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
 
     d.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'g', bubbles: true}));
     assert.equal($('graph-view').hidden, false, 'g opens the Graph view');
     click(d.querySelector('[data-graph-id="import:ThreeState:settled"]'));
+    click(d.querySelector('#graph-detail [data-act="graph-node"]'));
     await settle(30);
     assert.ok(d.body.classList.contains('glitnir-linked-view'));
     assert.equal($('insp-title').textContent, 'settled');
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/linked')).map(m => m.path), ['/api/linked?path=ThreeState.lean']);
+  } finally { window.close(); }
+});
+
+test('graph inspection preserves recorded uses and qualifies un-compared results', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims[0].current = null;
+  const window = await renderSnapshot(snapshot);
+  try {
+    const model = window.glitnirWorkbench.claimGraphModel(snapshot);
+    const node = model.byId.get('local:Demo.k_pos');
+    assert.equal(node.tone, 'muted');
+    assert.match(node.status, /Not compared/);
+    const claims = ['base', 'middle', 'result'].map((name, i) => ({name, status: 'checked', record: {verdict: 'holds'}, uses: i === 2 ? ['base', 'middle'] : i === 1 ? ['base'] : []}));
+    const reduced = window.glitnirWorkbench.claimGraphModel({claims});
+    assert.deepEqual([...reduced.byId.get('local:result').uses], ['local:base', 'local:middle']);
+    assert.deepEqual([...reduced.byId.get('local:base').usedBy], ['local:middle', 'local:result']);
+    assert.equal(reduced.edges.length, 2);
+    const wide = {claims: Array.from({length: 260}, (_, i) => ({...claims[0], name: `claim${i}`}))};
+    assert.ok(window.glitnirWorkbench.claimGraphModel(wide, 'claim259').byId.has('local:claim259'));
+    const page = new JSDOM(window.glitnirWorkbench.proofGraphHTML(wide));
+    assert.equal(Number(page.window.document.querySelector('.proof-map').getAttribute('width')), 52800, 'wide live maps retain readable intrinsic node sizes');
+    page.window.close();
+  } finally { window.close(); }
+});
+
+test('graph selection and polling retain inspection position and focus', async () => {
+  const window = await renderSnapshot(projectNotebook());
+  try {
+    const d = window.document;
+    window.HTMLElement.prototype.scrollIntoView = () => {};
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-graph-name="Demo.floor"]').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    assert.equal(d.getElementById('graph-view').hidden, false);
+    assert.match(d.querySelector('#graph-detail h3').textContent, /floor/);
+    const canvas = d.querySelector('.proof-graph-canvas'); canvas.scrollLeft = 300; canvas.scrollTop = 45;
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-graph-canvas').scrollLeft, 300);
+    assert.equal(d.querySelector('.proof-graph-canvas').scrollTop, 45);
+    assert.equal(d.activeElement, d.querySelector('#graph-detail h3'), 'polling keeps detail-heading focus');
+    d.querySelector('#graph-detail [data-act="graph-node"]').click();
+    assert.equal(d.getElementById('doc').hidden, false);
+    assert.equal(d.activeElement.closest('.cell')?.id, 'cell-Demo.floor');
+  } finally { window.close(); }
+});
+
+test('walkthrough graph details retain paper-link focus across polling', async () => {
+  const snapshot = projectNotebook();
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Map', paper: 'https://example.org/paper.pdf', formalization: supportedWalkthroughFormalization, nodes: [
+    {id: 'result', label: 'Result', kind: 'theorem', uses: [], claim: 'k_pos', pages: '7', lean: []},
+  ]};
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const paper = d.querySelector('#graph-detail a');
+    paper.focus();
+    d.getElementById('graph-detail').scrollTop = 160;
+    await window.glitnirPoll();
+    assert.equal(d.activeElement.getAttribute('href'), paper.getAttribute('href'));
+    assert.ok(d.activeElement.closest('#graph-detail'));
+    assert.equal(d.getElementById('graph-detail').scrollTop, 160, 'polling retains the detail pane reading position');
   } finally { window.close(); }
 });
 
@@ -3664,13 +3728,16 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.match(d.getElementById('graph-view').textContent, /Dependency observations are unknown for unchecked/);
     const zoom = d.querySelector('[data-act="graph-zoom-in"]');
     zoom.focus(); zoom.click();
-    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '125%');
+    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '950');
     assert.equal(d.activeElement.dataset.act, 'graph-zoom-in', 'zoom focus survives the graph redraw');
     d.querySelector('[data-act="graph-zoom-out"]').click();
     d.querySelector('[data-act="graph-zoom-out"]').click();
-    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '75%', 'zoom out is smaller than fit width');
+    assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '608', 'zoom out scales intrinsic node size');
     d.querySelector('[data-act="graph-fit"]').click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '100%');
+    Object.defineProperty(d.querySelector('.proof-graph-canvas'), 'clientWidth', {value: 600});
+    d.querySelector('[data-act="graph-zoom-out"]').click();
+    assert.ok(Number(d.querySelector('#graph-view .proof-map').getAttribute('width')) < 600, 'zooming out from fit really shrinks the graph');
   } finally { window.close(); }
 });
 
@@ -3818,6 +3885,7 @@ test('a mapped source claim stays navigable before it has a saved result', async
     assert.equal(model.byId.get('walkthrough:result').name, 'Demo.floor');
     assert.equal(model.byId.get('walkthrough:result').status, 'Unknown');
     window.document.querySelector('[data-graph-name="Theorem 1"]').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    window.document.querySelector('#graph-detail [data-act="graph-node"]').click();
     assert.equal(window.glitnirWorkbench.UI.mode, 'doc');
     assert.equal(window.glitnirWorkbench.UI.documentLine.line, 15);
     assert.ok(window.document.querySelector('#doc .document-target'));
@@ -3912,6 +3980,7 @@ test('an incompatible walkthrough never presents saved claim results as checked'
     assert.match(d.getElementById('graph-view').textContent, /claims are unchecked/);
     assert.doesNotMatch(d.getElementById('graph-view').textContent, /\bChecked\b|Kernel checked/);
     d.querySelector('[data-graph-name="Theorem 1"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    d.querySelector('#graph-detail [data-act="graph-node"]').click();
     assert.equal(d.getElementById('doc').hidden, false);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .pill').textContent, 'Unchecked');
     assert.match(d.getElementById('insp-sub').textContent, /unchecked/);

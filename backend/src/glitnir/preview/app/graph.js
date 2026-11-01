@@ -49,16 +49,16 @@
       edges.push({from: dependency, to: user, appendix: byId.get(user)?.statementKind === 'appendix'});
     }
     const users = new Map(nodes.map(node => [node.id, []]));
-    for (const edge of edges) users.get(edge.from)?.push(edge.to);
+    for (const [user, own] of dependencies) for (const dependency of own) users.get(dependency)?.push(user);
     for (const node of nodes) {
-      node.uses = direct.get(node.id) || [];
+      node.uses = dependencies.get(node.id) || [];
       node.usedBy = users.get(node.id) || [];
       node.unavailable = unavailable.get(node.id) || 0;
     }
     return {nodes, byId, edges, dependencies: direct, cyclic, ...extra};
   }
 
-  function claimGraphModel(data) {
+  function claimGraphModel(data, selectedName = null) {
     const project = data.preview?.mode === 'project';
     const rendered = project ? projectClaims(data) : (Array.isArray(data.claims) ? data.claims : []);
     const claimsByName = new Map(rendered.map(entry => [entry.name, entry]));
@@ -67,6 +67,7 @@
       : rendered.map(entry => entry.name);
     const savedByName = new Map((data.project_claims || []).filter(saved => typeof saved?.name === 'string').map(saved => [saved.name, saved]));
     const allNames = [...new Set([...sourceNames, ...rendered.map(entry => entry.name), ...savedByName.keys()])];
+    if (allNames.length > MAX_GRAPH_NODES && allNames.includes(selectedName)) allNames.unshift(...allNames.splice(allNames.indexOf(selectedName), 1));
     const orderedNames = allNames.slice(0, MAX_GRAPH_NODES);
     const omittedNodeIds = new Set(allNames.slice(MAX_GRAPH_NODES).map(localId));
     let omittedEdges = 0, dependencyCount = 0;
@@ -84,8 +85,9 @@
       const hasLegacyRecord = project || entry?.status === 'stale' || Boolean(entry?.record || entry?.refutation);
       const status = entry && hasLegacyRecord ? statusOf(entry, true) : {key: 'unknown', label: 'Unknown', tone: 'muted'};
       const stale = saved?.current === false || (!project && entry?.status === 'stale');
+      const notCompared = saved?.current === null;
       add({id: localId(name), name, label: entry ? claimLabel(entry) : shortName(name), kind: 'local', path: null,
-        fullLabel: name, tone: stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone, status: status.label, stale,
+        fullLabel: name, tone: notCompared ? 'muted' : stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone, status: status.label + (notCompared ? ' · Not compared' : ''), stale,
         relationsKnown: project ? Array.isArray(saved?.uses) : hasLegacyRecord && Array.isArray(entry?.uses),
         truncated: project ? saved?.uses_truncated === true : entry?.uses_truncated === true, malformed: false});
     }
@@ -171,6 +173,7 @@
       const saved = matchedClaim ? savedByName.get(matchedClaim.name) : null;
       const hasRecord = data.preview?.mode === 'project' ? Boolean(saved) : Boolean(matchedClaim?.record || matchedClaim?.refutation || matchedClaim?.status === 'stale');
       const status = matchedClaim && hasRecord ? statusOf(matchedClaim, true, data) : {key: 'unknown', label: 'Unknown', tone: 'muted'};
+      const notCompared = saved?.current === null;
       const stale = compatibility.supported && (saved?.current === false || matchedClaim?.status === 'stale');
       if (raw.claim && !matchedClaim) claimProblems.push(`No saved walkthrough result matches ${raw.claim}.`);
       const statementKind = STATEMENT_KINDS.has(raw.kind) ? raw.kind : 'unknown';
@@ -179,8 +182,8 @@
         kind: 'walkthrough', statementKind, section: typeof raw.section === 'string' ? raw.section : '',
         pages: typeof raw.pages === 'string' ? raw.pages : '', statement: typeof raw.statement === 'string' ? raw.statement : '', idea: typeof raw.idea === 'string' ? raw.idea : '',
         paper: typeof outline.paper === 'string' ? outline.paper : '', paperLocal: outline.paper_local === true, lean: Array.isArray(raw.lean) ? raw.lean.slice(0, 32) : [], rawUses: Array.isArray(raw.uses) ? raw.uses.slice(0, MAX_GRAPH_NODES) : [],
-        claimRequested: typeof raw.claim === 'string' ? raw.claim : '', tone: stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone,
-        status: status.label, stale, hasRecord, sourceLine: Number.isSafeInteger(matchedClaim?.start) ? matchedClaim.start : null,
+        claimRequested: typeof raw.claim === 'string' ? raw.claim : '', tone: notCompared ? 'muted' : stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone,
+        status: status.label + (notCompared ? ' · Not compared' : ''), stale, hasRecord, sourceLine: Number.isSafeInteger(matchedClaim?.start) ? matchedClaim.start : null,
         relationsKnown: true, truncated: false, malformed: !Array.isArray(raw.uses), path: null};
       nodes.push(node); byId.set(node.id, node);
     }
@@ -211,7 +214,7 @@
       problems, missingReferences});
   }
 
-  const graphModel = data => data.walkthrough ? walkthroughGraphModel(data) : claimGraphModel(data);
+  const graphModel = (data, selected = null) => data.walkthrough ? walkthroughGraphModel(data) : claimGraphModel(data, selected?.startsWith('local:') ? selected.slice(6) : null);
 
   function graphLayout(model) {
     const depth = new Map(model.nodes.map(node => [node.id, 0]));
@@ -255,7 +258,10 @@
     return {positions, width, height: top + (topLevel + 1) * rowHeight};
   }
 
-  const nodeList = (ids, model) => ids.length ? ids.map(id => esc(model.byId.get(id)?.fullLabel || model.byId.get(id)?.name || id)).join(', ') : 'None';
+  const nodeList = (ids, model, staticPage) => ids.length ? ids.map(id => {
+    const label = esc(model.byId.get(id)?.fullLabel || model.byId.get(id)?.name || id);
+    return staticPage ? label : `<button type="button" class="graph-relation" data-act="graph-select" data-graph-id="${esc(id)}">${label}</button>`;
+  }).join(', ') : 'None';
   function safeHTTPS(value) {
     if (typeof value !== 'string' || /\s/.test(value)) return '';
     try { const url = new URL(value); return url.protocol === 'https:' && url.hostname ? value : ''; } catch { return ''; }
@@ -290,7 +296,7 @@
       const where = [node.statementKind, node.section, node.pages ? `pp. ${node.pages}` : ''].filter(Boolean).join(' · ');
       return `<h3${staticPage ? '' : ' tabindex="-1"'}>${esc(node.fullLabel)}</h3><p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>
         ${where ? `<p class="small muted">${esc(where)}</p>` : ''}<div class="walkthrough-statement">${inlineHTML(node.statement)}</div><p>${inlineHTML(node.idea)}</p>
-        <dl><dt>Uses</dt><dd>${nodeList(node.uses, model)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model)}</dd></dl>${walkthroughLinks(node)}${action}`;
+        <dl><dt>Uses</dt><dd>${nodeList(node.uses, model, staticPage)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model, staticPage)}</dd></dl>${walkthroughLinks(node)}${action}`;
     }
     const action = !staticPage && node.kind === 'local'
       ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Document</button>`
@@ -300,24 +306,23 @@
     const malformed = node.malformed ? '<p class="small warn-text">Malformed dependency observations were ignored.</p>' : '';
     const unavailable = node.unavailable ? `<p class="small muted">${node.unavailable} saved use could not be matched to a statement in this notebook.</p>` : '';
     return `<h3 tabindex="-1">${esc(node.fullLabel || node.name)}</h3><p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>
-      <dl><dt>Uses</dt><dd>${nodeList(node.uses, model)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model)}</dd></dl>${note}${truncated}${malformed}${unavailable}${action}`;
+      <dl><dt>Uses</dt><dd>${nodeList(node.uses, model, staticPage)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model, staticPage)}</dd></dl>${note}${truncated}${malformed}${unavailable}${action}`;
   }
 
-  function proofGraphHTML(data, {staticPage = false, selected = null, zoom = 1} = {}) {
-    const model = graphModel(data), layout = graphLayout(model), boxWidth = 188, boxHeight = 50;
+  function proofGraphHTML(data, {staticPage = false, selected = null, zoom = 1, fit = false} = {}) {
+    const model = graphModel(data, selected), layout = graphLayout(model), boxWidth = 188, boxHeight = 50;
     const marker = staticPage ? 'proof-arrow-static' : 'proof-arrow';
     const paths = model.edges.map(edge => {
       const from = layout.positions.get(edge.from), to = layout.positions.get(edge.to);
       const start = from.y - boxHeight / 2, end = to.y + boxHeight / 2, mid = (start + end) / 2;
-      return `<path class="proof-edge${edge.appendix ? ' appendix-edge' : ''}" data-from="${esc(edge.from)}" data-to="${esc(edge.to)}" d="M${from.x},${start} C${from.x},${mid} ${to.x},${mid} ${to.x},${end + 6}" marker-end="url(#${marker})"/>`;
+      return `<path class="proof-edge${edge.from === selected || edge.to === selected ? ' related' : ''}${edge.appendix ? ' appendix-edge' : ''}" data-from="${esc(edge.from)}" data-to="${esc(edge.to)}" d="M${from.x},${start} C${from.x},${mid} ${to.x},${mid} ${to.x},${end + 6}" marker-end="url(#${marker})"/>`;
     }).join('');
     const nodes = model.nodes.map(node => {
       const point = layout.positions.get(node.id), chosen = node.id === selected ? ' chosen' : '';
       const fullLabel = node.fullLabel || node.name;
-      const nodeAction = node.kind === 'local' || node.kind === 'walkthrough' && node.name ? 'Open in Document' : node.path ? 'Open notebook' : 'Show details';
       const accessibleKind = node.kind === 'walkthrough' ? `${node.statementKind}, ` : '';
-      const nodeLabel = `${accessibleKind}${fullLabel}, ${node.status}. ${nodeAction}`;
-      const attrs = staticPage ? '' : ` data-act="graph-node" data-graph-id="${esc(node.id)}" tabindex="0" role="button" aria-label="${esc(nodeLabel)}"`;
+      const nodeLabel = `${accessibleKind}${fullLabel}, ${node.status}. Show details`;
+      const attrs = staticPage ? '' : ` data-act="graph-select" data-graph-id="${esc(node.id)}" tabindex="0" role="button" aria-pressed="${node.id === selected}" aria-label="${esc(nodeLabel)}"`;
       const graphName = node.kind === 'walkthrough' || node.kind === 'imported' ? node.label : node.name;
       const meta = node.kind === 'imported' ? 'Imported · ' + node.status : node.kind === 'walkthrough' ? `${node.statementKind} · ${node.status}` : node.status + (node.stale && node.status !== 'Out of date' ? ' · Out of date' : '');
       const kindClass = node.kind === 'walkthrough' ? ` walkthrough-node statement-${node.statementKind}` : '';
@@ -338,32 +343,32 @@
     const compatibility = model.walkthrough && !model.compatibility.supported ? `<p class="banner quiet walkthrough-compatibility" role="status">${esc(model.compatibility.message)}</p>` : '';
     const statementKinds = model.walkthrough ? [...new Set(model.nodes.map(node => node.statementKind))] : [];
     const legend = statementKinds.length ? `<div class="walkthrough-legend" aria-label="Statement kinds">${statementKinds.map(kind => `<span><i class="statement-swatch statement-${kind}" aria-hidden="true"></i>${esc(kind)}</span>`).join('')}</div>` : '';
-    const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" aria-label="Graph size"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-fit">Fit width</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button></div>`;
+    const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" aria-label="Graph size"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-fit">Fit width</button><button type="button" class="secondary" data-act="graph-reset">Actual size</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button></div>`;
     const detailOptions = model.nodes.map(node => `<option value="${esc(node.id)}"${node.id === selected ? ' selected' : ''}>${node.kind === 'walkthrough' ? `${esc(node.statementKind)} — ` : ''}${esc(node.fullLabel || node.name)} — ${esc(node.status)}</option>`).join('');
     const picker = '<se' + `lect data-act="graph-detail-picker">${detailOptions}</se` + 'lect>';
     const detail = staticPage ? '' : `<aside class="proof-graph-detail" id="graph-detail" aria-live="polite"><label class="proof-graph-detail-picker">Statement details${picker}</label>${graphDetailHTML(model.byId.get(selected), model, false)}</aside>`;
     const staticDetails = staticPage && model.walkthrough ? `<div class="walkthrough-static-details">${model.nodes.map(node => `<section id="walkthrough-detail-${esc(node.outlineId)}">${graphDetailHTML(node, model, true)}</section>`).join('')}</div>` : '';
     const svgRole = staticPage && !model.walkthrough ? ' role="img"' : ' role="group"';
-    const svgWidth = staticPage ? layout.width : `${Math.round(zoom * 100)}%`;
+    const svgWidth = !staticPage && fit ? '100%' : Math.round(layout.width * zoom);
     const heading = model.walkthrough ? model.title : 'Recorded proof graph';
-    const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows the displayed walkthrough result status.` : 'Arrows run from a statement to each statement that directly uses it. Foundations are at the bottom; results rise to the top. This view does not check or update results.';
+    const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows the displayed walkthrough result status.` : 'Arrows run from supporting statements to results above them. Implied arrows are hidden to simplify the map; details list every recorded use. This view does not check or update results.';
     const label = model.walkthrough ? `${model.title} statement map` : 'Recorded proof graph';
     return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2><p>${description}</p>${legend}</div>${toolbar}</header>
-      ${compatibility}<div class="proof-graph-layout"><div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${detail}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}${staticPage ? workbench.atlasStaticHTML?.(data) || '' : ''}</section>`;
+      ${compatibility}<div class="proof-graph-layout">${detail}<div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div></div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}${staticPage ? workbench.atlasStaticHTML?.(data) || '' : ''}</section>`;
   }
 
   function renderProofGraph() {
     const root = document.getElementById('graph-view');
     if (!root || !UI.data) return;
     if (workbench.renderAtlas?.(UI.data)) return;
-    const model = graphModel(UI.data);
+    const model = graphModel(UI.data, UI.graphSelected || localId(UI.selected));
     if (!model.byId.has(UI.graphSelected)) {
       const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }
-    root.innerHTML = (UI.data.walkthrough?.atlas ? '<button type="button" class="secondary" data-atlas="layout" data-value="reading">Return to proof atlas</button>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1});
+    root.innerHTML = (UI.data.walkthrough?.atlas ? '<button type="button" class="secondary" data-atlas="layout" data-value="reading">Return to proof atlas</button>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true});
   }
-  const graphNode = id => graphModel(UI.data).byId.get(id);
+  const graphNode = id => graphModel(UI.data, UI.graphSelected).byId.get(id);
 
   Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, proofGraphHTML, renderProofGraph, walkthroughGraphModel});
 })();
