@@ -2,7 +2,7 @@
   "name": "glitnir",
   "displayName": "Glitnir \u2014 Lean Notebooks",
   "description": "Read, explore and check Lean notebooks beside their source.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "gimle",
   "license": "MIT",
   "icon": "extension/icon/glitnir-128.png",
