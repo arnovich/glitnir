@@ -31,6 +31,12 @@
     }
     return `<a class="notebook-reference" data-sha="${esc(UI.data.sha256)}" href="/?reference=${encodeURIComponent(module)}" target="_blank" rel="noopener" title="Open ${esc(module)}.lean in another notebook tab">${label}</a>`;
   }
+  function atlasReference(target, label) {
+    if (!target.startsWith('#atlas?') || /\s/.test(target)) return null;
+    const params = new URLSearchParams(target.slice(7));
+    if (!params.get('route') || !params.get('node')) return null;
+    return `<a class="atlas-link" href="${esc(target)}">${label}</a>`;
+  }
   function externalReference(target, label) {
     if (/\s/.test(target)) return null;
     let url;
@@ -57,7 +63,7 @@
         out += (links && notebookReference(m[1], code)) || code;
       } else if (m[4] !== undefined) {
         const label = inlineHTML(m[4], false);
-        out += (links && (notebookReference(m[5], label) || externalReference(m[5], label))) || plain(m[0]);
+        out += (links && (notebookReference(m[5], label) || atlasReference(m[5], label) || externalReference(m[5], label))) || plain(m[0]);
       } else out += mathHTML((m[2] ?? m[3]).trim(), m[2] !== undefined);
       at = m.index + m[0].length;
     }

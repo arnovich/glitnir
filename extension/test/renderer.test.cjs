@@ -4872,6 +4872,9 @@ test('proof atlas preserves selection across layouts, references and navigation'
     window.glitnirWorkbench.render();
     assert.ok(d.activeElement.hasAttribute('data-atlas-route'), 'poll render restores route control focus');
     assert.match(d.querySelector('.proof-atlas').textContent, /Related counterpart/);
+    d.querySelector('.atlas-reference a').focus();
+    window.glitnirWorkbench.render();
+    assert.ok(d.activeElement.matches('.atlas-reference a'), 'source link focus survives refresh');
     click('back');
     assert.match(d.querySelector('.atlas-body').textContent, /What this establishes/);
     click('forward');
@@ -4889,5 +4892,119 @@ test('proof atlas preserves selection across layouts, references and navigation'
     assert.ok(saved, 'the full export was produced');
     const page = new JSDOM(saved.body).window.document;
     for (const link of page.querySelectorAll('a[href^="#atlas-"]')) assert.ok(page.getElementById(link.hash.slice(1)), `export target ${link.hash} exists`);
+  } finally {window.close();}
+});
+
+function atlasExplorationSnapshot(count = 4) {
+  const snapshot = projectNotebook();
+  const nodes = Array.from({length: count}, (_, i) => ({id: `n${i}`, label: `Argument ${i}`, kind: 'lemma', statement: 'Statement', idea: 'Idea', uses: [], lean: []}));
+  const supports = {n0: nodes.slice(1, -1).map(n => n.id), n1: [nodes.at(-1).id], n2: [nodes.at(-1).id]};
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Exploration', formalization: supportedWalkthroughFormalization, nodes, problems: [], atlas: {format: 'glitnir.proof-atlas/v1', commit: 'a'.repeat(40), nodes: nodes.map(n => ({...n, statement: n.id, declarations: [], goal: 'Goal', scope: 'Scope', role: 'Role', idea: 'Idea', difference: ''})), routes: [{id: 'lean', label: 'Lean route', root: 'n0', supports}, {id: 'paper', label: 'Paper route', root: 'n1', supports: {n1: [nodes.at(-1).id]}}]}};
+  return snapshot;
+}
+
+test('atlas overview exposes shared steps and backlinks with bounded paging', async () => {
+  const window = await renderSnapshot(atlasExplorationSnapshot(32));
+  const d = window.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-atlas="overview"]').click();
+    assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 24);
+    d.querySelector('[data-atlas="overview-page"][data-value="1"]').click();
+    assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 8);
+    d.querySelector('.atlas-overview [data-value="n31"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
+    const parents = [...d.querySelectorAll('.atlas-backlinks [data-atlas="node"]')].map(el => el.dataset.value);
+    assert.deepEqual(parents, ['n1', 'n2']);
+    d.querySelector('.atlas-backlinks [data-value="n2"]').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
+  } finally { window.close(); }
+});
+
+test('atlas direct links restore route and node, and exports keep their targets', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  const window = await renderSnapshot(snapshot, {onWindow: w => w.history.replaceState(null, '', '#atlas?route=paper&node=n3')});
+  const d = window.document;
+  try {
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 3');
+    assert.equal(d.querySelector('[data-atlas-route]').value, 'paper');
+    assert.equal(d.querySelector('#graph-view').hidden, false);
+    const link = d.querySelector('.atlas-permalink').getAttribute('href');
+    assert.equal(link, '#atlas?route=paper&node=n3');
+    const html = window.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true});
+    const exported = new JSDOM(html).window.document;
+    assert.ok(exported.getElementById(decodeURIComponent(link.slice(1))));
+    window.location.hash = '#atlas?route=lean&node=n2';
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
+    window.location.hash = '#atlas?route=paper&node=n0';
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2', 'a node outside the route is not silently substituted');
+    assert.match(d.querySelector('.atlas-link-status').textContent, /not available/);
+  } finally { window.close(); }
+});
+
+
+test('atlas missing notebook observations name the binding without a null status label', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  snapshot.walkthrough.nodes[0].claim = 'missingClaim';
+  const window = await renderSnapshot(snapshot);
+  try {
+    window.document.querySelector('[data-mode="graph"]').click();
+    assert.match(window.document.querySelector('.proof-atlas').textContent, /missingClaim: no matching notebook result/);
+  } finally {window.close();}
+});
+
+test('atlas fragments in notebook prose open the argument even when the URL already matches', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  snapshot.cells = [{index: 0, kind: 'prose', start: 1, end: 3, markdown: '[Read the step](#atlas?route=lean&node=n3)'}];
+  const window = await renderSnapshot(snapshot);
+  const d = window.document;
+  try {
+    const link = d.querySelector('#doc a.atlas-link');
+    assert.ok(link, 'Markdown atlas fragment is a navigable link');
+    link.click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 3');
+    d.querySelector('[data-mode="doc"]').click();
+    d.querySelector('#doc a.atlas-link').click();
+    assert.equal(d.querySelector('#graph-view').hidden, false);
+    d.querySelector('[data-atlas="overview"]').click();
+    const map = d.querySelector('.atlas-overview-scroll');
+    map.scrollTop = 200; map.scrollLeft = 40;
+    window.glitnirWorkbench.render();
+    assert.equal(d.querySelector('.atlas-overview-scroll').scrollTop, 200);
+    assert.equal(d.querySelector('.atlas-overview-scroll').scrollLeft, 40);
+  } finally {window.close();}
+});
+
+test('atlas routes and exports accept prototype names and encoded IDs without losing targets', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  const atlas = snapshot.walkthrough.atlas;
+  const names = ['constructor', '__proto__', 'a&b%λ', 'toString'];
+  atlas.nodes.forEach((n, i) => {n.id = names[i];});
+  atlas.routes = [{id: 'route &λ%', label: 'Special route', root: 'constructor', supports: JSON.parse('{"constructor":["__proto__","a&b%λ"],"__proto__":["toString"]}')}];
+  const fragment = '#atlas?' + new URLSearchParams({route: 'route &λ%', node: 'a&b%λ'});
+  const window = await renderSnapshot(snapshot, {onWindow: w => w.history.replaceState(null, '', fragment)});
+  try {
+    assert.equal(window.document.querySelector('#atlas-selected').textContent, 'Argument 2');
+    window.document.querySelector('[data-atlas="overview"]').click();
+    assert.equal(window.document.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 4);
+    const html = window.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true});
+    const exported = new JSDOM(html).window.document;
+    for (const link of exported.querySelectorAll('a[href^="#atlas?"]')) {
+      assert.ok(exported.getElementById(link.hash.slice(1)), 'encoded fragment matches an exact exported ID');
+    }
+    assert.ok(exported.getElementById(fragment.slice(1)));
+  } finally {window.close();}
+});
+
+
+test('an atlas deep link opens the overview page containing its selected argument', async () => {
+  const window = await renderSnapshot(atlasExplorationSnapshot(32), {onWindow: w => {
+    w.history.replaceState(null, '', '#atlas?route=lean&node=n31');
+    w.scrollTo = () => {};
+  }});
+  try {
+    window.document.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    assert.equal(window.document.querySelector('.atlas-overview [aria-current="true"]').dataset.value, 'n31');
   } finally {window.close();}
 });

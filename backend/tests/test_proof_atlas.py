@@ -115,3 +115,53 @@ def test_unrenderable_source_binding_suppresses_atlas(atlas: dict, tmp_path) -> 
     assert any(
         "atlas declaration unavailable" in problem for problem in result["problems"]
     )
+
+
+def test_disconnected_arguments_have_actionable_diagnostics(atlas: dict) -> None:
+    """Coverage is across all routes, not necessarily every individual route."""
+    from glitnir.preview.atlas import atlas_warnings
+
+    atlas["nodes"].append({**atlas["nodes"][0], "id": "orphan"})
+    assert atlas_warnings(atlas) == [
+        "Arguments unreachable from every route root: orphan"
+    ]
+    atlas["routes"].append(
+        {"id": "other", "label": "Other", "root": "orphan", "supports": {}}
+    )
+    assert atlas_warnings(atlas) == []
+
+
+def test_authoring_cli_rejects_unrenderable_binding(atlas: dict, tmp_path) -> None:
+    """Authoring must use the same normalized bindings as the preview."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    node = {
+        "id": "result",
+        "label": "Result",
+        "kind": "theorem",
+        "uses": [],
+        "lean": [{"name": "Paper.result", "file": "P.lean", "line": False}],
+    }
+    atlas["nodes"][0]["declarations"] = ["Paper.result"]
+    outline = {
+        "format": "glitnir.walkthrough-outline/v1",
+        "title": "Guide",
+        "project": {"commit": "a" * 40},
+        "nodes": [node],
+        "sources": [],
+    }
+    path = tmp_path / "outline.json"
+    path.write_text(json.dumps(outline))
+    (tmp_path / "atlas.json").write_text(json.dumps(atlas))
+    helper = (
+        Path(__file__).resolve().parents[2]
+        / "skills/glitnir-notebooks/scripts/proof_atlas.py"
+    )
+    result = subprocess.run(
+        [sys.executable, str(helper), str(path)], capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert "atlas declaration unavailable" in result.stderr

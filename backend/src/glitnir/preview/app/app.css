@@ -536,3 +536,13 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .proof-atlas details{padding:12px 0;border-bottom:1px solid var(--border)}
 .proof-atlas button[aria-pressed=true]{outline:2px solid var(--blue);outline-offset:1px}
 @media(max-width:760px){.proof-atlas .atlas-map-first{grid-template-columns:minmax(0,1fr)}}
+
+.atlas-overview { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; }
+.atlas-overview-scroll { max-height: 440px; overflow: auto; }
+.atlas-overview svg { display: block; width: 100%; min-width: 620px; }
+.atlas-overview-edges path { fill: none; stroke: var(--muted); stroke-width: 1; }
+.atlas-overview rect { fill: var(--paper); stroke: var(--border); }
+.atlas-overview text { fill: var(--ink); font: 14px system-ui, sans-serif; }
+.atlas-overview a[aria-current="true"] rect, .atlas-overview a:focus rect { stroke: var(--blue); stroke-width: 3; }
+.atlas-backlinks { margin-top: 1rem; }
+.atlas-backlinks button { margin: .25rem; }

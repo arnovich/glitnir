@@ -632,3 +632,16 @@ outline’s pinned revision; their notes distinguish related counterparts and di
 formal statements. Navigation never checks a claim or changes its status. Unsupported
 Lean toolchains remain unchecked. Static export includes expandable atlas explanations
 and links. Malformed atlases produce diagnostics without removing the statement map.
+
+The atlas’s **Route overview** shows the selected route in pages of 24 arguments;
+shared steps appear once. **Used by** links back to every selected parent in that
+route. The overview is also available in Reading first and opens in Map first.
+Links across map pages remain available through supporting arguments and Used by.
+
+**Link to this argument** identifies its route and stable argument ID.
+**Copy argument link** copies a notebook-relative fragment in VS Code; use it in
+a Markdown link in that notebook, or append it to the exported HTML URL. A browser
+preview copies a full URL. Opening it restores that argument and route; an unknown
+argument or route produces a diagnostic. Static exports include route indexes,
+backlinks and the same link targets. Authoring validation now uses the preview’s
+normalized source mappings and reports arguments disconnected from every route.
