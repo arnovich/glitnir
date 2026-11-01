@@ -179,6 +179,29 @@ def validate_atlas(raw: Any, statements: list[Any], commit: Any) -> ProofAtlas:
     }
 
 
+def atlas_warnings(atlas: ProofAtlas) -> list[str]:
+    """Report exposition omitted from every route without hiding usable routes."""
+    reachable: set[str] = set()
+    for route in atlas["routes"]:
+        seen: set[str] = set()
+        pending = [route["root"]]
+        while pending:
+            node = pending.pop()
+            if node not in seen:
+                seen.add(node)
+                pending.extend(route["supports"].get(node, []))
+        reachable.update(seen)
+    missing = [node["id"] for node in atlas["nodes"] if node["id"] not in reachable]
+    if not missing:
+        return []
+    suffix = f" (and {len(missing) - 20} more)" if len(missing) > 20 else ""
+    return [
+        "Arguments unreachable from every route root: "
+        + ", ".join(missing[:20])
+        + suffix
+    ]
+
+
 def load_atlas(path: Path, outline: dict[str, Any]) -> ProofAtlas | None:
     """Read a regular bounded sidecar; absence leaves existing notebooks alone."""
     try:

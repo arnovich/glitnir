@@ -8,6 +8,8 @@ Lean dependency extraction. The atlas is curated exposition, not checking eviden
 Keep `outline.json` as the paper-to-Lean source map. Add `atlas.json` beside it;
 Glitnir offers **Reading first**, **Map first**, and the original **Statement graph**
 in Graph view. Both atlas layouts share selection, source details and Back/Forward.
+Use **Route overview** to see the selected route, shared steps and paged map;
+**Used by** follows the reverse curated links. Map first opens the overview.
 A route switch explicitly starts at that route's result. Static export includes
 linked, expandable argument explanations and all declaration qualification notes.
 
@@ -18,6 +20,33 @@ short mathematical labels, not file names. A supporting step may be a curated
 subargument rather than a declaration, but must retain a source mapping and say
 when that mapping is only a related counterpart. Keep statement and proof
 qualifications in the outline's declaration `note`; the atlas displays them.
+
+## Deepen a difficult branch
+
+Choose a bottleneck whose proof is still hard to understand after the overview.
+Read its pinned source and follow several layers to actual intermediate lemmas,
+explaining what each establishes and how its parent uses it. Stop at an explicit,
+useful boundary; expanding all branches uniformly is usually less helpful.
+For example, the 3SAT atlas follows improved pieces through reindexing, the
+padded-to-counted conversion and the padding-machine execution lemma. Keep the
+cost model and state-size assumptions visible at each step.
+
+Reuse a node when two arguments use the same step, so the overview and **Used by**
+show the shared structure. A node may belong to only one route; connect every
+published node to at least one route root. The validator diagnoses disconnected
+nodes. Add precise intermediate declaration mappings to the appropriate outline
+statement when needed, keeping its existing ID and recording qualification notes.
+Do not create notebook claims merely to make these steps navigable.
+
+## Argument links
+
+**Link to this argument** and **Copy argument link** identify the route and stable
+argument ID. In VS Code the copied link is a notebook-relative fragment, such as
+`#atlas?route=lean&node=half_bridge`; use it in a Markdown link in that notebook
+or append it to the URL of its exported HTML. A browser preview copies its full
+URL. Do not share a temporary VS Code webview URL or a local preview server as a
+public notebook address. The same fragment opens the route and argument live
+and targets the argument in static export. Keep IDs stable when revising prose.
 
 ## Sidecar format
 
@@ -74,14 +103,19 @@ Use the matching Glitnir runtime Python (atlas support is required):
 python -B scripts/proof_atlas.py /path/to/walkthrough/outline.json
 ```
 
-This invokes the backend's own validator. It checks revision, declaration and
-argument targets, bounds and route cycles; it grants no proof status. Also run the
+This uses the preview's complete outline loading and normalization path. It checks
+revision, renderable declaration and argument targets, bounds and route cycles.
+It exits unsuccessfully for outline diagnostics or arguments unreachable from
+every route root; the preview retains usable routes alongside those warnings.
+A successful validation grants no proof status. Also run the
 walkthrough helper's existing `check` against the original sources and notebook.
 Textual checks, elaboration and independent Glitnir checking remain distinct.
 An incompatible toolchain stays explicitly unchecked in both atlas layouts.
 
-Inspect both layouts: start at a result, follow two supporting steps, inspect a
-source note, return, switch layout, and use Back/Forward. Check keyboard focus,
+Inspect both layouts: start at a result, follow the deepened branch, inspect a
+source note, return, switch layout, and use Back/Forward. In the overview, select
+a shared step and follow each Used by backlink. Open a copied argument link
+in the live preview and its static export, and check any paged map boundaries. Check keyboard focus,
 small-screen reflow, and exported links. Verify the mathematical scope and
 qualifications after changing a route or source binding; a structurally valid
 atlas alone does not establish that its exposition is correct.

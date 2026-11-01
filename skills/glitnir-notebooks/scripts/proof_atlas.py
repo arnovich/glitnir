@@ -2,7 +2,6 @@
 
 import argparse
 import importlib
-import json
 import sys
 from pathlib import Path
 
@@ -14,16 +13,22 @@ def main() -> int:
     args = parser.parse_args()
     try:
         # The optional runtime is checked separately with its Python 3.12 target.
-        load_atlas = importlib.import_module("glitnir.preview.atlas").load_atlas
+        load_walkthrough = importlib.import_module(
+            "glitnir.preview.walkthrough"
+        ).load_walkthrough
     except ImportError:
         parser.error(
             "use the Python interpreter of a Glitnir runtime with proof atlas support"
         )
     try:
-        outline = json.loads(args.outline.read_bytes())
-        if not isinstance(outline, dict):
-            raise ValueError("outline must be an object")
-        atlas = load_atlas(args.outline, outline)
+        if args.outline.name != "outline.json":
+            raise ValueError("pass the walkthrough outline.json used by the preview")
+        walkthrough = load_walkthrough(args.outline)
+        if walkthrough is None:
+            raise ValueError("outline.json is missing")
+        if walkthrough["problems"]:
+            raise ValueError("; ".join(walkthrough["problems"]))
+        atlas = walkthrough.get("atlas")
         if atlas is None:
             raise ValueError("atlas.json is missing beside the outline")
     except (OSError, ValueError) as error:

@@ -12,7 +12,7 @@ from glitnir.lean.project_inspection import (
     supported_version,
     toolchain_version,
 )
-from glitnir.preview.atlas import ProofAtlas, load_atlas
+from glitnir.preview.atlas import ProofAtlas, atlas_warnings, load_atlas
 
 FORMAT = "glitnir.walkthrough-outline/v1"
 OUTLINE = "outline.json"
@@ -332,6 +332,7 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
     try:
         atlas = load_atlas(path, raw)
         if atlas is not None:
+            problems.extend(atlas_warnings(atlas))
             rendered_ids = {node["id"] for node in nodes}
             rendered_nodes = {node["id"]: node for node in nodes}
             if any(node["statement"] not in rendered_ids for node in atlas["nodes"]):
