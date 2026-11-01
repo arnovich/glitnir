@@ -102,6 +102,10 @@ svg.graph .node{cursor:pointer}
 .proof-graph-view>header p{font-size:12px;color:var(--muted);margin:0;max-width:720px}
 .proof-graph-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px;align-items:start}
 .proof-graph-canvas{border:1px solid var(--border);border-radius:8px;background:var(--paper);overflow:auto;min-height:220px}
+.proof-graph-layout>.proof-graph-canvas{grid-column:1;grid-row:1;max-height:72vh}
+.proof-graph-layout>.proof-graph-detail{grid-column:2;grid-row:1;position:sticky;top:12px;max-height:72vh;overflow:auto}
+.proof-edge.related{stroke:var(--blue);stroke-width:2.5}
+.proof-graph-detail button.graph-relation{display:inline;padding:0;margin:0;color:var(--blue);text-decoration:underline;font:inherit;text-align:left}
 .proof-map{height:auto;display:block;transition:width .12s ease}
 .proof-edge{fill:none;stroke:var(--faint);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .proof-edge.appendix-edge{stroke-dasharray:5 4}
@@ -145,6 +149,7 @@ svg.graph .node{cursor:pointer}
 .proof-graph-export{margin:0 0 28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
 .proof-graph-export .proof-graph-layout{display:block}
 .proof-graph-export .proof-graph-canvas{min-height:0}
+.proof-graph-export .proof-graph-layout>.proof-graph-canvas{max-height:none}
 .keys{font-size:11px;color:var(--muted);display:grid;grid-template-columns:max-content minmax(0,1fr);gap:5px 8px;align-items:center;margin:16px 0 0}
 .keys dt{white-space:nowrap}
 .keys dd{margin:0}
@@ -326,6 +331,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .proof-graph-view>header{display:block}
   .proof-graph-toolbar{margin-top:10px}
   .proof-graph-layout{grid-template-columns:1fr}
+  .proof-graph-layout>.proof-graph-canvas{grid-column:1;grid-row:1}
+  .proof-graph-layout>.proof-graph-detail{grid-column:1;grid-row:2;position:static;max-height:none}
 }
 
 /* app additions */

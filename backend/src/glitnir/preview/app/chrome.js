@@ -293,6 +293,12 @@
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
     const activeGraphControl = UI.mode === 'graph' ? document.activeElement?.closest?.('#graph-view [data-act]') : null;
     const graphFocus = activeGraphControl ? {...activeGraphControl.dataset} : null;
+    const graphHeading = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail h3');
+    const graphLink = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail a[href]') ? document.activeElement.getAttribute('href') : null;
+    const graphCanvas = $('graph-view').querySelector('.proof-graph-canvas');
+    const graphScroll = graphCanvas ? {left: graphCanvas.scrollLeft, top: graphCanvas.scrollTop, sha: UI.data.sha256, selected: graphCanvas.querySelector('.chosen')?.dataset.graphId} : null;
+    const graphDetail = $('graph-detail');
+    const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
     const atlasFocus = atlasActive ? {heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const scroll = $('insp').scrollTop;
@@ -325,6 +331,17 @@
     if (graphFocus && UI.mode === 'graph') {
       const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail);
       control?.focus({preventScroll: true});
+    }
+    if (UI.mode === 'graph') {
+      if (graphHeading) $('graph-detail')?.querySelector('h3')?.focus({preventScroll: true});
+      if (graphLink) [...$('graph-view').querySelectorAll('#graph-detail a[href]')].find(link => link.getAttribute('href') === graphLink)?.focus({preventScroll: true});
+      const canvas = $('graph-view').querySelector('.proof-graph-canvas');
+      if (canvas && graphScroll?.sha === UI.data.sha256 && graphScroll.selected === canvas.querySelector('.chosen')?.dataset.graphId) {
+        canvas.scrollLeft = graphScroll.left; canvas.scrollTop = graphScroll.top;
+        const detail = $('graph-detail');
+        if (detail && detailScroll) { detail.scrollLeft = detailScroll.left; detail.scrollTop = detailScroll.top; }
+      }
+      else revealGraphSelection();
     }
     if (linkFocus && UI.mode === 'doc' && (!linkFocus.sha || linkFocus.sha === UI.data.sha256)) {
       const link = $('doc').querySelectorAll(linkSelector)[linkFocus.index];
@@ -432,10 +449,27 @@
   renderShortcuts();
 
   // ----- interaction -------------------------------------------------------------------
+  function revealGraphSelection() {
+    const canvas = $('graph-view').querySelector('.proof-graph-canvas');
+    const chosen = canvas?.querySelector('.proof-node.chosen');
+    if (!chosen || !canvas.clientWidth) return;
+    const box = canvas.getBoundingClientRect(), node = chosen.getBoundingClientRect();
+    canvas.scrollLeft += node.left - box.left - (canvas.clientWidth - node.width) / 2;
+    canvas.scrollTop += node.top - box.top - (canvas.clientHeight - node.height) / 2;
+  }
+  function zoomGraph(factor) {
+    const canvas = $('graph-view').querySelector('.proof-graph-canvas');
+    const svg = canvas?.querySelector('.proof-map');
+    const width = Number(svg?.getAttribute('viewBox').split(' ')[2]);
+    const scale = UI.graphFit && width > 0 ? canvas.clientWidth / width : UI.graphZoom || 1;
+    UI.graphZoom = Math.max(.0001, Math.min(8, scale * factor));
+    UI.graphFit = false;
+    render();
+  }
   function select(name, scroll) {
     UI.sourceCell = null;
     UI.selected = name;
-    if (UI.mode === 'graph') UI.graphSelected = `local:${name}`;
+    UI.graphSelected = `local:${name}`;
     render();
     void loadResearch(name);
     if (!scroll) return;
@@ -529,12 +563,25 @@
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'goto': closeDiagram(); select(id, true); break;
+      case 'graph-select': {
+        const node = graphNode(b.dataset.graphId);
+        if (!node) break;
+        UI.graphSelected = node.id; render();
+        const heading = $('graph-detail')?.querySelector('h3');
+        heading?.focus({preventScroll: true});
+        if (window.matchMedia('(max-width:760px)').matches) heading?.scrollIntoView({block: 'nearest'});
+        break;
+      }
       case 'graph-node': {
         const node = graphNode(b.dataset.graphId);
         if (!node) break;
         UI.graphSelected = node.id;
         if (node.kind === 'walkthrough' && node.sourceLine) { showDocument(node.sourceLine, UI.data.sha256); break; }
-        if (node.kind === 'local' || node.kind === 'walkthrough' && node.name) { UI.mode = 'doc'; select(node.name, true); break; }
+        if (node.kind === 'local' || node.kind === 'walkthrough' && node.name) {
+          const cell = UI.data.cells.find(cell => cell.claim === node.name || cell.id === node.name);
+          if (cell) showDocument(cell.start, UI.data.sha256);
+          break;
+        }
         if (node.path) {
           const path = [...(linkedPath() || '').split('/').slice(0, -1), node.path].join('/');
           const link = path === UI.main?.file ? '' : path;
@@ -542,9 +589,10 @@
         } else render();
         break;
       }
-      case 'graph-zoom-in': UI.graphZoom = Math.min(8, (UI.graphZoom || 1) + .25); render(); break;
-      case 'graph-zoom-out': UI.graphZoom = Math.max(.5, (UI.graphZoom || 1) - .25); render(); break;
-      case 'graph-fit': UI.graphZoom = 1; render(); break;
+      case 'graph-reset': UI.graphZoom = 1; UI.graphFit = false; render(); break;
+      case 'graph-zoom-in': zoomGraph(1.25); break;
+      case 'graph-zoom-out': zoomGraph(.8); break;
+      case 'graph-fit': UI.graphZoom = 1; UI.graphFit = true; render(); break;
       case 'open-notebook': e.preventDefault(); closeDiagram(); UI.pendingClaim = b.dataset.claim || null; openNotebook(b.dataset.link || null); break;
       case 'notebook-back': showNotebookAt(UI.at - 1); break;
       case 'notebook-forward': showNotebookAt(UI.at + 1); break;
@@ -592,7 +640,7 @@
       return;
     }
     if (e.target.closest('#image-dialog,.context-help')) return;
-    const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"]');
+    const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"],#graph-view [data-act="graph-select"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       graphAction.dispatchEvent(new MouseEvent('click', {bubbles: true}));
