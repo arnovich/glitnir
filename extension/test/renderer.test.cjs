@@ -5123,3 +5123,21 @@ test('atlas position survives reopening and yields to an explicit argument link'
   w = await open('#atlas?route=paper&node=n3');
   try {assert.equal(w.document.querySelector('#atlas-selected').textContent, 'Argument 3');} finally {w.close();}
 });
+
+test('compare atlas routes at the same argument and return to prior context', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  const w = await renderSnapshot(snapshot);
+  const d = w.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    assert.match(d.querySelector('.atlas-compare').textContent, /only in/);
+    d.querySelector('[data-atlas="node"][data-value="n1"]').click();
+    d.querySelector('.atlas-compare a').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 1');
+    assert.equal(d.querySelector('[data-atlas-route]').value, 'paper');
+    assert.match(d.querySelector('.atlas-backlinks').textContent, /route’s result/);
+    d.querySelector('[data-atlas="back"]').click();
+    assert.equal(d.querySelector('[data-atlas-route]').value, 'lean');
+    assert.match(d.querySelector('.atlas-backlinks').textContent, /Argument 0/);
+  } finally {w.close();}
+});

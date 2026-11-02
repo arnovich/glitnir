@@ -128,3 +128,8 @@ Reopening a preview restores the route, argument and layout for the same
 notebook and atlas revision. VS Code keeps the position in workspace storage.
 The browser preview uses local storage on its origin. Direct argument links
 take precedence. Use **Start route again** to return to the selected result.
+
+At a shared step, **View this argument in** switches to another reachable
+route while keeping the argument selected. Compare the supports and Used by
+links on each route. In HTML exports these links jump to the corresponding
+route section. Keep a shared ID only when both routes discuss the same step.
