@@ -15,12 +15,42 @@
     if (!atlas?.nodes?.length || !atlas.routes?.length) return null;
     return {...atlas, byId: new Map(atlas.nodes.map(n => [n.id, n])), statements: new Map(data.walkthrough.nodes.map(n => [n.id, n]))};
   }
+  function rememberPosition(data) {
+    const key = data.walkthrough?.position_key;
+    if (!key || workbench.linkedPath() || state.layout === 'graph') return;
+    const record = JSON.stringify({key, revision: data.walkthrough.atlas_revision, route: state.route, node: state.node, layout: state.layout});
+    try {
+      if (window.glitnirHost) window.glitnirHost.saveAtlasPosition?.(record);
+      else localStorage.setItem('glitnir.atlas.' + key, record);
+    } catch { /* Storage is optional. */ }
+  }
+  function resumePosition(data, m) {
+    const key = data.walkthrough.position_key;
+    if (!key || workbench.linkedPath() || location.hash) return;
+    try {
+      const raw = window.glitnirHost ? window.glitnirHost.readAtlasPosition?.() : localStorage.getItem('glitnir.atlas.' + key);
+      if (!raw) return;
+      const record = JSON.parse(raw);
+      if (record?.key !== key) return;
+      const route = m.routes.find(r => r.id === record.route);
+      UI.mode = 'graph';
+      if (record.revision !== data.walkthrough.atlas_revision || !route || !routeIndex(route).depth.has(record.node)) {
+        linkMessage = 'The saved reading position belongs to an earlier atlas. Starting at the result.';
+        return;
+      }
+      state.route = route.id; state.node = record.node;
+      state.layout = record.layout === 'map' ? 'map' : 'reading';
+      state.overview = state.layout === 'map';
+      state.overviewPage = Math.floor(routeIndex(route).order.indexOf(state.node) / OVERVIEW_SIZE);
+    } catch { /* Ignore unreadable storage. */ }
+  }
   function initialize(data, m) {
-    const key = `${data.file}:${JSON.stringify(data.walkthrough.atlas)}`;
+    const key = JSON.stringify([data.walkthrough.position_key || data.file, data.walkthrough.atlas_revision || data.walkthrough.atlas]);
     if (owner !== key) {
-      query = ''; resultsPage = 0;
+      query = ''; resultsPage = 0; linkMessage = '';
       owner = key; history = []; future = []; lastHash = null;
       state = {node: m.routes[0].root, route: m.routes[0].id, layout: 'reading', pane: 'argument', trail: [], page: 0, parentPage: 0, overview: false, overviewPage: 0, scroll: 0};
+      resumePosition(data, m);
     }
   }
   const childrenOf = (route, id) => Object.hasOwn(route.supports, id) ? route.supports[id] : [];
@@ -54,7 +84,7 @@
     }
     if (state.node !== node || state.route !== route.id) {history.push(snapshot()); future = [];}
     state = {...state, node, route: route.id, pane: 'argument', layout: state.layout === 'graph' ? 'reading' : state.layout, trail: [], page: 0, parentPage: 0, overviewPage: Math.floor(routeIndex(route).order.indexOf(node) / OVERVIEW_SIZE), scroll: 0};
-    linkMessage = ''; UI.mode = 'graph';
+    linkMessage = ''; UI.mode = 'graph'; rememberPosition(data);
   }
   window.addEventListener('hashchange', () => {if (UI.data) {syncAtlasLocation(UI.data); workbench.render();}});
   const button = (label, action, value = '', extra = '') => `<button type="button" class="secondary" data-atlas="${action}" data-value="${esc(value)}" ${extra}>${esc(label)}</button>`;
@@ -127,7 +157,7 @@
     const problems = (data.walkthrough.problems || []).map(p => `<p class="banner quiet">${esc(p)}</p>`).join('');
     const oldOverview = root.querySelector('.atlas-overview-scroll');
     const overviewScroll = oldOverview?.dataset.route === route.id && oldOverview?.dataset.page === String(state.overviewPage) ? [oldOverview.scrollTop, oldOverview.scrollLeft] : [0, 0];
-    root.innerHTML = `<section class="proof-graph-view proof-atlas" aria-label="Proof atlas"><header><div><h2>${esc(data.walkthrough.title)}</h2><p>Proof atlas · curated argument exploration</p></div></header>${problems}${!compatibility.supported ? `<p class="banner quiet">${esc(compatibility.message)}</p>` : ''}<div class="atlas-controls">${button('← Back', 'back', '', history.length ? '' : 'disabled')}${button('Forward →', 'forward', '', future.length ? '' : 'disabled')}<label>Route (starts at result) <${'select'} data-atlas-route>${m.routes.map(r => `<option value="${esc(r.id)}"${r.id === state.route ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</${'select'}></label>${button('Reading first', 'layout', 'reading', `aria-pressed="${state.layout === 'reading'}"`)}${button('Map first', 'layout', 'map', `aria-pressed="${state.layout === 'map'}"`)}${button('Statement graph', 'layout', 'graph')}${button(state.overview ? 'Hide overview' : 'Route overview', 'overview', '', `aria-expanded="${state.overview}"`)}</div>${state.overview ? overviewHTML(m, route) : ''}<div class="atlas-search"><label>Find an argument <input id="atlas-query" type="search" maxlength="256" value="${esc(query)}"></label><div class="atlas-matches">${matchesHTML(m)}</div></div><p><a class="atlas-permalink" href="${esc(permalink(route.id, n.id))}">Link to this argument</a> ${button('Copy argument link', 'copy-link')}</p><p class="atlas-link-status small" role="status">${esc(linkMessage)}</p><nav class="atlas-trail" aria-label="Exploration trail">${historyTrail}</nav><h2 id="atlas-selected" tabindex="-1">${esc(n.label)}</h2><p class="small muted">${esc(route.label)} · curated, not extracted dependencies · source revision ${esc(m.commit)}</p><p class="small" role="status">${claimModel?.name ? `Mapped notebook statement ${esc(claimModel.name)}: ${esc(claimModel.status)}` : mappedClaim ? `Mapped notebook statement ${esc(mappedClaim)}: no matching notebook result` : 'No mapped saved observation'} · This argument is exposition; navigation grants no proof status.</p><div class="atlas-controls">${button('Argument', 'pane', 'argument', `aria-pressed="${state.pane === 'argument'}"`)}${button('Source references', 'pane', 'sources', `aria-pressed="${state.pane === 'sources'}"`)}${claimModel?.name ? `<button type="button" class="secondary" data-act="graph-node" data-graph-id="${esc(claimModel.id)}">Show in notebook</button>` : ''}</div><div class="atlas-body ${state.layout === 'map' ? 'atlas-map-first' : ''}">${state.layout === 'map' ? `<div class="atlas-neighborhood"><p class="small muted">Selected argument</p><div class="atlas-focus">${esc(n.label)}</div><p class="atlas-arrow" aria-hidden="true">↓</p>${supports}</div>${argument}` : `${argument}${supports}`}</div></section>`;
+    root.innerHTML = `<section class="proof-graph-view proof-atlas" aria-label="Proof atlas"><header><div><h2>${esc(data.walkthrough.title)}</h2><p>Proof atlas · curated argument exploration</p></div></header>${problems}${!compatibility.supported ? `<p class="banner quiet">${esc(compatibility.message)}</p>` : ''}<div class="atlas-controls">${button('← Back', 'back', '', history.length ? '' : 'disabled')}${button('Forward →', 'forward', '', future.length ? '' : 'disabled')}<label>Route (starts at result) <${'select'} data-atlas-route>${m.routes.map(r => `<option value="${esc(r.id)}"${r.id === state.route ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</${'select'}></label>${button('Reading first', 'layout', 'reading', `aria-pressed="${state.layout === 'reading'}"`)}${button('Map first', 'layout', 'map', `aria-pressed="${state.layout === 'map'}"`)}${button('Start route again', 'route', route.id)}${button('Statement graph', 'layout', 'graph')}${button(state.overview ? 'Hide overview' : 'Route overview', 'overview', '', `aria-expanded="${state.overview}"`)}</div>${state.overview ? overviewHTML(m, route) : ''}<div class="atlas-search"><label>Find an argument <input id="atlas-query" type="search" maxlength="256" value="${esc(query)}"></label><div class="atlas-matches">${matchesHTML(m)}</div></div><p><a class="atlas-permalink" href="${esc(permalink(route.id, n.id))}">Link to this argument</a> ${button('Copy argument link', 'copy-link')}</p><p class="atlas-link-status small" role="status">${esc(linkMessage)}</p><nav class="atlas-trail" aria-label="Exploration trail">${historyTrail}</nav><h2 id="atlas-selected" tabindex="-1">${esc(n.label)}</h2><p class="small muted">${esc(route.label)} · curated, not extracted dependencies · source revision ${esc(m.commit)}</p><p class="small" role="status">${claimModel?.name ? `Mapped notebook statement ${esc(claimModel.name)}: ${esc(claimModel.status)}` : mappedClaim ? `Mapped notebook statement ${esc(mappedClaim)}: no matching notebook result` : 'No mapped saved observation'} · This argument is exposition; navigation grants no proof status.</p><div class="atlas-controls">${button('Argument', 'pane', 'argument', `aria-pressed="${state.pane === 'argument'}"`)}${button('Source references', 'pane', 'sources', `aria-pressed="${state.pane === 'sources'}"`)}${claimModel?.name ? `<button type="button" class="secondary" data-act="graph-node" data-graph-id="${esc(claimModel.id)}">Show in notebook</button>` : ''}</div><div class="atlas-body ${state.layout === 'map' ? 'atlas-map-first' : ''}">${state.layout === 'map' ? `<div class="atlas-neighborhood"><p class="small muted">Selected argument</p><div class="atlas-focus">${esc(n.label)}</div><p class="atlas-arrow" aria-hidden="true">↓</p>${supports}</div>${argument}` : `${argument}${supports}`}</div></section>`;
     const overview = root.querySelector('.atlas-overview-scroll');
     if (overview) {overview.scrollTop = overviewScroll[0]; overview.scrollLeft = overviewScroll[1];}
     workbench.typesetMath?.(root);
@@ -177,6 +207,7 @@
       lastHash = permalink(state.route, state.node);
       window.history.replaceState(null, '', lastHash);
     }
+    rememberPosition(UI.data);
     workbench.renderProofGraph();
     (root.querySelector('#atlas-selected') || root.querySelector('[data-atlas="layout"]'))?.focus({preventScroll: true});
     window.scrollTo?.(0, state.scroll);

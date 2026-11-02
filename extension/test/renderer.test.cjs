@@ -5097,3 +5097,29 @@ test('atlas search finds a declaration on a later map page and opens its route',
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 0');
   } finally {window.close();}
 });
+
+test('atlas position survives reopening and yields to an explicit argument link', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  snapshot.walkthrough.position_key = 'a'.repeat(64);
+  snapshot.walkthrough.atlas_revision = 'b'.repeat(64);
+  let saved;
+  const open = hash => renderSnapshot(snapshot, {browser:true, onWindow:w => {
+    if (saved) w.localStorage.setItem('glitnir.atlas.' + snapshot.walkthrough.position_key, saved);
+    if (hash) w.location.hash = hash;
+  }});
+  let w = await open();
+  try {
+    w.document.querySelector('[data-mode="graph"]').click();
+    w.document.querySelector('[data-atlas="node"][data-value="n1"]').click();
+    w.document.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    saved = w.localStorage.getItem('glitnir.atlas.' + snapshot.walkthrough.position_key);
+    assert.ok(saved);
+  } finally {w.close();}
+  w = await open();
+  try {
+    assert.equal(w.document.querySelector('#atlas-selected').textContent,'Argument 1');
+    assert.ok(w.document.querySelector('.atlas-map-first'));
+  } finally {w.close();}
+  w = await open('#atlas?route=paper&node=n3');
+  try {assert.equal(w.document.querySelector('#atlas-selected').textContent, 'Argument 3');} finally {w.close();}
+});

@@ -1,5 +1,6 @@
 """Read the paper-level map declared beside a walkthrough notebook."""
 
+import hashlib
 import json
 import re
 from pathlib import Path, PurePosixPath
@@ -83,6 +84,8 @@ class WalkthroughMap(TypedDict):
     problems: list[str]
     source: NotRequired[str]
     atlas: NotRequired[ProofAtlas]
+    position_key: NotRequired[str]
+    atlas_revision: NotRequired[str]
 
 
 def _text(value: Any, limit: int = 4096) -> str:
@@ -364,4 +367,8 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
     }
     if atlas is not None:
         result["atlas"] = atlas
+        result["position_key"] = hashlib.sha256(bytes(path.absolute())).hexdigest()
+        result["atlas_revision"] = hashlib.sha256(
+            json.dumps(atlas, sort_keys=True).encode()
+        ).hexdigest()
     return result

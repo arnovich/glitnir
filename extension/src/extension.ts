@@ -158,8 +158,16 @@ export function activate(context: vscode.ExtensionContext): void {
       source.dispose(); sourceEvents.forEach(event => event.dispose());
       previews.delete(key); stop(preview);
     });
+    const positionKey = 'atlas.position.' + uri.toString();
     panel.webview.onDidReceiveMessage(async message => {
       if (!message || typeof message !== 'object') return;
+      if (message.type === 'atlasPosition') {
+        if (typeof message.body === 'string' && message.body.length <= 4096 && vscode.workspace.isTrusted) {
+          try { await context.workspaceState.update(positionKey, message.body); }
+          catch { /* Reading still works when workspace storage is unavailable. */ }
+        }
+        return;
+      }
       if (message.type === 'ready') {
         preview.ready = true;
         updateState();
@@ -325,7 +333,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     });
     try {
-      panel.webview.html = previewHtml(panel.webview, media);
+      panel.webview.html = previewHtml(panel.webview, media, context.workspaceState?.get<string>(positionKey));
       await backend.ready;
       updateState();
     }

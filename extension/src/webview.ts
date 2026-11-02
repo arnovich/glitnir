@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import * as vscode from 'vscode';
 
 /** Reuse the packaged browser renderer with local resources and a narrow CSP. */
-export function previewHtml(webview: vscode.Webview, media: vscode.Uri): string {
+export function previewHtml(webview: vscode.Webview, media: vscode.Uri, atlasPosition = ''): string {
   const nonce = randomBytes(24).toString('hex');
   const resource = (name: string) => webview.asWebviewUri(vscode.Uri.joinPath(media, name)).toString();
   let html = readFileSync(vscode.Uri.joinPath(media, 'index.html').fsPath, 'utf8');
@@ -16,6 +16,9 @@ export function previewHtml(webview: vscode.Webview, media: vscode.Uri): string 
   html = html.replace(/<link rel="stylesheet" href="\/([^"]+)">/g, (_tag, name: string) => `<link rel="stylesheet" href="${resource(name)}">`);
   html = html.replace(/<script src="\/([^"]+)"><\/script>/g, (_tag, name: string) => script(name));
   html = html.replace('<!-- host scripts -->', script('bridge.js') + script('review.js'));
+  if (atlasPosition) {
+    html = html.replace('</head>', () => `<meta name="atlas-position" content="${encodeURIComponent(atlasPosition)}"></head>`);
+  }
   html = html.replace('</head>', `<link rel="stylesheet" href="${resource('preview.css')}"></head>`);
   html = html.replace('<body>', '<body class="glitnir-preview"><div id="editor-state" role="status" hidden></div>');
   html = html.replace('<div class="bar-right">', `<div class="bar-right">

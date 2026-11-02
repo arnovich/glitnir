@@ -123,3 +123,8 @@ atlas alone does not establish that its exposition is correct.
 Use **Find an argument** to locate a late step by its mathematical label, a
 phrase in the explanation, or a mapped declaration. Check that each result
 names the intended routes and opens the expected argument in that route.
+
+Reopening a preview restores the route, argument and layout for the same
+notebook and atlas revision. VS Code keeps the position in workspace storage.
+The browser preview uses local storage on its origin. Direct argument links
+take precedence. Use **Start route again** to return to the selected result.
