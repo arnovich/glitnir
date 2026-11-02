@@ -119,3 +119,23 @@ in the live preview and its static export, and check any paged map boundaries. C
 small-screen reflow, and exported links. Verify the mathematical scope and
 qualifications after changing a route or source binding; a structurally valid
 atlas alone does not establish that its exposition is correct.
+
+Use **Find an argument** to locate a late step by its mathematical label, a
+phrase in the explanation, or a mapped declaration. Check that each result
+names the intended routes and opens the expected argument in that route.
+
+Reopening a preview restores the route, argument and layout for the same
+notebook and atlas revision. VS Code keeps the position in workspace storage.
+The browser preview uses local storage on its origin. Direct argument links
+take precedence. Use **Start route again** to return to the selected result.
+
+At a shared step, **View this argument in** switches to another reachable
+route while keeping the argument selected. Compare the supports and Used by
+links on each route. In HTML exports these links jump to the corresponding
+route section. Keep a shared ID only when both routes discuss the same step.
+
+Run `proof_atlas.py --report path/to/outline.json` with the matching runtime.
+For each route, read the reachable argument count, longest depth in support
+edges, arguments with multiple reachable parents, and boundaries where the
+route stops. Inspect named boundaries for missing explanation and repair any
+unreachable argument or broken source binding reported by the validator.

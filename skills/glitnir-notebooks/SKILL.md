@@ -187,7 +187,7 @@ they differ. Deepen a difficult branch into intermediate lemmas before expanding
 coverage; reuse shared arguments so overview and Used by links remain useful.
 Keep stable IDs for direct links, preserve source qualification notes, and validate
 with the bundled
-`scripts/proof_atlas.py` using the matching runtime Python. An atlas never
+`scripts/proof_atlas.py --report path/to/outline.json` using the matching runtime Python. An atlas never
 grants proof status or replaces the outline/source checks.
 
 ## Validate before finishing

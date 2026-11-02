@@ -652,3 +652,14 @@ preview copies a full URL. Opening it restores that argument and route; an unkno
 argument or route produces a diagnostic. Static exports include route indexes,
 backlinks and the same link targets. Authoring validation now uses the preview’s
 normalized source mappings and reports arguments disconnected from every route.
+
+### Exploring a proof atlas
+
+Use **Find an argument** in either atlas layout to search explanations and Lean
+declaration names. Choose a result's route to open that argument. At a shared
+argument, **View this argument in** opens the same step on another route so you
+can compare its supports and backlinks. HTML exports include these route links.
+
+Reopening the same notebook restores the argument and layout when its atlas
+revision matches. An explicit argument link opens its own destination.
+**Start route again** returns to the root of the current route.

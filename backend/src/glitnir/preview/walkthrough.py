@@ -1,5 +1,6 @@
 """Read the paper-level map declared beside a walkthrough notebook."""
 
+import hashlib
 import json
 import re
 from pathlib import Path, PurePosixPath
@@ -83,6 +84,8 @@ class WalkthroughMap(TypedDict):
     problems: list[str]
     source: NotRequired[str]
     atlas: NotRequired[ProofAtlas]
+    position_key: NotRequired[str]
+    atlas_revision: NotRequired[str]
 
 
 def _text(value: Any, limit: int = 4096) -> str:
@@ -333,20 +336,24 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
         atlas = load_atlas(path, raw)
         if atlas is not None:
             problems.extend(atlas_warnings(atlas))
-            rendered_ids = {node["id"] for node in nodes}
             rendered_nodes = {node["id"]: node for node in nodes}
-            if any(node["statement"] not in rendered_ids for node in atlas["nodes"]):
-                raise ValueError(
-                    "atlas binds a statement unavailable in the rendered outline"
-                )
             for argument in atlas["nodes"]:
+                if argument["statement"] not in rendered_nodes:
+                    raise ValueError(
+                        "atlas binds a statement unavailable in the rendered outline: "
+                        f"{argument['id']} -> {argument['statement']}"
+                    )
                 names = {
                     entry["name"]
                     for entry in rendered_nodes[argument["statement"]]["lean"]
                 }
-                if any(name not in names for name in argument["declarations"]):
+                missing = [
+                    name for name in argument["declarations"] if name not in names
+                ]
+                if missing:
                     raise ValueError(
-                        "atlas declaration unavailable in rendered source mappings"
+                        "atlas declaration unavailable in rendered source mappings: "
+                        f"{argument['id']} -> {missing[0]}"
                     )
     except (OSError, ValueError) as error:
         atlas = None
@@ -364,4 +371,8 @@ def load_walkthrough(path: Path) -> WalkthroughMap | None:
     }
     if atlas is not None:
         result["atlas"] = atlas
+        result["position_key"] = hashlib.sha256(bytes(path.absolute())).hexdigest()
+        result["atlas_revision"] = hashlib.sha256(
+            json.dumps(atlas, sort_keys=True).encode()
+        ).hexdigest()
     return result

@@ -92,7 +92,10 @@ def validate_atlas(raw: Any, statements: list[Any], commit: Any) -> ProofAtlas:
             )
         _require(node["id"] not in ids, "duplicate atlas node id")
         ids.add(node["id"])
-        _require(node["statement"] in sources, "unknown atlas statement binding")
+        _require(
+            node["statement"] in sources,
+            f"unknown atlas statement binding for {node['id']}: {node['statement']}",
+        )
         _require(
             isinstance(node.get("difference"), str) and len(node["difference"]) <= 8192,
             "atlas difference must be bounded text",
@@ -102,7 +105,7 @@ def validate_atlas(raw: Any, statements: list[Any], commit: Any) -> ProofAtlas:
             isinstance(refs, list)
             and len(refs) <= 32
             and all(_string(r, 512) for r in refs),
-            "atlas declarations must be a bounded name list",
+            f"atlas declarations must be a bounded name list for {node['id']}",
         )
         _require(
             isinstance(sources[node["statement"]].get("lean"), list),
@@ -115,7 +118,11 @@ def validate_atlas(raw: Any, statements: list[Any], commit: Any) -> ProofAtlas:
         ]
         _require(
             len(set(refs)) == len(refs) and all(known.count(r) == 1 for r in refs),
-            "unknown or ambiguous atlas declaration binding",
+            f"unknown or ambiguous atlas declaration binding for {node['id']} "
+            f"in {node['statement']}: "
+            + ", ".join(r for r in refs if known.count(r) != 1 or refs.count(r) > 1)[
+                :512
+            ],
         )
     route_ids: set[str] = set()
     for route in routes:
@@ -177,6 +184,52 @@ def validate_atlas(raw: Any, statements: list[Any], commit: Any) -> ProofAtlas:
             for route in routes
         ],
     }
+
+
+def atlas_coverage(atlas: ProofAtlas) -> list[str]:
+    """Describe reachable editorial structure, with depth measured in edges."""
+    lines = []
+    route_counts: dict[str, int] = {}
+    total = len(atlas["nodes"])
+    for route in atlas["routes"]:
+        edges = route["supports"]
+        root = route["root"]
+        incoming = {root: 0}
+        pending = [root]
+        while pending:
+            for target in edges.get(pending.pop(), []):
+                if target not in incoming:
+                    incoming[target] = 0
+                    pending.append(target)
+                incoming[target] += 1
+
+        for key in incoming:
+            route_counts[key] = route_counts.get(key, 0) + 1
+        shared = sorted(key for key, count in incoming.items() if count > 1)
+        leaves = sorted(key for key in incoming if not edges.get(key))
+        depth = {root: 0}
+        pending.append(root)
+        while pending:
+            key = pending.pop()
+            for target in edges.get(key, []):
+                depth[target] = max(depth.get(target, 0), depth[key] + 1)
+                incoming[target] -= 1
+                if not incoming[target]:
+                    pending.append(target)
+
+        lines.append(
+            f"{route['id']}: {len(depth)}/{total} reachable; "
+            f"longest depth {max(depth.values())}"
+        )
+        for label, keys in (("shared", shared), ("boundary", leaves)):
+            sample = ", ".join(keys[:8]) or "none"
+            suffix = f" (+{len(keys) - 8} more)" if len(keys) > 8 else ""
+            lines.append(f"  {len(keys)} {label}: {sample}{suffix}")
+    overlap = sorted(key for key, count in route_counts.items() if count > 1)
+    sample = ", ".join(overlap[:8]) or "none"
+    suffix = f" (+{len(overlap) - 8} more)" if len(overlap) > 8 else ""
+    lines.append(f"{len(overlap)} shared across routes: {sample}{suffix}")
+    return lines
 
 
 def atlas_warnings(atlas: ProofAtlas) -> list[str]:

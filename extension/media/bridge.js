@@ -49,6 +49,10 @@
     }
   });
   window.glitnirHost = {
+    readAtlasPosition() {
+      return decodeURIComponent(document.querySelector('meta[name="atlas-position"]')?.content || '');
+    },
+    saveAtlasPosition(body) { vscode.postMessage({type: 'atlasPosition', body}); },
     async gitHistory() {
       const reply = await request('', {}, 'gitHistory');
       if (reply.status !== 200) throw new Error(reply.json?.error || 'Git history is unavailable.');
