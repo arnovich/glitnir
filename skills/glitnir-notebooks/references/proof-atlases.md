@@ -6,10 +6,10 @@ formalization reading routes, or explanations that are awkward in one linear not
 Lean dependency extraction. The atlas is curated exposition, not checking evidence.
 
 Keep `outline.json` as the paper-to-Lean source map. Add `atlas.json` beside it;
-Glitnir offers **Read**, **Map**, and the original **Statement graph**
+Glitnir offers **Read**, **Map**, and **Graph** (the full statement map)
 in Explore view. Both atlas layouts share selection, source details and Back/Forward.
-Use **Route overview** to see the selected route, shared steps and paged map;
-**Used by** follows the reverse curated links. Map opens the overview.
+Choose **Map** to open the route overview and nearby supporting steps;
+**Used by** follows the reverse curated links. **Graph** opens the full statement dependency graph.
 A route switch explicitly starts at that route's result. Static export includes
 linked, expandable argument explanations and all declaration qualification notes.
 
@@ -141,5 +141,5 @@ route stops. Inspect named boundaries for missing explanation and repair any
 unreachable argument or broken source binding reported by the validator.
 
 In Explore, the notebook sidebars are hidden. Use **Actions** for restarting the
-route, copying an argument link, opening the statement graph and inspecting the
+route, copying an argument link, inspecting the
 source revision. **Source status** expands the mapped status details.

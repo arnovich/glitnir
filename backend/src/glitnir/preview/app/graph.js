@@ -366,7 +366,7 @@
       const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }
-    root.innerHTML = (UI.data.walkthrough?.atlas ? '<button type="button" class="secondary" data-atlas="layout" data-value="reading">Return to proof atlas</button>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true});
+    root.innerHTML = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') + '<p class="atlas-view-help small muted">Graph shows the full statement dependency map. Select a statement to inspect its links, or choose Read or Map for the guided argument.</p>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true});
   }
   const graphNode = id => graphModel(UI.data, UI.graphSelected).byId.get(id);
 

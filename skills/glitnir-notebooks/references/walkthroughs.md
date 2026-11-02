@@ -89,7 +89,7 @@ to run and exits with status 2.
   the notebook's claims (below), once the outline and its Lean entries have
   no errors. The helper still accepts several `--notebook` arguments for older
   multi-file walkthroughs. New walkthroughs keep mapped claims in one notebook:
-  the Graph view and its static export show saved status and navigation for the
+  the Explore view and its static export show saved status and navigation for the
   notebook currently open.
   To resolve the project's names it scans every `.lean` file under the project
   root, except in `.lake` folders.
@@ -99,7 +99,7 @@ to run and exits with status 2.
   open this machine's files. `--links public` links to `repository` at `commit`
   and to the sources' `url`s instead, and writes no local path. `map` refuses
   an outline with structural errors but does not compare Lean entries, so run
-  `check` first. New walkthroughs use Glitnir's Graph view and static HTML
+  `check` first. New walkthroughs use Glitnir's Explore view and static HTML
   export, both drawn directly from `outline.json` with no generated map asset.
 
 `check` exits 0 when it reports no error, 1 when it reports any (it lists them
@@ -291,7 +291,7 @@ theorem does not follow the paper's route.
 *Check:* `python -B scripts/walkthrough.py check OUTLINE --notebook NOTEBOOK`
 exits 0, and the preview shows the prose and claims as cards, rather than the
 whole file as source. If you are maintaining an older multi-file walkthrough,
-pass every file in the same helper run; its Graph view maps only claims in the
+pass every file in the same helper run; its Explore view maps only claims in the
 file currently open. If you cannot open the preview, say so in the report.
 
 ### 5. Add figures

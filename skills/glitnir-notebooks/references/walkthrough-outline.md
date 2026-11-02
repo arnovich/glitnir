@@ -55,7 +55,7 @@ Each source is an object:
 | `version` | no | which version was read: an arXiv version, a release, or the commit for a file in the project |
 | `title` | no | a short name |
 
-The first `paper` source is the one the map uses. Glitnir's Graph view and
+The first `paper` source is the one the map uses. Glitnir's Explore view and
 static export link only to a public HTTPS `url`; when the source has only a
 local `path`, the details say that the public link is unavailable. A public
 PDF link opens at a node's first page. The legacy generated map may still use
@@ -110,7 +110,7 @@ The name exactly as written after `theorem` in the notebook, without the
 notebook's namespace. Each node has at most one claim, each claim belongs to
 one node, and new walkthroughs keep every mapped claim in the single notebook
 that owns the Graph statement map. The checker still accepts older walkthroughs
-whose claims are spread across files; the Graph view maps saved status and
+whose claims are spread across files; the Explore view maps saved status and
 navigation only for the file currently open. Give a second statement a node of
 its own. The claim restates one of the node's `lean` entries;
 [walkthroughs.md](walkthroughs.md) gives its shape and what can be restated.

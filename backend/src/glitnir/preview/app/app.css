@@ -568,3 +568,7 @@ body[data-view="graph"] .live-bar{display:none}
 .proof-atlas .atlas-explanation p{margin:0 0 16px}
 
 body[data-view="source"] .doc-inner{max-width:none}
+
+.atlas-view-controls{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.atlas-view-controls [aria-pressed="true"]{background:var(--blue-soft);color:var(--blue);border-color:var(--blue)}
+.atlas-view-help{margin:4px 0 14px}

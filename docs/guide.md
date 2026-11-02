@@ -631,7 +631,7 @@ A walkthrough with an `atlas.json` sidecar offers **Read** and **Map**
 in Explore view. Both show the same curated argument, scope, proof idea, and mapped
 source notes. Follow supporting arguments, inspect source references, and use
 Back/Forward to return. Switching layouts keeps the selected step; switching routes
-starts at the selected route’s result. **Statement graph** retains the existing map.
+starts at the selected route’s result. **Graph** retains the existing map.
 
 Atlas routes are curated explanations, not extracted Lean dependencies. A boundary
 means further explanation has not been authored. Source references name the
@@ -640,7 +640,7 @@ formal statements. Navigation never checks a claim or changes its status. Unsupp
 Lean toolchains remain unchecked. Static export includes expandable atlas explanations
 and links. Malformed atlases produce diagnostics without removing the statement map.
 
-The atlas’s **Route overview** shows the selected route in pages of 24 arguments;
+The atlas’s **Actions → Show route overview** shows the selected route in pages of 24 arguments;
 shared steps appear once. **Used by** links back to every selected parent in that
 route. The overview is also available in Read and opens in Map.
 Links across map pages remain available through supporting arguments and Used by.

@@ -5202,3 +5202,24 @@ test('source and exploration modes hide notebook sidebars', async () => {
     assert.equal(d.querySelector('.inspector').hidden, false);
   } finally {w.close();}
 });
+
+test('the full graph is a visible exploration view and keeps Read and Map available', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const graph = d.querySelector('[data-atlas="layout"][data-value="graph"]');
+    assert.equal(graph.textContent, 'Graph');
+    assert.equal(graph.closest('details'), null);
+    graph.click();
+    assert.ok(d.querySelector('.proof-map'));
+    assert.equal(d.activeElement.dataset.value, 'graph');
+    assert.equal(d.querySelector('[data-atlas="layout"][data-value="graph"]').getAttribute('aria-pressed'), 'true');
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    assert.ok(d.querySelector('.atlas-map-first'));
+    assert.match(d.querySelector('.atlas-view-help').textContent, /supporting steps/);
+    d.querySelector('[data-atlas="layout"][data-value="reading"]').click();
+    assert.match(d.querySelector('.atlas-view-help').textContent, /Read/);
+    assert.equal(d.querySelector('.atlas-overview'), null);
+  } finally {w.close();}
+});
