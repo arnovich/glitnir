@@ -5077,3 +5077,23 @@ test('an atlas deep link opens the overview page containing its selected argumen
     assert.equal(window.document.querySelector('.atlas-overview [aria-current="true"]').dataset.value, 'n31');
   } finally {window.close();}
 });
+
+test('atlas search finds a declaration on a later map page and opens its route', async () => {
+  const snapshot = atlasExplorationSnapshot(32);
+  snapshot.walkthrough.nodes[31].lean = [{name: 'Pieces.padThen_runs'}];
+  const window = await renderSnapshot(snapshot);
+  const d = window.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    const input = d.querySelector('#atlas-query');
+    input.value = 'PADTHEN';
+    input.dispatchEvent(new window.Event('input', {bubbles:true}));
+    const result = d.querySelector('.atlas-matches a');
+    assert.match(result.textContent, /Argument 31/);
+    assert.match(d.querySelector('.atlas-matches').textContent, /Lean route/);
+    result.click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 31');
+    d.querySelector('[data-atlas="back"]').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 0');
+  } finally {window.close();}
+});

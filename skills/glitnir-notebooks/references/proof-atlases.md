@@ -119,3 +119,7 @@ in the live preview and its static export, and check any paged map boundaries. C
 small-screen reflow, and exported links. Verify the mathematical scope and
 qualifications after changing a route or source binding; a structurally valid
 atlas alone does not establish that its exposition is correct.
+
+Use **Find an argument** to locate a late step by its mathematical label, a
+phrase in the explanation, or a mapped declaration. Check that each result
+names the intended routes and opens the expected argument in that route.
