@@ -105,7 +105,7 @@ def validate_atlas(raw: Any, statements: list[Any], commit: Any) -> ProofAtlas:
             isinstance(refs, list)
             and len(refs) <= 32
             and all(_string(r, 512) for r in refs),
-            "atlas declarations must be a bounded name list",
+            f"atlas declarations must be a bounded name list for {node['id']}",
         )
         _require(
             isinstance(sources[node["statement"]].get("lean"), list),

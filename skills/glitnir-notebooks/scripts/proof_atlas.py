@@ -31,7 +31,11 @@ def main() -> int:
             raise ValueError("outline.json is missing")
         atlas = walkthrough.get("atlas")
         if args.report and atlas is not None:
-            coverage = importlib.import_module("glitnir.preview.atlas").atlas_coverage
+            coverage = getattr(
+                importlib.import_module("glitnir.preview.atlas"), "atlas_coverage", None
+            )
+            if coverage is None:
+                raise ValueError("upgrade the Glitnir runtime to use --report")
             print("Authored argument coverage (depth in support edges)")
             print("\n".join(coverage(atlas)))
         if walkthrough["problems"]:
