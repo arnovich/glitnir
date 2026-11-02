@@ -141,5 +141,11 @@ route stops. Inspect named boundaries for missing explanation and repair any
 unreachable argument or broken source binding reported by the validator.
 
 In Explore, the notebook sidebars are hidden. Use **Actions** for restarting the
-route, copying an argument link, inspecting the
-source revision. **Source status** expands the mapped status details.
+route, copying an argument link and inspecting the source revision. **Source status** expands the mapped status details.
+
+The exploration sidebar shows the selected route and current argument. Use its
+**Lean proof / Paper proof** choices to change reading routes. Back/Forward name
+the arguments previously visited. Map includes its overview, with no independent
+overview toggle. Check sidebar paging and the current-step highlight after
+following a support or a backlink. Read should remain a bounded prose column,
+with assumptions and paper/Lean differences visible.

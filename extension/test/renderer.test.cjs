@@ -4937,15 +4937,15 @@ test('proof atlas preserves selection across layouts, references and navigation'
     assert.ok(d.querySelector('.atlas-map-first'));
     click('pane', 'sources');
     assert.equal(scroll, 420, 'source switching preserves scroll');
-    d.querySelector('[data-atlas-route]').focus();
+    d.querySelector('[data-atlas="route"][aria-pressed="true"]').focus();
     window.glitnirWorkbench.render();
-    assert.ok(d.activeElement.hasAttribute('data-atlas-route'), 'poll render restores route control focus');
+    assert.ok(d.activeElement.matches('[data-atlas="route"]'), 'poll render restores route control focus');
     assert.match(d.querySelector('.proof-atlas').textContent, /Related counterpart/);
     d.querySelector('.atlas-reference a').focus();
     window.glitnirWorkbench.render();
     assert.ok(d.activeElement.matches('.atlas-reference a'), 'source link focus survives refresh');
     click('back');
-    assert.match(d.querySelector('.atlas-body').textContent, /What this establishes/);
+    assert.match(d.querySelector('.atlas-body').textContent, /Proof idea/);
     click('forward');
     assert.match(d.querySelector('.atlas-body').textContent, /Declaration references/);
     click('layout', 'graph'); assert.ok(d.querySelector('.proof-map'));
@@ -4977,7 +4977,7 @@ test('atlas overview exposes shared steps and backlinks with bounded paging', as
   const d = window.document;
   try {
     d.querySelector('[data-mode="graph"]').click();
-    d.querySelector('[data-atlas="overview"]').click();
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
     assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 24);
     d.querySelector('[data-atlas="overview-page"][data-value="1"]').click();
     assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 8);
@@ -4995,7 +4995,7 @@ test('atlas direct links restore route and node, and exports keep their targets'
   const d = window.document;
   try {
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 3');
-    assert.equal(d.querySelector('[data-atlas-route]').value, 'paper');
+    assert.equal(d.querySelector('[data-atlas="route"][aria-pressed="true"]').dataset.value, 'paper');
     assert.equal(d.querySelector('#graph-view').hidden, false);
     const link = d.querySelector('.atlas-permalink').getAttribute('href');
     assert.equal(link, '#atlas?route=paper&node=n3');
@@ -5036,7 +5036,7 @@ test('atlas fragments in notebook prose open the argument even when the URL alre
     d.querySelector('[data-mode="doc"]').click();
     d.querySelector('#doc a.atlas-link').click();
     assert.equal(d.querySelector('#graph-view').hidden, false);
-    d.querySelector('[data-atlas="overview"]').click();
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
     const map = d.querySelector('.atlas-overview-scroll');
     map.scrollTop = 200; map.scrollLeft = 40;
     window.glitnirWorkbench.render();
@@ -5055,7 +5055,7 @@ test('atlas routes and exports accept prototype names and encoded IDs without lo
   const window = await renderSnapshot(snapshot, {onWindow: w => w.history.replaceState(null, '', fragment)});
   try {
     assert.equal(window.document.querySelector('#atlas-selected').textContent, 'Argument 2');
-    window.document.querySelector('[data-atlas="overview"]').click();
+    window.document.querySelector('[data-atlas="layout"][data-value="map"]').click();
     assert.equal(window.document.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 4);
     const html = window.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true});
     const exported = new JSDOM(html).window.document;
@@ -5154,10 +5154,10 @@ test('compare atlas routes at the same argument and return to prior context', as
     d.querySelector('[data-atlas="node"][data-value="n1"]').click();
     d.querySelector('.atlas-compare a').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 1');
-    assert.equal(d.querySelector('[data-atlas-route]').value, 'paper');
+    assert.equal(d.querySelector('[data-atlas="route"][aria-pressed="true"]').dataset.value, 'paper');
     assert.match(d.querySelector('.atlas-backlinks').textContent, /route’s result/);
     d.querySelector('[data-atlas="back"]').click();
-    assert.equal(d.querySelector('[data-atlas-route]').value, 'lean');
+    assert.equal(d.querySelector('[data-atlas="route"][aria-pressed="true"]').dataset.value, 'lean');
     assert.match(d.querySelector('.atlas-backlinks').textContent, /Argument 0/);
   } finally {w.close();}
 });
@@ -5221,5 +5221,74 @@ test('the full graph is a visible exploration view and keeps Read and Map availa
     d.querySelector('[data-atlas="layout"][data-value="reading"]').click();
     assert.match(d.querySelector('.atlas-view-help').textContent, /Read/);
     assert.equal(d.querySelector('.atlas-overview'), null);
+  } finally {w.close();}
+});
+
+test('Read presents a bounded article with visible scope and compact support navigation', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.ok(d.querySelector('.proof-atlas.atlas-reading'));
+    const article = d.querySelector('article.atlas-explanation');
+    assert.equal(article.querySelector('.atlas-goal').textContent, 'Goal');
+    assert.equal(article.querySelector('.atlas-role').textContent, 'Role');
+    assert.match(article.querySelector('.atlas-context').textContent, /AssumptionsScope/);
+    d.querySelector('.atlas-supports [data-atlas="node"]').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 1');
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    assert.equal(d.querySelector('.proof-atlas.atlas-reading'), null);
+    assert.ok(d.querySelector('article.atlas-explanation'));
+  } finally {w.close();}
+});
+
+test('proof navigation sidebar shows position, route choices and named visit history', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const nav = () => d.querySelector('.atlas-sidebar');
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n0');
+    assert.equal(d.querySelector('select[data-atlas-route]'), null);
+    assert.equal(d.querySelector('[data-atlas="overview"]'), null);
+    nav().querySelector('[data-value="n1"]').click();
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n1');
+    assert.match(nav().querySelector('[data-atlas="back"]').textContent, /Back to Argument 0/);
+    nav().querySelector('[data-atlas="back"]').click();
+    assert.match(nav().querySelector('[data-atlas="forward"]').textContent, /Forward to Argument 1/);
+    nav().querySelector('[data-atlas="route"][data-value="paper"]').click();
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n1');
+    assert.equal(nav().querySelector('[data-atlas="route"][aria-pressed="true"]').textContent, 'Paper proof');
+    d.querySelector('[data-atlas="layout"][data-value="graph"]').click();
+    assert.ok(nav());
+    nav().querySelector('[data-atlas="route"][data-value="lean"]').click();
+    assert.ok(d.querySelector('.atlas-explanation'));
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n0');
+  } finally {w.close();}
+});
+
+test('sidebar branches retain parent order and support focus stays in the article', async () => {
+  const snapshot = atlasExplorationSnapshot(5);
+  snapshot.walkthrough.atlas.routes[0].supports = {n0: ['n1', 'n2'], n1: ['n3'], n2: ['n4']};
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.deepEqual([...d.querySelectorAll('.atlas-flow [data-atlas="node"]')].map(el => el.dataset.value), ['n0','n1','n3','n2','n4']);
+    d.querySelector('.atlas-supports [data-value="n1"]').focus();
+    w.glitnirWorkbench.render();
+    assert.ok(d.activeElement.closest('.atlas-supports'));
+  } finally {w.close();}
+});
+
+test('sidebar keeps late arguments visible after direct links and history navigation', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot(32), {onWindow: w => w.history.replaceState(null, '', '#atlas?route=lean&node=n31')});
+  try {
+    const d = w.document;
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n31');
+    d.querySelector('.atlas-backlinks [data-value="n1"]').click();
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n1');
+    d.querySelector('.atlas-visit-history [data-atlas="back"]').click();
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n31');
   } finally {w.close();}
 });

@@ -640,10 +640,12 @@ formal statements. Navigation never checks a claim or changes its status. Unsupp
 Lean toolchains remain unchecked. Static export includes expandable atlas explanations
 and links. Malformed atlases produce diagnostics without removing the statement map.
 
-The atlas’s **Actions → Show route overview** shows the selected route in pages of 24 arguments;
-shared steps appear once. **Used by** links back to every selected parent in that
-route. The overview is also available in Read and opens in Map.
-Links across map pages remain available through supporting arguments and Used by.
+The exploration sidebar contains **Lean proof / Paper proof** choices and the
+selected reading route. Its current argument is highlighted, with shared supports
+identified. Select a step directly, or use the named Back/Forward buttons under
+**Navigation history** to retrace visits. Map includes the route overview in pages
+of 24 arguments. **Used by** links back to every selected parent in that route.
+Links across pages remain available through supporting arguments and Used by.
 
 **Link to this argument** identifies its route and stable argument ID.
 **Copy argument link** copies a notebook-relative fragment in VS Code; use it in
