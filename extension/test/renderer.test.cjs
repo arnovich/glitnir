@@ -5086,12 +5086,23 @@ test('atlas search finds a declaration on a later map page and opens its route',
   try {
     d.querySelector('[data-mode="graph"]').click();
     const input = d.querySelector('#atlas-query');
+    input.value = 'nothing matches this';
+    input.dispatchEvent(new window.Event('input', {bubbles:true}));
+    assert.match(d.querySelector('.atlas-matches').textContent, /No matching arguments/);
+    input.value = 'Argument';
+    input.dispatchEvent(new window.Event('input', {bubbles:true}));
+    assert.equal(d.querySelectorAll('.atlas-matches li').length, 12);
+    d.querySelector('[data-atlas="results-page"]').click();
+    assert.match(d.activeElement.textContent, /Argument 12/);
     input.value = 'PADTHEN';
     input.dispatchEvent(new window.Event('input', {bubbles:true}));
     const result = d.querySelector('.atlas-matches a');
     assert.match(result.textContent, /Argument 31/);
     assert.match(d.querySelector('.atlas-matches').textContent, /Lean route/);
-    result.click();
+    result.focus();
+    window.glitnirWorkbench.render();
+    assert.equal(d.activeElement.getAttribute('href'), result.getAttribute('href'));
+    d.activeElement.click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 31');
     d.querySelector('[data-atlas="back"]').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 0');
@@ -5121,7 +5132,16 @@ test('atlas position survives reopening and yields to an explicit argument link'
     assert.ok(w.document.querySelector('.atlas-map-first'));
   } finally {w.close();}
   w = await open('#atlas?route=paper&node=n3');
-  try {assert.equal(w.document.querySelector('#atlas-selected').textContent, 'Argument 3');} finally {w.close();}
+  try {
+    assert.equal(w.document.querySelector('#atlas-selected').textContent, 'Argument 3');
+    assert.ok(w.document.querySelector('.atlas-map-first'));
+  } finally {w.close();}
+  snapshot.walkthrough.atlas_revision = 'changed';
+  w = await open();
+  try {
+    assert.equal(w.document.querySelector('#atlas-selected').textContent, 'Argument 0');
+    assert.match(w.document.querySelector('.atlas-link-status').textContent, /earlier atlas/);
+  } finally {w.close();}
 });
 
 test('compare atlas routes at the same argument and return to prior context', async () => {
@@ -5139,5 +5159,20 @@ test('compare atlas routes at the same argument and return to prior context', as
     d.querySelector('[data-atlas="back"]').click();
     assert.equal(d.querySelector('[data-atlas-route]').value, 'lean');
     assert.match(d.querySelector('.atlas-backlinks').textContent, /Argument 0/);
+  } finally {w.close();}
+});
+
+test('atlas navigation tolerates unavailable browser storage', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  snapshot.walkthrough.position_key = 'storage-disabled';
+  const w = await renderSnapshot(snapshot, {browser:true, onWindow: w => {
+    Object.defineProperty(w, 'localStorage', {get() {throw new Error('unavailable');}});
+  }});
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-atlas="node"][data-value="n1"]').click();
+    d.querySelector('[data-atlas="route"]').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 0');
   } finally {w.close();}
 });

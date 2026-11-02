@@ -300,7 +300,8 @@
     const graphDetail = $('graph-detail');
     const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
-    const atlasFocus = atlasActive ? {search: atlasActive.id === 'atlas-query', caret: atlasActive.id === 'atlas-query' ? atlasActive.selectionStart : null, heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
+    const atlasFocus = atlasActive ? {search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
+      region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const scroll = $('insp').scrollTop;
     const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
     if (!heldRendering()) {
@@ -325,9 +326,10 @@
     if (atlasFocus && UI.mode === 'graph') {
       const controls = [...$('graph-view').querySelectorAll('[data-atlas]')];
       const source = [...$('graph-view').querySelectorAll('[data-atlas-source]')].find(el => el.dataset.atlasSource === atlasFocus.source);
-      const control = atlasFocus.search ? $('atlas-query') : atlasFocus.source ? source : atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value);
+      const atlasLink = atlasFocus.region && [...$('graph-view').querySelectorAll(atlasFocus.region + ' a[href]')].find(el => el.getAttribute('href') === atlasFocus.href);
+      const control = atlasLink || (atlasFocus.search ? $('atlas-query') : atlasFocus.source ? source : atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value));
       control?.focus({preventScroll: true});
-      if (atlasFocus.search && control) control.setSelectionRange(atlasFocus.caret, atlasFocus.caret);
+      if (atlasFocus.search && control) control.setSelectionRange(...atlasFocus.selection);
     }
     if (graphFocus && UI.mode === 'graph') {
       const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail);

@@ -102,7 +102,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   Module._load = function(name, parent, ...rest) {
     if (name === 'vscode') return fake;
     if (name === './backend' && parent.filename.endsWith('/dist/extension.js')) return {...load.call(this, name, parent, ...rest), Backend: FakeBackend};
-    if (name === './webview' && parent.filename.endsWith('/dist/extension.js')) return {previewHtml: () => '<html></html>'};
+    if (name === './webview' && parent.filename.endsWith('/dist/extension.js')) return {previewHtml: (_webview, _media, position) => position || '<html></html>'};
     if (name === './git-history' && parent.filename.endsWith('/dist/extension.js')) return {GitHistory: class {
       constructor(file) { gitFiles.push(file); }
       async read() { return {state: 'no_repository', reason: 'Not in a Git repository.'}; }
@@ -121,7 +121,9 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   };
   let extension;
   try { extension = require('../../dist/extension'); } finally { Module._load = load; }
-  extension.activate({subscriptions: [], extensionUri: file(path.resolve(__dirname, '../..'))});
+  const positions = new Map();
+  const workspaceState = {get: key => positions.get(key), update: (key, value) => positions.set(key, value)};
+  extension.activate({workspaceState, subscriptions: [], extensionUri: file(path.resolve(__dirname, '../..'))});
   const open = commands.get('glitnir.openPreview');
   const temporary = mkdtempSync(path.join(tmpdir(), 'glitnir-symlink-test-'));
   try {
@@ -150,6 +152,9 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.equal(servers[0].options.env.GLITNIR_MEMORY_LIMIT_MB, '12288', 'the memory setting reaches the backend');
   assert.equal(servers[0].options.env.GLITNIR_ELABORATION_TIMEOUT_MS, '600000');
   const panel = panels[0];
+  const position = JSON.stringify({route: 'lean', node: 'appB', layout: 'map'});
+  await panel.receive({type: 'atlasPosition', body: position});
+  assert.equal(positions.size, 1);
   await panel.receive({type: 'clipboard', id: 301, body: 'python -m replay --goal goal.json'});
   assert.equal(clipboard, 'python -m replay --goal goal.json');
   assert.equal(panel.messages.at(-1).status, 200);
@@ -321,6 +326,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.deepEqual(packageCalls.map(call => call[0]), ['install']);
   await open(file(fixture));
   assert.equal(servers.length, 4);
+  assert.equal(panels.at(-1).webview.html, position, 'reopening restores the workspace record for this notebook');
   assert.equal(packageRestart('/other/bin/python'), false, 'previews of another backend stay open');
   assert.equal(servers[3].closed, undefined);
   assert.equal(packageRestart('/workspace/.venv/bin/python'), true);

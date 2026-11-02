@@ -26,13 +26,19 @@
   }
   function resumePosition(data, m) {
     const key = data.walkthrough.position_key;
-    if (!key || workbench.linkedPath() || location.hash) return;
+    if (!key || workbench.linkedPath() || (location.hash && !location.hash.startsWith('#atlas?'))) return;
     try {
       const raw = window.glitnirHost ? window.glitnirHost.readAtlasPosition?.() : localStorage.getItem('glitnir.atlas.' + key);
       if (!raw) return;
       const record = JSON.parse(raw);
       if (record?.key !== key) return;
       const route = m.routes.find(r => r.id === record.route);
+      if (location.hash) {
+        if (record.revision === data.walkthrough.atlas_revision && record.layout === 'map') {
+          state.layout = 'map'; state.overview = true;
+        }
+        return;
+      }
       UI.mode = 'graph';
       if (record.revision !== data.walkthrough.atlas_revision || !route || !routeIndex(route).depth.has(record.node)) {
         linkMessage = 'The saved reading position belongs to an earlier atlas. Starting at the result.';
@@ -227,7 +233,9 @@
     if (link.closest('.atlas-matches')) {query = ''; resultsPage = 0;}
     window.history.replaceState(null, '', link.getAttribute('href'));
     lastHash = null; syncAtlasLocation(UI.data); workbench.render();
-    root.querySelector('#atlas-selected')?.focus({preventScroll: true});
+    const heading = root.querySelector('#atlas-selected');
+    heading?.focus({preventScroll: true});
+    heading?.scrollIntoView?.({block: 'nearest'});
   });
   function atlasStaticHTML(data) {
     const m = model(data); if (!m) return '';
