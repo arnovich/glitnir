@@ -291,7 +291,7 @@
     if (!node) return '<h3>Pick a statement</h3><p class="muted">Use Statement details to read its saved relationships.</p>';
     if (node.kind === 'walkthrough') {
       const action = node.name
-        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Document</button>`
+        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
         : node.claimRequested ? `<p class="small muted">No saved walkthrough result matches ${esc(node.claimRequested)}.</p>` : '<p class="small muted">This paper statement has no mapped walkthrough result.</p>';
       const where = [node.statementKind, node.section, node.pages ? `pp. ${node.pages}` : ''].filter(Boolean).join(' · ');
       return `<h3${staticPage ? '' : ' tabindex="-1"'}>${esc(node.fullLabel)}</h3><p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>
@@ -299,7 +299,7 @@
         <dl><dt>Uses</dt><dd>${nodeList(node.uses, model, staticPage)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model, staticPage)}</dd></dl>${walkthroughLinks(node)}${action}`;
     }
     const action = !staticPage && node.kind === 'local'
-      ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Document</button>`
+      ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
       : !staticPage && node.path ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Open notebook</button>` : '';
     const note = node.relationsKnown ? '' : '<p class="small muted">Dependency observations are unknown for this statement.</p>';
     const truncated = node.truncated ? '<p class="small warn-text">The saved check recorded only the first uses; more dependencies may exist.</p>' : '';

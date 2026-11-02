@@ -553,3 +553,18 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .atlas-overview a[aria-current="true"] rect, .atlas-overview a:focus rect { stroke: var(--blue); stroke-width: 3; }
 .atlas-backlinks { margin-top: 1rem; }
 .atlas-backlinks button { margin: .25rem; }
+
+/* Non-notebook views use their own content rather than notebook sidebars. */
+.workspace.focused-view{grid-template-columns:minmax(0,1fr)}
+body[data-view="source"]:not(.glitnir-proof-mode) .review-nav,body[data-view="graph"]:not(.glitnir-proof-mode) .review-nav{display:none}
+body[data-view="graph"] .live-bar{display:none}
+.proof-atlas .atlas-actions{border:0;padding:0;margin:8px 0}
+.proof-atlas .atlas-actions summary,.proof-atlas .atlas-qualification summary{cursor:pointer;color:var(--muted);font-size:12px}
+.proof-atlas .atlas-action-items{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px;border:1px solid var(--border);border-radius:8px}
+.proof-atlas .atlas-action-items p{margin:0}
+.proof-atlas .atlas-search input{font:inherit;padding:6px 10px;border:1px solid var(--border);border-radius:6px;max-width:100%;background:var(--paper);color:var(--ink)}
+.proof-atlas .atlas-explanation{display:block}
+.proof-atlas .atlas-explanation h3{margin:20px 0 8px}
+.proof-atlas .atlas-explanation p{margin:0 0 16px}
+
+body[data-view="source"] .doc-inner{max-width:none}

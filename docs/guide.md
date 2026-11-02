@@ -194,7 +194,7 @@ claim. Use **Open in its own preview** to check it.
 ### Export and history
 
 - **Export HTML** saves an offline snapshot of the rendered notebook and its
-  exact saved Lean source, with images embedded. **Document** and **Lean source**
+  exact saved Lean source, with images embedded. **Notebook** and **Lean source**
   switch without a server or scripts, and source locations link between the two
   views. A link to another notebook stays a link when its `Module.html` export
   already exists beside the selected file; otherwise it becomes plain text.
@@ -356,7 +356,7 @@ environment is identified shows saved results as out of date once, too.
 Each result also records the claims it uses: the theorems its statement and proof
 name directly, from this notebook or from another notebook of the project (a
 module the project builds itself, not a dependency). Cards show them as chips,
-the sidebar draws a compact claim graph, and the **Graph** view lays the same
+the sidebar draws a compact claim graph, and the **Explore** view lays the same
 recorded relationships out from foundations at the bottom to results at the
 top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
@@ -373,12 +373,12 @@ and the static HTML export includes an inert copy.
 
 For a guided paper walkthrough, an `outline.json` beside the Lean notebook is
 the map's source of truth. New walkthroughs keep mapped claims in that one
-notebook. The same **Graph** view shows the
+notebook. The same **Explore** view shows the
 paper's definitions, lemmas, theorems and appendices instead of the claim-only
 graph. Box colours distinguish statement kinds; the status dot comes from the
 saved walkthrough claim named by the outline. **Statement details** gives the
 paper page and pinned public Lean declarations. Selecting a mapped node opens
-its details; **Show in Document** returns to its walkthrough claim.
+its details; **Show in Notebook** returns to its walkthrough claim.
 A local-only paper is identified without exposing a
 filesystem path; links require a public HTTPS URL. Static export includes the
 same self-contained map and safe public links. It loads no map script, font or
@@ -396,7 +396,7 @@ visible, and only current Glitnir checks of that port may supply claim statuses.
 
 Selecting a node opens **Statement details**, highlighting its adjacent arrows.
 The details list every recorded use and user even when an implied arrow is
-hidden; select a relationship to inspect that statement. **Show in Document**
+hidden; select a relationship to inspect that statement. **Show in Notebook**
 returns to the highlighted claim and places keyboard focus there; its exact
 Lean source remains available from the claim's existing source action. None of
 these graph actions runs Lean, updates a record, or changes proof authority.
@@ -426,9 +426,9 @@ the preview for this list. Moving never starts a check.
 | `j` `k` | Next / previous claim |
 | `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
 | `c` `t` | Claims / Proof steps |
-| `s` | Switch between document and Lean source |
+| `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
-| `i` | Show or hide the claim inspector |
+| `i` | Show or hide the claim inspector in Notebook |
 | `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
 | `e` | Edit the selected claim or proof step in VS Code |
 | `?` | Show these shortcuts |
@@ -627,8 +627,8 @@ check a notebook with the command from **Glitnir: Copy Validation Command**.
 
 ## Explore a proof atlas
 
-A walkthrough with an `atlas.json` sidecar offers **Reading first** and **Map first**
-in Graph view. Both show the same curated argument, scope, proof idea, and mapped
+A walkthrough with an `atlas.json` sidecar offers **Read** and **Map**
+in Explore view. Both show the same curated argument, scope, proof idea, and mapped
 source notes. Follow supporting arguments, inspect source references, and use
 Back/Forward to return. Switching layouts keeps the selected step; switching routes
 starts at the selected route’s result. **Statement graph** retains the existing map.
@@ -642,7 +642,7 @@ and links. Malformed atlases produce diagnostics without removing the statement 
 
 The atlas’s **Route overview** shows the selected route in pages of 24 arguments;
 shared steps appear once. **Used by** links back to every selected parent in that
-route. The overview is also available in Reading first and opens in Map first.
+route. The overview is also available in Read and opens in Map.
 Links across map pages remain available through supporting arguments and Used by.
 
 **Link to this argument** identifies its route and stable argument ID.

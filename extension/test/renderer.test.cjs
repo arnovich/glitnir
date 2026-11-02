@@ -2551,7 +2551,7 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1);
     key('?'); key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     assert.match($('keys').textContent, /Ctrl\+K then G/, 'the reveal chord, outside macOS');
-    assert.match($('keys').textContent, /Switch between document and Lean source/);
+    assert.match($('keys').textContent, /Switch between notebook and Lean source/);
     key('Escape', $('keys-close'));
     $('review-letter-keys').checked = false; key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     $('review-letter-keys').checked = true;
@@ -3594,7 +3594,7 @@ test('the Graph view layers recorded direct uses, includes linked claims, and na
   window.scrollTo = () => {};
   try {
     const graphButton = d.querySelector('[data-mode="graph"]');
-    assert.equal(graphButton.textContent, 'Graph');
+    assert.equal(graphButton.textContent, 'Explore');
     graphButton.click();
     assert.equal($('graph-view').hidden, false);
     assert.equal($('doc').hidden, true);
@@ -5174,5 +5174,31 @@ test('atlas navigation tolerates unavailable browser storage', async () => {
     d.querySelector('[data-atlas="node"][data-value="n1"]').click();
     d.querySelector('[data-atlas="route"]').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 0');
+  } finally {w.close();}
+});
+
+test('source and exploration modes hide notebook sidebars', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    assert.equal(d.querySelector('[data-mode="doc"]').textContent, 'Notebook');
+    assert.equal(d.querySelector('[data-mode="graph"]').textContent, 'Explore');
+    for (const mode of ['source', 'graph']) {
+      d.querySelector('[data-mode="' + mode + '"]').click();
+      assert.equal(d.querySelector('.rail').hidden, true);
+      assert.equal(d.querySelector('.inspector').hidden, true);
+      assert.equal(d.querySelector('#panel-show').hidden, true);
+      assert.ok(d.querySelector('#workspace').classList.contains('focused-view'));
+    }
+    assert.equal(d.querySelectorAll('.proof-atlas header h2').length, 0);
+    const actions = d.querySelector('.atlas-actions');
+    actions.open = true;
+    actions.querySelector('summary').focus();
+    w.glitnirWorkbench.render();
+    assert.ok(d.querySelector('.atlas-actions').open);
+    assert.equal(d.activeElement.parentElement.className, 'atlas-actions');
+    d.querySelector('[data-mode="doc"]').click();
+    assert.equal(d.querySelector('.rail').hidden, false);
+    assert.equal(d.querySelector('.inspector').hidden, false);
   } finally {w.close();}
 });

@@ -237,8 +237,13 @@
     $('source').hidden = UI.mode !== 'source';
     $('reading-view').hidden = UI.mode === 'graph';
     $('graph-view').hidden = UI.mode !== 'graph';
+    const notebookView = UI.mode === 'doc';
+    document.body.dataset.view = UI.mode;
+    $('workspace').classList.toggle('focused-view', !notebookView);
+    document.querySelector('.rail').hidden = !notebookView;
+    document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
-    $('panel-show').hidden = UI.panel;
+    $('panel-show').hidden = !notebookView || UI.panel;
     // Project records hold uses only from checks that recorded them: without
     // any, show no graph rather than a graph without its arcs.
     const graph = !project || cs.some(c => Array.isArray(c.project?.uses));
@@ -301,6 +306,7 @@
     const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
     const atlasFocus = atlasActive ? {search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
+      summary: atlasActive.matches('.atlas-actions > summary') ? '.atlas-actions > summary' : atlasActive.matches('.atlas-qualification > summary') ? '.atlas-qualification > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const scroll = $('insp').scrollTop;
     const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
@@ -327,7 +333,7 @@
       const controls = [...$('graph-view').querySelectorAll('[data-atlas]')];
       const source = [...$('graph-view').querySelectorAll('[data-atlas-source]')].find(el => el.dataset.atlasSource === atlasFocus.source);
       const atlasLink = atlasFocus.region && [...$('graph-view').querySelectorAll(atlasFocus.region + ' a[href]')].find(el => el.getAttribute('href') === atlasFocus.href);
-      const control = atlasLink || (atlasFocus.search ? $('atlas-query') : atlasFocus.source ? source : atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value));
+      const control = (atlasFocus.summary && $('graph-view').querySelector(atlasFocus.summary)) || atlasLink || (atlasFocus.search ? $('atlas-query') : atlasFocus.source ? source : atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value));
       control?.focus({preventScroll: true});
       if (atlasFocus.search && control) control.setSelectionRange(...atlasFocus.selection);
     }
@@ -429,9 +435,9 @@
     {group: 'Navigate', keys: ['n', 'p'], hint: 'needs attention', editor: true,
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
     {group: 'Navigate', keys: ['c', 't'], hint: 'claims / proof steps', editor: true, text: 'Claims / Proof steps'},
-    {group: 'View', keys: ['s'], hint: 'document / source', text: 'Switch between document and Lean source'},
+    {group: 'View', keys: ['s'], hint: 'notebook / source', text: 'Switch between notebook and Lean source'},
     {group: 'View', keys: ['g'], hint: 'proof graph', text: 'Show the recorded proof graph'},
-    {group: 'View', keys: ['i'], hint: 'inspector', text: 'Show or hide the claim inspector'},
+    {group: 'View', keys: ['i'], hint: 'inspector', text: 'Show or hide the claim inspector in Notebook'},
     {group: 'Check and edit', keys: ['r'], hint: 'check through claim', text: 'Check the saved file through the selected claim',
       editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
     {group: 'Check and edit', keys: ['e'], hint: 'edit in VS Code', editor: true, text: 'Edit the selected claim or proof step in VS Code'},
@@ -654,7 +660,7 @@
       j: () => move(1), k: () => move(-1), '?': () => keys(true),
       s: () => { if (UI.mode === 'source') showDocument(); else { UI.mode = 'source'; render(); } },
       g: () => { UI.mode = 'graph'; render(); },
-      i: () => { UI.panel = !UI.panel; render(); },
+      i: () => { if (UI.mode === 'doc') { UI.panel = !UI.panel; render(); } },
       // Check through the selected claim; Check saved file checks all of it.
       r: () => { const c = claim(UI.selected); if (c?.project && !linkedPath()) checkProject(c.project.end_line); },
     };

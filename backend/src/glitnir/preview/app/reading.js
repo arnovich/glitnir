@@ -618,17 +618,17 @@
       const c = cell.kind === 'claim' ? claim(cell.id) : cell.claim ? claim(cell.claim) : null;
       cell.text.split('\n').slice(0, cell.end - cell.start + 1).forEach((line, i) => rows.push({n: cell.start + i, line, c}));
     });
-    const back = staticPage ? '<a class="secondary" href="#document-view">← Back to Document</a>'
-      : `<button type="button" class="secondary" data-act="document-return" data-sha="${esc(UI.data.sha256)}">← Back to Document</button>`;
+    const back = staticPage ? '<a class="secondary" href="#document-view">← Back to Notebook</a>'
+      : `<button type="button" class="secondary" data-act="document-return" data-sha="${esc(UI.data.sha256)}">← Back to Notebook</button>`;
     const note = staticPage
       ? `${esc(UI.data.file)} as saved · source SHA-256 ${esc(UI.data.sha256)} · line numbers return to the corresponding claim where available.`
-      : `${esc(UI.data.file)} as it is on disk ${UI.data.preview?.mode === 'project' ? '· source preview; the gutter marks saved results · use Check saved file to check it' : '· the gutter shows each claim\'s status'} · click a line number to show its place in Document.`;
+      : `${esc(UI.data.file)} as it is on disk ${UI.data.preview?.mode === 'project' ? '· source preview; the gutter marks saved results · use Check saved file to check it' : '· the gutter shows each claim\'s status'} · click a line number to show its place in Notebook.`;
     return `${range ? '' : `<p>${back}</p>`}<p class="source-note">${note}</p>
       <div class="source"><table>${rows.map(r => {
         const documentHref = r.c ? `#cell-${esc(r.c.name)}` : '#document-view';
         const lineLink = staticPage
-          ? `<a href="${documentHref}" aria-label="Show line ${r.n} in Document">${r.n}</a>`
-          : `<a href="#doc" data-act="document-line" data-line="${r.n}" data-sha="${esc(UI.data.sha256)}" aria-label="Show line ${r.n} in Document">${r.n}</a>`;
+          ? `<a href="${documentHref}" aria-label="Show line ${r.n} in Notebook">${r.n}</a>`
+          : `<a href="#doc" data-act="document-line" data-line="${r.n}" data-sha="${esc(UI.data.sha256)}" aria-label="Show line ${r.n} in Notebook">${r.n}</a>`;
         return `${range && r.n === range.start ? `<tr class="source-return"><td colspan="3">${back}</td></tr>` : ''}<tr id="source-L${r.n}" tabindex="-1" data-source-line="${r.n}" data-line-target="${Boolean(range && r.n >= range.start && r.n <= range.end)}" ${r.c ? `data-claim="${esc(r.c.name)}" data-tone="${toneOf(r.c)}" data-selected="${UI.selected === r.c.name}"` : ''}><td class="gut"></td><td class="ln">${lineLink}</td><td>${leanHTML(r.line) || ' '}</td></tr>`;
       }).join('')}</table></div>`;
   }
