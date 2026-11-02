@@ -165,3 +165,23 @@ def test_authoring_cli_rejects_unrenderable_binding(atlas: dict, tmp_path) -> No
     )
     assert result.returncode == 1
     assert "atlas declaration unavailable" in result.stderr
+
+
+def test_coverage_counts_longest_route_and_shared_boundaries(atlas: dict) -> None:
+    """A shortcut to a shared leaf must not shorten the reported route depth."""
+    from glitnir.preview.atlas import atlas_coverage
+
+    seed = atlas["nodes"][0]
+    atlas["nodes"] = [{**seed, "id": key} for key in ("root", "mid", "leaf", "unused")]
+    atlas["routes"][0].update(
+        root="root", supports={"root": ["mid", "leaf"], "mid": ["leaf"]}
+    )
+    atlas["routes"].append(
+        {"id": "paper", "label": "Paper", "root": "leaf", "supports": {}}
+    )
+    actual = validate_atlas(atlas, [{"id": "result", "lean": []}], "a" * 40)
+    report = "\n".join(atlas_coverage(actual))
+    for phrase in ("3/4 reachable", "depth 2", "1 shared: leaf", "1 boundary: leaf"):
+        assert phrase in report
+    assert "paper: 1/4 reachable; longest depth 0" in report
+    assert "1 shared across routes: leaf" in report

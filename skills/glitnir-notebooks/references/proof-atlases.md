@@ -133,3 +133,9 @@ At a shared step, **View this argument in** switches to another reachable
 route while keeping the argument selected. Compare the supports and Used by
 links on each route. In HTML exports these links jump to the corresponding
 route section. Keep a shared ID only when both routes discuss the same step.
+
+Run `proof_atlas.py --report path/to/outline.json` with the matching runtime.
+For each route, read the reachable argument count, longest depth in support
+edges, arguments with multiple reachable parents, and boundaries where the
+route stops. Inspect named boundaries for missing explanation and repair any
+unreachable argument or broken source binding reported by the validator.

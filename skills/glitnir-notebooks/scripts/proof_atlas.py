@@ -10,6 +10,9 @@ def main() -> int:
     """Check atlas structure and outline bindings without compiling Lean."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("outline", type=Path)
+    parser.add_argument(
+        "--report", action="store_true", help="show curated route coverage"
+    )
     args = parser.parse_args()
     try:
         # The optional runtime is checked separately with its Python 3.12 target.
@@ -26,9 +29,13 @@ def main() -> int:
         walkthrough = load_walkthrough(args.outline)
         if walkthrough is None:
             raise ValueError("outline.json is missing")
+        atlas = walkthrough.get("atlas")
+        if args.report and atlas is not None:
+            coverage = importlib.import_module("glitnir.preview.atlas").atlas_coverage
+            print("Authored argument coverage (depth in support edges)")
+            print("\n".join(coverage(atlas)))
         if walkthrough["problems"]:
             raise ValueError("; ".join(walkthrough["problems"]))
-        atlas = walkthrough.get("atlas")
         if atlas is None:
             raise ValueError("atlas.json is missing beside the outline")
     except (OSError, ValueError) as error:
