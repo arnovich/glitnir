@@ -123,6 +123,7 @@
   function liveMessage(text) {
     if ($('live-status').textContent !== text) $('live-status').textContent = text;
     $('live-status').hidden = !text;
+    renderConnection();
   }
   function scheduleLoad(delay) {
     clearTimeout(loadTimer);
@@ -259,8 +260,10 @@
     const epoch = sourceEpoch;
     const link = linkedPath();
     inFlight = (async () => {
+      let reachedServer = false;
       try {
         const response = await fetch(link ? `/api/linked?path=${encodeURIComponent(link)}` : '/api/notebook', {cache: 'no-store', headers: API});
+        reachedServer = true;
         if (!response.ok) {
           const answer = await response.json().catch(() => ({}));
           throw Object.assign(new Error(answer.error || `server said ${response.status}`), {refused: response.status >= 400 && response.status < 500});
@@ -270,11 +273,11 @@
         // opened: never flash the old reply.
         if (epoch === sourceEpoch) acceptSnapshot(data);
       } catch (error) {
+        if (epoch === sourceEpoch) UI.connected = reachedServer;
         if (epoch === sourceEpoch && link && (opening || error.refused)) {
           // The linked notebook cannot be read: say why and return.
           leaveLinked(`${link} could not be opened here: ${error.message}`);
         } else if (epoch === sourceEpoch) {
-          UI.connected = false;
           if (!link) document.dispatchEvent(new CustomEvent('glitnir-snapshot', {detail: undefined}));
           holdRendering(`Cannot read ${link || 'saved file'} · showing the last readable version; retrying`);
           renderConnection();

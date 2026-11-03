@@ -8,7 +8,7 @@
   font: 13px var(--sans);
 }
 .unsaved-lean #editor-state { color: var(--amber); }
-#editor-state[hidden], .glitnir-preview #preview-footer { display: none; }
+#editor-state[hidden] { display: none; }
 #open-source { white-space: nowrap; }
 
 /* Keep navigation feedback brief; the inspector and outline retain selection. */

@@ -46,9 +46,16 @@
   window.addEventListener('resize', hideHelp);
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
-    const busy = UI.data && UI.data.checking.length;
-    $('conn').dataset.state = !UI.connected ? 'down' : busy ? 'busy' : 'up';
-    $('conn-text').textContent = !UI.connected ? 'Server not reachable · retrying' : busy ? `Lean is checking ${UI.data.checking.join(', ')}` : 'Connected to the local notebook server';
+    $('conn').dataset.state = UI.connected ? 'up' : 'down';
+    $('conn-text').textContent = UI.connected ? 'Connected' : 'Reconnecting…';
+    $('connection-detail').textContent = UI.connected ? 'Connected to the local notebook server' : 'Server not reachable · retrying';
+    $('status-summary').setAttribute('aria-label', `Notebook status: ${[$('conn-text').textContent, $('proof-availability').hidden ? '' : $('proof-availability').textContent, $('subline').textContent, $('live-status').textContent].filter(Boolean).join(' · ')}. Show details`);
+    $('status-summary').title = [
+      $('connection-detail').textContent,
+      $('file-state').title,
+      $('lean-unsupported').hidden ? $('subline').textContent : $('lean-unsupported-text').textContent,
+      $('live-status').textContent,
+    ].filter(Boolean).join('\n');
   }
 
   function drawGraph() {
@@ -145,7 +152,7 @@
     $('location').hidden = !linked;
     renderTrail();
     $('file-state').textContent = `Source hash: ${d.sha256.slice(0, 8)}`;
-    $('file-state').title = `SHA-256 of the saved Lean source (not a Git commit): ${d.sha256}`;
+    $('file-state').title = `Source hash: ${d.sha256}\nSHA-256 of the displayed saved source (not a Git commit)`;
     const count = key => cs.filter(c => c.status === key).length;
     const stat = (n, tone, text) => `<span class="stat"><span class="dot"${tone ? ` data-tone="${tone}"` : ''}></span>${n} ${esc(text)}</span>`;
     const project = d.preview?.mode === 'project';
@@ -176,6 +183,7 @@
     const unsupported = leanOff() || walkthroughUnchecked();
     $('lean-unsupported').hidden = !unsupported;
     $('proof-availability').textContent = walkthroughUnchecked() ? 'Not checked' : 'Checking unavailable';
+    $('proof-availability').hidden = !unsupported;
     // The message already names any lean-toolchain read error: shown verbatim.
     $('lean-unsupported-text').textContent = unsupported ? walkthroughMessage() || d.preview.lean?.message || '' : '';
     if (unsupported) $('check-project').hidden = true;
@@ -643,14 +651,23 @@
   $('keys-open').onclick = () => keys(true);
   $('keys-close').onclick = () => keys(false);
   $('keys').onclick = e => { if (e.target === $('keys')) keys(false); };
+  document.addEventListener('click', e => {
+    if (!$('header-status').contains(e.target)) $('header-status').open = false;
+  });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if ($('header-status').open) {
+        $('header-status').open = false;
+        $('status-summary').focus({preventScroll: true});
+        e.stopPropagation();
+        return;
+      }
       hideHelp();
       keys(false);
       $('history').open = false;
       return;
     }
-    if (e.target.closest('#image-dialog,.context-help')) return;
+    if ($('header-status').open || e.target.closest('#image-dialog,.context-help,#header-status')) return;
     const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"],#graph-view [data-act="graph-select"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();

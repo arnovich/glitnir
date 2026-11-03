@@ -667,10 +667,15 @@ Reopening the same notebook restores the argument and layout when its atlas
 revision matches. An explicit argument link opens its own destination.
 **Start route again** returns to the root of the current route.
 
-The title area summarizes proof-check results. If a walkthrough cannot be checked
-with this Glitnir installation, **Not checked** expands to explain the Lean
-compatibility issue; it does not display a zero unchecked count. Project files
-without observed results say **No check results**. An empty review queue does not
-certify a proof and has no status message in the navigation toolbar. Saved-file
-refresh progress and errors appear beside **Follow live edits** while relevant;
+The header status group separates the server connection from proof-check results.
+Its dot reports connection only. Hover for a summary, or click the status group
+(or focus it and press Enter) for connection details, the displayed saved source's
+SHA-256 hash, and any Lean compatibility explanation. Escape closes the details.
+**Not checked** identifies an incompatible walkthrough without a misleading zero
+unchecked count; **Checking unavailable** preserves the distinction between saved
+results and whether this installation can check them. A project with no observed
+results or saved file check says **No check results**. An empty review queue does
+not certify a proof and has no status message in the navigation toolbar.
+Refresh progress and errors appear in the same header group while relevant;
 a successful refresh clears that message without running a proof check.
+**Follow live edits** remains a separate scrolling preference.

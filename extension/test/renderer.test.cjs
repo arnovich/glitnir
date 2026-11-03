@@ -2537,6 +2537,14 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal($('proof-review').hidden, false);
     assert.equal($('review-position').textContent, 'Initial goals');
+    $('header-status').open = true;
+    $('status-summary').focus();
+    key('n', $('status-summary'));
+    assert.equal($('review-position').textContent, 'Initial goals', 'status focus does not navigate proof steps');
+    key('Escape', $('status-summary'));
+    assert.equal($('header-status').open, false);
+    assert.equal($('proof-review').hidden, false, 'Escape closes status without leaving proof steps');
+    assert.equal(window.document.activeElement, $('status-summary'));
     const requested = messages.filter(m => m.path === '/api/proof/start');
     assert.equal(requested.length, 1);
     assert.deepEqual(JSON.parse(requested[0].body), {sha256: snapshot.sha256, claim: 'pair'});
@@ -3979,8 +3987,8 @@ test('an incompatible walkthrough never presents saved claim results as checked'
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .pill').textContent, 'Unchecked');
     assert.doesNotMatch(d.getElementById('subline').textContent, /unchecked/);
     assert.equal(d.getElementById('proof-availability').textContent, 'Not checked');
-    assert.ok(d.querySelector('.heading #lean-unsupported'));
-    assert.equal(d.getElementById('lean-unsupported').open, false);
+    assert.ok(d.querySelector('.bar #lean-unsupported'));
+    assert.equal(d.getElementById('header-status').open, false);
     assert.equal(d.getElementById('check-project').hidden, true);
     assert.equal(d.getElementById('inspect-project').hidden, false);
     assert.equal(window.glitnirWorkbench.leanOff(), false);
@@ -5366,12 +5374,14 @@ for (const browser of [false, true]) {
       assert.ok(header.firstElementChild.classList.contains('brand'));
       assert.equal(d.getElementById('location').hidden, true);
       assert.equal(d.getElementById('location').textContent, '');
-      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'save', 'seg view-switcher', 'bar-right']);
+      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'header-status', 'bar-right']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Lean source', 'Explore']);
       const row = d.querySelector('.live-bar');
       assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
       assert.equal(row.textContent.includes('Live · saved files'), false);
-      assert.ok(row.querySelector('#live-status'));
+      assert.ok(header.querySelector('#live-status'));
+      assert.equal(d.querySelector('.footer'), null);
+      assert.equal(d.querySelector('.heading #subline, .heading #lean-unsupported'), null);
       if (!browser) {
         assert.ok(row.querySelector('.review-nav'));
         assert.equal(row.querySelector('#proof-review'), null);
@@ -5395,9 +5405,9 @@ test('an incompatible walkthrough with no observed claims has a clear status in 
       assert.doesNotMatch(d.getElementById('subline').textContent, /0 unchecked/);
       assert.equal(d.getElementById('review-position').hidden, true);
     }
-    d.getElementById('lean-unsupported').open = true;
+    d.getElementById('header-status').open = true;
     await w.glitnirPoll();
-    assert.equal(d.getElementById('lean-unsupported').open, true, 'polling retains the expanded explanation');
+    assert.equal(d.getElementById('header-status').open, true, 'polling retains the expanded explanation');
   } finally {w.close();}
 });
 
@@ -5429,10 +5439,81 @@ test('Explore retains exceptional refresh messages and clears them after recover
     await w.glitnirPoll();
     const activity = d.querySelector('.live-bar');
     assert.equal(d.getElementById('live-status').hidden, false);
-    assert.notEqual(w.getComputedStyle(activity).display, 'none');
+    assert.ok(d.querySelector('.bar #live-status'));
+    assert.notEqual(w.getComputedStyle(d.getElementById('header-status')).display, 'none');
     reply = {json: liveSnapshot('Recovered', 'b')};
     await w.glitnirPoll();
     assert.equal(d.getElementById('live-status').hidden, true);
     assert.equal(w.getComputedStyle(activity).display, 'none');
+  } finally {w.close();}
+});
+
+test('header status distinguishes connection from proof status and exposes keyboard details', async () => {
+  const snapshot = projectNotebook();
+  let offline = false, status = 200;
+  const w = await renderSnapshot(snapshot, {browser: async () => {
+    if (offline) throw new Error('connection lost');
+    return {ok: status === 200, status, json: async () => status === 200 ? snapshot : {error: 'server busy'}};
+  }});
+  try {
+    const d = w.document, menu = d.getElementById('header-status');
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected');
+    assert.equal(d.getElementById('conn').dataset.state, 'up');
+    assert.match(d.getElementById('status-summary').getAttribute('aria-label'), /Notebook status: Connected/);
+    assert.match(d.getElementById('status-summary').title, /Connected to the local notebook server/);
+    assert.match(d.getElementById('status-summary').title, /Source hash: aaaaaaaa/);
+    assert.match(d.getElementById('status-summary').title, /not a Git commit/);
+    menu.open = true;
+    d.getElementById('status-summary').focus();
+    await w.glitnirPoll();
+    assert.equal(menu.open, true);
+    d.getElementById('status-summary').dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    assert.equal(menu.open, false);
+    assert.equal(d.activeElement, d.getElementById('status-summary'));
+    menu.open = true;
+    d.querySelector('[data-mode="source"]').click();
+    assert.equal(menu.open, false, 'outside clicks dismiss details');
+    snapshot.checking = ['Demo.k_pos'];
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected');
+    assert.equal(d.getElementById('conn').dataset.state, 'up', 'checking does not change the connection dot');
+    assert.match(d.getElementById('status-summary').textContent, /Checking 1/);
+    snapshot.checking = [];
+    status = 503;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected', 'a readable HTTP error is not a lost connection');
+    assert.equal(d.getElementById('live-status').hidden, false);
+    status = 200;
+    await w.glitnirPoll();
+    offline = true;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Reconnecting…');
+    assert.equal(d.getElementById('conn').dataset.state, 'down');
+    assert.equal(d.getElementById('live-status').hidden, false);
+    offline = false;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected');
+    assert.equal(d.getElementById('conn').dataset.state, 'up');
+    assert.equal(d.getElementById('live-status').hidden, true);
+  } finally {w.close();}
+});
+
+test('a network failure opening a linked notebook updates the header connection immediately', async () => {
+  const {main} = linkedNotebooks();
+  let offline = false;
+  const w = await renderSnapshot(main, {browser: async () => {
+    if (offline) throw new Error('connection lost');
+    return {ok: true, json: async () => main};
+  }});
+  w.HTMLElement.prototype.scrollIntoView = () => {};
+  w.scrollTo = () => {};
+  try {
+    const d = w.document;
+    offline = true;
+    [...d.querySelectorAll('#doc a.notebook-reference')].find(a => a.textContent === 'the three states').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(d.getElementById('conn-text').textContent, 'Reconnecting…');
+    assert.equal(d.getElementById('conn').dataset.state, 'down');
+    assert.equal(d.getElementById('file-name').textContent, main.file);
   } finally {w.close();}
 });

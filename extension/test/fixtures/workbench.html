@@ -4,12 +4,30 @@
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)
+1 kernel checked1 contains sorry1 out of date">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -27,7 +45,6 @@
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -37,11 +54,6 @@
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Demo notebook</h1>
-    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -127,7 +139,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -160,12 +171,30 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="false">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="true">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)
+1 kernel checked1 contains sorry1 out of date">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -183,7 +212,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -193,11 +221,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Demo notebook</h1>
-    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace focused-view" id="workspace">
@@ -284,7 +307,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -317,12 +339,30 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)
+1 kernel checked1 contains sorry">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -340,7 +380,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -350,11 +389,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Demo notebook</h1>
-    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -440,7 +474,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -473,12 +506,30 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)
+No check results">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat">No check results</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -496,7 +547,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -506,11 +556,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">E.lean</h1>
-    <div class="subline" id="subline"><span class="stat">No check results</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -553,7 +598,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -586,12 +630,30 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)
+No check results">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat">No check results</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -609,7 +671,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -619,11 +680,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">E.lean</h1>
-    <div class="subline" id="subline"><span class="stat">No check results</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -668,7 +724,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -701,12 +756,29 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Pictured.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -724,7 +796,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -734,11 +805,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Pictured</h1>
-    <div class="subline" id="subline"></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -773,7 +839,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -806,12 +871,30 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">A.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">Source hash: bbbbbbbb</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked. Show details" title="Connected to the local notebook server
+Source hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+SHA-256 of the displayed saved source (not a Git commit)
+1 kernel checked">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -829,7 +912,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -839,11 +921,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">A.lean</h1>
-    <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -900,7 +977,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">
@@ -933,12 +1009,30 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
     </div>
-    <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
+    <details class="header-status" id="header-status">
+      <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
+Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)
+No check results">
+        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+        <span id="proof-availability" hidden="">Checking unavailable</span>
+        <span class="subline" id="subline"><span class="stat">No check results</span></span>
+        <span id="live-status" role="status" hidden=""></span>
+        <span class="status-info" aria-hidden="true">ⓘ</span>
+      </summary>
+      <div class="status-details">
+        <p id="connection-detail">Connected to the local notebook server</p>
+        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
+        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+      </div>
+    </details>
     <div class="bar-right">
 
       <details class="history" id="history">
@@ -956,7 +1050,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -966,11 +1059,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">E.lean</h1>
-    <div class="subline" id="subline"><span class="stat">No check results</span></div>
-    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
-      <summary id="proof-availability">Checking unavailable</summary>
-      <p id="lean-unsupported-text"></p>
-    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -1013,7 +1101,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </aside>
   </div>
 
-  <footer class="footer"><span><span class="conn" id="conn" data-state="up"></span><span id="conn-text">Connected to the local notebook server</span></span><span id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</span></footer>
 </div>
 
 <div class="overlay" id="keys" hidden="">

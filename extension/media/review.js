@@ -279,6 +279,10 @@
       }
       event.stopImmediatePropagation(); return;
     }
+    if ($('header-status')?.open || event.target.closest('#header-status')) {
+      if (event.key !== 'Escape') event.stopImmediatePropagation();
+      return;
+    }
     if (!app.contains(event.target) || event.target.isContentEditable || event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) { if ('npctejksir?'.includes(event.key) && event.key.length === 1) event.stopImmediatePropagation(); return; }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const overlay = [...document.querySelectorAll('.overlay')].some(e => e !== help && !e.hidden);
