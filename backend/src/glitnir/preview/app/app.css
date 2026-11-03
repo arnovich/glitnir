@@ -598,3 +598,9 @@ body[data-view="source"] .doc-inner{max-width:none}
 .atlas-visit-history{border-top:1px solid var(--border);padding-top:12px}
 .atlas-visit-history button{margin-bottom:4px}
 @media(max-width:900px){.atlas-shell{grid-template-columns:minmax(0,1fr)}.atlas-sidebar{position:static;max-height:280px;border-right:0;border-bottom:1px solid var(--border);padding:0 0 12px}.atlas-flow{margin:12px 0}}
+
+/* Zoom controls belong to the diagram, outside its scrolling canvas. */
+.proof-graph-stage{grid-column:1;grid-row:1;min-width:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--paper)}
+.proof-graph-stage>.proof-graph-toolbar{justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:8px;margin:0;border-bottom:1px solid var(--border);background:var(--chrome)}
+.proof-graph-stage>.proof-graph-toolbar>span{margin-right:auto}
+.proof-graph-stage>.proof-graph-canvas{border:0;border-radius:0;max-height:72vh}

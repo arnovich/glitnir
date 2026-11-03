@@ -3726,6 +3726,10 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.match(d.querySelector('[data-graph-name="result"] title').textContent, /result — Out of date/);
     assert.equal(d.querySelector('[data-graph-name="unchecked"]').dataset.tone, 'muted');
     assert.match(d.getElementById('graph-view').textContent, /Dependency observations are unknown for unchecked/);
+    const graphToolbar = d.querySelector('.proof-graph-toolbar');
+    assert.ok(graphToolbar.closest('.proof-graph-stage'));
+    assert.ok(graphToolbar.nextElementSibling.classList.contains('proof-graph-canvas'));
+    assert.equal(d.querySelector('.proof-graph-view > header .proof-graph-toolbar'), null);
     const zoom = d.querySelector('[data-act="graph-zoom-in"]');
     zoom.focus(); zoom.click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '950');
