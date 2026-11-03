@@ -684,3 +684,7 @@ a successful refresh clears that message without running a proof check.
 source line links to move between views. The filename tooltip identifies the full
 local path; exported snapshots omit that local path. Project setup details live
 in the header status panel, while actionable warnings stay visible.
+
+Source uses an editor-style layout with a fixed line-number gutter, restrained
+syntax colours and distinct documentation headings. Its source text and line
+links stay unchanged; saved-result and selected-range markers remain separate.

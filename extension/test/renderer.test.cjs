@@ -5541,3 +5541,33 @@ test('Source is a peer mode without an empty activity row or explanatory return 
   assert.doesNotMatch(d.getElementById('banner-text').textContent, /Saved-source preview/);
  } finally {w.close();}
 });
+
+test('Source distinguishes documentation and declarations without changing saved text', async () => {
+ const snapshot=liveSnapshot();
+ snapshot.cells=[
+  {index:0,kind:'source',start:1,end:1,text:'import Mathlib'},
+  {index:1,kind:'prose',start:2,end:5,text:'/-!\n## A <section>\nThe theorem uses `by` and <tags>.\n-/',markdown:'## A <section>\nThe theorem uses `by` and <tags>.'},
+  {index:2,kind:'source',start:6,end:7,text:'theorem sample : True := by\n  trivial'},
+ ];
+ const w=await renderSnapshot(snapshot);
+ try {
+  const d=w.document;
+  d.querySelector('[data-mode="source"]').click();
+  assert.equal(d.querySelector('#source .source').tabIndex,0);
+  assert.equal(d.querySelector('#source .source').getAttribute('aria-label'),'Lean source code');
+  assert.ok(d.querySelector('#source-L1.source-import'));
+  assert.ok(d.querySelector('#source-L3.source-doc-heading'));
+  assert.equal(d.querySelector('#source-L4 .code').textContent,'The theorem uses `by` and <tags>.');
+  assert.equal(d.querySelector('#source-L4 .kw, #source-L4 tags'),null,'documentation is escaped and does not highlight Lean words as code');
+  assert.ok(d.querySelector('#source-L6.source-declaration .kw'));
+  assert.deepEqual([...d.querySelectorAll('#source [data-source-line] .code')].map(e=>e.textContent),snapshot.cells.flatMap(c=>c.text.split('\n')));
+  const pane=d.querySelector('#source .source');
+  pane.focus(); pane.scrollLeft=180;
+  await w.glitnirPoll();
+  assert.equal(d.activeElement,d.querySelector('#source .source'),'polling preserves keyboard panning focus');
+  assert.equal(d.querySelector('#source .source').scrollLeft,180);
+  snapshot.sha256='b'.repeat(64);
+  await w.glitnirPoll();
+  assert.equal(d.querySelector('#source .source').scrollLeft,0,'a new source resets the old horizontal position');
+ }finally{w.close();}
+});

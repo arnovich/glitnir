@@ -616,19 +616,33 @@
     const rows = [];
     UI.data.cells.forEach(cell => {
       const c = cell.kind === 'claim' ? claim(cell.id) : cell.claim ? claim(cell.claim) : null;
-      cell.text.split('\n').slice(0, cell.end - cell.start + 1).forEach((line, i) => rows.push({n: cell.start + i, line, c}));
+      cell.text.split('\n').slice(0, cell.end - cell.start + 1).forEach((line, i) => rows.push({n: cell.start + i, line, c, prose: cell.kind === 'prose'}));
     });
-    return `<div class="source"><table>${rows.map(r => {
+    return `<div class="source" tabindex="0" role="region" aria-label="Lean source code"><table>${rows.map(r => {
+        const kind = r.prose ? (/^\s*#{1,6}\s/.test(r.line) ? 'source-doc-heading' : 'source-doc')
+          : /^\s*import\s/.test(r.line) ? 'source-import'
+          : /^\s*(?:(?:private|protected|noncomputable)\s+)*(?:theorem|lemma|def|abbrev|instance|structure|inductive|example|axiom)\b/.test(r.line) ? 'source-declaration' : '';
+        const code = r.prose ? esc(r.line) : leanHTML(r.line);
         const documentHref = r.c ? `#cell-${esc(r.c.name)}` : '#document-view';
         const lineLink = staticPage
           ? `<a href="${documentHref}" aria-label="Show line ${r.n} in Notebook">${r.n}</a>`
           : `<a href="#doc" data-act="document-line" data-line="${r.n}" data-sha="${esc(UI.data.sha256)}" aria-label="Show line ${r.n} in Notebook">${r.n}</a>`;
-        return `<tr id="source-L${r.n}" tabindex="-1" data-source-line="${r.n}" data-line-target="${Boolean(range && r.n >= range.start && r.n <= range.end)}" ${r.c ? `data-claim="${esc(r.c.name)}" data-tone="${toneOf(r.c)}" data-selected="${UI.selected === r.c.name}"` : ''}><td class="gut"></td><td class="ln">${lineLink}</td><td>${leanHTML(r.line) || ' '}</td></tr>`;
+        return `<tr class="${kind}" id="source-L${r.n}" tabindex="-1" data-source-line="${r.n}" data-line-target="${Boolean(range && r.n >= range.start && r.n <= range.end)}" ${r.c ? `data-claim="${esc(r.c.name)}" data-tone="${toneOf(r.c)}" data-selected="${UI.selected === r.c.name}"` : ''}><td class="gut"></td><td class="ln">${lineLink}</td><td class="code">${code || ' '}</td></tr>`;
       }).join('')}</table></div>`;
   }
 
+  let sourceIdentity;
   function renderSource() {
+    const identity = `${linkedPath() || ''}\n${UI.data.file}\n${UI.data.sha256}`;
+    const previous = $('source').querySelector('.source');
+    const same = sourceIdentity === identity;
+    const left = same ? previous?.scrollLeft || 0 : 0;
+    const focused = same && previous === document.activeElement;
     $('source').innerHTML = sourceViewHTML();
+    sourceIdentity = identity;
+    const pane = $('source').querySelector('.source');
+    pane.scrollLeft = left;
+    if (focused) pane.focus({preventScroll: true});
   }
 
   Object.assign(workbench, {cellEntries, cellView, commands, declarationParts, docHTML, fieldHTML, leanOf,

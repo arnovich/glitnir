@@ -234,15 +234,23 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .claim-actions .small{flex:1;min-width:140px;text-align:right}
 
 /* source view */
-.source{border:1px solid var(--border);border-radius:7px;overflow-x:auto;background:var(--sunk)}
-.source table{border-collapse:collapse;width:100%;font:12px/1.65 var(--mono)}
-.source td{padding:0 10px;vertical-align:top;white-space:pre}
-.source td.ln{width:1%;text-align:right;color:var(--faint);user-select:none;border-right:1px solid var(--rule)}
-.source td.gut{width:4px;padding:0}
+.source{border:1px solid var(--border);border-radius:8px;overflow-x:auto;background:var(--paper);padding-block:12px;tab-size:2}
+.source:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.source table{border-collapse:separate;border-spacing:0;width:100%;font:12.5px/1.85 var(--mono)}
+.source td{padding:0 14px;vertical-align:top;white-space:pre}
+.source td.code{padding-right:28px}
+.source tr:hover td.code,.source tr:focus-within td.code{background:var(--chrome)}
+.source tr.source-import td.code{color:var(--violet)}
+.source tr.source-doc td.code{color:var(--muted)}
+.source tr.source-doc-heading td.code{color:var(--ink);font-weight:600}
+.source tr.source-declaration td.code{padding-top:6px}
+.source tr.source-declaration td.ln{padding-top:6px}
+.source td.ln{position:sticky;left:4px;z-index:1;width:1%;text-align:right;color:var(--muted);background:var(--chrome);user-select:none;border-right:1px solid var(--rule);font-size:11px;padding-inline:12px}
+.source td.gut{position:sticky;left:0;z-index:1;width:4px;padding:0;background:var(--chrome)}
 .source tr[data-tone=green] td.gut{background:var(--green)}.source tr[data-tone=amber] td.gut{background:var(--amber)}.source tr[data-tone=red] td.gut{background:var(--red)}.source tr[data-tone=blue] td.gut{background:var(--blue)}.source tr[data-tone=muted] td.gut{background:var(--faint)}
 .source tr[data-claim]{cursor:pointer}
 .source tr[data-selected=true] td:not(.gut){background:var(--blue-soft)}
-.source .kw{color:var(--blue)}.source .cm{color:var(--faint)}
+.source .kw{color:var(--blue);font-weight:600}.source .cm{color:var(--muted)}
 .source-note{font-size:11px;color:var(--muted);margin:0 0 10px}
 
 /* inspector */
