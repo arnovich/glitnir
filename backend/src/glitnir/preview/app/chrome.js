@@ -142,6 +142,73 @@
   $('history').addEventListener('toggle', () => { if ($('history').open) void loadGitHistory(); });
   renderGitHistory();
 
+  function renderOutline() {
+    const outline = $('outline'), rail = outline.closest('.rail');
+    const scroll = rail.scrollTop;
+    const focused = outline.contains(document.activeElement) ? {...document.activeElement.dataset} : null;
+    const roots = [], stack = [{level: 1, children: roots}], declarations = [];
+    const kinds = new Set(['definition', 'lemma', 'proposition', 'theorem', 'corollary', 'algorithm', 'appendix']);
+    for (const [index, el] of [...$('doc').querySelectorAll('[id^="notebook-heading-"],.cell[data-claim],.definition,.context-card,.source-context')].entries()) {
+      if (el.matches('[id^="notebook-heading-"]')) {
+        const level = Number(el.tagName.slice(1));
+        while (stack.length > 1 && stack.at(-1).level >= level) stack.pop();
+        const label = (el.dataset.heading || el.textContent).replace(/\s+\{fold\}\s*$/, '').trim();
+        el.tabIndex = -1;
+        const prefix = /^(Definition|Lemma|Proposition|Theorem|Corollary|Setup)\b/i.exec(label)?.[1].toLowerCase();
+        const entry = {id: el.id, label, kind: prefix || 'section', section: true, children: []};
+        stack.at(-1).children.push(entry); stack.push({level, children: entry.children});
+        continue;
+      }
+      if (el.closest('.cell[data-claim]') && !el.matches('.cell[data-claim]')) continue;
+      const kindLabel = el.querySelector('.def-kind')?.textContent.trim() || '';
+      const claimName = el.dataset.claim;
+      const c = claimName ? claim(claimName) : null;
+      const short = el.querySelector('.card-header dfn code')?.textContent.trim();
+      const namespace = el.querySelector('.def-namespace code')?.textContent.trim();
+      const name = claimName || [namespace, short].filter(Boolean).join('.');
+      let kind = /theorem/i.test(kindLabel) ? 'theorem' : /lemma/i.test(kindLabel) ? 'lemma' : /example/i.test(kindLabel) ? 'example' : /assumption/i.test(kindLabel) ? 'assumption' : 'definition';
+      let label = c ? (c.project ? claimLabel(c) : c.name) : short;
+      if (!el.matches('.definition,.cell[data-claim]')) {
+        const code = el.querySelector('pre')?.textContent.trim() || '';
+        if (el.matches('.import-header')) label = el.querySelector('summary')?.firstChild?.textContent.trim();
+        else if (el.matches('.source-context') && /^(namespace|section|open|variable|universe|set_option)\b/.test(code)) label = code.split('\n')[0];
+        else if (el.matches('.context-card') && !['Note', 'Additional notebook content'].includes(kindLabel)) label = kindLabel;
+        else continue;
+        kind = 'setup';
+      }
+      if (!label) label = kindLabel || 'Example';
+      const start = el.querySelector('.source-link')?.dataset.start;
+      const cell = el.closest('.cellwrap')?.dataset.index || '0';
+      if (!el.id) el.id = `notebook-entry-${cell}-${start || index}`;
+      el.tabIndex = -1;
+      const entry = {id: el.id, label, name, kind, c, children: []};
+      stack.at(-1).children.push(entry); declarations.push(entry);
+    }
+    for (const node of UI.data.walkthrough?.nodes || []) {
+      if (!node?.claim || !kinds.has(node.kind)) continue;
+      const exact = declarations.filter(e => e.name === node.claim);
+      const matches = exact.length ? exact : declarations.filter(e => e.name?.endsWith('.' + node.claim));
+      if (matches.length === 1) {
+        const entry = matches[0];
+        entry.mappedKinds ||= new Set(); entry.mappedKinds.add(node.kind);
+      }
+    }
+    for (const entry of declarations) if (entry.mappedKinds?.size === 1) entry.kind = [...entry.mappedKinds][0];
+    const html = entries => entries.map(entry => {
+      const saved = entry.c, current = UI.outlineTarget ? UI.outlineTarget === entry.id : saved && UI.selected === saved.name;
+      const action = saved ? `data-act="goto" data-id="${esc(saved.name)}"` : `data-act="scroll" data-id="${esc(entry.id)}"`;
+      const kind = entry.kind[0].toUpperCase() + entry.kind.slice(1);
+      const content = entry.section ? inlineHTML(entry.label) : `<span class="o-kind" title="Declaration kind: ${esc(kind)}">${esc(kind)}</span><span class="o-name${saved ? ' o-claim' : ''}">${breakableName(entry.label)}</span>`;
+      const dot = saved ? `<span class="dot" data-tone="${toneOf(saved)}" title="${esc(statusOf(saved).label)}${saved.project && currencyNoted(saved.project) ? ' · ' + esc(currencyText(saved.project)) : ''}"></span>` : '';
+      return `<li class="${entry.section ? 'outline-section' : 'outline-declaration'}" data-outline-kind="${entry.kind}"><button type="button" ${action} aria-current="${Boolean(current)}" title="${esc(entry.name || entry.label)}">${content}${dot}</button>${entry.children.length ? `<ol>${html(entry.children)}</ol>` : ''}</li>`;
+    }).join('');
+    outline.innerHTML = html(roots);
+    // Keep the shared cache's full root set, including on standalone chrome updates.
+    typesetMath($('doc'), $('insp'), $('title'), outline, $('graph-view'));
+    if (focused) [...outline.querySelectorAll('button')].find(b => b.dataset.act === focused.act && b.dataset.id === focused.id)?.focus({preventScroll: true});
+    rail.scrollTop = scroll;
+  }
+
   function renderChrome() {
     const d = UI.data, cs = claims();
     document.title = `${title()} · Glitnir`;
@@ -233,20 +300,7 @@
       + (revisions.length
         ? [...revisions].reverse().map(h => `<div class="rev"><b>r${esc(h.rev)}</b><span>${esc(h.label)} <span class="muted">${when(h.time)}</span></span><span class="effect" data-hit="${(h.made_stale || []).length > 0}">${esc(effect(h))}</span></div>`).join('')
         : '<p class="small muted">No recorded notebook activity.</p>');
-    $('outline').innerHTML = d.cells.flatMap(cell => {
-      if (cell.kind === 'claim') {
-        const c = claim(cell.id);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(c.name)}</span><span class="dot" data-tone="${statusOf(c).tone}" title="${statusOf(c).label}"></span></button></li>`] : [];
-      }
-      if (cell.kind === 'source' && cell.claim) {
-        const c = claim(cell.claim);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}"></span></button></li>`] : [];
-      }
-      if (cell.kind === 'prose') {
-        return [...cell.markdown.matchAll(/^\s*(#{2,6}) (.+)$/gm)].map((m, i) => `<li class="outline-level-${m[1].length}"><button type="button" data-act="scroll" data-id="notebook-heading-${cell.index}-${i}">${inlineHTML(m[2].trim().replace(/\s+\{fold\}$/, ''))}</button></li>`);
-      }
-      return [];
-    }).join('');
+    renderOutline();
     $('chips-row').innerHTML = cs.map(c => `<button type="button" data-act="goto" data-id="${esc(c.name)}"><span class="dot" data-tone="${toneOf(c)}"></span> ${esc(claimLabel(c))}</button>`).join('');
     document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === UI.mode)));
     $('doc').hidden = UI.mode !== 'doc';
@@ -306,6 +360,7 @@
     const helpFocus = document.activeElement?.dataset.helpKey;
     const helpOpen = helpFocus && !$(helpFocus)?.hidden;
     const openHelpKey = document.querySelector('.help-tooltip:not([hidden])')?.id;
+    const outlineDocumentFocus = UI.mode === 'doc' && /^notebook-(entry|heading)-/.test(document.activeElement?.id || '') ? document.activeElement.id : null;
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
     const foldFocus = saveReadingFolds();
     const linkSelector = '.source-link,.source-edit,.source-inspect,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
@@ -333,13 +388,13 @@
     }
     renderInspector();
     renderChrome();
-    typesetMath($('doc'), $('insp'), $('title'), $('outline'), $('graph-view'));
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
     if (UI.mode === 'doc' && UI.documentLine?.sha === UI.data.sha256) {
       const target = documentTarget(UI.documentLine.line);
       if (target) { target.classList.add('document-target'); target.tabIndex = -1; if (documentFocus) target.focus({preventScroll: true}); }
     }
+    if (outlineDocumentFocus) $(outlineDocumentFocus)?.focus({preventScroll: true});
     if (sourceFocus) $(sourceFocus)?.focus({preventScroll: true});
     if (sourceControl?.sha === UI.data.sha256) {
       const control = [...$('source').querySelectorAll('[data-act]')].find(el => el.dataset.act === sourceControl.act && el.dataset.line === sourceControl.line);
@@ -491,6 +546,7 @@
     render();
   }
   function select(name, scroll) {
+    UI.outlineTarget = null;
     UI.sourceCell = null;
     UI.selected = name;
     UI.graphSelected = `local:${name}`;
@@ -503,6 +559,7 @@
   function showSourceLines(start, end) {
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) return;
     if (!UI.data.cells.some(cell => start >= cell.start && start < cell.start + cell.text.split('\n').length)) return;
+    UI.hideSourceComments = false;
     UI.sourceRange = {start, end, sha: UI.data.sha256};
     UI.mode = 'source';
     render();
@@ -550,6 +607,7 @@
   }
 
   document.addEventListener('change', e => {
+    if (e.target.matches('#source-hide-comments')) { UI.hideSourceComments = e.target.checked; render(); return; }
     if (!e.target.matches('[data-diagram-contract]')) return;
     const key = e.target.dataset.diagramContract;
     if (!key.endsWith(UI.data.sha256)) return;
@@ -625,6 +683,7 @@
       // Stale buttons of an earlier saved file never check other lines.
       case 'check-through': if (b.dataset.sha === UI.data.sha256 && claim(id)) { UI.selected = id; checkProject(Number(b.dataset.line)); } break;
       case 'scroll': {
+        UI.outlineTarget = id;
         UI.mode = 'doc';
         render();
         const heading = document.getElementById(id);

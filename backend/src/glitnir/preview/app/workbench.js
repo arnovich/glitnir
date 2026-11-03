@@ -219,6 +219,7 @@
     const changed = readableSnapshot && readableSnapshot.sha256 !== data.sha256;
     forgetFailedDrawings(Boolean(UI.data) && UI.data.preview?.check?.status !== data.preview?.check?.status, data.sha256);
     forgetImages(data);
+    if (UI.data?.sha256 !== data.sha256) UI.outlineTarget = null;
     UI.data = data;
     UI.connected = true;
     // Only the previewed notebook's snapshots reach the editor integration.
@@ -556,7 +557,7 @@
     if (!linkedPath()) mainChanged = false;
     clearTimeout(highlightTimer);
     highlighted = new Set();
-    Object.assign(UI, {selected: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
+    Object.assign(UI, {selected: null, outlineTarget: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
     closeDiagram();
     document.body.classList.toggle('glitnir-linked-view', Boolean(linkedPath()));
     const cached = snapshots.get(linkedPath() ?? '');

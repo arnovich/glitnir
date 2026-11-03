@@ -632,3 +632,24 @@ body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-foll
 .status-details>p:last-child{margin-bottom:0;color:var(--muted)}
 
 .source-controls .source-inspect{font:11px var(--sans);padding:3px 7px;line-height:1.5}
+
+/* Declaration kinds label navigation; saved-result dots retain their own meaning. */
+.rail #outline ol{margin:3px 0 7px;padding-left:10px;border-left:1px solid var(--rule);gap:1px}
+.rail .outline-section>button{font-weight:600;margin-top:5px}
+.rail .outline-declaration>button{grid-template-columns:auto minmax(0,1fr) 8px;gap:6px;padding:5px 6px;align-items:baseline}
+.rail .outline-declaration .o-kind{font:9px/1.5 var(--sans);white-space:nowrap;border-radius:3px;padding:1px 4px;color:var(--blue);background:var(--blue-soft)}
+.rail .o-name{min-width:0;overflow-wrap:anywhere;font-size:11.5px}
+.rail [data-outline-kind=theorem]>.o-kind,.rail [data-outline-kind=theorem]>button .o-kind,.rail [data-outline-kind=proposition]>button .o-kind{color:var(--violet);background:var(--violet-soft)}
+.rail [data-outline-kind=lemma]>button .o-kind{color:var(--green);background:var(--green-soft)}
+.rail [data-outline-kind=corollary]>button .o-kind{color:var(--red);background:var(--red-soft)}
+.rail [data-outline-kind=setup]>button .o-kind{color:var(--muted);background:var(--sunk)}
+.rail .outline-section[data-outline-kind=theorem]>button,.rail .outline-section[data-outline-kind=proposition]>button{color:var(--violet)}
+.rail .outline-section[data-outline-kind=definition]>button{color:var(--blue)}
+.rail .outline-section[data-outline-kind=lemma]>button{color:var(--green)}
+.rail .outline-section[data-outline-kind=corollary]>button{color:var(--red)}
+.source-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;color:var(--muted);font-size:11px}
+.source-toolbar label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink)}
+.source-toolbar input{accent-color:var(--blue)}
+.source-link-hint{color:var(--muted)}
+.source td.ln a{color:var(--blue);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;border-radius:2px}
+.source td.ln a:hover,.source td.ln a:focus-visible{background:var(--blue-soft);text-decoration-style:solid;outline:1px solid var(--blue);outline-offset:2px}

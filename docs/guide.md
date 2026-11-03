@@ -700,3 +700,14 @@ leave the reading view in place without requesting a tactic observation.
 Proof inspection is a claim action rather than a notebook-wide mode. The title
 stays in the same position in Notebook, Source and Explore; Notebook-only
 Previous/Next and Follow live edits controls sit below it.
+
+Notebook contents nests rendered declarations and setup beneath section headings,
+including before any check results exist. Text badges and colours identify
+declaration kinds; saved-result dots remain separate. Walkthrough mappings can
+identify corollaries or propositions when their claim binding is unambiguous.
+
+Source offers **Hide comments** for a code-only reading view. Original line
+numbers stay unchanged and link back to Notebook; hover or focus makes the
+return action explicit. Static exports always include the complete saved source.
+Opening an explicit source range from Notebook shows comments again so the
+requested lines remain visible.

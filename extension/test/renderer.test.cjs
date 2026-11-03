@@ -2855,6 +2855,7 @@ test('proof outline navigation opens ancestors and retains independent folds and
     const d = window.document;
     let scrolled;
     window.HTMLElement.prototype.scrollIntoView = function() { scrolled = this; };
+    assert.ok(d.querySelector('#outline [data-act="goto"][data-id="step1"]'),d.getElementById('outline').innerHTML);
     d.querySelector('#outline [data-act="goto"][data-id="step1"]').click();
     let folds = [...d.querySelectorAll('#doc details.proof-section')];
     assert.equal(folds[0].open, true);
@@ -5724,5 +5725,84 @@ test('anonymous examples have distinct proof actions and return to the matching 
   assert.equal(d.getElementById('proof-title').textContent,name);
   d.getElementById('proof-back').click();
   assert.equal(d.activeElement.dataset.proofClaim,name);
+ }finally{w.close();}
+});
+
+test('Notebook contents nests fresh declarations and colours kinds independently of proof status',async()=>{
+ const snapshot=projectNotebook();snapshot.project_claims=[];
+ snapshot.cells=[{index:0,kind:'source',start:1,end:1,text:'import Mathlib'},
+ {index:1,kind:'prose',start:2,end:6,text:'/-!\n## Setup\n### Facts {fold}\n-/\n',markdown:'## Setup\n### Facts {fold}'},
+ {index:2,kind:'source',start:7,end:13,text:'namespace Demo\ndef base : Nat := 1\ntheorem result : True := by\n  trivial\ntheorem consequence : True := by\n  trivial\nend Demo'}];
+ snapshot.walkthrough={format:'glitnir.walkthrough-outline/v1',formalization:supportedWalkthroughFormalization,nodes:[{id:'cor',label:'Corollary',kind:'corollary',claim:'Demo.consequence',lean:[],uses:[]}]};
+ const w=await renderSnapshot(snapshot);w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  assert.ok(d.querySelector('#outline [data-outline-kind="setup"]'));
+  assert.ok(d.querySelector('#outline [data-outline-kind="definition"]'));
+  const theorem=d.querySelector('#outline [data-outline-kind="theorem"]>button');
+  assert.match(theorem.textContent,/Theorem.*result/);
+  assert.equal(theorem.closest('ol').parentElement.querySelector(':scope>button').textContent,'Facts');
+  const corollary=d.querySelector('#outline [data-outline-kind="corollary"]>button');
+  assert.match(corollary.textContent,/Corollary.*consequence/);
+  assert.equal(corollary.querySelector('.dot'),null,'declaration colour does not invent a proof status');
+  const id=corollary.dataset.id;corollary.click();
+  assert.equal(d.querySelector('.proof-section').open,true);
+  assert.equal(d.activeElement.id,id);
+  await w.glitnirPoll();assert.equal(d.activeElement.id,id);
+ }finally{w.close();}
+});
+
+test('Source hides comments without renumbering or stripping literal contents and exports full source',async()=>{
+ const text=['/-! prose -- words -/','def a := "-- literal" -- comment','/- outer','  /- nested -/','-/','def b := r#"" -- raw literal"#','def «-- name» := 2','def c := 3 /- inline -/ + 4','def d := r"'+String.fromCharCode(92)+'" -- tail'].join('\n');
+ const snapshot={...liveSnapshot(),cells:[{index:0,kind:'source',start:1,end:9,text}]};
+ const w=await renderSnapshot(snapshot,{katex:true});let exported;
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;d.querySelector('[data-mode="source"]').click();
+  const toggle=d.getElementById('source-hide-comments');assert.ok(toggle);toggle.checked=true;toggle.dispatchEvent(new w.Event('change',{bubbles:true}));
+  const code=()=>d.querySelector('#source .source').textContent;
+  assert.doesNotMatch(code(),/prose|outer|nested|inline/);
+  assert.match(code(),/"-- literal"/);assert.match(code(),/-- raw literal/);assert.match(code(),/«-- name»/);
+  assert.deepEqual([...d.querySelectorAll('#source [data-source-line]')].map(r=>Number(r.dataset.sourceLine)),[2,6,7,8,9]);
+  assert.equal(d.querySelector('#source-L9 .code').textContent.trimEnd(),text.split('\n')[8].split(' -- tail')[0]);
+  assert.doesNotMatch(code(),/-- tail/);
+  const line=d.querySelector('#source-L6 .ln a');assert.match(line.title,/Notebook/);
+  assert.match(d.querySelector('.source-link-hint').textContent,/Line numbers.*Notebook/);
+  d.getElementById('source-hide-comments').focus();await w.glitnirPoll();
+  assert.equal(d.activeElement.id,'source-hide-comments');assert.equal(d.getElementById('source-hide-comments').checked,true);
+  w.glitnirHost.saveHTML=async html=>{exported=html;};await d.getElementById('export-html').onclick();
+  assert.ok(exported,w.glitnirWorkbench.UI.notice);
+  assert.match(exported,/outer/);assert.match(exported,/inline/);
+  d.querySelector('#source-L6 .ln a').click();assert.equal(d.getElementById('doc').hidden,false);
+ }finally{w.close();}
+});
+
+test('outline headings preserve formatting and focus across chrome updates',async()=>{
+ const snapshot=liveSnapshot();snapshot.cells=[{index:0,kind:'prose',start:1,end:4,text:'/-!\n## A $x^2$ and `code`\nBody $y^3$.\n-/',markdown:'## A $x^2$ and `code`\nBody $y^3$.'}];
+ const w=await renderSnapshot(snapshot,{katex:true});w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;const button=()=>d.querySelector('#outline [data-act="scroll"]');
+  assert.ok(button().querySelector('.katex'));assert.ok(button().querySelector('code'));
+  const label=button().textContent;
+  let renders=0;const original=w.katex.render;w.katex.render=(...args)=>{renders++;return original(...args);};
+  w.glitnirWorkbench.renderChrome();w.glitnirWorkbench.renderChrome();
+  assert.equal(button().textContent,label);
+  button().click();const id=d.activeElement.id;assert.match(id,/notebook-heading/);
+  await w.glitnirPoll();assert.equal(d.activeElement.id,id);assert.equal(button().textContent,label);
+  assert.equal(renders,0,'unchanged outline updates retain the body math cache');
+ }finally{w.close();}
+});
+
+test('opening a linked notebook clears the previous outline target',async()=>{
+ const {main,linked}=linkedNotebooks();
+ const w=await renderSnapshot(main,{onLinked:()=>({json:linked})});w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  d.querySelector('#outline [data-act="scroll"]').click();
+  assert.ok(w.glitnirWorkbench.UI.outlineTarget);
+  [...d.querySelectorAll('a.notebook-reference')].find(a=>a.textContent==='the three states').click();
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(w.glitnirWorkbench.UI.outlineTarget,null);
+  assert.equal(d.querySelector('#outline [aria-current="true"]').dataset.id,'settled');
  }finally{w.close();}
 });
