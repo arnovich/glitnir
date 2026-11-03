@@ -370,7 +370,7 @@
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }
     const readingSidebarScroll = root.querySelector('.atlas-sidebar')?.scrollTop || 0;
-    const graphContent = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') + '<p class="atlas-view-help small muted">Graph shows the full statement dependency map. Select a statement to inspect its links, or choose Read or Map for the guided argument.</p>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true});
+    const graphContent = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') + '<p class="atlas-view-help small muted">Statement graph shows notebook statements and their recorded links. Select a statement to inspect it, or choose Read or Route map for the guided argument.</p>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true});
     root.innerHTML = UI.data.walkthrough?.atlas ? workbench.atlasShell(UI.data, graphContent) : graphContent;
     const readingSidebar = root.querySelector('.atlas-sidebar');
     if (readingSidebar) readingSidebar.scrollTop = readingSidebarScroll;

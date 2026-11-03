@@ -628,45 +628,32 @@ check a notebook with the command from **Glitnir: Copy Validation Command**.
 
 ## Explore a proof atlas
 
-A walkthrough with an `atlas.json` sidecar offers **Read** and **Map**
-in Explore view. Both show the same curated argument, scope, proof idea, and mapped
-source notes. Follow supporting arguments, inspect source references, and use
-Back/Forward to return. Switching layouts keeps the selected step; switching routes
-starts at the selected route’s result. **Graph** retains the existing map.
+A walkthrough with an `atlas.json` sidecar offers three views in Explore:
 
-Atlas routes are curated explanations, not extracted Lean dependencies. A boundary
-means further explanation has not been authored. Source references name the
-outline’s pinned revision; their notes distinguish related counterparts and differing
-formal statements. Navigation never checks a claim or changes its status. Unsupported
-Lean toolchains remain unchecked. Static export includes expandable atlas explanations
-and links. Malformed atlases produce diagnostics without removing the statement map.
+- **Read** explains the selected argument, with its scope and proof idea.
+- **Route map** shows the chosen route’s curated support links, in pages of 24 arguments.
+- **Statement graph** shows notebook statements and their recorded links.
 
-The exploration sidebar contains **Lean proof / Paper proof** choices and the
-selected reading route. Its current argument is highlighted, with shared supports
-identified. Choosing a step or route keeps the active Read, Map or Graph view.
-Graph selects and reveals the statement mapped to that argument. Select a step directly, or use the named Back/Forward buttons under
-**Navigation history** to retrace visits. Map includes the route overview in pages
-of 24 arguments. **Used by** links back to every selected parent in that route.
-Links across pages remain available through supporting arguments and Used by.
+The sidebar holds route choices, **Search proof**, and the reading flow. Its current
+argument is highlighted and shared supports are identified. Selecting a step or
+search result keeps the active view; switching routes starts at that route’s result.
+The statement graph selects the statement mapped to the chosen argument. Use the
+named Back/Forward buttons under **Navigation history** to retrace visits. At a
+shared argument, **View this argument in** opens it on another route.
 
-**Link to this argument** identifies its route and stable argument ID.
-**Copy argument link** copies a notebook-relative fragment in VS Code; use it in
-a Markdown link in that notebook, or append it to the exported HTML URL. A browser
-preview copies a full URL. Opening it restores that argument and route; an unknown
-argument or route produces a diagnostic. Static exports include route indexes,
-backlinks and the same link targets. Authoring validation now uses the preview’s
-normalized source mappings and reports arguments disconnected from every route.
+**Sources and details** below the explanation holds mapped declaration references,
+statement status, source revision and **Copy argument link**. The explanation stays
+visible when these details are open. The copy action produces a notebook-relative
+fragment in VS Code or a full URL in browser preview. Opening a link restores its
+argument and route; unknown destinations produce a diagnostic. Reopening the same
+notebook restores its position when the atlas revision matches.
 
-### Exploring a proof atlas
-
-Use **Find an argument** in either atlas layout to search explanations and Lean
-declaration names. Choose a result's route to open that argument. At a shared
-argument, **View this argument in** opens the same step on another route so you
-can compare its supports and backlinks. HTML exports include these route links.
-
-Reopening the same notebook restores the argument and layout when its atlas
-revision matches. An explicit argument link opens its own destination.
-**Start route again** returns to the root of the current route.
+Routes are curated explanations, not extracted Lean dependencies. Navigation never
+checks a claim or changes its status; incompatible toolchains remain unchecked.
+Pinned source notes distinguish related counterparts and differing formal statements.
+Static HTML exports retain route indexes, supporting links and backlinks so they can
+be explored without the live sidebar. Malformed atlases produce diagnostics without
+removing the statement map.
 
 The header status group separates the server connection from proof-check results.
 Its dot reports connection only. Hover for a summary, or click the status group

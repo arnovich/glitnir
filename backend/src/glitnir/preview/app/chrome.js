@@ -376,8 +376,8 @@
     const graphDetail = $('graph-detail');
     const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
-    const atlasFocus = atlasActive ? {controlRegion: ['.atlas-flow', '.atlas-route-controls', '.atlas-visit-history', '.atlas-overview', '.atlas-supports', '.atlas-backlinks', '.atlas-actions', '.atlas-content'].find(selector => atlasActive.closest(selector)), search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
-      summary: atlasActive.matches('.atlas-actions > summary') ? '.atlas-actions > summary' : atlasActive.matches('.atlas-qualification > summary') ? '.atlas-qualification > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
+    const atlasFocus = atlasActive ? {controlRegion: ['.atlas-flow', '.atlas-route-controls', '.atlas-visit-history', '.atlas-overview', '.atlas-details', '.atlas-content'].find(selector => atlasActive.closest(selector)), search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
+      summary: atlasActive.matches('.atlas-details > summary') ? '.atlas-details > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const scroll = $('insp').scrollTop;
     const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
