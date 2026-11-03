@@ -109,7 +109,7 @@ on that line, so an unnamed `instance` cannot be listed.
 The name exactly as written after `theorem` in the notebook, without the
 notebook's namespace. Each node has at most one claim, each claim belongs to
 one node, and new walkthroughs keep every mapped claim in the single notebook
-that owns the Graph statement map. The checker still accepts older walkthroughs
+that owns the statement map in Explore. The checker still accepts older walkthroughs
 whose claims are spread across files; the Explore view maps saved status and
 navigation only for the file currently open. Give a second statement a node of
 its own. The claim restates one of the node's `lean` entries;

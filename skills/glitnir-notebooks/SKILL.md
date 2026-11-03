@@ -182,9 +182,10 @@ formalization checkout; that textual validation still grants no proof status.
 For larger walkthroughs needing linked argument exploration, read
 [references/proof-atlases.md](references/proof-atlases.md). Author an optional
 `atlas.json` beside the outline; Glitnir presents the same curated argument in
-Reading-first and Map-first layouts. Keep paper and Lean routes distinct where
+**Read**, **Route map** and **Statement graph** views. Keep paper and Lean routes distinct where
 they differ. Deepen a difficult branch into intermediate lemmas before expanding
-coverage; reuse shared arguments so overview and Used by links remain useful.
+coverage; reuse shared arguments so the route map and sidebar identify shared
+structure. Static exports retain supporting links and backlinks.
 Keep stable IDs for direct links, preserve source qualification notes, and validate
 with the bundled
 `scripts/proof_atlas.py --report path/to/outline.json` using the matching runtime Python. An atlas never

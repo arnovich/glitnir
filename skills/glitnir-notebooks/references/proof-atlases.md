@@ -6,10 +6,13 @@ formalization reading routes, or explanations that are awkward in one linear not
 Lean dependency extraction. The atlas is curated exposition, not checking evidence.
 
 Keep `outline.json` as the paper-to-Lean source map. Add `atlas.json` beside it;
-Glitnir offers **Read**, **Map**, and **Graph** (the full statement map)
-in Explore view. Both atlas layouts share selection, source details and Back/Forward.
-Choose **Map** to open the route overview and nearby supporting steps;
-**Used by** follows the reverse curated links. **Graph** opens the full statement dependency graph.
+Glitnir offers **Read**, **Route map**, and **Statement graph** in Explore.
+Read shows an explanation; Route map shows a route's curated support links;
+Statement graph shows notebook statements and their recorded links. The sidebar
+owns routes, search, step navigation and named Back/Forward history. Selection
+stays synchronized without changing the active view. **Sources and details** below
+the explanation holds pinned references, qualifications, mapped statement status,
+source revision and argument links; it leaves the explanation visible.
 A route switch explicitly starts at that route's result. Static export includes
 linked, expandable argument explanations and all declaration qualification notes.
 
@@ -31,8 +34,8 @@ For example, the 3SAT atlas follows improved pieces through reindexing, the
 padded-to-counted conversion and the padding-machine execution lemma. Keep the
 cost model and state-size assumptions visible at each step.
 
-Reuse a node when two arguments use the same step, so the overview and **Used by**
-show the shared structure. A node may belong to only one route; connect every
+Reuse a node when two arguments use the same step, so the route map and sidebar
+identify the shared structure. Static HTML retains supporting links and backlinks. A node may belong to only one route; connect every
 published node to at least one route root. The validator diagnoses disconnected
 nodes. Add precise intermediate declaration mappings to the appropriate outline
 statement when needed, keeping its existing ID and recording qualification notes.
@@ -91,7 +94,7 @@ Example shape (use real outline IDs and commit instead of these illustrative val
 ```
 
 The atlas accepts at most 2,000 nodes, 16 routes and a 1 MiB regular sidecar;
-focused maps page supporting steps rather than discarding the rest of the index.
+route maps and sidebar flows page arguments rather than discarding the rest of the index.
 Keep source bindings within the outline's supported bounds. Do not manufacture
 extra notebook claims just to navigate: use arguments bound to existing statements.
 
@@ -110,28 +113,29 @@ every route root; the preview retains usable routes alongside those warnings.
 A successful validation grants no proof status. Also run the
 walkthrough helper's existing `check` against the original sources and notebook.
 Textual checks, elaboration and independent Glitnir checking remain distinct.
-An incompatible toolchain stays explicitly unchecked in both atlas layouts.
+An incompatible toolchain stays explicitly unchecked across the exploration views.
 
-Inspect both layouts: start at a result, follow the deepened branch, inspect a
-source note, return, switch layout, and use Back/Forward. In the overview, select
-a shared step and follow each Used by backlink. Open a copied argument link
+Inspect all three views: start at a result, follow the deepened branch using the
+sidebar, open Sources and details, switch views, and use Back/Forward. In the
+route map, select a shared step and check the sidebar highlight. Open a copied argument link
 in the live preview and its static export, and check any paged map boundaries. Check keyboard focus,
 small-screen reflow, and exported links. Verify the mathematical scope and
 qualifications after changing a route or source binding; a structurally valid
 atlas alone does not establish that its exposition is correct.
 
-Use **Find an argument** to locate a late step by its mathematical label, a
+Use **Search proof** in the sidebar to locate a late step by its mathematical label, a
 phrase in the explanation, or a mapped declaration. Check that each result
-names the intended routes and opens the expected argument in that route.
+names the intended routes and opens the expected argument without changing the
+active view.
 
-Reopening a preview restores the route, argument and layout for the same
-notebook and atlas revision. VS Code keeps the position in workspace storage.
+Reopening a preview restores its reading route, argument and Read/Route map
+layout for the same notebook and atlas revision; Statement graph is not persisted. VS Code keeps the position in workspace storage.
 The browser preview uses local storage on its origin. Direct argument links
-take precedence. Use **Start route again** to return to the selected result.
+take precedence. Select the first sidebar step or select the current route again to return to its result.
 
 At a shared step, **View this argument in** switches to another reachable
-route while keeping the argument selected. Compare the supports and Used by
-links on each route. In HTML exports these links jump to the corresponding
+route while keeping the argument selected. Compare each route’s map and explanation; static exports also retain supporting
+links and backlinks. In HTML exports these links jump to the corresponding
 route section. Keep a shared ID only when both routes discuss the same step.
 
 Run `proof_atlas.py --report path/to/outline.json` with the matching runtime.
@@ -140,12 +144,14 @@ edges, arguments with multiple reachable parents, and boundaries where the
 route stops. Inspect named boundaries for missing explanation and repair any
 unreachable argument or broken source binding reported by the validator.
 
-In Explore, the notebook sidebars are hidden. Use **Actions** for restarting the
-route, copying an argument link and inspecting the source revision. **Source status** expands the mapped status details.
+In Explore, notebook-only sidebars are hidden. **Sources and details** consolidates
+references, source revision, mapped status and copyable argument links. There is
+no Actions menu, separate source-status fold or argument/source pane switch.
 
 The exploration sidebar shows the selected route and current argument. Use its
 **Lean proof / Paper proof** choices to change reading routes. Back/Forward name
-the arguments previously visited. Map includes its overview, with no independent
-overview toggle. Check sidebar paging and the current-step highlight after
-following a support or a backlink. Read should remain a bounded prose column,
-with assumptions and paper/Lean differences visible.
+the arguments previously visited. Route map owns the overview, with no separate
+overview toggle. Check paging and the current-step highlight after selecting a
+sidebar step, map node or search result. Read remains a bounded prose column,
+with assumptions and paper/formalization differences visible. Supporting-link
+and backlink navigation in static exports remains useful without the live sidebar.
