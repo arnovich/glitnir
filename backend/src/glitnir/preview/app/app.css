@@ -434,7 +434,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .document-target{outline:2px solid var(--blue);outline-offset:3px}
 .live-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 26px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
 .live-label{font-weight:600;color:var(--ink)}
-.live-bar label{display:flex;align-items:center;gap:6px;margin-left:auto;cursor:pointer;color:var(--ink)}
+.live-bar .live-follow-control{display:flex;align-items:center;gap:6px;margin-left:auto;cursor:pointer;color:var(--ink)}
 .live-bar input{accent-color:var(--blue)}
 .cellwrap.live-changed{outline:2px solid var(--blue);outline-offset:5px;border-radius:4px}
 .live-held{opacity:.55}
@@ -557,7 +557,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 /* Non-notebook views use their own content rather than notebook sidebars. */
 .workspace.focused-view{grid-template-columns:minmax(0,1fr)}
 body[data-view="source"]:not(.glitnir-proof-mode) .review-nav,body[data-view="graph"]:not(.glitnir-proof-mode) .review-nav{display:none}
-body[data-view="graph"] .live-bar{display:none}
+body[data-view="graph"]:not(.glitnir-proof-mode) .live-bar{display:none}
 .proof-atlas .atlas-actions{border:0;padding:0;margin:8px 0}
 .proof-atlas .atlas-actions summary,.proof-atlas .atlas-qualification summary{cursor:pointer;color:var(--muted);font-size:12px}
 .proof-atlas .atlas-action-items{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px;border:1px solid var(--border);border-radius:8px}
@@ -604,3 +604,14 @@ body[data-view="source"] .doc-inner{max-width:none}
 .proof-graph-stage>.proof-graph-toolbar{justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:8px;margin:0;border-bottom:1px solid var(--border);background:var(--chrome)}
 .proof-graph-stage>.proof-graph-toolbar>span{margin-right:auto}
 .proof-graph-stage>.proof-graph-canvas{border:0;border-radius:0;max-height:72vh}
+
+/* Primary views lead the header. Saved-update controls share the review row. */
+.bar>.view-switcher{flex-shrink:0;border-color:var(--border)}
+.bar>.view-switcher button{font-size:13px;font-weight:600;padding:8px 14px;min-height:34px}
+.bar>.view-switcher button[aria-pressed="true"]{box-shadow:inset 0 -2px var(--blue)}
+.live-bar{padding:8px 16px;gap:12px}
+.live-bar>.review-nav{flex:1;min-width:0;padding:0;border:0}
+.live-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto;font-size:11px}
+.live-controls .live-follow-control{margin-left:0;font-size:12px;white-space:nowrap}
+body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-follow-control,.glitnir-proof-mode .live-follow-control{display:none}
+@media(max-width:760px){.bar>.view-switcher{width:100%}.bar>.view-switcher button{flex:1}.live-bar>.review-nav{flex-basis:100%}.live-controls{width:100%;justify-content:space-between}}

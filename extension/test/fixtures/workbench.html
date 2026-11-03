@@ -1,16 +1,17 @@
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -24,10 +25,11 @@
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -152,16 +154,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="false">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="true">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="false">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="true">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -175,10 +178,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -304,16 +308,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Demo.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -327,10 +332,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -455,16 +461,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -478,10 +485,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -563,16 +571,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -586,10 +595,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -673,16 +683,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">Pictured.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -696,10 +707,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -773,16 +785,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">A.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">Source hash: bbbbbbbb</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -796,10 +809,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -895,16 +909,17 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden=""></button>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">E.lean</span></nav>
     </div>
     <span class="save" id="file-state" title="SHA-256 of the saved Lean source (not a Git commit): aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Source hash: aaaaaaaa</span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -918,10 +933,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>

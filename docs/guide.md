@@ -166,7 +166,7 @@ action. Escape dismisses the explanation.
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
 - Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow edits** scrolls to them.
+  highlights the changed sections. **Follow live edits**, beside the Claims / Proof steps controls, scrolls to them after each save.
 - **Claims** (`c`) steps through the claims with `j` and `k`; `i` shows the claim
   inspector for the selected claim.
 - `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review

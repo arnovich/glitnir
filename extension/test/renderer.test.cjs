@@ -5344,3 +5344,23 @@ test('a late sidebar argument is selected in the bounded full graph', async () =
     assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n299');
   } finally {w.close();}
 });
+
+for (const browser of [false, true]) {
+  test(`primary view navigation leads the header and saved edits share one activity row (${browser ? 'browser' : 'editor'})`, async () => {
+    const w = await renderSnapshot(projectNotebook(), {browser});
+    try {
+      const d = w.document;
+      assert.ok(d.querySelector('.bar').firstElementChild.classList.contains('view-switcher'));
+      assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Lean source', 'Explore']);
+      const row = d.querySelector('.live-bar');
+      assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
+      assert.equal(row.textContent.includes('Live · saved files'), false);
+      assert.ok(row.querySelector('#live-status'));
+      if (!browser) {
+        assert.ok(row.querySelector('.review-nav'));
+        assert.equal(row.querySelector('#proof-review'), null);
+        assert.ok(d.querySelector('#proof-review').parentElement.classList.contains('app'));
+      }
+    } finally {w.close();}
+  });
+}

@@ -17,12 +17,13 @@
   const next = $('next-unresolved') || document.createElement('button');
   next.id = 'next-unresolved'; next.className = 'secondary'; next.innerHTML = 'Next <kbd>n</kbd>'; next.hidden = false;
   nav.querySelector('.review-controls').append(next);
-  app.querySelector('.bar').after(nav);
+  const activity = app.querySelector('.live-bar');
+  activity.prepend(nav);
   const proof = document.createElement('section');
   proof.id = 'proof-review'; proof.hidden = true;
   proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-title"></h2><p id="proof-status" class="small"></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-cancel" class="secondary" hidden>Cancel</button><button id="proof-back" class="secondary">Back to claims <kbd>Esc</kbd></button></div></div>
     <p id="proof-message" role="status"></p><div class="proof-grid"><div><pre id="proof-statement"></pre><div id="proof-tactics" role="group" aria-label="Recorded tactics"></div></div><div class="proof-goals"><h3 id="proof-goal-title"></h3><details id="proof-before"><summary>Goals before this tactic</summary><pre id="proof-before-text"></pre></details><pre id="proof-after"></pre><p class="small" id="proof-scope"></p><details id="proof-diagnostics" hidden><summary>Lean messages</summary><pre></pre></details><p id="proof-provenance" class="small muted"></p></div></div>`;
-  nav.after(proof);
+  activity.after(proof);
   // The renderer draws the shortcut list (one source for every listing); this
   // layer adds only its own setting.
   const help = $('keys');

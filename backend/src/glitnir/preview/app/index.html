@@ -13,16 +13,17 @@
 <body>
 <div class="app">
   <header class="bar">
+      <div class="seg view-switcher" role="group" aria-label="View">
+        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
+        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+      </div>
     <div class="brand"><span class="mark">∀</span>
       <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">…</span></nav>
     </div>
     <span class="save" id="file-state"></span>
     <div class="bar-right">
-      <div class="seg" role="group" aria-label="View">
-        <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-        <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
-        <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
-      </div>
+
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"/></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -36,10 +37,11 @@
     </div>
   </header>
 
-  <div class="live-bar" aria-label="Live saved-file updates">
-    <span class="live-label">Live · saved files</span>
-    <span id="live-status" role="status">Waiting for saved edits</span>
-    <label title="Scroll to changed sections as saved edits arrive"><input type="checkbox" id="live-follow"> Follow edits</label>
+  <div class="live-bar" aria-label="Review and saved-file updates">
+    <div class="live-controls">
+      <span id="live-status" role="status">Waiting for saved edits</span>
+      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
+    </div>
   </div>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden></nav>
