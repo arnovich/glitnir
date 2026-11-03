@@ -642,7 +642,8 @@ and links. Malformed atlases produce diagnostics without removing the statement 
 
 The exploration sidebar contains **Lean proof / Paper proof** choices and the
 selected reading route. Its current argument is highlighted, with shared supports
-identified. Select a step directly, or use the named Back/Forward buttons under
+identified. Choosing a step or route keeps the active Read, Map or Graph view.
+Graph selects and reveals the statement mapped to that argument. Select a step directly, or use the named Back/Forward buttons under
 **Navigation history** to retrace visits. Map includes the route overview in pages
 of 24 arguments. **Used by** links back to every selected parent in that route.
 Links across pages remain available through supporting arguments and Used by.

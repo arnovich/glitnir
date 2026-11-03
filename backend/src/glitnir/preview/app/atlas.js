@@ -193,7 +193,7 @@
     const compatibility = walkthroughCompatibility(data);
     const known = m.statements.get(n.statement);
     const mappedClaim = known?.claim;
-    const claimModel = mappedClaim ? workbench.walkthroughGraphModel(data).nodes.find(node => node.outlineId === n.statement) : null;
+    const claimModel = mappedClaim ? workbench.walkthroughGraphModel(data, workbench.walkthroughId(n.statement)).nodes.find(node => node.outlineId === n.statement) : null;
     const argument = state.pane === 'sources' ? `<section><h3>Declaration references</h3>${sourcesHTML(n, m)}${button('Return to argument', 'pane', 'argument')}</section>` : explanation(n);
     const supports = supportsHTML(n, m, route) + backlinksHTML(n, m, route);
     const problems = (data.walkthrough.problems || []).map(p => `<p class="banner quiet">${esc(p)}</p>`).join('');
@@ -238,7 +238,7 @@
       to.push(previous); state = from.pop();
     } else {
       history.push(previous); future = [];
-      if (action === 'node' && m.byId.has(value)) state = {...state, layout: state.layout === 'graph' ? 'reading' : state.layout, node: value, trail: [...state.trail, state.node].slice(-24), pane: 'argument', page: 0, parentPage: 0, scroll: 0};
+      if (action === 'node' && m.byId.has(value)) state = {...state, node: value, trail: [...state.trail, state.node].slice(-24), pane: 'argument', page: 0, parentPage: 0, scroll: 0};
       if (action === 'trail') {const path = [...state.trail, state.node], i = Number(value); state = {...state, node: path[i], trail: path.slice(0, i), page: 0, parentPage: 0, scroll: 0};}
       if (action === 'parent-page') state = {...state, parentPage: Number(value)};
       if (action === 'flow-page') state = {...state, flowPage: Number(value)};
@@ -246,7 +246,7 @@
       if (action === 'pane') state = {...state, pane: value};
       if (action === 'page') state = {...state, page: Number(value)};
       if (action === 'layout') state = {...state, layout: value};
-      if (action === 'route') {const r = m.routes.find(r => r.id === value); state = {...state, layout: state.layout === 'graph' ? 'reading' : state.layout, route: value, node: r.root, overviewPage: 0, trail: [], pane: 'argument', page: 0, parentPage: 0, scroll: 0};}
+      if (action === 'route') {const r = m.routes.find(r => r.id === value); state = {...state, route: value, node: r.root, overviewPage: 0, trail: [], pane: 'argument', page: 0, parentPage: 0, scroll: 0};}
     }
     linkMessage = '';
     if (['node', 'trail', 'route', 'back', 'forward'].includes(action)) {
@@ -255,8 +255,11 @@
       lastHash = permalink(state.route, state.node);
       window.history.replaceState(null, '', lastHash);
     }
+    if (state.layout === 'graph' && ['node', 'trail', 'route', 'back', 'forward', 'layout'].includes(action)) {
+      UI.graphSelected = workbench.walkthroughId(m.byId.get(state.node).statement);
+    }
     rememberPosition(UI.data);
-    workbench.renderProofGraph();
+    workbench.render();
     (root.querySelector('#atlas-selected') || root.querySelector('[data-atlas="layout"][aria-pressed="true"]'))?.focus({preventScroll: true});
     window.scrollTo?.(0, state.scroll);
   }

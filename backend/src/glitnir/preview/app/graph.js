@@ -148,11 +148,14 @@
   }
 
   const walkthroughId = id => `walkthrough:${id}`;
-  function walkthroughGraphModel(data) {
+  function walkthroughGraphModel(data, selected = null) {
     const outline = data.walkthrough || {};
     const compatibility = walkthroughCompatibility(data);
     const allNodes = Array.isArray(outline.nodes) ? outline.nodes : [];
-    const rawNodes = allNodes.slice(0, MAX_GRAPH_NODES);
+    const selectedIndex = allNodes.findIndex(node => node && walkthroughId(node.id) === selected);
+    const rawNodes = selectedIndex >= MAX_GRAPH_NODES
+      ? [allNodes[selectedIndex], ...allNodes.slice(0, MAX_GRAPH_NODES - 1)]
+      : allNodes.slice(0, MAX_GRAPH_NODES);
     const rendered = data.preview?.mode === 'project' ? projectClaims(data) : (Array.isArray(data.claims) ? data.claims : []);
     const sourceClaims = (data.cells || []).filter(cell => typeof cell?.claim === 'string' && cell.claim)
       .map(cell => ({name: cell.claim, label: shortName(cell.claim), sourceOnly: true, start: cell.start}));
@@ -214,7 +217,7 @@
       problems, missingReferences});
   }
 
-  const graphModel = (data, selected = null) => data.walkthrough ? walkthroughGraphModel(data) : claimGraphModel(data, selected?.startsWith('local:') ? selected.slice(6) : null);
+  const graphModel = (data, selected = null) => data.walkthrough ? walkthroughGraphModel(data, selected) : claimGraphModel(data, selected?.startsWith('local:') ? selected.slice(6) : null);
 
   function graphLayout(model) {
     const depth = new Map(model.nodes.map(node => [node.id, 0]));
@@ -374,5 +377,5 @@
   }
   const graphNode = id => graphModel(UI.data, UI.graphSelected).byId.get(id);
 
-  Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, proofGraphHTML, renderProofGraph, walkthroughGraphModel});
+  Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, proofGraphHTML, renderProofGraph, walkthroughGraphModel, walkthroughId});
 })();

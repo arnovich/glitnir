@@ -5266,7 +5266,7 @@ test('proof navigation sidebar shows position, route choices and named visit his
     d.querySelector('[data-atlas="layout"][data-value="graph"]').click();
     assert.ok(nav());
     nav().querySelector('[data-atlas="route"][data-value="lean"]').click();
-    assert.ok(d.querySelector('.atlas-explanation'));
+    assert.ok(d.querySelector('.proof-map'));
     assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n0');
   } finally {w.close();}
 });
@@ -5294,5 +5294,44 @@ test('sidebar keeps late arguments visible after direct links and history naviga
     assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n1');
     d.querySelector('.atlas-visit-history [data-atlas="back"]').click();
     assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n31');
+  } finally {w.close();}
+});
+
+
+test('sidebar selects the same argument in Read, Map and Graph without changing view', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    for (const layout of ['reading', 'map', 'graph']) {
+      d.querySelector('[data-atlas="layout"][data-value="' + layout + '"]').click();
+      d.querySelector('.atlas-flow [data-value="n2"]').click();
+      assert.equal(d.querySelector('[data-atlas="layout"][aria-pressed="true"]').dataset.value, layout);
+      assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n2');
+      if (layout === 'graph') {
+        assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+        assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'walkthrough:n2');
+      } else {
+        assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
+      }
+      d.querySelector('.atlas-flow [data-value="n1"]').click();
+    }
+    d.querySelector('.atlas-visit-history [data-atlas="back"]').click();
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+    d.querySelector('.atlas-route-controls [data-value="paper"]').click();
+    assert.equal(d.querySelector('[data-atlas="layout"][aria-pressed="true"]').dataset.value, 'graph');
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n1');
+  } finally {w.close();}
+});
+
+test('a late sidebar argument is selected in the bounded full graph', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot(300), {onWindow: w => w.history.replaceState(null, '', '#atlas?route=lean&node=n299')});
+  try {
+    const d = w.document;
+    d.querySelector('[data-atlas="layout"][data-value="graph"]').click();
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n299');
+    assert.equal(d.querySelectorAll('.proof-node').length, 240);
+    assert.match(d.querySelector('#graph-detail').textContent, /Argument 299/);
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n299');
   } finally {w.close();}
 });
