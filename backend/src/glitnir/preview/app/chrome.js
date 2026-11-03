@@ -141,7 +141,8 @@
     $('title').innerHTML = inlineHTML(title());
     $('file-name').textContent = d.file;
     const linked = Boolean(linkedPath());
-    $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : 'Notebook';
+    $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : '';
+    $('location').hidden = !linked;
     renderTrail();
     $('file-state').textContent = `Source hash: ${d.sha256.slice(0, 8)}`;
     $('file-state').title = `SHA-256 of the saved Lean source (not a Git commit): ${d.sha256}`;

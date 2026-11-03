@@ -4183,6 +4183,7 @@ test('a linked notebook is read in the same panel, read-only, with a way back an
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/linked')).map(m => m.path), ['/api/linked?path=ThreeState.lean']);
     assert.equal($('title').textContent, 'Three states');
     assert.equal($('location').textContent, 'Linked from Demo.lean · read-only');
+    assert.equal($('location').hidden, false);
     assert.equal($('file-name').textContent, 'ThreeState.lean');
     assert.ok(d.body.classList.contains('glitnir-linked-view'));
     const trail = $('notebook-trail');
@@ -4224,7 +4225,8 @@ test('a linked notebook is read in the same panel, read-only, with a way back an
     // Back, forward, and a link back to the previewed notebook.
     $('notebook-trail').querySelector('[data-act="notebook-back"]').click(); await settle(20);
     assert.equal($('title').textContent, 'Demo notebook');
-    assert.equal($('location').textContent, 'Notebook');
+    assert.equal($('location').textContent, '');
+    assert.equal($('location').hidden, true);
     assert.ok(!d.body.classList.contains('glitnir-linked-view'));
     assert.equal($('notebook-trail').hidden, false, 'forward history stays');
     assert.equal($('notebook-trail').querySelector('[data-act="notebook-forward"]').title, 'Forward to ThreeState.lean');
@@ -5352,6 +5354,8 @@ for (const browser of [false, true]) {
       const d = w.document;
       const header = d.querySelector('.bar');
       assert.ok(header.firstElementChild.classList.contains('brand'));
+      assert.equal(d.getElementById('location').hidden, true);
+      assert.equal(d.getElementById('location').textContent, '');
       assert.deepEqual([...header.children].map(el => el.className), ['brand', 'save', 'seg view-switcher', 'bar-right']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Lean source', 'Explore']);
       const row = d.querySelector('.live-bar');
