@@ -220,7 +220,7 @@
         const end = listed[count - 1].body.at(-1)[0];
         const source = entries.filter(([n]) => n >= start && n <= end);
         const label = `${imports} import${imports === 1 ? '' : 's'}${opens ? ` · ${opens} open${opens === 1 ? '' : 's'}` : ''}`;
-        header = `<details class="cell source-context import-header" data-fold-key="import-header:${esc(leanOf(source))}"><summary>${label}${lineLinkHTML(start, end, false)}</summary><pre>${leanHTML(leanOf(source))}</pre></details>`;
+        header = `<details class="cell source-context import-header" data-fold-key="import-header:${esc(leanOf(source))}"><summary>${label}${lineLinkHTML(start, end)}</summary><pre>${leanHTML(leanOf(source))}</pre></details>`;
         listed.splice(0, count);
       }
     }

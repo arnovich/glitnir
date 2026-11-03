@@ -4852,7 +4852,8 @@ for (const browser of [false, true]) {
     const header = 'import Mathlib\nimport Demo.Basic\n\nopen scoped BigOperators\nopen Nat\n';
     snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 8, text: header + 'namespace Demo\ndef x := 1\nend Demo\n'}];
     snapshot.project_claims = [];
-    const window = await renderSnapshot(snapshot, {browser, katex: true});
+    const messages = [];
+    const window = await renderSnapshot(snapshot, {browser, katex: true, onMessage: message => messages.push(message)});
     try {
       const d = window.document;
       window.HTMLElement.prototype.scrollIntoView = () => {};
@@ -4863,7 +4864,14 @@ for (const browser of [false, true]) {
       assert.equal(fold.querySelector('pre').textContent, header.trimEnd());
       assert.equal(fold.querySelectorAll('.source-link').length, 1);
       assert.equal(fold.querySelector('.source-link').textContent, 'L1–5');
-      assert.equal(fold.querySelectorAll('button').length, 0);
+      assert.equal(fold.querySelectorAll('button').length, browser ? 0 : 1);
+      if (!browser) {
+        const edit = fold.querySelector('button.source-edit');
+        assert.equal(edit.getAttribute('aria-label'), 'Edit in editor');
+        edit.click();
+        assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {type: 'source', index: 0, sha256: snapshot.sha256, range: {start: 1, end: 5}});
+        assert.equal(fold.open, false, 'editing does not toggle the import fold');
+      }
       assert.equal(d.querySelectorAll('#doc .cell-tools').length, 0);
       assert.ok(d.querySelector('#doc .definition'));
       fold.querySelector('.source-link').click();
@@ -4914,7 +4922,8 @@ test('module headers and ordinary comments stay exact inside the import fold', a
     const d = window.document, fold = d.querySelector('#doc .import-header');
     assert.equal(fold.querySelector('pre').textContent, header.trimEnd());
     assert.match(fold.querySelector('summary').textContent, /^2 imports/);
-    assert.equal(fold.querySelectorAll('img,button').length, 0);
+    assert.equal(fold.querySelectorAll('img').length, 0);
+    assert.equal(fold.querySelectorAll('button.source-edit').length, 1);
     assert.match(d.querySelector('#doc .definition').textContent, /open Nat in/);
   } finally { window.close(); }
 });
