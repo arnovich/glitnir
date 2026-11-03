@@ -666,3 +666,11 @@ can compare its supports and backlinks. HTML exports include these route links.
 Reopening the same notebook restores the argument and layout when its atlas
 revision matches. An explicit argument link opens its own destination.
 **Start route again** returns to the root of the current route.
+
+The title area summarizes proof-check results. If a walkthrough cannot be checked
+with this Glitnir installation, **Not checked** expands to explain the Lean
+compatibility issue; it does not display a zero unchecked count. Project files
+without observed results say **No check results**. An empty review queue does not
+certify a proof and has no status message in the navigation toolbar. Saved-file
+refresh progress and errors appear beside **Follow live edits** while relevant;
+a successful refresh clears that message without running a proof check.

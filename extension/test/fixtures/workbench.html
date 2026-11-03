@@ -27,7 +27,7 @@
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -38,6 +38,10 @@
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Demo notebook</h1>
     <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -52,7 +56,6 @@
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="Demo.k_pos"><span class="dot" data-tone="green"></span> k_pos</button><button type="button" data-act="goto" data-id="Demo.floor"><span class="dot" data-tone="amber"></span> floor</button></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">1 saved result is out of date. Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -180,7 +183,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -191,6 +194,10 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Demo notebook</h1>
     <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace focused-view" id="workspace">
@@ -205,7 +212,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="Demo.k_pos"><span class="dot" data-tone="green"></span> k_pos</button><button type="button" data-act="goto" data-id="Demo.floor"><span class="dot" data-tone="amber"></span> floor</button></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">1 saved result is out of date. Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -334,7 +340,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -345,6 +351,10 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Demo notebook</h1>
     <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -359,7 +369,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="Demo.k_pos"><span class="dot" data-tone="green"></span> k_pos</button><button type="button" data-act="goto" data-id="Demo.floor"><span class="dot" data-tone="amber"></span> floor</button></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -487,7 +496,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -497,7 +506,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">E.lean</h1>
-    <div class="subline" id="subline"></div>
+    <div class="subline" id="subline"><span class="stat">No check results</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -512,7 +525,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -597,7 +609,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -607,7 +619,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">E.lean</h1>
-    <div class="subline" id="subline"></div>
+    <div class="subline" id="subline"><span class="stat">No check results</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -622,7 +638,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -709,7 +724,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -720,6 +735,10 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">Pictured</h1>
     <div class="subline" id="subline"></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -734,7 +753,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner" id="banner" hidden="" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">0 result no longer matches the file: .</span><button type="button" id="check-project" hidden="">Check saved file</button><button type="button" id="inspect-project" hidden="" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -811,7 +829,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -822,6 +840,10 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">A.lean</h1>
     <div class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -836,7 +858,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"><button type="button" data-act="goto" data-id="t"><span class="dot" data-tone="green"></span> t</button></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>
@@ -935,7 +956,7 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden=""></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -945,7 +966,11 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
   <div class="heading">
     <div class="location" id="location" hidden=""></div>
     <h1 id="title">E.lean</h1>
-    <div class="subline" id="subline"></div>
+    <div class="subline" id="subline"><span class="stat">No check results</span></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden="">
+      <summary id="proof-availability">Checking unavailable</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -960,7 +985,6 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden=""><svg class="ic"><use href="#i-branch"></use></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner quiet" id="banner" data-state=""><svg class="ic"><use href="#i-branch"></use></svg><span id="banner-text">Saved-source preview. Project: /p. Declared toolchain: t</span><button type="button" id="check-project">Check saved file</button><button type="button" id="inspect-project" title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden=""></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden=""></section>

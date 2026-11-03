@@ -91,13 +91,14 @@
       $('review-position').textContent = nodeList.length ? step < 0 ? 'Initial goals' : `Step ${step + 1} of ${nodeList.length}` : 'No recorded steps';
     } else if (project()) {
       previous.title = 'Previous claim that needs attention (p)';
-      next.title = queue.length ? `${queue.length} need attention; next in source order (n)` : 'Nothing needs attention';
-      $('review-position').textContent = !queue.length ? 'Nothing needs attention' : index >= 0 ? `${index + 1} of ${queue.length} needing attention` : `${queue.length} need attention`;
+      next.title = queue.length ? `${queue.length} need attention; next in source order (n)` : 'No claims queued for review';
+      $('review-position').textContent = !queue.length ? '' : index >= 0 ? `${index + 1} of ${queue.length} needing attention` : `${queue.length} need attention`;
     } else {
       previous.title = 'Previous matching claim (p)';
       next.title = queue.length ? `${queue.length} matching claims; next in source order (n)` : 'No matching claims';
-      $('review-position').textContent = index >= 0 ? `Claim ${index + 1} of ${queue.length}` : `${queue.length} matching claims`;
+      $('review-position').textContent = index >= 0 ? `Claim ${index + 1} of ${queue.length}` : queue.length ? `${queue.length} matching claims` : '';
     }
+    $('review-position').hidden = !$('review-position').textContent;
     if (!inProof) { focusAfterRender(focused); return; }
     $('proof-title').textContent = claim?.name || currentCell()?.id || snapshot?.file || 'Saved source unavailable';
     $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : 'Project observation · use Check saved file for proof checking';

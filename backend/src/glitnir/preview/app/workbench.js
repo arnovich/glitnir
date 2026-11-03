@@ -116,12 +116,13 @@
   // runs no Lean (the server refuses every such request with the same words).
   // Saved results shown as recorded run nothing and say nothing about it.
   const leanOff = () => UI.data?.preview?.lean?.supported === false && !recorded();
-  const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
+  const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : '');
   let readableSnapshot, heldRendering = false, highlightTimer;
   let highlighted = new Set(), highlightUntil = 0;
 
   function liveMessage(text) {
     if ($('live-status').textContent !== text) $('live-status').textContent = text;
+    $('live-status').hidden = !text;
   }
   function scheduleLoad(delay) {
     clearTimeout(loadTimer);
@@ -132,7 +133,7 @@
     if (linkedPath()) { mainChanged = true; liveMessage(upToDate()); return; }
     sourceEpoch++;
     reloadPending = true;
-    liveMessage('Saved file changing…');
+    liveMessage('Updating preview…');
     scheduleLoad(250);
   });
 
@@ -231,9 +232,9 @@
       highlightUntil = Date.now() + 2400;
       clearTimeout(highlightTimer);
       highlightTimer = setTimeout(markLiveChanges, 2450);
-      liveMessage('Saved edits received · checking is manual');
-    } else if (opening) liveMessage(linkedPath() && !mainChanged ? `Reading ${data.file} read-only · its saved results only` : upToDate());
-    else if (heldRendering) liveMessage('Saved source is readable again');
+      liveMessage(upToDate());
+    } else if (opening) liveMessage(upToDate());
+    else if (heldRendering) liveMessage(upToDate());
     else if (readableSnapshot) liveMessage(upToDate());
     opening = false;
     heldRendering = false;

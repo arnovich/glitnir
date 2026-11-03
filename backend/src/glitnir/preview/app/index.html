@@ -39,7 +39,7 @@
 
   <div class="live-bar" aria-label="Review and saved-file updates">
     <div class="live-controls">
-      <span id="live-status" role="status">Waiting for saved edits</span>
+      <span id="live-status" role="status" hidden></span>
       <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
     </div>
   </div>
@@ -50,6 +50,10 @@
     <div class="location" id="location" hidden></div>
     <h1 id="title">Loading…</h1>
     <div class="subline" id="subline"></div>
+    <details class="proof-availability" id="lean-unsupported" data-tone="amber" hidden>
+      <summary id="proof-availability">Not checked</summary>
+      <p id="lean-unsupported-text"></p>
+    </details>
   </div>
 
   <div class="workspace" id="workspace">
@@ -64,7 +68,6 @@
     <main class="document">
       <div class="doc-inner" id="reading-view">
         <div class="chips-row" id="chips-row" aria-label="Claims"></div>
-        <div class="note-line" id="lean-unsupported" data-tone="amber" role="status" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="lean-unsupported-text"></span></div>
         <div class="banner" id="banner" hidden><svg class="ic"><use href="#i-branch"/></svg><span id="banner-text"></span><button type="button" id="check-project" hidden>Check saved file</button><button type="button" id="inspect-project" hidden title="Inspect a prepared Lean project without building or downloading dependencies">Inspect project environment</button></div>
         <div class="banner info" id="project-inspection" role="status" hidden></div>
         <section id="project-check" aria-label="Last checked snapshot" hidden></section>

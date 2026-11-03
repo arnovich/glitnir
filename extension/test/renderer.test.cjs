@@ -2513,7 +2513,7 @@ test('review navigation visits unresolved claims without checking and resets aft
     await window.glitnirPoll();
     assert.equal(button.hidden, false, 'project snapshots review their saved results');
     assert.equal(button.disabled, true);
-    assert.equal(button.title, 'Nothing needs attention', 'a project without saved results has nothing to step through');
+    assert.equal(button.title, 'No claims queued for review', 'a project without saved results has nothing to step through');
   } finally { window.close(); }
 });
 
@@ -2668,7 +2668,10 @@ test('live saved edits coalesce, highlight changes, and follow only by choice', 
     assert.equal($('live-follow').checked, false);
     snapshot = liveSnapshot('Agent wrote this', 'b');
     changed(); changed(); changed();
+    assert.equal($('live-status').textContent, 'Updating preview…');
+    assert.equal($('live-status').hidden, false);
     await pause();
+    assert.equal($('live-status').hidden, true);
     assert.equal(reads, 2, 'one refresh for a burst of writes');
     assert.match($('doc').textContent, /Agent wrote this/);
     assert.equal($('doc').querySelectorAll('.live-changed').length, 1);
@@ -2699,6 +2702,7 @@ test('live updates retain an inactive readable view through parse errors and del
     assert.match($('doc').textContent, /First text/);
     assert.equal($('doc').inert, true);
     assert.match($('live-status').textContent, /previous|last readable/i);
+    assert.equal($('live-status').hidden, false);
     reply = {status: 409, json: {error: 'file missing'}};
     await window.glitnirPoll();
     assert.match($('doc').textContent, /First text/);
@@ -2707,6 +2711,7 @@ test('live updates retain an inactive readable view through parse errors and del
     await window.glitnirPoll();
     assert.match($('doc').textContent, /Recovered source/);
     assert.equal($('doc').inert, false);
+    assert.equal($('live-status').hidden, true);
   } finally { window.close(); }
 });
 
@@ -2755,7 +2760,8 @@ test('live unchanged polls preserve repeated prose anchors and settle duplicate 
     assert.deepEqual(shifts, [], 'the later identical prose section remains the anchor');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'sourceChanged'}}));
     await new Promise(resolve => setTimeout(resolve, 350));
-    assert.equal($('live-status').textContent, 'Saved file is up to date');
+    assert.equal($('live-status').textContent, '');
+    assert.equal($('live-status').hidden, true);
   } finally { window.close(); }
 });
 
@@ -3971,11 +3977,14 @@ test('an incompatible walkthrough never presents saved claim results as checked'
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .pill').textContent, 'Unchecked');
-    assert.match(d.getElementById('subline').textContent, /2 unchecked/);
+    assert.doesNotMatch(d.getElementById('subline').textContent, /unchecked/);
+    assert.equal(d.getElementById('proof-availability').textContent, 'Not checked');
+    assert.ok(d.querySelector('.heading #lean-unsupported'));
+    assert.equal(d.getElementById('lean-unsupported').open, false);
     assert.equal(d.getElementById('check-project').hidden, true);
     assert.equal(d.getElementById('inspect-project').hidden, false);
     assert.equal(window.glitnirWorkbench.leanOff(), false);
-    assert.match(d.getElementById('project-check').textContent, /formalization uses Lean 4\.33\.1/);
+    assert.equal(d.getElementById('project-check').hidden, true);
     assert.doesNotMatch(d.getElementById('doc').textContent, /Checked statement|Kernel checked/);
 
     d.querySelector('[data-mode="graph"]').click();
@@ -4518,7 +4527,8 @@ test('n and p step through the project claims that need attention, and steps in 
     snapshot.project_withheld = {from_line: 20, message: 'unsolved goals', stale: true};
     snapshot.project_claims.forEach(c => { c.status = 'checked'; c.current = true; delete c.not_rechecked; });
     await window.glitnirPoll(); await settle();
-    assert.equal($('review-position').textContent, 'Nothing needs attention');
+    assert.equal($('review-position').textContent, '');
+    assert.equal($('review-position').hidden, true);
     assert.equal($('next-unresolved').disabled, true);
   } finally { window.close(); }
 });
@@ -4631,7 +4641,7 @@ test('a project on another Lean version shows one banner, no enabled Lean contro
     const d = window.document, $ = id => d.getElementById(id);
     assert.equal($('lean-unsupported').hidden, false);
     assert.equal($('lean-unsupported').dataset.tone, 'amber');
-    assert.equal($('lean-unsupported').textContent, LEAN_MESSAGE);
+    assert.equal($('lean-unsupported-text').textContent, LEAN_MESSAGE);
     assert.equal($('check-project').hidden, true);
     assert.equal($('inspect-project').hidden, true);
     assert.equal(d.querySelectorAll(`#doc ${RUN_CONTROLS.split(', ').join(', #doc ')}, #insp [data-act="goal"], #insp [data-act="check-through"]`).length, 0, 'no Lean control is offered');
@@ -4650,7 +4660,7 @@ test('the unsupported-version banner shows the message verbatim, read errors inc
   const window = await renderSnapshot(snapshot);
   try {
     const banner = window.document.getElementById('lean-unsupported');
-    assert.equal(banner.textContent, hostile.message);
+    assert.equal(banner.querySelector('#lean-unsupported-text').textContent, hostile.message);
     assert.equal(banner.querySelector('b, i'), null);
   } finally { window.close(); }
 });
@@ -4736,7 +4746,7 @@ test('a linked notebook in another project shows its own project\'s Lean banner'
     window.HTMLElement.prototype.scrollIntoView = () => {};
     window.scrollTo = () => {};
     const d = window.document, $ = id => d.getElementById(id);
-    const banner = () => ($('lean-unsupported').hidden ? null : $('lean-unsupported').textContent);
+    const banner = () => ($('lean-unsupported').hidden ? null : $('lean-unsupported-text').textContent);
     const before = banner();
     [...d.querySelectorAll('#doc a.notebook-reference')].find(a => a.textContent === 'the three states').click();
     await new Promise(resolve => setTimeout(resolve, 30));
@@ -5370,3 +5380,59 @@ for (const browser of [false, true]) {
     } finally {w.close();}
   });
 }
+
+test('an incompatible walkthrough with no observed claims has a clear status in every view', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Unobserved proof', nodes: [], formalization: {supported: false, declared: 'leanprover/lean4:v4.33.1', toolchain: 'leanprover/lean4:v4.35.0', message: 'Formalization needs Lean 4.33.1; Glitnir checks Lean 4.35.0.'}};
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document;
+    for (const mode of ['doc', 'source', 'graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(d.getElementById('lean-unsupported').hidden, false);
+      assert.equal(d.getElementById('proof-availability').textContent, 'Not checked');
+      assert.doesNotMatch(d.getElementById('subline').textContent, /0 unchecked/);
+      assert.equal(d.getElementById('review-position').hidden, true);
+    }
+    d.getElementById('lean-unsupported').open = true;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('lean-unsupported').open, true, 'polling retains the expanded explanation');
+  } finally {w.close();}
+});
+
+test('empty claim observations do not contradict a saved file check', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  delete snapshot.preview.check;
+  const w = await renderSnapshot(snapshot);
+  try {
+    assert.equal(w.document.getElementById('subline').textContent, 'No check results');
+    snapshot.preview.check = {status: 'checked_snapshot', source_sha256: snapshot.sha256, environment_sha256: 'b'.repeat(64), message: 'Kernel replay complete.', theorems: []};
+    await w.glitnirPoll();
+    assert.doesNotMatch(w.document.getElementById('subline').textContent, /No check results/);
+    assert.equal(w.document.getElementById('project-check').hidden, false);
+  } finally {w.close();}
+});
+
+test('Explore retains exceptional refresh messages and clears them after recovery', async () => {
+  let reply = {json: liveSnapshot()};
+  const w = await renderSnapshot(reply.json, {onNotebook: () => reply});
+  try {
+    const d = w.document;
+    const style = d.createElement('style');
+    style.textContent = readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8');
+    d.head.append(style);
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(w.getComputedStyle(d.querySelector('.live-bar')).display, 'none');
+    reply = {status: 409, json: {error: 'file missing'}};
+    await w.glitnirPoll();
+    const activity = d.querySelector('.live-bar');
+    assert.equal(d.getElementById('live-status').hidden, false);
+    assert.notEqual(w.getComputedStyle(activity).display, 'none');
+    reply = {json: liveSnapshot('Recovered', 'b')};
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('live-status').hidden, true);
+    assert.equal(w.getComputedStyle(activity).display, 'none');
+  } finally {w.close();}
+});

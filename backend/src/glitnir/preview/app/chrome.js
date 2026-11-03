@@ -155,13 +155,13 @@
     const notRechecked = cs.filter(c => c.project?.not_rechecked).length;
     const covered = project && requestedCut(d.project_withheld) ? d.project_withheld.through_line : null;
     const bits = walkthroughUnchecked()
-      ? [stat(cs.length, 'muted', 'unchecked')]
+      ? []
       : project
       ? [...statuses.map(k => stat(count(k), statusOf({status: k, project: true}).tone, statusOf({status: k, project: true}).label.toLowerCase())), ...(outOfDate ? [stat(outOfDate, 'amber', 'out of date')] : []), ...(uncompared ? [stat(uncompared, '', 'not compared')] : []),
         ...(notRechecked ? [stat(notRechecked, 'muted', 'not rechecked')] : []), ...(covered ? [`<span class="stat project-covered">last check: lines 1–${esc(covered)}</span>`] : [])]
       : [['checked', 'green'], ['refuted', 'red'], ['conditional', 'amber'], ['stale', 'amber'], ['open', ''], ['failed', 'red'], ['unknown', 'amber']]
         .filter(([k]) => count(k)).map(([k, t]) => stat(count(k), t, LABEL[k].toLowerCase()));
-    $('subline').innerHTML = bits.join('') + (d.checking.length ? `<span class="stat checking-badge">Checking ${d.checking.length}</span>` : '');
+    $('subline').innerHTML = (bits.length ? bits.join('') : project && !walkthroughUnchecked() && !d.preview.check && !d.checking.length ? '<span class="stat">No check results</span>' : '') + (d.checking.length ? `<span class="stat checking-badge">Checking ${d.checking.length}</span>` : '');
     const stale = cs.filter(c => c.status === 'stale' && !checking(c.name) && c.record);
     $('banner').hidden = !stale.length;
     $('banner-text').textContent = `${stale.length} result${stale.length > 1 ? 's' : ''} no longer match${stale.length > 1 ? '' : 'es'} the file: ${stale.map(c => c.name).join(', ')}.`;
@@ -175,12 +175,13 @@
     // One banner for a project Glitnir does not check; never on a static page.
     const unsupported = leanOff() || walkthroughUnchecked();
     $('lean-unsupported').hidden = !unsupported;
+    $('proof-availability').textContent = walkthroughUnchecked() ? 'Not checked' : 'Checking unavailable';
     // The message already names any lean-toolchain read error: shown verbatim.
     $('lean-unsupported-text').textContent = unsupported ? walkthroughMessage() || d.preview.lean?.message || '' : '';
     if (unsupported) $('check-project').hidden = true;
     if (leanOff()) $('inspect-project').hidden = true;
     $('check-project').disabled = checkBusy();
-    $('project-check').hidden = !project || linked || (!d.preview.check && !walkthroughUnchecked());
+    $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
     const inspected = inspection();
     $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
