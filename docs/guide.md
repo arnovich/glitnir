@@ -691,3 +691,7 @@ links stay unchanged; saved-result and selected-range markers remain separate.
 
 Keyboard shortcuts are listed in the **?** help dialog. The Notebook contents
 sidebar stays focused on navigating the notebook.
+
+Proof steps is disabled when the project or walkthrough requires an incompatible
+Lean toolchain. Its tooltip explains why; the shortcut and editor command also
+leave the reading view in place without requesting a tactic observation.

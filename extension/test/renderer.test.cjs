@@ -5571,3 +5571,56 @@ test('Source distinguishes documentation and declarations without changing saved
   assert.equal(d.querySelector('#source .source').scrollLeft,0,'a new source resets the old horizontal position');
  }finally{w.close();}
 });
+
+for (const walkthrough of [false,true]) {
+ test(`unavailable Proof steps stays in Notebook and makes no request (${walkthrough ? 'walkthrough' : 'project'})`, async () => {
+  const snapshot=projectNotebook(), messages=[];
+  const reason='This project uses Lean 4.33.1. Glitnir checks Lean 4.35.0.';
+  if(walkthrough) snapshot.walkthrough={format:'glitnir.walkthrough-outline/v1',nodes:[],formalization:{supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:reason}};
+  else snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:reason};
+  const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m)});
+  try {
+   const d=w.document, button=d.getElementById('review-proof');
+   assert.equal(button.disabled,true);
+   assert.match(button.title,/4\.33\.1/);
+   assert.equal(button.getAttribute('aria-description'),reason);
+   button.click();
+   d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'t',bubbles:true}));
+   w.dispatchEvent(new w.MessageEvent('message',{data:{type:'reviewCommand',action:'proof'}}));
+   await new Promise(resolve=>setTimeout(resolve,20));
+   assert.equal(d.getElementById('proof-review').hidden,true);
+   assert.equal(d.body.classList.contains('glitnir-proof-mode'),false);
+   assert.equal(messages.filter(m=>m.path?.startsWith('/api/proof')).length,0);
+  }finally{w.close();}
+ });
+}
+
+test('a compatibility change leaves active Proof steps without another observation',async()=>{
+ const snapshot=projectNotebook(), messages=[];
+ const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m),onProof:()=>goalTrace(snapshot.sha256)});
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  w.dispatchEvent(new w.MessageEvent('message',{data:{type:'revealCell',index:3,sha256:snapshot.sha256}}));
+  d.getElementById('review-proof').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-review').hidden,false);
+  d.querySelector('#proof-tactics button').focus();
+  snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:'Use a compatible Lean toolchain.'};
+  await w.glitnirPoll();
+  assert.equal(d.getElementById('review-proof').disabled,true);
+  assert.equal(d.getElementById('proof-review').hidden,true);
+  assert.equal(d.activeElement,d.getElementById('review-claims'));
+  const starts=messages.filter(m=>m.path==='/api/proof/start').length;
+  d.getElementById('proof-refresh').click();
+  assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,starts);
+  snapshot.preview.lean.supported=true;
+  await w.glitnirPoll();
+  d.getElementById('review-proof').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  d.getElementById('status-summary').focus();
+  snapshot.preview.lean.supported=false;
+  await w.glitnirPoll();
+  assert.equal(d.activeElement,d.getElementById('status-summary'),'compatibility updates do not steal focus outside the proof inspector');
+ }finally{w.close();}
+});

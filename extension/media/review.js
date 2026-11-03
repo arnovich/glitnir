@@ -35,6 +35,12 @@
   function currentCell() { return snapshot?.cells?.find(c => c.index === selected); }
   function currentClaim() { return snapshot?.claims?.find(c => c.name === currentCell()?.id); }
   function project() { return snapshot?.preview?.mode === 'project'; }
+  function proofUnavailable() {
+    if (snapshot?.preview?.lean?.supported === false) return snapshot.preview.lean.message || 'Proof steps are unavailable for this Lean toolchain.';
+    const workbench = window.glitnirWorkbench;
+    if (snapshot?.walkthrough && workbench?.walkthroughUnchecked(snapshot)) return workbench.walkthroughMessage(snapshot) || 'Proof steps are unavailable for this walkthrough.';
+    return '';
+  }
   // A saved project result needs attention unless it is kernel checked and
   // current: out of date, not compared, not rechecked, containing sorry or
   // resting on additional assumptions.
@@ -79,8 +85,11 @@
     document.body.classList.toggle('glitnir-proof-mode', inProof);
     $('review-claims').setAttribute('aria-pressed', String(!inProof));
     $('review-proof').setAttribute('aria-pressed', String(inProof));
-    $('review-proof').disabled = dirty || (!project() && !claim);
-    $('review-proof').title = dirty ? 'Save or revert edits before viewing proof steps' : 'Explore saved tactics (t)';
+    const unavailable = proofUnavailable();
+    $('review-proof').disabled = dirty || !!unavailable || (!project() && !claim);
+    $('review-proof').title = dirty ? 'Save or revert edits before viewing proof steps' : unavailable ? `Proof steps unavailable: ${unavailable}` : 'Explore saved tactics (t)';
+    if (unavailable) $('review-proof').setAttribute('aria-description', unavailable);
+    else $('review-proof').removeAttribute('aria-description');
     $('review-filter-label').hidden = inProof || project();
     const previous = $('review-previous');
     previous.disabled = dirty || (inProof ? step < 0 : !queue.some(c => selected === null || c.index < selected));
@@ -103,7 +112,7 @@
     $('proof-title').textContent = claim?.name || currentCell()?.id || snapshot?.file || 'Saved source unavailable';
     $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : 'Project observation · use Check saved file for proof checking';
     $('proof-statement').textContent = claim ? `${claim.keyword} ${claim.name} ${claim.statement}` : currentCell()?.text || '';
-    $('proof-refresh').disabled = dirty || !snapshot || !!snapshot.error || trace?.status === 'running';
+    $('proof-refresh').disabled = dirty || !!unavailable || !snapshot || !!snapshot.error || trace?.status === 'running';
     $('proof-cancel').hidden = trace?.status !== 'running';
     $('proof-message').textContent = dirty ? 'Unsaved changes — save or revert, then refresh proof steps.' : (pendingRefresh ? 'Finishing the previous observation before loading this claim…' : trace?.message) || 'Load the saved proof to see its tactic goals.';
     const buttons = nodeList.map((n, i) => {
@@ -164,7 +173,7 @@
     } catch (error) { if (epoch === generation) { trace = {status: 'unavailable', message: String(error), nodes: []}; update(); } }
   }
   async function refresh() {
-    if (dirty || !snapshot) return;
+    if (dirty || !snapshot || proofUnavailable()) return;
     if (trace?.status === 'running') {
       if (!project() && trace.claim !== currentClaim()?.name) {
         pendingRefresh = true;
@@ -197,7 +206,7 @@
   // and editing belong to the previewed notebook, so they stay off.
   const linkedView = () => document.body.classList.contains('glitnir-linked-view');
   function proofMode() {
-    if (dirty || (!project() && !currentClaim()) || linkedView()) return;
+    if (dirty || proofUnavailable() || (!project() && !currentClaim()) || linkedView()) return;
     mode = 'proof'; step = positions.get(`${trace?.id}:${selected}`) ?? -1; update();
     if (!trace || trace.status === 'stale' || (!project() && trace.claim !== currentClaim()?.name)) void refresh();
   }
@@ -219,6 +228,12 @@
     const nextSnapshot = event.detail;
     if (sha && nextSnapshot?.sha256 !== sha) { selected = null; invalidate('Saved source changed. Refresh proof steps.'); }
     snapshot = nextSnapshot; sha = snapshot?.sha256;
+    if (mode === 'proof' && proofUnavailable()) {
+      const focused = proof.contains(document.activeElement) || document.activeElement === $('review-proof');
+      invalidate(proofUnavailable());
+      claimsMode();
+      if (focused) $('review-claims').focus({preventScroll: true});
+    }
     if (selected !== null && !currentCell()) selected = null;
     if (selected === null) selected = snapshot?.cells?.find(c => c.kind === (project() ? 'source' : 'claim'))?.index ?? null;
     if (pendingReveal && pendingReveal.sha256 === sha) { const reveal = pendingReveal; pendingReveal = undefined; applySourceReveal(reveal); }
