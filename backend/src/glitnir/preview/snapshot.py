@@ -181,6 +181,7 @@ class Snapshot(TypedDict):
     """What the renderer shows for one saved notebook (`GET /api/notebook`)."""
 
     file: str
+    source_path: NotRequired[str]
     sha256: str
     preview: PreviewInfo
     cells: list[Cell]
@@ -581,6 +582,7 @@ def build_snapshot(
     project = describe_project(path)
     snapshot: Snapshot = {
         "file": path.name,
+        "source_path": str(path.resolve()),
         "sha256": sha256,
         "preview": {
             "mode": "project",

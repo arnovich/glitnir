@@ -49,6 +49,15 @@
     }
   });
   window.glitnirHost = {
+    readNotebookLayout(key) { return vscode.getState?.()?.notebookLayouts?.[key]; },
+    saveNotebookLayout(key, value) {
+      const state = vscode.getState?.() || {};
+      const layouts = {...state.notebookLayouts};
+      delete layouts[key];
+      layouts[key] = value;
+      const entries = Object.entries(layouts).slice(-32);
+      vscode.setState?.({...state, notebookLayouts: Object.fromEntries(entries)});
+    },
     readAtlasPosition() {
       return decodeURIComponent(document.querySelector('meta[name="atlas-position"]')?.content || '');
     },

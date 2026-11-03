@@ -166,8 +166,8 @@ action. Escape dismisses the explanation.
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
 - Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow edits** scrolls to them.
-- **Claims** (`c`) steps through the claims with `j` and `k`; `i` shows the claim
+  highlights the changed sections. **Follow live edits**, in the Notebook controls below the title, scrolls to them after each save.
+- `j` and `k` step through the claims; `i` shows the claim
   inspector for the selected claim.
 - `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
   Item**, step through the claims that need attention: out of date, not
@@ -176,10 +176,11 @@ action. Escape dismisses the explanation.
 
 ### Proof goals and steps
 
-**Glitnir: Explore Proof Steps** (or `t` in the preview) records the selected
+**Inspect proof steps** on a claim (or `t` for the selected claim, or
+**Glitnir: Inspect Selected Claim’s Proof Steps**) records the selected
 proof's tactic tree once with Lean, then lets you walk it with the goals before
 and after each step: `n` and `p` move between steps, `r` checks the whole saved
-file, and `Esc` returns to Claims. **Inspect proof goals** in the claim inspector
+file, and **Back to claim** or `Esc` returns to that claim and its reading position. **Inspect proof goals** in the claim inspector
 shows the goals after each tactic step of the selected claim from the same
 recording. Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`.
 Both are historical observations of the saved file and never change a status.
@@ -194,7 +195,7 @@ claim. Use **Open in its own preview** to check it.
 ### Export and history
 
 - **Export HTML** saves an offline snapshot of the rendered notebook and its
-  exact saved Lean source, with images embedded. **Document** and **Lean source**
+  exact saved Lean source, with images embedded. **Notebook** and **Source**
   switch without a server or scripts, and source locations link between the two
   views. A link to another notebook stays a link when its `Module.html` export
   already exists beside the selected file; otherwise it becomes plain text.
@@ -356,7 +357,7 @@ environment is identified shows saved results as out of date once, too.
 Each result also records the claims it uses: the theorems its statement and proof
 name directly, from this notebook or from another notebook of the project (a
 module the project builds itself, not a dependency). Cards show them as chips,
-the sidebar draws a compact claim graph, and the **Graph** view lays the same
+the sidebar draws a compact claim graph, and the **Explore** view lays the same
 recorded relationships out from foundations at the bottom to results at the
 top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
@@ -373,12 +374,12 @@ and the static HTML export includes an inert copy.
 
 For a guided paper walkthrough, an `outline.json` beside the Lean notebook is
 the map's source of truth. New walkthroughs keep mapped claims in that one
-notebook. The same **Graph** view shows the
+notebook. The same **Explore** view shows the
 paper's definitions, lemmas, theorems and appendices instead of the claim-only
 graph. Box colours distinguish statement kinds; the status dot comes from the
 saved walkthrough claim named by the outline. **Statement details** gives the
 paper page and pinned public Lean declarations. Selecting a mapped node opens
-its details; **Show in Document** returns to its walkthrough claim.
+its details; **Show in Notebook** returns to its walkthrough claim.
 A local-only paper is identified without exposing a
 filesystem path; links require a public HTTPS URL. Static export includes the
 same self-contained map and safe public links. It loads no map script, font or
@@ -396,7 +397,7 @@ visible, and only current Glitnir checks of that port may supply claim statuses.
 
 Selecting a node opens **Statement details**, highlighting its adjacent arrows.
 The details list every recorded use and user even when an implied arrow is
-hidden; select a relationship to inspect that statement. **Show in Document**
+hidden; select a relationship to inspect that statement. **Show in Notebook**
 returns to the highlighted claim and places keyboard focus there; its exact
 Lean source remains available from the claim's existing source action. None of
 these graph actions runs Lean, updates a record, or changes proof authority.
@@ -425,14 +426,14 @@ the preview for this list. Moving never starts a check.
 |---|---|
 | `j` `k` | Next / previous claim |
 | `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
-| `c` `t` | Claims / Proof steps |
-| `s` | Switch between document and Lean source |
+| `c` `t` | Return to claim / inspect selected claim’s proof steps |
+| `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
-| `i` | Show or hide the claim inspector |
+| `i` | Show or hide the claim inspector in Notebook |
 | `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
 | `e` | Edit the selected claim or proof step in VS Code |
 | `?` | Show these shortcuts |
-| `Esc` | Close the dialog; in Proof steps, return to Claims |
+| `Esc` | Close the dialog; in Proof steps, return to the claim |
 | `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
 <!-- shortcuts:end -->
 
@@ -627,39 +628,81 @@ check a notebook with the command from **Glitnir: Copy Validation Command**.
 
 ## Explore a proof atlas
 
-A walkthrough with an `atlas.json` sidecar offers **Reading first** and **Map first**
-in Graph view. Both show the same curated argument, scope, proof idea, and mapped
-source notes. Follow supporting arguments, inspect source references, and use
-Back/Forward to return. Switching layouts keeps the selected step; switching routes
-starts at the selected route’s result. **Statement graph** retains the existing map.
+A walkthrough with an `atlas.json` sidecar offers three views in Explore:
 
-Atlas routes are curated explanations, not extracted Lean dependencies. A boundary
-means further explanation has not been authored. Source references name the
-outline’s pinned revision; their notes distinguish related counterparts and differing
-formal statements. Navigation never checks a claim or changes its status. Unsupported
-Lean toolchains remain unchecked. Static export includes expandable atlas explanations
-and links. Malformed atlases produce diagnostics without removing the statement map.
+- **Read** explains the selected argument, with its scope and proof idea.
+- **Route map** shows the chosen route’s curated support links, in pages of 24 arguments.
+- **Statement graph** shows notebook statements and their recorded links.
 
-The atlas’s **Route overview** shows the selected route in pages of 24 arguments;
-shared steps appear once. **Used by** links back to every selected parent in that
-route. The overview is also available in Reading first and opens in Map first.
-Links across map pages remain available through supporting arguments and Used by.
+The sidebar holds route choices, **Search proof**, and the reading flow. Its current
+argument is highlighted and shared supports are identified. Selecting a step or
+search result keeps the active view; switching routes starts at that route’s result.
+The statement graph selects the statement mapped to the chosen argument. Use the
+named Back/Forward buttons under **Navigation history** to retrace visits. At a
+shared argument, **View this argument in** opens it on another route.
 
-**Link to this argument** identifies its route and stable argument ID.
-**Copy argument link** copies a notebook-relative fragment in VS Code; use it in
-a Markdown link in that notebook, or append it to the exported HTML URL. A browser
-preview copies a full URL. Opening it restores that argument and route; an unknown
-argument or route produces a diagnostic. Static exports include route indexes,
-backlinks and the same link targets. Authoring validation now uses the preview’s
-normalized source mappings and reports arguments disconnected from every route.
+**Sources and details** below the explanation holds mapped declaration references,
+statement status, source revision and **Copy argument link**. The explanation stays
+visible when these details are open. The copy action produces a notebook-relative
+fragment in VS Code or a full URL in browser preview. Opening a link restores its
+argument and route; unknown destinations produce a diagnostic. Reopening the same
+notebook restores its position when the atlas revision matches.
 
-### Exploring a proof atlas
+Routes are curated explanations, not extracted Lean dependencies. Navigation never
+checks a claim or changes its status; incompatible toolchains remain unchecked.
+Pinned source notes distinguish related counterparts and differing formal statements.
+Static HTML exports retain route indexes, supporting links and backlinks so they can
+be explored without the live sidebar. Malformed atlases produce diagnostics without
+removing the statement map.
 
-Use **Find an argument** in either atlas layout to search explanations and Lean
-declaration names. Choose a result's route to open that argument. At a shared
-argument, **View this argument in** opens the same step on another route so you
-can compare its supports and backlinks. HTML exports include these route links.
+The header status group separates the server connection from proof-check results.
+Its dot reports connection only. Hover for a summary, or click the status group
+(or focus it and press Enter) for connection details, the displayed saved source's
+SHA-256 hash, and any Lean compatibility explanation. Escape closes the details.
+**Not checked** identifies an incompatible walkthrough without a misleading zero
+unchecked count; **Checking unavailable** preserves the distinction between saved
+results and whether this installation can check them. A project with no observed
+results or saved file check says **No check results**. An empty review queue does
+not certify a proof and has no status message in the navigation toolbar.
+Refresh progress and errors appear in the same header group while relevant;
+a successful refresh clears that message without running a proof check.
+**Follow live edits** remains a separate scrolling preference.
 
-Reopening the same notebook restores the argument and layout when its atlas
-revision matches. An explicit argument link opens its own destination.
-**Start route again** returns to the root of the current route.
+**Source** is a peer of **Notebook** and **Explore**. Use the mode controls or
+source line links to move between views. The filename tooltip identifies the full
+local path; exported snapshots omit that local path. Project setup details live
+in the header status panel, while actionable warnings stay visible.
+
+Source uses an editor-style layout with a fixed line-number gutter, restrained
+syntax colours and distinct documentation headings. Its source text and line
+links stay unchanged; saved-result and selected-range markers remain separate.
+
+Keyboard shortcuts are listed in the **?** help dialog. The Notebook contents
+sidebar stays focused on navigating the notebook.
+
+Proof steps is disabled when the project or walkthrough requires an incompatible
+Lean toolchain. Its tooltip explains why; the shortcut and editor command also
+leave the reading view in place without requesting a tactic observation.
+
+Proof inspection is a claim action rather than a notebook-wide mode. The title
+stays in the same position in Notebook, Source and Explore; Notebook-only
+Previous/Next and Follow live edits controls sit below it.
+
+Notebook contents nests rendered declarations and setup beneath section headings,
+including before any check results exist. Text badges and colours identify
+declaration kinds; saved-result dots remain separate. Walkthrough mappings can
+identify corollaries or propositions when their claim binding is unambiguous.
+
+Source offers **Hide comments** for a code-only reading view. Original line
+numbers stay unchanged and link back to Notebook; hover or focus makes the
+return action explicit. Static exports always include the complete saved source.
+Opening an explicit source range from Notebook shows comments again so the
+requested lines remain visible.
+
+The Notebook contents sidebar has independent section chevrons: use a chevron to
+fold its subitems, or the section title to navigate. Navigating to a declaration
+reveals its parent sections in the contents; notebook content folds stay independent.
+Drag the sidebar’s right edge to resize it, or focus that edge and use Left/Right
+(20 pixels), Home (minimum) or End (maximum). Double-click resets its width.
+Widths adapt to the available window space, and widths and folded sections are
+remembered for each notebook when preference storage is available.

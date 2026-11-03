@@ -183,6 +183,7 @@ class SavedNotebook:
         """
         text = read_source(self.path)
         snapshot = self._recorded(text)
+        snapshot.pop("source_path", None)
         preview = snapshot["preview"]
         preview["recorded"] = True
         preview["notice"] = fallback_notice(RECORDED_NOTICE, split_cells(text)[1])

@@ -77,10 +77,14 @@
     while (!entries[to - 1][1].trim()) to--;
     return entries.slice(at, to);
   }
-  function lineLinkHTML(start, end, editable = true) {
+  function lineLinkHTML(start, end, editable = true, inspectName = '', staticPage = false) {
     const cell = UI.data.cells.find(c => c.start <= start && end <= c.end);
     const edit = editable && HOST && cell && !linkedPath() ? `<button type="button" class="source-edit" data-act="source" data-index="${cell.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" title="Edit in editor" aria-label="Edit in editor">${icon('edit')}</button>` : '';
-    return `<span class="source-controls"><a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
+    const reason = document.body.classList.contains('unsaved-lean') ? 'Save or revert edits before viewing proof steps.'
+      : UI.data.preview?.lean?.supported === false ? UI.data.preview.lean.message || 'Proof steps are unavailable for this Lean toolchain.'
+      : walkthroughUnchecked() ? walkthroughMessage() : '';
+    const inspect = HOST && inspectName && !staticPage && !linkedPath() ? `<button type="button" class="source-inspect secondary" data-act="inspect-proof" data-proof-claim="${esc(inspectName)}" data-index="${cell?.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" aria-label="Inspect proof steps for ${esc(inspectName)}" title="${esc(reason || 'Inspect this claim’s saved tactic goals (t)')}"${reason ? ` disabled aria-description="${esc(reason)}"` : ''}>Inspect proof steps</button>` : '';
+    return `<span class="source-controls">${inspect}<a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
   }
   const leanOf = entries => entries.map(e => e[1]).join('\n');
   // A cell's [line, text] entries; a source cell's text ends with a newline.
@@ -220,7 +224,7 @@
         const end = listed[count - 1].body.at(-1)[0];
         const source = entries.filter(([n]) => n >= start && n <= end);
         const label = `${imports} import${imports === 1 ? '' : 's'}${opens ? ` · ${opens} open${opens === 1 ? '' : 's'}` : ''}`;
-        header = `<details class="cell source-context import-header" data-fold-key="import-header:${esc(leanOf(source))}"><summary>${label}${lineLinkHTML(start, end, false)}</summary><pre>${leanHTML(leanOf(source))}</pre></details>`;
+        header = `<details class="cell source-context import-header" data-fold-key="import-header:${esc(leanOf(source))}"><summary>${label}${lineLinkHTML(start, end)}</summary><pre>${leanHTML(leanOf(source))}</pre></details>`;
         listed.splice(0, count);
       }
     }
@@ -298,10 +302,13 @@
   // Remove comments only outside strings and quoted identifiers. Keeping
   // whitespace and offsets inside literals matters to the displayed meaning.
   function presentationCode(text) {
-    let out = '', quoted = '', block = 0;
+    let out = '', quoted = '', block = 0, raw = false;
     for (let i = 0; i < text.length; i++) {
       const ch = text[i], pair = text.slice(i, i + 2);
-      if (quoted) {
+      if (raw) {
+        if (text.startsWith(quoted, i)) { out += quoted; i += quoted.length - 1; quoted = ''; raw = false; }
+        else out += ch;
+      } else if (quoted) {
         out += ch;
         if (quoted === '"' && ch === '\\') { out += text[++i] || ''; continue; }
         if (ch === quoted) quoted = '';
@@ -309,6 +316,9 @@
         if (pair === '/-') { block++; i++; }
         else if (pair === '-/') { block--; i++; }
         else if (ch === '\n') out += '\n';
+      } else if (ch === 'r' && !/[\p{L}\p{N}_'.`]/u.test(text[i - 1] || '') && /^r#*"/.test(text.slice(i))) {
+        const opener = /^r(#*)"/.exec(text.slice(i))[0];
+        out += opener; i += opener.length - 1; quoted = '"' + opener.slice(1, -1); raw = true;
       } else if (charLiteralLength(text, i)) { const length = charLiteralLength(text, i); out += text.slice(i, i + length); i += length - 1; }
       else if (pair === '/-') { block++; i++; out += ' '; }
       else if (pair === '--') { while (i < text.length && text[i] !== '\n') i++; out += '\n'; }
@@ -393,7 +403,7 @@
       kind: presentation.kind, label: presentation.label, name,
       signature: headerType, descriptionHTML: shortDoc ? inlineHTML(shortDoc) : '',
       classes: ['definition', ...(compact ? ['compact-definition'] : [])],
-      locationHTML: lineLinkHTML(entries[0][0], entries[entries.length - 1][0]),
+      locationHTML: lineLinkHTML(entries[0][0], entries[entries.length - 1][0], true, keyword === 'example' ? `${namespace ? namespace + ' · ' : ''}Example at line ${command.body[0][0]}` : ['theorem', 'lemma'].includes(keyword) ? [namespace, name].filter(Boolean).join('.') : ''),
       sourceHTML: sourceFoldHTML(entries, 'definition', ['example', 'theorem', 'lemma'].includes(keyword) ? 'Lean source & proof' : 'Lean source')
         + (details ? `<details class="def-lean definition-details" data-fold-key="definition-details:${esc(leanOf(entries))}"><summary>Details</summary>${details}</details>` : ''),
       bodyHTML: `${namespaceHTML(namespace)}
@@ -427,7 +437,7 @@
     const uses = c.uses.length ? `<div class="uses">uses ${c.uses.map(useHTML).join('')}</div>` : '';
     return `<section class="cell" id="cell-${esc(c.name)}" data-claim="${esc(c.name)}">
       <article class="claim card-proposition" data-tone="${st.tone}" data-selected="${UI.selected === c.name}" aria-label="${esc(c.keyword)} ${esc(c.name)}">
-        ${window.glitnirCards.header({label: window.glitnirCards.declarations[c.keyword]?.label || c.keyword, name: c.name, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end), badgesHTML: `${!staticPage && checking(c.name) ? '<span class="checking-badge">Checking in Lean</span>' : ''}<span class="pill" data-tone="${st.tone}">${st.label}</span>`})}
+        ${window.glitnirCards.header({label: window.glitnirCards.declarations[c.keyword]?.label || c.keyword, name: c.name, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end, true, c.name, staticPage), badgesHTML: `${!staticPage && checking(c.name) ? '<span class="checking-badge">Checking in Lean</span>' : ''}<span class="pill" data-tone="${st.tone}">${st.label}</span>`})}
         ${namespaceHTML(namespace)}
         ${c.doc ? `<div class="doc-line">${inlineHTML(c.doc)}</div>` : ''}
         <div class="claim-statement">${fieldHTML('Statement', c.statement.replace(/^:\s*/, ''))}</div>
@@ -616,25 +626,41 @@
     const rows = [];
     UI.data.cells.forEach(cell => {
       const c = cell.kind === 'claim' ? claim(cell.id) : cell.claim ? claim(cell.claim) : null;
-      cell.text.split('\n').slice(0, cell.end - cell.start + 1).forEach((line, i) => rows.push({n: cell.start + i, line, c}));
+      cell.text.split('\n').slice(0, cell.end - cell.start + 1).forEach((line, i) => rows.push({n: cell.start + i, line, c, prose: cell.kind === 'prose'}));
     });
-    const back = staticPage ? '<a class="secondary" href="#document-view">← Back to Document</a>'
-      : `<button type="button" class="secondary" data-act="document-return" data-sha="${esc(UI.data.sha256)}">← Back to Document</button>`;
-    const note = staticPage
-      ? `${esc(UI.data.file)} as saved · source SHA-256 ${esc(UI.data.sha256)} · line numbers return to the corresponding claim where available.`
-      : `${esc(UI.data.file)} as it is on disk ${UI.data.preview?.mode === 'project' ? '· source preview; the gutter marks saved results · use Check saved file to check it' : '· the gutter shows each claim\'s status'} · click a line number to show its place in Document.`;
-    return `${range ? '' : `<p>${back}</p>`}<p class="source-note">${note}</p>
-      <div class="source"><table>${rows.map(r => {
+    const hide = !staticPage && Boolean(UI.hideSourceComments);
+    const uncommented = hide ? presentationCode(rows.map(r => r.line).join('\n')).split('\n') : null;
+    const shown = rows.flatMap((r, i) => {
+      if (!hide) return [r];
+      const line = uncommented[i] || '';
+      return line.trim() || (!r.line.trim() && !r.prose) ? [{...r, line, prose: false}] : [];
+    });
+    const controls = staticPage ? '' : `<div class="source-toolbar"><label><input type="checkbox" id="source-hide-comments" data-act="source-comments" data-sha="${esc(UI.data.sha256)}"${hide ? ' checked' : ''}> Hide comments</label><span class="source-link-hint">Line numbers link to Notebook</span></div>`;
+    return `${controls}${hide && !shown.length ? '<p class="small muted" role="status">No code remains with comments hidden.</p>' : ''}<div class="source" tabindex="0" role="region" aria-label="Lean source code"><table>${shown.map(r => {
+        const kind = r.prose ? (/^\s*#{1,6}\s/.test(r.line) ? 'source-doc-heading' : 'source-doc')
+          : /^\s*import\s/.test(r.line) ? 'source-import'
+          : /^\s*(?:(?:private|protected|noncomputable)\s+)*(?:theorem|lemma|def|abbrev|instance|structure|inductive|example|axiom)\b/.test(r.line) ? 'source-declaration' : '';
+        const code = r.prose ? esc(r.line) : leanHTML(r.line);
         const documentHref = r.c ? `#cell-${esc(r.c.name)}` : '#document-view';
         const lineLink = staticPage
-          ? `<a href="${documentHref}" aria-label="Show line ${r.n} in Document">${r.n}</a>`
-          : `<a href="#doc" data-act="document-line" data-line="${r.n}" data-sha="${esc(UI.data.sha256)}" aria-label="Show line ${r.n} in Document">${r.n}</a>`;
-        return `${range && r.n === range.start ? `<tr class="source-return"><td colspan="3">${back}</td></tr>` : ''}<tr id="source-L${r.n}" tabindex="-1" data-source-line="${r.n}" data-line-target="${Boolean(range && r.n >= range.start && r.n <= range.end)}" ${r.c ? `data-claim="${esc(r.c.name)}" data-tone="${toneOf(r.c)}" data-selected="${UI.selected === r.c.name}"` : ''}><td class="gut"></td><td class="ln">${lineLink}</td><td>${leanHTML(r.line) || ' '}</td></tr>`;
+          ? `<a href="${documentHref}" aria-label="Show line ${r.n} in Notebook" title="Show this line in Notebook">${r.n}</a>`
+          : `<a href="#doc" data-act="document-line" data-line="${r.n}" data-sha="${esc(UI.data.sha256)}" aria-label="Show line ${r.n} in Notebook" title="Show this line in Notebook">${r.n}</a>`;
+        return `<tr class="${kind}" id="source-L${r.n}" tabindex="-1" data-source-line="${r.n}" data-line-target="${Boolean(range && r.n >= range.start && r.n <= range.end)}" ${r.c ? `data-claim="${esc(r.c.name)}" data-tone="${toneOf(r.c)}" data-selected="${UI.selected === r.c.name}"` : ''}><td class="gut"></td><td class="ln">${lineLink}</td><td class="code">${code || ' '}</td></tr>`;
       }).join('')}</table></div>`;
   }
 
+  let sourceIdentity;
   function renderSource() {
+    const identity = `${linkedPath() || ''}\n${UI.data.file}\n${UI.data.sha256}`;
+    const previous = $('source').querySelector('.source');
+    const same = sourceIdentity === identity;
+    const left = same ? previous?.scrollLeft || 0 : 0;
+    const focused = same && previous === document.activeElement;
     $('source').innerHTML = sourceViewHTML();
+    sourceIdentity = identity;
+    const pane = $('source').querySelector('.source');
+    pane.scrollLeft = left;
+    if (focused) pane.focus({preventScroll: true});
   }
 
   Object.assign(workbench, {cellEntries, cellView, commands, declarationParts, docHTML, fieldHTML, leanOf,

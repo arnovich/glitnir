@@ -93,6 +93,7 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
   window.setTimeout = (fn, delay) => delay === 4000 || delay === 1000 ? (window.glitnirPoll = fn, onPoll?.(fn, delay), 0) : schedule(fn, delay);
   window.Response = Response;
   window.matchMedia = () => ({matches: false});
+  window.scrollTo = () => {};
   window.acquireVsCodeApi = () => ({postMessage: message => {
     onMessage?.(message);
     if (message.type === 'exportTarget') {
@@ -1448,7 +1449,8 @@ test('line indicators switch to Source, focus and highlight the range without lo
       assert.equal(exported.window.document.querySelectorAll('[data-act="source-lines"]').length, 0);
       assert.equal(exported.window.document.querySelector('.definition .lines').getAttribute('href'), '#source-L260');
       assert.equal(exported.window.document.getElementById('source-L260').textContent.includes('def'), true);
-      assert.match(exported.window.document.querySelector('.source-note').textContent, new RegExp(snapshot.sha256));
+      assert.equal(exported.window.document.querySelector('.source-note'), null);
+      assert.match(exported.window.document.querySelector('.snapshot').textContent, new RegExp(snapshot.sha256));
       assert.equal(exported.window.document.querySelectorAll('script').length, 0);
     } finally { exported.window.close(); }
   } finally { window.close(); }
@@ -1576,10 +1578,11 @@ for (const browser of [false, true]) test(`Source returns to the exact document 
   try {
     const second = () => [...d.querySelectorAll('.definition')].find(el => el.textContent.includes('second'));
     second().querySelector('.lines').click();
-    d.querySelector('[data-act="document-return"]').focus();
+    assert.equal(d.querySelector('[data-act="document-return"]'), null);
+    d.querySelector('[data-mode="doc"]').focus();
     await window.glitnirPoll();
-    assert.equal(d.activeElement.dataset.act, 'document-return');
-    d.querySelector('[data-act="document-return"]').click();
+    assert.equal(d.activeElement.dataset.mode, 'doc');
+    d.querySelector('[data-mode="doc"]').click();
     assert.equal(d.getElementById('doc').hidden, false);
     assert.equal(scrolled, second());
     assert.equal(d.activeElement, second());
@@ -1606,7 +1609,7 @@ for (const browser of [false, true]) test(`Source returns to the exact document 
     snapshot.sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     scrolled = null;
-    d.querySelector('[data-act="document-return"]').click();
+    d.querySelector('[data-mode="doc"]').click();
     assert.equal(d.getElementById('doc').hidden, false);
     assert.equal(scrolled, null, 'a stale range cannot target different content');
   } finally { window.close(); }
@@ -1685,7 +1688,7 @@ test('shared theorem headers retain status and inline edit selects each declarat
     const controls = [...d.querySelectorAll('#doc .source-controls')];
     assert.equal(controls.length, 3);
     for (const [i, bounds] of [[0, [1, 1]], [1, [3, 3]], [2, [4, 5]]]) {
-      const button = controls[i].querySelector('button');
+      const button = controls[i].querySelector('.source-edit');
       assert.equal(button.title, 'Edit in editor');
       assert.equal(button.getAttribute('aria-label'), 'Edit in editor');
       button.click();
@@ -1953,7 +1956,7 @@ test('project source preview reads Lean as cards, with source navigation and an 
     assert.equal(window.document.querySelector('#doc .cellwrap[data-index="1"]'), null, 'blank lines get no cell');
     assert.equal(window.document.querySelectorAll('#doc script,.pill').length, 0);
     assert.equal(window.document.getElementById('replay-all'), null);
-    assert.match(window.document.getElementById('banner-text').textContent, /Check this file explicitly/);
+    assert.match(window.document.getElementById('project-context').textContent, /Check this file explicitly/);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: false, mode: 'project'}}));
     assert.equal(window.document.getElementById('editor-state').hidden, true);
     assert.equal(window.document.getElementById('editor-state').textContent, '');
@@ -1966,8 +1969,8 @@ test('project source preview reads Lean as cards, with source navigation and an 
     window.document.querySelector('[data-mode="source"]').click();
     assert.deepEqual([...window.document.querySelectorAll('[data-source-line]')].map(row => row.id), ['source-L1', 'source-L2', 'source-L3']);
     assert.equal(window.document.querySelector('#source-L2 td:last-child').textContent, '-- <script>never</script>');
-    assert.doesNotMatch(window.document.querySelector('.source-note').textContent, /gutter shows each claim|checking unavailable/);
-    assert.match(window.document.querySelector('.source-note').textContent, /use Check saved file/);
+    assert.equal(window.document.querySelector('.source-note'), null);
+    assert.equal(window.document.getElementById('check-project').hidden, false);
     assert.equal(requests.filter(r => /api\/(goal|view|replay)/.test(r.path)).length, 0);
   } finally { dom.window.close(); }
 });
@@ -2513,7 +2516,7 @@ test('review navigation visits unresolved claims without checking and resets aft
     await window.glitnirPoll();
     assert.equal(button.hidden, false, 'project snapshots review their saved results');
     assert.equal(button.disabled, true);
-    assert.equal(button.title, 'Nothing needs attention', 'a project without saved results has nothing to step through');
+    assert.equal(button.title, 'No claims queued for review', 'a project without saved results has nothing to step through');
   } finally { window.close(); }
 });
 
@@ -2537,6 +2540,14 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal($('proof-review').hidden, false);
     assert.equal($('review-position').textContent, 'Initial goals');
+    $('header-status').open = true;
+    $('status-summary').focus();
+    key('n', $('status-summary'));
+    assert.equal($('review-position').textContent, 'Initial goals', 'status focus does not navigate proof steps');
+    key('Escape', $('status-summary'));
+    assert.equal($('header-status').open, false);
+    assert.equal($('proof-review').hidden, false, 'Escape closes status without leaving proof steps');
+    assert.equal(window.document.activeElement, $('status-summary'));
     const requested = messages.filter(m => m.path === '/api/proof/start');
     assert.equal(requested.length, 1);
     assert.deepEqual(JSON.parse(requested[0].body), {sha256: snapshot.sha256, claim: 'pair'});
@@ -2551,7 +2562,7 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1);
     key('?'); key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     assert.match($('keys').textContent, /Ctrl\+K then G/, 'the reveal chord, outside macOS');
-    assert.match($('keys').textContent, /Switch between document and Lean source/);
+    assert.match($('keys').textContent, /Switch between notebook and Lean source/);
     key('Escape', $('keys-close'));
     $('review-letter-keys').checked = false; key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     $('review-letter-keys').checked = true;
@@ -2590,7 +2601,7 @@ test('review follows source selection, exact editor returns and every help close
     assert.equal(sourceRow.dataset.claim, 'two');
     sourceRow.focus(); key('t'); await settle();
     assert.equal($('proof-title').textContent, 'two');
-    assert.equal(window.document.activeElement.id, 'review-proof');
+    assert.equal(window.document.activeElement.id, 'proof-back');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 1, sha256: snapshot.sha256, line: 4, character: 7}}));
     assert.equal($('review-position').textContent, 'Step 2 of 2');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 0, sha256: snapshot.sha256, line: 2, character: 7}}));
@@ -2604,8 +2615,8 @@ test('review follows source selection, exact editor returns and every help close
     snapshot.sha256 = 'b'.repeat(64); snapshot.cells[1].index = 2;
     await window.glitnirPoll(); await settle();
     assert.equal($('proof-title').textContent, 'two');
-    $('review-proof').focus(); key('?'); $('keys-close').click(); await settle();
-    assert.equal(window.document.activeElement.id, 'review-proof');
+    $('proof-back').focus(); key('?'); $('keys-close').click(); await settle();
+    assert.equal(window.document.activeElement.id, 'proof-back');
     $('keys-open').focus(); $('keys-open').click(); $('keys').click(); await settle();
     assert.equal(window.document.activeElement.id, 'keys-open');
     window.document.querySelector('[data-mode="source"]').click();
@@ -2638,7 +2649,7 @@ test('switching a running proof queues once and explicit cancel cancels that int
   const $ = id => window.document.getElementById(id);
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   try {
-    $('review-proof').click(); await settle(30);
+    window.document.querySelector('[data-act="inspect-proof"]').click(); await settle(30);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 1, sha256: snapshot.sha256, line: 2, character: 0}}));
     $('proof-cancel').click(); await settle(850);
     assert.equal(starts, 1, 'cancel also cancels the queued replacement');
@@ -2668,7 +2679,10 @@ test('live saved edits coalesce, highlight changes, and follow only by choice', 
     assert.equal($('live-follow').checked, false);
     snapshot = liveSnapshot('Agent wrote this', 'b');
     changed(); changed(); changed();
+    assert.equal($('live-status').textContent, 'Updating preview…');
+    assert.equal($('live-status').hidden, false);
     await pause();
+    assert.equal($('live-status').hidden, true);
     assert.equal(reads, 2, 'one refresh for a burst of writes');
     assert.match($('doc').textContent, /Agent wrote this/);
     assert.equal($('doc').querySelectorAll('.live-changed').length, 1);
@@ -2699,6 +2713,7 @@ test('live updates retain an inactive readable view through parse errors and del
     assert.match($('doc').textContent, /First text/);
     assert.equal($('doc').inert, true);
     assert.match($('live-status').textContent, /previous|last readable/i);
+    assert.equal($('live-status').hidden, false);
     reply = {status: 409, json: {error: 'file missing'}};
     await window.glitnirPoll();
     assert.match($('doc').textContent, /First text/);
@@ -2707,6 +2722,7 @@ test('live updates retain an inactive readable view through parse errors and del
     await window.glitnirPoll();
     assert.match($('doc').textContent, /Recovered source/);
     assert.equal($('doc').inert, false);
+    assert.equal($('live-status').hidden, true);
   } finally { window.close(); }
 });
 
@@ -2755,7 +2771,8 @@ test('live unchanged polls preserve repeated prose anchors and settle duplicate 
     assert.deepEqual(shifts, [], 'the later identical prose section remains the anchor');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'sourceChanged'}}));
     await new Promise(resolve => setTimeout(resolve, 350));
-    assert.equal($('live-status').textContent, 'Saved file is up to date');
+    assert.equal($('live-status').textContent, '');
+    assert.equal($('live-status').hidden, true);
   } finally { window.close(); }
 });
 
@@ -2780,11 +2797,11 @@ test('reverse reveal waits for a fresh live snapshot after an obsolete poll', as
 });
 
 test('proof review becomes unavailable cleanly if its saved file cannot be read', async () => {
-  let reply = {json: {...liveSnapshot(), preview: {mode: 'project', project: {}, notice: ''}}};
+  let reply = {json: projectNotebook()};
   const window = await renderSnapshot(reply.json, {onNotebook: () => reply, onProof: () => ({status: 'ready', id: 'trace', source_sha256: 'a'.repeat(64), nodes: [], environment: {toolchain: 'Lean'}})});
   const $ = id => window.document.getElementById(id);
   try {
-    $('review-proof').click();
+    window.document.querySelector('[data-act="inspect-proof"]').click();
     await new Promise(resolve => setTimeout(resolve, 30));
     reply = {status: 409, json: {error: 'File temporarily missing'}};
     await window.glitnirPoll();
@@ -2838,6 +2855,7 @@ test('proof outline navigation opens ancestors and retains independent folds and
     const d = window.document;
     let scrolled;
     window.HTMLElement.prototype.scrollIntoView = function() { scrolled = this; };
+    assert.ok(d.querySelector('#outline [data-act="goto"][data-id="step1"]'),d.getElementById('outline').innerHTML);
     d.querySelector('#outline [data-act="goto"][data-id="step1"]').click();
     let folds = [...d.querySelectorAll('#doc details.proof-section')];
     assert.equal(folds[0].open, true);
@@ -2903,7 +2921,7 @@ test('proof section summaries retain source controls and document return targets
     const summary = d.querySelector('#doc .proof-section > summary');
     assert.ok(summary.querySelector('.section-tools [data-act="source-lines"]'));
     summary.querySelector('[data-act="source-lines"]').click();
-    d.querySelector('[data-act="document-return"]').click();
+    d.querySelector('[data-mode="doc"]').click();
     assert.equal(d.activeElement, d.querySelector('#doc .proof-section > summary'));
     assert.equal(d.querySelector('.proof-section').open, true);
   } finally { window.close(); }
@@ -3297,7 +3315,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.deepEqual([...d.querySelectorAll('#outline .o-claim + .dot')].map(o => o.dataset.tone), ['green', 'amber']);
     assert.deepEqual([...d.querySelectorAll('#chips-row button')].map(b => b.textContent.trim()), ['k_pos', 'floor']);
     for (const id of ['graph', 'graph-label', 'graph-note']) assert.equal(d.getElementById(id).hidden, true, 'no uses: no claim graph');
-    assert.deepEqual([...d.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 's', 'g', 'i', 'r', '?'], 'no editor-only keys outside the editor');
+    assert.equal(d.getElementById('key-hints'), null, 'shortcuts live in Help rather than the contents sidebar');
     assert.deepEqual([...d.querySelectorAll('.proof-section .section-statuses .pill')].map(p => p.textContent), ['1 Kernel checked', '1 Contains sorry', '1 Out of date']);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
@@ -3312,7 +3330,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.equal(d.getElementById('source-L18').dataset.tone, undefined);
   } finally { window.close(); }
   const host = await renderSnapshot(projectNotebook());
-  try { assert.deepEqual([...host.document.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 'n p', 'c t', 's', 'g', 'i', 'r', 'e', '?'], 'the editor preview handles e, n/p and c/t'); } finally { host.close(); }
+  try { assert.equal(host.document.getElementById('key-hints'), null); } finally { host.close(); }
 });
 
 test('the project banner is amber only when a result needs attention', async () => {
@@ -3321,7 +3339,8 @@ test('the project banner is amber only when a result needs attention', async () 
     const banner = window.document.getElementById('banner');
     assert.equal(banner.hidden, false, 'it holds the check actions');
     assert.ok(banner.classList.contains('quiet'));
-    assert.match(banner.textContent, /Project: \/p/);
+    assert.doesNotMatch(banner.textContent, /Project:/);
+    assert.match(window.document.getElementById('project-context').textContent, /Project: \/p/);
     assert.equal(window.document.getElementById('check-project').hidden, false);
   } finally { window.close(); }
   for (const change of [s => { s.project_claims[1].current = false; }, s => { s.project_withheld = {from_line: 18, message: 'x'}; },
@@ -3469,7 +3488,7 @@ test('Explore Proof Steps joins the observation the inspector started', async ()
   try {
     window.document.querySelector('#insp [data-act="goal"]').click(); await settle(20);
     window.document.querySelector('#doc .cellwrap[data-index="3"]').click();
-    window.document.getElementById('review-proof').click(); await settle(20);
+    window.document.querySelector('[data-act="inspect-proof"]').click(); await settle(20);
     assert.equal(starts, 1, 'the running observation is joined');
     assert.match(window.document.getElementById('proof-message').textContent, /Recording saved tactic goals/);
     trace = goalTrace(snapshot.sha256, {id: '1'});
@@ -3594,7 +3613,7 @@ test('the Graph view layers recorded direct uses, includes linked claims, and na
   window.scrollTo = () => {};
   try {
     const graphButton = d.querySelector('[data-mode="graph"]');
-    assert.equal(graphButton.textContent, 'Graph');
+    assert.equal(graphButton.textContent, 'Explore');
     graphButton.click();
     assert.equal($('graph-view').hidden, false);
     assert.equal($('doc').hidden, true);
@@ -3726,6 +3745,10 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.match(d.querySelector('[data-graph-name="result"] title').textContent, /result — Out of date/);
     assert.equal(d.querySelector('[data-graph-name="unchecked"]').dataset.tone, 'muted');
     assert.match(d.getElementById('graph-view').textContent, /Dependency observations are unknown for unchecked/);
+    const graphToolbar = d.querySelector('.proof-graph-toolbar');
+    assert.ok(graphToolbar.closest('.proof-graph-stage'));
+    assert.ok(graphToolbar.nextElementSibling.classList.contains('proof-graph-canvas'));
+    assert.equal(d.querySelector('.proof-graph-view > header .proof-graph-toolbar'), null);
     const zoom = d.querySelector('[data-act="graph-zoom-in"]');
     zoom.focus(); zoom.click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '950');
@@ -3967,11 +3990,14 @@ test('an incompatible walkthrough never presents saved claim results as checked'
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .pill').textContent, 'Unchecked');
-    assert.match(d.getElementById('subline').textContent, /2 unchecked/);
+    assert.doesNotMatch(d.getElementById('subline').textContent, /unchecked/);
+    assert.equal(d.getElementById('proof-availability').textContent, 'Not checked');
+    assert.ok(d.querySelector('.bar #lean-unsupported'));
+    assert.equal(d.getElementById('header-status').open, false);
     assert.equal(d.getElementById('check-project').hidden, true);
     assert.equal(d.getElementById('inspect-project').hidden, false);
     assert.equal(window.glitnirWorkbench.leanOff(), false);
-    assert.match(d.getElementById('project-check').textContent, /formalization uses Lean 4\.33\.1/);
+    assert.equal(d.getElementById('project-check').hidden, true);
     assert.doesNotMatch(d.getElementById('doc').textContent, /Checked statement|Kernel checked/);
 
     d.querySelector('[data-mode="graph"]').click();
@@ -4179,6 +4205,7 @@ test('a linked notebook is read in the same panel, read-only, with a way back an
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/linked')).map(m => m.path), ['/api/linked?path=ThreeState.lean']);
     assert.equal($('title').textContent, 'Three states');
     assert.equal($('location').textContent, 'Linked from Demo.lean · read-only');
+    assert.equal($('location').hidden, false);
     assert.equal($('file-name').textContent, 'ThreeState.lean');
     assert.ok(d.body.classList.contains('glitnir-linked-view'));
     const trail = $('notebook-trail');
@@ -4220,7 +4247,8 @@ test('a linked notebook is read in the same panel, read-only, with a way back an
     // Back, forward, and a link back to the previewed notebook.
     $('notebook-trail').querySelector('[data-act="notebook-back"]').click(); await settle(20);
     assert.equal($('title').textContent, 'Demo notebook');
-    assert.equal($('location').textContent, 'Notebook');
+    assert.equal($('location').textContent, '');
+    assert.equal($('location').hidden, true);
     assert.ok(!d.body.classList.contains('glitnir-linked-view'));
     assert.equal($('notebook-trail').hidden, false, 'forward history stays');
     assert.equal($('notebook-trail').querySelector('[data-act="notebook-forward"]').title, 'Forward to ThreeState.lean');
@@ -4403,8 +4431,8 @@ test('every shortcut listing comes from one list that matches the keys that work
     const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
     assert.deepEqual(listed, ['?', 'c', 'e', 'g', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
     assert.deepEqual(handledKeys(host).sort(), listed, 'the editor preview acts on exactly the listed keys');
-    const hinted = [...d.querySelectorAll('#key-hints kbd')].map(k => k.textContent);
-    assert.ok(hinted.length && hinted.every(k => listed.includes(k)), 'the contents hint is drawn from the same list');
+    assert.equal(d.querySelector('.rail [aria-label="Keyboard shortcuts"]'), null);
+    assert.equal(d.getElementById('key-hints'), null);
   } finally { host.close(); }
   const browser = await renderSnapshot(projectNotebook(), {browser: (url, options) => options?.method === 'POST' ? {ok: false, status: 409, json: async () => ({error: 'test'})} : {ok: true, json: async () => projectNotebook()}});
   try {
@@ -4512,7 +4540,8 @@ test('n and p step through the project claims that need attention, and steps in 
     snapshot.project_withheld = {from_line: 20, message: 'unsolved goals', stale: true};
     snapshot.project_claims.forEach(c => { c.status = 'checked'; c.current = true; delete c.not_rechecked; });
     await window.glitnirPoll(); await settle();
-    assert.equal($('review-position').textContent, 'Nothing needs attention');
+    assert.equal($('review-position').textContent, '');
+    assert.equal($('review-position').hidden, true);
     assert.equal($('next-unresolved').disabled, true);
   } finally { window.close(); }
 });
@@ -4625,7 +4654,7 @@ test('a project on another Lean version shows one banner, no enabled Lean contro
     const d = window.document, $ = id => d.getElementById(id);
     assert.equal($('lean-unsupported').hidden, false);
     assert.equal($('lean-unsupported').dataset.tone, 'amber');
-    assert.equal($('lean-unsupported').textContent, LEAN_MESSAGE);
+    assert.equal($('lean-unsupported-text').textContent, LEAN_MESSAGE);
     assert.equal($('check-project').hidden, true);
     assert.equal($('inspect-project').hidden, true);
     assert.equal(d.querySelectorAll(`#doc ${RUN_CONTROLS.split(', ').join(', #doc ')}, #insp [data-act="goal"], #insp [data-act="check-through"]`).length, 0, 'no Lean control is offered');
@@ -4644,7 +4673,7 @@ test('the unsupported-version banner shows the message verbatim, read errors inc
   const window = await renderSnapshot(snapshot);
   try {
     const banner = window.document.getElementById('lean-unsupported');
-    assert.equal(banner.textContent, hostile.message);
+    assert.equal(banner.querySelector('#lean-unsupported-text').textContent, hostile.message);
     assert.equal(banner.querySelector('b, i'), null);
   } finally { window.close(); }
 });
@@ -4714,7 +4743,8 @@ test('nothing under the Lean banner asks to check or run again', async () => {
     assert.match(doc, /Out of date: the source or its environment changed since this run\./);
     assert.match(doc, /Out of date: the source through this directive or its environment changed since this run\./);
     for (const id of ['doc', 'banner-text', 'insp']) assert.doesNotMatch(d.getElementById(id).textContent, prompts, id);
-    assert.match(d.getElementById('banner-text').textContent, /Saved-source preview\./);
+    assert.doesNotMatch(d.getElementById('project-context').textContent, /Saved-source preview\./);
+    assert.match(d.getElementById('project-context').textContent, /Project:/);
   } finally { window.close(); }
   const empty = leanSupportNotebook({lean: UNSUPPORTED});
   empty.project_claims = [];
@@ -4730,7 +4760,7 @@ test('a linked notebook in another project shows its own project\'s Lean banner'
     window.HTMLElement.prototype.scrollIntoView = () => {};
     window.scrollTo = () => {};
     const d = window.document, $ = id => d.getElementById(id);
-    const banner = () => ($('lean-unsupported').hidden ? null : $('lean-unsupported').textContent);
+    const banner = () => ($('lean-unsupported').hidden ? null : $('lean-unsupported-text').textContent);
     const before = banner();
     [...d.querySelectorAll('#doc a.notebook-reference')].find(a => a.textContent === 'the three states').click();
     await new Promise(resolve => setTimeout(resolve, 30));
@@ -4848,7 +4878,8 @@ for (const browser of [false, true]) {
     const header = 'import Mathlib\nimport Demo.Basic\n\nopen scoped BigOperators\nopen Nat\n';
     snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 8, text: header + 'namespace Demo\ndef x := 1\nend Demo\n'}];
     snapshot.project_claims = [];
-    const window = await renderSnapshot(snapshot, {browser, katex: true});
+    const messages = [];
+    const window = await renderSnapshot(snapshot, {browser, katex: true, onMessage: message => messages.push(message)});
     try {
       const d = window.document;
       window.HTMLElement.prototype.scrollIntoView = () => {};
@@ -4859,7 +4890,14 @@ for (const browser of [false, true]) {
       assert.equal(fold.querySelector('pre').textContent, header.trimEnd());
       assert.equal(fold.querySelectorAll('.source-link').length, 1);
       assert.equal(fold.querySelector('.source-link').textContent, 'L1–5');
-      assert.equal(fold.querySelectorAll('button').length, 0);
+      assert.equal(fold.querySelectorAll('button').length, browser ? 0 : 1);
+      if (!browser) {
+        const edit = fold.querySelector('button.source-edit');
+        assert.equal(edit.getAttribute('aria-label'), 'Edit in editor');
+        edit.click();
+        assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {type: 'source', index: 0, sha256: snapshot.sha256, range: {start: 1, end: 5}});
+        assert.equal(fold.open, false, 'editing does not toggle the import fold');
+      }
       assert.equal(d.querySelectorAll('#doc .cell-tools').length, 0);
       assert.ok(d.querySelector('#doc .definition'));
       fold.querySelector('.source-link').click();
@@ -4910,7 +4948,8 @@ test('module headers and ordinary comments stay exact inside the import fold', a
     const d = window.document, fold = d.querySelector('#doc .import-header');
     assert.equal(fold.querySelector('pre').textContent, header.trimEnd());
     assert.match(fold.querySelector('summary').textContent, /^2 imports/);
-    assert.equal(fold.querySelectorAll('img,button').length, 0);
+    assert.equal(fold.querySelectorAll('img').length, 0);
+    assert.equal(fold.querySelectorAll('button.source-edit').length, 1);
     assert.match(d.querySelector('#doc .definition').textContent, /open Nat in/);
   } finally { window.close(); }
 });
@@ -4935,19 +4974,21 @@ test('proof atlas preserves selection across layouts, references and navigation'
     assert.equal(scroll, 420, 'same-node layout switching preserves scroll');
     assert.equal(d.querySelector('#atlas-selected').textContent, 'deep');
     assert.ok(d.querySelector('.atlas-map-first'));
-    click('pane', 'sources');
+    d.querySelector('.atlas-details').open = true;
+    d.querySelector('.atlas-details').dispatchEvent(new window.Event('toggle'));
     assert.equal(scroll, 420, 'source switching preserves scroll');
-    d.querySelector('[data-atlas-route]').focus();
+    d.querySelector('[data-atlas="route"][aria-pressed="true"]').focus();
     window.glitnirWorkbench.render();
-    assert.ok(d.activeElement.hasAttribute('data-atlas-route'), 'poll render restores route control focus');
+    assert.ok(d.activeElement.matches('[data-atlas="route"]'), 'poll render restores route control focus');
     assert.match(d.querySelector('.proof-atlas').textContent, /Related counterpart/);
     d.querySelector('.atlas-reference a').focus();
     window.glitnirWorkbench.render();
     assert.ok(d.activeElement.matches('.atlas-reference a'), 'source link focus survives refresh');
     click('back');
-    assert.match(d.querySelector('.atlas-body').textContent, /What this establishes/);
+    assert.match(d.querySelector('.atlas-body').textContent, /Proof idea/);
     click('forward');
-    assert.match(d.querySelector('.atlas-body').textContent, /Declaration references/);
+    assert.ok(d.querySelector('.atlas-details').open);
+    assert.match(d.querySelector('.atlas-details').textContent, /Related counterpart/);
     click('layout', 'graph'); assert.ok(d.querySelector('.proof-map'));
     click('layout', 'reading'); assert.equal(d.querySelector('#atlas-selected').textContent, 'deep');
     assert.equal(d.activeElement.id, 'atlas-selected');
@@ -4972,19 +5013,19 @@ function atlasExplorationSnapshot(count = 4) {
   return snapshot;
 }
 
-test('atlas overview exposes shared steps and backlinks with bounded paging', async () => {
+test('atlas overview exposes shared steps with bounded paging and sidebar navigation', async () => {
   const window = await renderSnapshot(atlasExplorationSnapshot(32));
   const d = window.document;
   try {
     d.querySelector('[data-mode="graph"]').click();
-    d.querySelector('[data-atlas="overview"]').click();
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
     assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 24);
     d.querySelector('[data-atlas="overview-page"][data-value="1"]').click();
     assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 8);
     d.querySelector('.atlas-overview [data-value="n31"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
-    const parents = [...d.querySelectorAll('.atlas-backlinks [data-atlas="node"]')].map(el => el.dataset.value);
-    assert.deepEqual(parents, ['n1', 'n2']);
-    d.querySelector('.atlas-backlinks [data-value="n2"]').click();
+    assert.equal(d.querySelector('.atlas-backlinks'), null);
+    assert.match(d.querySelector('.atlas-flow').textContent, /Shared support/);
+    d.querySelector('.atlas-flow [data-value="n2"]').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
   } finally { window.close(); }
 });
@@ -4995,7 +5036,7 @@ test('atlas direct links restore route and node, and exports keep their targets'
   const d = window.document;
   try {
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 3');
-    assert.equal(d.querySelector('[data-atlas-route]').value, 'paper');
+    assert.equal(d.querySelector('[data-atlas="route"][aria-pressed="true"]').dataset.value, 'paper');
     assert.equal(d.querySelector('#graph-view').hidden, false);
     const link = d.querySelector('.atlas-permalink').getAttribute('href');
     assert.equal(link, '#atlas?route=paper&node=n3');
@@ -5036,7 +5077,7 @@ test('atlas fragments in notebook prose open the argument even when the URL alre
     d.querySelector('[data-mode="doc"]').click();
     d.querySelector('#doc a.atlas-link').click();
     assert.equal(d.querySelector('#graph-view').hidden, false);
-    d.querySelector('[data-atlas="overview"]').click();
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
     const map = d.querySelector('.atlas-overview-scroll');
     map.scrollTop = 200; map.scrollLeft = 40;
     window.glitnirWorkbench.render();
@@ -5055,7 +5096,7 @@ test('atlas routes and exports accept prototype names and encoded IDs without lo
   const window = await renderSnapshot(snapshot, {onWindow: w => w.history.replaceState(null, '', fragment)});
   try {
     assert.equal(window.document.querySelector('#atlas-selected').textContent, 'Argument 2');
-    window.document.querySelector('[data-atlas="overview"]').click();
+    window.document.querySelector('[data-atlas="layout"][data-value="map"]').click();
     assert.equal(window.document.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 4);
     const html = window.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true});
     const exported = new JSDOM(html).window.document;
@@ -5150,15 +5191,15 @@ test('compare atlas routes at the same argument and return to prior context', as
   const d = w.document;
   try {
     d.querySelector('[data-mode="graph"]').click();
-    assert.match(d.querySelector('.atlas-compare').textContent, /only in/);
+    assert.equal(d.querySelector('.atlas-compare'), null);
     d.querySelector('[data-atlas="node"][data-value="n1"]').click();
     d.querySelector('.atlas-compare a').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 1');
-    assert.equal(d.querySelector('[data-atlas-route]').value, 'paper');
-    assert.match(d.querySelector('.atlas-backlinks').textContent, /route’s result/);
+    assert.equal(d.querySelector('[data-atlas="route"][aria-pressed="true"]').dataset.value, 'paper');
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n1');
     d.querySelector('[data-atlas="back"]').click();
-    assert.equal(d.querySelector('[data-atlas-route]').value, 'lean');
-    assert.match(d.querySelector('.atlas-backlinks').textContent, /Argument 0/);
+    assert.equal(d.querySelector('[data-atlas="route"][aria-pressed="true"]').dataset.value, 'lean');
+    assert.equal(d.querySelector('.atlas-backlinks'), null);
   } finally {w.close();}
 });
 
@@ -5174,5 +5215,804 @@ test('atlas navigation tolerates unavailable browser storage', async () => {
     d.querySelector('[data-atlas="node"][data-value="n1"]').click();
     d.querySelector('[data-atlas="route"]').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 0');
+  } finally {w.close();}
+});
+
+test('source and exploration modes hide notebook sidebars', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    assert.equal(d.querySelector('[data-mode="doc"]').textContent, 'Notebook');
+    assert.equal(d.querySelector('[data-mode="graph"]').textContent, 'Explore');
+    for (const mode of ['source', 'graph']) {
+      d.querySelector('[data-mode="' + mode + '"]').click();
+      assert.equal(d.querySelector('.rail').hidden, true);
+      assert.equal(d.querySelector('.inspector').hidden, true);
+      assert.equal(d.querySelector('#panel-show').hidden, true);
+      assert.ok(d.querySelector('#workspace').classList.contains('focused-view'));
+    }
+    assert.equal(d.querySelectorAll('.proof-atlas header h2').length, 0);
+    const actions = d.querySelector('.atlas-details');
+    actions.open = true;
+    actions.querySelector('summary').focus();
+    w.glitnirWorkbench.render();
+    assert.ok(d.querySelector('.atlas-details').open);
+    assert.equal(d.activeElement.parentElement.className, 'atlas-details');
+    d.querySelector('[data-mode="doc"]').click();
+    assert.equal(d.querySelector('.rail').hidden, false);
+    assert.equal(d.querySelector('.inspector').hidden, false);
+  } finally {w.close();}
+});
+
+test('the full graph is a visible exploration view and keeps Read and Map available', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const graph = d.querySelector('[data-atlas="layout"][data-value="graph"]');
+    assert.equal(graph.textContent, 'Statement graph');
+    assert.equal(graph.closest('details'), null);
+    graph.click();
+    assert.ok(d.querySelector('.proof-map'));
+    assert.equal(d.activeElement.dataset.value, 'graph');
+    assert.equal(d.querySelector('[data-atlas="layout"][data-value="graph"]').getAttribute('aria-pressed'), 'true');
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    assert.ok(d.querySelector('.atlas-map-first'));
+    assert.match(d.querySelector('.atlas-view-help').textContent, /curated support links/);
+    d.querySelector('[data-atlas="layout"][data-value="reading"]').click();
+    assert.match(d.querySelector('.atlas-view-help').textContent, /Read/);
+    assert.equal(d.querySelector('.atlas-overview'), null);
+  } finally {w.close();}
+});
+
+test('Read presents a bounded article with visible scope and sidebar navigation', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.ok(d.querySelector('.proof-atlas.atlas-reading'));
+    const article = d.querySelector('article.atlas-explanation');
+    assert.equal(article.querySelector('.atlas-goal').textContent, 'Goal');
+    assert.equal(article.querySelector('.atlas-role').textContent, 'Role');
+    assert.match(article.querySelector('.atlas-context').textContent, /AssumptionsScope/);
+    d.querySelector('.atlas-flow [data-value="n1"]').click();
+    assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 1');
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    assert.equal(d.querySelector('.proof-atlas.atlas-reading'), null);
+    assert.ok(d.querySelector('article.atlas-explanation'));
+  } finally {w.close();}
+});
+
+test('proof navigation sidebar shows position, route choices and named visit history', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const nav = () => d.querySelector('.atlas-sidebar');
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n0');
+    assert.equal(d.querySelector('select[data-atlas-route]'), null);
+    assert.equal(d.querySelector('[data-atlas="overview"]'), null);
+    nav().querySelector('[data-value="n1"]').click();
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n1');
+    assert.match(nav().querySelector('[data-atlas="back"]').textContent, /Back to Argument 0/);
+    nav().querySelector('[data-atlas="back"]').click();
+    assert.match(nav().querySelector('[data-atlas="forward"]').textContent, /Forward to Argument 1/);
+    nav().querySelector('[data-atlas="route"][data-value="paper"]').click();
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n1');
+    assert.equal(nav().querySelector('[data-atlas="route"][aria-pressed="true"]').textContent, 'Paper proof');
+    d.querySelector('[data-atlas="layout"][data-value="graph"]').click();
+    assert.ok(nav());
+    nav().querySelector('[data-atlas="route"][data-value="lean"]').click();
+    assert.ok(d.querySelector('.proof-map'));
+    assert.equal(nav().querySelector('[aria-current="step"]').dataset.value, 'n0');
+  } finally {w.close();}
+});
+
+test('sidebar branches retain parent order and step focus stays in the sidebar', async () => {
+  const snapshot = atlasExplorationSnapshot(5);
+  snapshot.walkthrough.atlas.routes[0].supports = {n0: ['n1', 'n2'], n1: ['n3'], n2: ['n4']};
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.deepEqual([...d.querySelectorAll('.atlas-flow [data-atlas="node"]')].map(el => el.dataset.value), ['n0','n1','n3','n2','n4']);
+    d.querySelector('.atlas-flow [data-value="n1"]').focus();
+    w.glitnirWorkbench.render();
+    assert.ok(d.activeElement.closest('.atlas-flow'));
+  } finally {w.close();}
+});
+
+test('sidebar keeps late arguments visible after direct links and history navigation', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot(32), {onWindow: w => w.history.replaceState(null, '', '#atlas?route=lean&node=n31')});
+  try {
+    const d = w.document;
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n31');
+    d.querySelector('.atlas-flow [data-value="n1"]').click();
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n1');
+    d.querySelector('.atlas-visit-history [data-atlas="back"]').click();
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n31');
+  } finally {w.close();}
+});
+
+
+test('sidebar selects the same argument in Read, Map and Graph without changing view', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    for (const layout of ['reading', 'map', 'graph']) {
+      d.querySelector('[data-atlas="layout"][data-value="' + layout + '"]').click();
+      d.querySelector('.atlas-flow [data-value="n2"]').click();
+      assert.equal(d.querySelector('[data-atlas="layout"][aria-pressed="true"]').dataset.value, layout);
+      assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n2');
+      if (layout === 'graph') {
+        assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+        assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'walkthrough:n2');
+      } else {
+        assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
+      }
+      d.querySelector('.atlas-flow [data-value="n1"]').click();
+    }
+    d.querySelector('.atlas-visit-history [data-atlas="back"]').click();
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+    d.querySelector('.atlas-route-controls [data-value="paper"]').click();
+    assert.equal(d.querySelector('[data-atlas="layout"][aria-pressed="true"]').dataset.value, 'graph');
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n1');
+  } finally {w.close();}
+});
+
+test('a late sidebar argument is selected in the bounded full graph', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot(300), {onWindow: w => w.history.replaceState(null, '', '#atlas?route=lean&node=n299')});
+  try {
+    const d = w.document;
+    d.querySelector('[data-atlas="layout"][data-value="graph"]').click();
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n299');
+    assert.equal(d.querySelectorAll('.proof-node').length, 240);
+    assert.match(d.querySelector('#graph-detail').textContent, /Argument 299/);
+    assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n299');
+  } finally {w.close();}
+});
+
+for (const browser of [false, true]) {
+  test(`primary view navigation follows file identity before editor actions and saved edits share one activity row (${browser ? 'browser' : 'editor'})`, async () => {
+    const w = await renderSnapshot(projectNotebook(), {browser});
+    try {
+      const d = w.document;
+      const header = d.querySelector('.bar');
+      assert.ok(header.firstElementChild.classList.contains('brand'));
+      assert.equal(d.getElementById('location').hidden, true);
+      assert.equal(d.getElementById('location').textContent, '');
+      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'header-status', 'bar-right']);
+      assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Source', 'Explore']);
+      const row = d.querySelector('.live-bar');
+      assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
+      assert.equal(row.textContent.includes('Live · saved files'), false);
+      assert.ok(header.querySelector('#live-status'));
+      assert.equal(d.querySelector('.footer'), null);
+      assert.equal(d.querySelector('.heading #subline, .heading #lean-unsupported'), null);
+      if (!browser) {
+        assert.ok(row.querySelector('.review-nav'));
+        assert.equal(row.querySelector('#proof-review'), null);
+        assert.ok(d.querySelector('#proof-review').parentElement.classList.contains('app'));
+      }
+    } finally {w.close();}
+  });
+}
+
+test('an incompatible walkthrough with no observed claims has a clear status in every view', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', title: 'Unobserved proof', nodes: [], formalization: {supported: false, declared: 'leanprover/lean4:v4.33.1', toolchain: 'leanprover/lean4:v4.35.0', message: 'Formalization needs Lean 4.33.1; Glitnir checks Lean 4.35.0.'}};
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document;
+    for (const mode of ['doc', 'source', 'graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(d.getElementById('lean-unsupported').hidden, false);
+      assert.equal(d.getElementById('proof-availability').textContent, 'Not checked');
+      assert.doesNotMatch(d.getElementById('subline').textContent, /0 unchecked/);
+      assert.equal(d.getElementById('review-position').hidden, true);
+    }
+    d.getElementById('header-status').open = true;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('header-status').open, true, 'polling retains the expanded explanation');
+  } finally {w.close();}
+});
+
+test('empty claim observations do not contradict a saved file check', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  delete snapshot.preview.check;
+  const w = await renderSnapshot(snapshot);
+  try {
+    assert.equal(w.document.getElementById('subline').textContent, 'No check results');
+    snapshot.preview.check = {status: 'checked_snapshot', source_sha256: snapshot.sha256, environment_sha256: 'b'.repeat(64), message: 'Kernel replay complete.', theorems: []};
+    await w.glitnirPoll();
+    assert.doesNotMatch(w.document.getElementById('subline').textContent, /No check results/);
+    assert.equal(w.document.getElementById('project-check').hidden, false);
+  } finally {w.close();}
+});
+
+test('Explore retains exceptional refresh messages and clears them after recovery', async () => {
+  let reply = {json: liveSnapshot()};
+  const w = await renderSnapshot(reply.json, {onNotebook: () => reply});
+  try {
+    const d = w.document;
+    const style = d.createElement('style');
+    style.textContent = readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8');
+    d.head.append(style);
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(w.getComputedStyle(d.querySelector('.live-bar')).display, 'none');
+    reply = {status: 409, json: {error: 'file missing'}};
+    await w.glitnirPoll();
+    const activity = d.querySelector('.live-bar');
+    assert.equal(d.getElementById('live-status').hidden, false);
+    assert.ok(d.querySelector('.bar #live-status'));
+    assert.notEqual(w.getComputedStyle(d.getElementById('header-status')).display, 'none');
+    reply = {json: liveSnapshot('Recovered', 'b')};
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('live-status').hidden, true);
+    assert.equal(w.getComputedStyle(activity).display, 'none');
+  } finally {w.close();}
+});
+
+test('header status distinguishes connection from proof status and exposes keyboard details', async () => {
+  const snapshot = projectNotebook();
+  let offline = false, status = 200;
+  const w = await renderSnapshot(snapshot, {browser: async () => {
+    if (offline) throw new Error('connection lost');
+    return {ok: status === 200, status, json: async () => status === 200 ? snapshot : {error: 'server busy'}};
+  }});
+  try {
+    const d = w.document, menu = d.getElementById('header-status');
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected');
+    assert.equal(d.getElementById('conn').dataset.state, 'up');
+    assert.match(d.getElementById('status-summary').getAttribute('aria-label'), /Notebook status: Connected/);
+    assert.match(d.getElementById('status-summary').title, /Connected to the local notebook server/);
+    assert.match(d.getElementById('status-summary').title, /Source hash: aaaaaaaa/);
+    assert.match(d.getElementById('status-summary').title, /not a Git commit/);
+    menu.open = true;
+    d.getElementById('status-summary').focus();
+    await w.glitnirPoll();
+    assert.equal(menu.open, true);
+    d.getElementById('status-summary').dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    assert.equal(menu.open, false);
+    assert.equal(d.activeElement, d.getElementById('status-summary'));
+    menu.open = true;
+    d.querySelector('[data-mode="source"]').click();
+    assert.equal(menu.open, false, 'outside clicks dismiss details');
+    snapshot.checking = ['Demo.k_pos'];
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected');
+    assert.equal(d.getElementById('conn').dataset.state, 'up', 'checking does not change the connection dot');
+    assert.match(d.getElementById('status-summary').textContent, /Checking 1/);
+    snapshot.checking = [];
+    status = 503;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected', 'a readable HTTP error is not a lost connection');
+    assert.equal(d.getElementById('live-status').hidden, false);
+    status = 200;
+    await w.glitnirPoll();
+    offline = true;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Reconnecting…');
+    assert.equal(d.getElementById('conn').dataset.state, 'down');
+    assert.equal(d.getElementById('live-status').hidden, false);
+    offline = false;
+    await w.glitnirPoll();
+    assert.equal(d.getElementById('conn-text').textContent, 'Connected');
+    assert.equal(d.getElementById('conn').dataset.state, 'up');
+    assert.equal(d.getElementById('live-status').hidden, true);
+  } finally {w.close();}
+});
+
+test('a network failure opening a linked notebook updates the header connection immediately', async () => {
+  const {main} = linkedNotebooks();
+  let offline = false;
+  const w = await renderSnapshot(main, {browser: async () => {
+    if (offline) throw new Error('connection lost');
+    return {ok: true, json: async () => main};
+  }});
+  w.HTMLElement.prototype.scrollIntoView = () => {};
+  w.scrollTo = () => {};
+  try {
+    const d = w.document;
+    offline = true;
+    [...d.querySelectorAll('#doc a.notebook-reference')].find(a => a.textContent === 'the three states').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(d.getElementById('conn-text').textContent, 'Reconnecting…');
+    assert.equal(d.getElementById('conn').dataset.state, 'down');
+    assert.equal(d.getElementById('file-name').textContent, main.file);
+  } finally {w.close();}
+});
+
+test('Source is a peer mode without an empty activity row or explanatory return controls', async () => {
+ const snapshot = projectNotebook();
+ snapshot.source_path = '/workspace/proofs/nested/Demo.lean';
+ snapshot.preview.recorded = true;
+ snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', nodes: [], formalization: {supported: false, declared: 'v4.33.1', toolchain: 'v4.35.0', message: 'Different Lean version'}};
+ snapshot.preview.lean = {supported: false, declared: 'v4.33.1', toolchain: 'v4.35.0', message: 'Different Lean version'};
+ const w = await renderSnapshot(snapshot);
+ try {
+  const d=w.document, style=d.createElement('style');
+  style.textContent=readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8'); d.head.append(style);
+  d.querySelector('[data-mode="source"]').click();
+  assert.equal(d.querySelector('[data-mode="source"]').textContent, 'Source');
+  assert.equal(w.getComputedStyle(d.querySelector('.live-bar')).display, 'none');
+  assert.equal(d.querySelector('#source [data-act="document-return"], #source .source-note'), null);
+  assert.equal(d.getElementById('file-name').title, snapshot.source_path);
+  assert.equal(d.getElementById('banner').hidden, true);
+  assert.doesNotMatch(d.getElementById('banner-text').textContent, /Saved-source preview/);
+ } finally {w.close();}
+});
+
+test('Source distinguishes documentation and declarations without changing saved text', async () => {
+ const snapshot=liveSnapshot();
+ snapshot.cells=[
+  {index:0,kind:'source',start:1,end:1,text:'import Mathlib'},
+  {index:1,kind:'prose',start:2,end:5,text:'/-!\n## A <section>\nThe theorem uses `by` and <tags>.\n-/',markdown:'## A <section>\nThe theorem uses `by` and <tags>.'},
+  {index:2,kind:'source',start:6,end:7,text:'theorem sample : True := by\n  trivial'},
+ ];
+ const w=await renderSnapshot(snapshot);
+ try {
+  const d=w.document;
+  d.querySelector('[data-mode="source"]').click();
+  assert.equal(d.querySelector('#source .source').tabIndex,0);
+  assert.equal(d.querySelector('#source .source').getAttribute('aria-label'),'Lean source code');
+  assert.ok(d.querySelector('#source-L1.source-import'));
+  assert.ok(d.querySelector('#source-L3.source-doc-heading'));
+  assert.equal(d.querySelector('#source-L4 .code').textContent,'The theorem uses `by` and <tags>.');
+  assert.equal(d.querySelector('#source-L4 .kw, #source-L4 tags'),null,'documentation is escaped and does not highlight Lean words as code');
+  assert.ok(d.querySelector('#source-L6.source-declaration .kw'));
+  assert.deepEqual([...d.querySelectorAll('#source [data-source-line] .code')].map(e=>e.textContent),snapshot.cells.flatMap(c=>c.text.split('\n')));
+  const pane=d.querySelector('#source .source');
+  pane.focus(); pane.scrollLeft=180;
+  await w.glitnirPoll();
+  assert.equal(d.activeElement,d.querySelector('#source .source'),'polling preserves keyboard panning focus');
+  assert.equal(d.querySelector('#source .source').scrollLeft,180);
+  snapshot.sha256='b'.repeat(64);
+  await w.glitnirPoll();
+  assert.equal(d.querySelector('#source .source').scrollLeft,0,'a new source resets the old horizontal position');
+ }finally{w.close();}
+});
+
+for (const walkthrough of [false,true]) {
+ test(`unavailable Proof steps stays in Notebook and makes no request (${walkthrough ? 'walkthrough' : 'project'})`, async () => {
+  const snapshot=projectNotebook(), messages=[];
+  const reason='This project uses Lean 4.33.1. Glitnir checks Lean 4.35.0.';
+  if(walkthrough) snapshot.walkthrough={format:'glitnir.walkthrough-outline/v1',nodes:[],formalization:{supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:reason}};
+  else snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:reason};
+  const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m)});
+  try {
+   const d=w.document, button=d.querySelector('[data-act="inspect-proof"]');
+   assert.equal(button.disabled,true);
+   assert.match(button.title,/4\.33\.1/);
+   assert.equal(button.getAttribute('aria-description'),reason);
+   button.click();
+   d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'t',bubbles:true}));
+   w.dispatchEvent(new w.MessageEvent('message',{data:{type:'reviewCommand',action:'proof'}}));
+   await new Promise(resolve=>setTimeout(resolve,20));
+   assert.equal(d.getElementById('proof-review').hidden,true);
+   assert.equal(d.body.classList.contains('glitnir-proof-mode'),false);
+   assert.equal(messages.filter(m=>m.path?.startsWith('/api/proof')).length,0);
+  }finally{w.close();}
+ });
+}
+
+test('a compatibility change leaves active Proof steps without another observation',async()=>{
+ const snapshot=projectNotebook(), messages=[];
+ const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m),onProof:()=>goalTrace(snapshot.sha256)});
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  w.dispatchEvent(new w.MessageEvent('message',{data:{type:'revealCell',index:3,sha256:snapshot.sha256}}));
+  d.querySelector('[data-act="inspect-proof"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-review').hidden,false);
+  d.querySelector('#proof-tactics button').focus();
+  snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:'Use a compatible Lean toolchain.'};
+  await w.glitnirPoll();
+  assert.equal(d.querySelector('[data-act="inspect-proof"]').disabled,true);
+  assert.equal(d.getElementById('proof-review').hidden,true);
+  assert.equal(d.activeElement.dataset.claim,'Demo.k_pos');
+  const starts=messages.filter(m=>m.path==='/api/proof/start').length;
+  d.getElementById('proof-refresh').click();
+  assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,starts);
+  snapshot.preview.lean.supported=true;
+  await w.glitnirPoll();
+  d.querySelector('[data-act="inspect-proof"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  d.getElementById('status-summary').focus();
+  snapshot.preview.lean.supported=false;
+  await w.glitnirPoll();
+  assert.equal(d.activeElement,d.getElementById('status-summary'),'compatibility updates do not steal focus outside the proof inspector');
+ }finally{w.close();}
+});
+
+test('proof inspection belongs to each claim and returns to its reading position',async()=>{
+ const snapshot=projectNotebook(), messages=[];
+ const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m),onProof:()=>goalTrace(snapshot.sha256)});
+ let top=240, returned;
+ Object.defineProperty(w,'scrollY',{get:()=>top});
+ w.scrollTo=(x,y)=>{returned=[x,y];};
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  assert.equal(d.querySelector('#review-proof,#review-claims'),null);
+  const actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.k_pos','Demo.floor']);
+  assert.equal(d.querySelector('.import-header [data-act="inspect-proof"]'),null);
+  assert.ok(d.querySelector('.heading').compareDocumentPosition(d.querySelector('.live-bar')) & w.Node.DOCUMENT_POSITION_FOLLOWING);
+  actions[1].click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
+  assert.match(d.getElementById('proof-back').textContent,/Back to claim/);
+  assert.equal(d.activeElement,d.getElementById('proof-back'));
+  d.getElementById('proof-back').click();
+  assert.equal(d.getElementById('proof-review').hidden,true);
+  assert.equal(d.activeElement.dataset.proofClaim,'Demo.floor');
+  assert.deepEqual(returned,[0,240]);
+  returned=null;
+  d.querySelector('[data-act="inspect-proof"]').focus();
+  const focused=d.activeElement;
+  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'c',bubbles:true}));
+  assert.equal(returned,null,'c outside inspection does not reuse an old return position');
+  assert.equal(d.activeElement,focused);
+  assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,1);
+ }finally{w.close();}
+});
+
+test('fresh project theorems have declaration-scoped proof actions before checking',async()=>{
+ const snapshot=projectNotebook();
+ snapshot.project_claims=[];
+ snapshot.cells=[{index:0,kind:'source',start:1,end:7,text:'import Mathlib\nnamespace Demo\ntheorem first : True := by\n  trivial\ntheorem second : True := by\n  trivial\nend Demo'}];
+ const trace={status:'ready',id:'fresh',source_sha256:snapshot.sha256,nodes:[{id:0,parent:null,text:'first tactic',range:{start:{line:4,character:2},end:{line:4,character:9}},before:['first'],after:[]},{id:1,parent:null,text:'second tactic',range:{start:{line:6,character:2},end:{line:6,character:9}},before:['second'],after:[]}]};
+ const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+ try{
+  const d=w.document, actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.first','Demo.second']);
+  actions[0].click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'n',bubbles:true}));
+  assert.equal(d.getElementById('review-position').textContent,'Step 1 of 1');
+  d.getElementById('proof-back').click();
+  d.querySelector('[data-proof-claim="Demo.second"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.second');
+  assert.equal(d.getElementById('review-position').textContent,'Initial goals');
+  assert.match(d.getElementById('proof-tactics').textContent,/second tactic/);
+  assert.doesNotMatch(d.getElementById('proof-tactics').textContent,/first tactic/);
+  assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib|theorem first/);
+ }finally{w.close();}
+});
+
+test('Source shortcut enters a named claim and saved edits retain its identity',async()=>{
+ const snapshot=projectNotebook(),w=await renderSnapshot(snapshot,{onProof:()=>goalTrace(snapshot.sha256)});
+ try{
+  const d=w.document;
+  d.querySelector('[data-mode="source"]').click();
+  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'t',bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.body.dataset.view,'doc');
+  assert.equal(d.querySelector('[data-mode="doc"]').getAttribute('aria-pressed'),'true');
+  d.getElementById('proof-back').click();
+  d.querySelector('[data-proof-claim="Demo.floor"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  snapshot.sha256='b'.repeat(64);
+  await w.glitnirPoll();
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
+  assert.match(d.getElementById('proof-statement').textContent,/theorem floor/);
+  assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib/);
+  d.getElementById('proof-refresh').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
+  snapshot.sha256='c'.repeat(64);
+  snapshot.cells=snapshot.cells.filter(c=>c.claim!=='Demo.floor');
+  snapshot.project_claims=snapshot.project_claims.filter(c=>c.name!=='Demo.floor');
+  await w.glitnirPoll();
+  assert.equal(d.getElementById('proof-review').hidden,true,'a removed claim leaves inspection');
+ }finally{w.close();}
+});
+
+test('anonymous examples have distinct proof actions and return to the matching example',async()=>{
+ const snapshot=projectNotebook();snapshot.project_claims=[];
+ snapshot.cells=[{index:0,kind:'source',start:1,end:6,text:'namespace Demo\nexample : True := by\n  trivial\nexample : True := by\n  trivial\nend Demo'}];
+ const w=await renderSnapshot(snapshot,{onProof:()=>({id:'examples',status:'ready',source_sha256:snapshot.sha256,nodes:[]})});
+ try{
+  const d=w.document, actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  assert.equal(actions.length,2);assert.notEqual(actions[0].dataset.proofClaim,actions[1].dataset.proofClaim);
+  const name=actions[1].dataset.proofClaim;
+  assert.match(name,/Example at line 4/);
+  actions[1].click();await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,name);
+  d.getElementById('proof-back').click();
+  assert.equal(d.activeElement.dataset.proofClaim,name);
+ }finally{w.close();}
+});
+
+test('Notebook contents nests fresh declarations and colours kinds independently of proof status',async()=>{
+ const snapshot=projectNotebook();snapshot.project_claims=[];
+ snapshot.cells=[{index:0,kind:'source',start:1,end:1,text:'import Mathlib'},
+ {index:1,kind:'prose',start:2,end:6,text:'/-!\n## Setup\n### Facts {fold}\n-/\n',markdown:'## Setup\n### Facts {fold}'},
+ {index:2,kind:'source',start:7,end:13,text:'namespace Demo\ndef base : Nat := 1\ntheorem result : True := by\n  trivial\ntheorem consequence : True := by\n  trivial\nend Demo'}];
+ snapshot.walkthrough={format:'glitnir.walkthrough-outline/v1',formalization:supportedWalkthroughFormalization,nodes:[{id:'cor',label:'Corollary',kind:'corollary',claim:'Demo.consequence',lean:[],uses:[]}]};
+ const w=await renderSnapshot(snapshot);w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  assert.ok(d.querySelector('#outline [data-outline-kind="setup"]'));
+  assert.ok(d.querySelector('#outline [data-outline-kind="definition"]'));
+  const theorem=d.querySelector('#outline [data-outline-kind="theorem"]>button');
+  assert.match(theorem.textContent,/Theorem.*result/);
+  assert.equal(theorem.closest('ol').parentElement.querySelector(':scope>button[data-act="scroll"]').textContent,'Facts');
+  const corollary=d.querySelector('#outline [data-outline-kind="corollary"]>button');
+  assert.match(corollary.textContent,/Corollary.*consequence/);
+  assert.equal(corollary.querySelector('.dot'),null,'declaration colour does not invent a proof status');
+  const id=corollary.dataset.id;corollary.click();
+  assert.equal(d.querySelector('.proof-section').open,true);
+  assert.equal(d.activeElement.id,id);
+  await w.glitnirPoll();assert.equal(d.activeElement.id,id);
+ }finally{w.close();}
+});
+
+test('Source hides comments without renumbering or stripping literal contents and exports full source',async()=>{
+ const text=['/-! prose -- words -/','def a := "-- literal" -- comment','/- outer','  /- nested -/','-/','def b := r#"" -- raw literal"#','def «-- name» := 2','def c := 3 /- inline -/ + 4','def d := r"'+String.fromCharCode(92)+'" -- tail'].join('\n');
+ const snapshot={...liveSnapshot(),cells:[{index:0,kind:'source',start:1,end:9,text}]};
+ const w=await renderSnapshot(snapshot,{katex:true});let exported;
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;d.querySelector('[data-mode="source"]').click();
+  const toggle=d.getElementById('source-hide-comments');assert.ok(toggle);toggle.checked=true;toggle.dispatchEvent(new w.Event('change',{bubbles:true}));
+  const code=()=>d.querySelector('#source .source').textContent;
+  assert.doesNotMatch(code(),/prose|outer|nested|inline/);
+  assert.match(code(),/"-- literal"/);assert.match(code(),/-- raw literal/);assert.match(code(),/«-- name»/);
+  assert.deepEqual([...d.querySelectorAll('#source [data-source-line]')].map(r=>Number(r.dataset.sourceLine)),[2,6,7,8,9]);
+  assert.equal(d.querySelector('#source-L9 .code').textContent.trimEnd(),text.split('\n')[8].split(' -- tail')[0]);
+  assert.doesNotMatch(code(),/-- tail/);
+  const line=d.querySelector('#source-L6 .ln a');assert.match(line.title,/Notebook/);
+  assert.match(d.querySelector('.source-link-hint').textContent,/Line numbers.*Notebook/);
+  d.getElementById('source-hide-comments').focus();await w.glitnirPoll();
+  assert.equal(d.activeElement.id,'source-hide-comments');assert.equal(d.getElementById('source-hide-comments').checked,true);
+  w.glitnirHost.saveHTML=async html=>{exported=html;};await d.getElementById('export-html').onclick();
+  assert.ok(exported,w.glitnirWorkbench.UI.notice);
+  assert.match(exported,/outer/);assert.match(exported,/inline/);
+  d.querySelector('#source-L6 .ln a').click();assert.equal(d.getElementById('doc').hidden,false);
+ }finally{w.close();}
+});
+
+test('outline headings preserve formatting and focus across chrome updates',async()=>{
+ const snapshot=liveSnapshot();snapshot.cells=[{index:0,kind:'prose',start:1,end:4,text:'/-!\n## A $x^2$ and `code`\nBody $y^3$.\n-/',markdown:'## A $x^2$ and `code`\nBody $y^3$.'}];
+ const w=await renderSnapshot(snapshot,{katex:true});w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;const button=()=>d.querySelector('#outline [data-act="scroll"]');
+  assert.ok(button().querySelector('.katex'));assert.ok(button().querySelector('code'));
+  const label=button().textContent;
+  let renders=0;const original=w.katex.render;w.katex.render=(...args)=>{renders++;return original(...args);};
+  w.glitnirWorkbench.renderChrome();w.glitnirWorkbench.renderChrome();
+  assert.equal(button().textContent,label);
+  button().click();const id=d.activeElement.id;assert.match(id,/notebook-heading/);
+  await w.glitnirPoll();assert.equal(d.activeElement.id,id);assert.equal(button().textContent,label);
+  assert.equal(renders,0,'unchanged outline updates retain the body math cache');
+ }finally{w.close();}
+});
+
+test('opening a linked notebook clears the previous outline target',async()=>{
+ const {main,linked}=linkedNotebooks();
+ const w=await renderSnapshot(main,{onLinked:()=>({json:linked})});w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  d.querySelector('#outline [data-act="scroll"]').click();
+  assert.ok(w.glitnirWorkbench.UI.outlineTarget);
+  [...d.querySelectorAll('a.notebook-reference')].find(a=>a.textContent==='the three states').click();
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(w.glitnirWorkbench.UI.outlineTarget,null);
+  assert.equal(d.querySelector('#outline [aria-current="true"]').dataset.id,'settled');
+ }finally{w.close();}
+});
+
+test('Explore keeps navigation in the sidebar and consolidates argument details', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.deepEqual([...d.querySelectorAll('.atlas-view-controls button')].map(b => b.textContent), ['Read', 'Route map', 'Statement graph']);
+    assert.ok(d.querySelector('.atlas-sidebar #atlas-query'));
+    assert.equal(d.querySelector('.atlas-actions,.atlas-qualification,.atlas-supports,.atlas-backlinks,[data-atlas="pane"]'), null);
+    const details = d.querySelector('.atlas-details');
+    assert.equal(details.querySelector('summary').textContent, 'Sources and details');
+    assert.match(details.textContent, /navigation grants no proof status/);
+    assert.ok(d.querySelector('article.atlas-explanation'));
+    details.open = true;
+    details.dispatchEvent(new w.Event('toggle'));
+    details.querySelector('summary').focus();
+    w.glitnirWorkbench.render();
+    assert.ok(d.querySelector('.atlas-details').open);
+    assert.equal(d.activeElement.parentElement.className, 'atlas-details');
+  } finally {w.close();}
+});
+
+test('Explore sidebar search preserves the selected view in Read, Route map and Statement graph', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot(), {onWindow: w => {w.HTMLElement.prototype.scrollIntoView = () => {};}});
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    for (const layout of ['reading', 'map', 'graph']) {
+      d.querySelector('[data-atlas="layout"][data-value="' + layout + '"]').click();
+      const input = d.querySelector('.atlas-sidebar #atlas-query');
+      assert.ok(input);
+      input.value = 'Argument 2';
+      input.dispatchEvent(new w.Event('input', {bubbles:true}));
+      d.querySelector('.atlas-matches a').click();
+      assert.equal(d.querySelector('[data-atlas="layout"][aria-pressed="true"]').dataset.value, layout);
+      assert.equal(d.querySelector('.atlas-flow [aria-current="step"]').dataset.value, 'n2');
+      if (layout === 'graph') assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+    }
+  } finally {w.close();}
+});
+
+test('Statement graph search leaves the remembered reading position unchanged', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  snapshot.walkthrough.position_key = 'graph-search-position';
+  snapshot.walkthrough.atlas_revision = 'revision';
+  const w = await renderSnapshot(snapshot, {browser:true, onWindow: w => {w.HTMLElement.prototype.scrollIntoView = () => {};}});
+  try {
+    const d = w.document, key = 'glitnir.atlas.' + snapshot.walkthrough.position_key;
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-atlas="layout"][data-value="map"]').click();
+    const saved = w.localStorage.getItem(key);
+    d.querySelector('[data-atlas="layout"][data-value="graph"]').click();
+    const input = d.querySelector('#atlas-query');
+    input.value = 'Argument 2';
+    input.dispatchEvent(new w.Event('input', {bubbles:true}));
+    d.querySelector('.atlas-matches a').click();
+    assert.equal(w.localStorage.getItem(key), saved);
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+  } finally {w.close();}
+});
+
+test('Sources disclosure stays a view preference rather than a navigation visit', async () => {
+  const w = await renderSnapshot(atlasExplorationSnapshot());
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('.atlas-details').open = true;
+    d.querySelector('.atlas-details').dispatchEvent(new w.Event('toggle'));
+    d.querySelector('.atlas-flow [data-value="n1"]').click();
+    assert.ok(d.querySelector('.atlas-details').open);
+    d.querySelector('.atlas-details').open = false;
+    d.querySelector('.atlas-details').dispatchEvent(new w.Event('toggle'));
+    d.querySelector('[data-atlas="back"]').click();
+    assert.equal(d.querySelector('.atlas-details').open, false);
+    assert.doesNotMatch(d.querySelector('.atlas-visit-history').textContent, /sources/);
+  } finally {w.close();}
+});
+
+function foldingOutlineSnapshot() {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.cells = [{index:0,kind:'prose',start:1,end:4,text:'/-!\n## Setup\n### Facts {fold}\n-/',markdown:'## Setup\n### Facts {fold}'}, {index:1,kind:'source',start:5,end:6,text:'def first := 1\ndef second := 2'}];
+  return snapshot;
+}
+
+test('Notebook sidebar folds are independent and reveal a navigated declaration', async () => {
+  const w = await renderSnapshot(foldingOutlineSnapshot(), {onWindow:w => {w.HTMLElement.prototype.scrollIntoView=()=>{};}});
+  try {
+    const d=w.document, section=()=>d.querySelector('#outline .outline-section');
+    const target=d.querySelector('#outline .outline-declaration button').dataset.id;
+    const fold=section().querySelector('[data-outline-toggle]');
+    assert.ok(fold);
+    fold.focus(); fold.click();
+    assert.equal(section().querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+    assert.ok(section().querySelector(':scope>ol').hidden);
+    assert.equal(d.querySelector('.proof-section').open,false,'sidebar fold does not change document fold');
+    await w.glitnirPoll();
+    assert.ok(section().querySelector(':scope>ol').hidden);
+    assert.ok(d.activeElement.matches('[data-outline-toggle]'),'fold focus survives polling');
+    w.glitnirWorkbench.UI.outlineTarget=target;
+    w.glitnirWorkbench.render();
+    assert.equal(section().querySelector(':scope>ol').hidden,false);
+    assert.ok(d.querySelector('#outline [aria-current="true"]'));
+    section().querySelector('[data-outline-toggle]').click();
+    section().querySelector(':scope>button[data-act="scroll"]').click();
+    assert.match(d.activeElement.id,/notebook-heading/,'section title remains a navigation action');
+  } finally {w.close();}
+});
+
+test('Notebook sidebar folds and adjustable width survive browser reopening', async () => {
+  const snapshot=foldingOutlineSnapshot();
+  let stored=[];
+  const open=()=>renderSnapshot(snapshot,{browser:true,onWindow:w=>{for(const [key,value] of stored) w.localStorage.setItem(key,value);}});
+  let w=await open();
+  try {
+    const d=w.document;
+    d.querySelector('[data-outline-toggle]').click();
+    const handle=d.querySelector('[role="separator"][aria-label="Notebook sidebar width"]');
+    assert.ok(handle);
+    handle.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+    assert.equal(handle.getAttribute('aria-valuenow'),'280');
+    stored=Object.entries(w.localStorage);
+  } finally {w.close();}
+  w=await open();
+  try {
+    const d=w.document;
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+    assert.equal(d.querySelector('[role="separator"]').getAttribute('aria-valuenow'),'280');
+    d.querySelector('[role="separator"]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));
+    assert.ok(Number(d.querySelector('[role="separator"]').getAttribute('aria-valuenow'))<=480);
+    d.querySelector('[role="separator"]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));
+    assert.equal(d.querySelector('[role="separator"]').getAttribute('aria-valuenow'),'260');
+  } finally {w.close();}
+});
+
+test('VS Code remembers Notebook layout through webview state without task messages', async () => {
+  let state={unrelated:'keep'};
+  const w=await renderSnapshot(foldingOutlineSnapshot(),{onWindow:w=>{const api=w.acquireVsCodeApi();w.acquireVsCodeApi=()=>({...api,getState:()=>state,setState:value=>{state=value;}});}});
+  try {
+    w.document.querySelector('[data-outline-toggle]').click();
+    assert.equal(state.unrelated,'keep');
+    assert.ok(state.notebookLayouts);
+    assert.ok(Object.values(state.notebookLayouts)[0].collapsed.length);
+  } finally {w.close();}
+});
+
+test('Notebook sidebar pointer resizing clamps width and stops on release', async () => {
+  const w=await renderSnapshot(foldingOutlineSnapshot());
+  try {
+    const handle=w.document.getElementById('outline-resize');
+    const pointer=(type,x)=>{const e=new w.MouseEvent(type,{clientX:x,button:0,bubbles:true});Object.defineProperty(e,'pointerId',{value:1});handle.dispatchEvent(e);};
+    pointer('pointerdown',260);pointer('pointermove',300);
+    assert.equal(handle.getAttribute('aria-valuenow'),'300');
+    pointer('pointermove',-1000);assert.equal(handle.getAttribute('aria-valuenow'),'200');
+    pointer('pointerup',-1000);pointer('pointermove',1000);
+    assert.equal(handle.getAttribute('aria-valuenow'),'200');
+    assert.equal(w.document.activeElement,handle);
+  } finally {w.close();}
+});
+
+test('Notebook outline preferences are isolated by source path and tolerate unavailable storage', async () => {
+  const snapshot=foldingOutlineSnapshot();snapshot.source_path='/project/First.lean';
+  const w=await renderSnapshot(snapshot,{browser:true});
+  try {
+    const d=w.document;
+    d.querySelector('[data-outline-toggle]').click();
+    w.glitnirWorkbench.UI.data={...snapshot,source_path:'/other/First.lean'};
+    w.glitnirWorkbench.render();
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'true');
+    Object.defineProperty(w,'localStorage',{get(){throw new Error('blocked');}});
+    d.querySelector('[data-outline-toggle]').click();
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+    w.glitnirWorkbench.render();
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+  } finally {w.close();}
+});
+
+test('Notebook reopening preserves folds around an automatically selected saved claim', async () => {
+  const snapshot=foldingOutlineSnapshot();
+  snapshot.cells[1].text='theorem first : True := by trivial';snapshot.cells[1].claim='first';
+  snapshot.project_claims=[{name:'first',start_line:5,end_line:5,type:'True',status:'checked',axioms:[],current:true}];
+  let stored=[];
+  const open=()=>renderSnapshot(snapshot,{browser:true,onWindow:w=>{for(const [key,value] of stored) w.localStorage.setItem(key,value);}});
+  let w=await open();
+  try {
+    assert.ok(w.document.querySelector('#outline .o-claim'));
+    w.document.querySelector('[data-outline-toggle]').click();
+    stored=Object.entries(w.localStorage);
+  } finally {w.close();}
+  w=await open();
+  try {assert.equal(w.document.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');}
+  finally {w.close();}
+});
+
+test('Notebook navigation reveals the current outline item within the sidebar without scrolling the page', async () => {
+  const w=await renderSnapshot(foldingOutlineSnapshot());
+  try {
+    const d=w.document, rail=d.querySelector('.rail');
+    w.HTMLElement.prototype.getBoundingClientRect=function(){return this===rail?{top:0,bottom:200}:this.matches('#outline button[aria-current="true"]')?{top:400,bottom:420}:{top:0,bottom:0};};
+    let pageScrolls=0;w.scrollTo=()=>{pageScrolls++;};
+    w.glitnirWorkbench.UI.outlineTarget=d.querySelector('#outline .outline-declaration button').dataset.id;
+    w.glitnirWorkbench.render();
+    assert.equal(rail.scrollTop,220);
+    await w.glitnirPoll();
+    assert.equal(rail.scrollTop,220,'polling preserves the sidebar position');
+    assert.equal(pageScrolls,0);
   } finally {w.close();}
 });

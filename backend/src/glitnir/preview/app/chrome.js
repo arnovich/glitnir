@@ -46,9 +46,16 @@
   window.addEventListener('resize', hideHelp);
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
-    const busy = UI.data && UI.data.checking.length;
-    $('conn').dataset.state = !UI.connected ? 'down' : busy ? 'busy' : 'up';
-    $('conn-text').textContent = !UI.connected ? 'Server not reachable · retrying' : busy ? `Lean is checking ${UI.data.checking.join(', ')}` : 'Connected to the local notebook server';
+    $('conn').dataset.state = UI.connected ? 'up' : 'down';
+    $('conn-text').textContent = UI.connected ? 'Connected' : 'Reconnecting…';
+    $('connection-detail').textContent = UI.connected ? 'Connected to the local notebook server' : 'Server not reachable · retrying';
+    $('status-summary').setAttribute('aria-label', `Notebook status: ${[$('conn-text').textContent, $('proof-availability').hidden ? '' : $('proof-availability').textContent, $('subline').textContent, $('live-status').textContent].filter(Boolean).join(' · ')}. Show details`);
+    $('status-summary').title = [
+      $('connection-detail').textContent,
+      $('file-state').title,
+      $('lean-unsupported').hidden ? $('subline').textContent : $('lean-unsupported-text').textContent,
+      $('live-status').textContent,
+    ].filter(Boolean).join('\n');
   }
 
   function drawGraph() {
@@ -135,16 +142,173 @@
   $('history').addEventListener('toggle', () => { if ($('history').open) void loadGitHistory(); });
   renderGitHistory();
 
+  let outlineOwner = null, outlineCollapsed = new Set(), outlineWidth = 260;
+  let outlineSelection = null, revealOutline = false;
+  const sidebarHandle = $('outline-resize');
+  function saveOutlineLayout() {
+    const value = {width: outlineWidth, collapsed: [...outlineCollapsed].slice(0, 2000)};
+    try {
+      if (window.glitnirHost) window.glitnirHost.saveNotebookLayout?.(outlineOwner, value);
+      else localStorage.setItem('glitnir.outline.' + outlineOwner, JSON.stringify(value));
+    } catch { /* Preferences are optional. */ }
+  }
+  function applyOutlineWidth() {
+    const available = $('workspace').clientWidth || window.innerWidth;
+    const max = Math.max(200, Math.min(480, Math.floor(available * .32)));
+    const width = Math.min(max, Math.max(200, outlineWidth));
+    $('workspace').style.setProperty('--outline-width', width + 'px');
+    sidebarHandle.setAttribute('aria-valuemax', String(max));
+    sidebarHandle.setAttribute('aria-valuenow', String(width));
+  }
+  function readOutlineLayout() {
+    const key = JSON.stringify([UI.data.source_path || UI.data.preview?.project?.root || '', UI.data.file, linkedPath() || '']);
+    if (outlineOwner !== key) {
+      outlineOwner = key; outlineCollapsed = new Set(); outlineWidth = 260; outlineSelection = UI.outlineTarget || UI.selected || '';
+      try {
+        const value = window.glitnirHost ? window.glitnirHost.readNotebookLayout?.(key) : JSON.parse(localStorage.getItem('glitnir.outline.' + key) || 'null');
+        if (Number.isFinite(value?.width)) outlineWidth = Math.max(200, Math.min(480, value.width));
+        if (Array.isArray(value?.collapsed)) outlineCollapsed = new Set(value.collapsed.slice(0, 2000).filter(v => typeof v === 'string' && v.length < 4096));
+      } catch { /* Ignore unreadable preferences. */ }
+    }
+    applyOutlineWidth();
+  }
+  $('outline').addEventListener('click', event => {
+    const toggle = event.target.closest('[data-outline-toggle]');
+    if (!toggle) return;
+    const key = toggle.dataset.outlineKey;
+    if (outlineCollapsed.has(key)) outlineCollapsed.delete(key); else outlineCollapsed.add(key);
+    saveOutlineLayout(); renderOutline();
+  });
+  function resizeOutline(width, persist = true) {
+    const max = Number(sidebarHandle.getAttribute('aria-valuemax'));
+    outlineWidth = Math.max(200, Math.min(max, width)); applyOutlineWidth();
+    if (persist) saveOutlineLayout();
+  }
+  let sidebarDrag = null;
+  sidebarHandle.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    sidebarDrag = {id: event.pointerId, x: event.clientX, width: Number(sidebarHandle.getAttribute('aria-valuenow'))};
+    sidebarHandle.setPointerCapture?.(event.pointerId); sidebarHandle.focus({preventScroll: true}); event.preventDefault();
+  });
+  sidebarHandle.addEventListener('pointermove', event => {
+    if (sidebarDrag?.id === event.pointerId) resizeOutline(sidebarDrag.width + event.clientX - sidebarDrag.x, false);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) sidebarHandle.addEventListener(type, () => {if (sidebarDrag) saveOutlineLayout(); sidebarDrag = null;});
+  sidebarHandle.addEventListener('keydown', event => {
+    const width = Number(sidebarHandle.getAttribute('aria-valuenow'));
+    const next = {ArrowLeft: width - 20, ArrowRight: width + 20, Home: 200, End: Number(sidebarHandle.getAttribute('aria-valuemax'))}[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); event.stopPropagation(); resizeOutline(next);
+  });
+  sidebarHandle.addEventListener('dblclick', () => resizeOutline(260));
+  window.addEventListener('resize', applyOutlineWidth);
+
+  function renderOutline() {
+    readOutlineLayout();
+    const outline = $('outline'), rail = outline.closest('.rail');
+    const scroll = rail.scrollTop;
+    const focused = outline.contains(document.activeElement) ? {...document.activeElement.dataset} : null;
+    const roots = [], stack = [{level: 1, children: roots}], declarations = [];
+    const kinds = new Set(['definition', 'lemma', 'proposition', 'theorem', 'corollary', 'algorithm', 'appendix']);
+    for (const [index, el] of [...$('doc').querySelectorAll('[id^="notebook-heading-"],.cell[data-claim],.definition,.context-card,.source-context')].entries()) {
+      if (el.matches('[id^="notebook-heading-"]')) {
+        const level = Number(el.tagName.slice(1));
+        while (stack.length > 1 && stack.at(-1).level >= level) stack.pop();
+        const label = (el.dataset.heading || el.textContent).replace(/\s+\{fold\}\s*$/, '').trim();
+        el.tabIndex = -1;
+        const prefix = /^(Definition|Lemma|Proposition|Theorem|Corollary|Setup)\b/i.exec(label)?.[1].toLowerCase();
+        const entry = {id: el.id, label, kind: prefix || 'section', section: true, children: []};
+        stack.at(-1).children.push(entry); stack.push({level, children: entry.children});
+        continue;
+      }
+      if (el.closest('.cell[data-claim]') && !el.matches('.cell[data-claim]')) continue;
+      const kindLabel = el.querySelector('.def-kind')?.textContent.trim() || '';
+      const claimName = el.dataset.claim;
+      const c = claimName ? claim(claimName) : null;
+      const short = el.querySelector('.card-header dfn code')?.textContent.trim();
+      const namespace = el.querySelector('.def-namespace code')?.textContent.trim();
+      const name = claimName || [namespace, short].filter(Boolean).join('.');
+      let kind = /theorem/i.test(kindLabel) ? 'theorem' : /lemma/i.test(kindLabel) ? 'lemma' : /example/i.test(kindLabel) ? 'example' : /assumption/i.test(kindLabel) ? 'assumption' : 'definition';
+      let label = c ? (c.project ? claimLabel(c) : c.name) : short;
+      if (!el.matches('.definition,.cell[data-claim]')) {
+        const code = el.querySelector('pre')?.textContent.trim() || '';
+        if (el.matches('.import-header')) label = el.querySelector('summary')?.firstChild?.textContent.trim();
+        else if (el.matches('.source-context') && /^(namespace|section|open|variable|universe|set_option)\b/.test(code)) label = code.split('\n')[0];
+        else if (el.matches('.context-card') && !['Note', 'Additional notebook content'].includes(kindLabel)) label = kindLabel;
+        else continue;
+        kind = 'setup';
+      }
+      if (!label) label = kindLabel || 'Example';
+      const start = el.querySelector('.source-link')?.dataset.start;
+      const cell = el.closest('.cellwrap')?.dataset.index || '0';
+      if (!el.id) el.id = `notebook-entry-${cell}-${start || index}`;
+      el.tabIndex = -1;
+      const entry = {id: el.id, label, name, kind, c, children: []};
+      stack.at(-1).children.push(entry); declarations.push(entry);
+    }
+    for (const node of UI.data.walkthrough?.nodes || []) {
+      if (!node?.claim || !kinds.has(node.kind)) continue;
+      const exact = declarations.filter(e => e.name === node.claim);
+      const matches = exact.length ? exact : declarations.filter(e => e.name?.endsWith('.' + node.claim));
+      if (matches.length === 1) {
+        const entry = matches[0];
+        entry.mappedKinds ||= new Set(); entry.mappedKinds.add(node.kind);
+      }
+    }
+    for (const entry of declarations) if (entry.mappedKinds?.size === 1) entry.kind = [...entry.mappedKinds][0];
+    const selection = UI.outlineTarget || UI.selected || '';
+    const reveal = revealOutline || selection !== outlineSelection;
+    outlineSelection = selection; revealOutline = false;
+    const prepareAll = entries => {
+      let contains = false;
+      for (const entry of entries) {
+        entry.key = entry.id + '|' + entry.label;
+        const childCurrent = prepareAll(entry.children);
+        const current = UI.outlineTarget ? UI.outlineTarget === entry.id : entry.c && UI.selected === entry.c.name;
+        if (reveal && (current || childCurrent)) outlineCollapsed.delete(entry.key);
+        contains ||= Boolean(current || childCurrent);
+      }
+      return contains;
+    };
+    prepareAll(roots);
+    const html = entries => entries.map(entry => {
+      const saved = entry.c, current = UI.outlineTarget ? UI.outlineTarget === entry.id : saved && UI.selected === saved.name;
+      const action = saved ? `data-act="goto" data-id="${esc(saved.name)}"` : `data-act="scroll" data-id="${esc(entry.id)}"`;
+      const kind = entry.kind[0].toUpperCase() + entry.kind.slice(1);
+      const content = entry.section ? inlineHTML(entry.label) : `<span class="o-kind" title="Declaration kind: ${esc(kind)}">${esc(kind)}</span><span class="o-name${saved ? ' o-claim' : ''}">${breakableName(entry.label)}</span>`;
+      const dot = saved ? `<span class="dot" data-tone="${toneOf(saved)}" title="${esc(statusOf(saved).label)}${saved.project && currencyNoted(saved.project) ? ' · ' + esc(currencyText(saved.project)) : ''}"></span>` : '';
+      const folded = outlineCollapsed.has(entry.key), childrenId = 'outline-children-' + entry.id;
+      const toggle = entry.children.length ? `<button type="button" class="outline-toggle" data-outline-toggle="${esc(entry.id)}" data-outline-key="${esc(entry.key)}" aria-label="${folded ? 'Expand' : 'Fold'} ${esc(entry.label)}" aria-expanded="${!folded}" aria-controls="${esc(childrenId)}">${folded ? '▸' : '▾'}</button>` : '';
+      return `<li class="${entry.children.length ? 'outline-branch ' : ''}${entry.section ? 'outline-section' : 'outline-declaration'}" data-outline-kind="${entry.kind}">${toggle}<button type="button" ${action} aria-current="${Boolean(current)}" title="${esc(entry.name || entry.label)}">${content}${dot}</button>${entry.children.length ? `<ol id="${esc(childrenId)}"${folded ? ' hidden' : ''}>${html(entry.children)}</ol>` : ''}</li>`;
+    }).join('');
+    outline.innerHTML = html(roots);
+    // Keep the shared cache's full root set, including on standalone chrome updates.
+    typesetMath($('doc'), $('insp'), $('title'), outline, $('graph-view'));
+    if (focused) [...outline.querySelectorAll('button')].find(b => focused.outlineToggle ? b.dataset.outlineToggle === focused.outlineToggle : b.dataset.act === focused.act && b.dataset.id === focused.id)?.focus({preventScroll: true});
+    rail.scrollTop = scroll;
+    if (reveal) {
+      const current = outline.querySelector('button[aria-current="true"]');
+      if (current) {
+        const item = current.getBoundingClientRect(), bounds = rail.getBoundingClientRect();
+        if (item.top < bounds.top) rail.scrollTop += item.top - bounds.top;
+        else if (item.bottom > bounds.bottom) rail.scrollTop += item.bottom - bounds.bottom;
+      }
+    }
+  }
+
   function renderChrome() {
     const d = UI.data, cs = claims();
     document.title = `${title()} · Glitnir`;
     $('title').innerHTML = inlineHTML(title());
     $('file-name').textContent = d.file;
+    $('file-name').title = d.source_path || d.file;
+    $('file-name').setAttribute('aria-description', d.source_path || d.file);
     const linked = Boolean(linkedPath());
-    $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : 'Notebook';
+    $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : '';
+    $('location').hidden = !linked;
     renderTrail();
     $('file-state').textContent = `Source hash: ${d.sha256.slice(0, 8)}`;
-    $('file-state').title = `SHA-256 of the saved Lean source (not a Git commit): ${d.sha256}`;
+    $('file-state').title = `Source hash: ${d.sha256}\nSHA-256 of the displayed saved source (not a Git commit)`;
     const count = key => cs.filter(c => c.status === key).length;
     const stat = (n, tone, text) => `<span class="stat"><span class="dot"${tone ? ` data-tone="${tone}"` : ''}></span>${n} ${esc(text)}</span>`;
     const project = d.preview?.mode === 'project';
@@ -154,13 +318,13 @@
     const notRechecked = cs.filter(c => c.project?.not_rechecked).length;
     const covered = project && requestedCut(d.project_withheld) ? d.project_withheld.through_line : null;
     const bits = walkthroughUnchecked()
-      ? [stat(cs.length, 'muted', 'unchecked')]
+      ? []
       : project
       ? [...statuses.map(k => stat(count(k), statusOf({status: k, project: true}).tone, statusOf({status: k, project: true}).label.toLowerCase())), ...(outOfDate ? [stat(outOfDate, 'amber', 'out of date')] : []), ...(uncompared ? [stat(uncompared, '', 'not compared')] : []),
         ...(notRechecked ? [stat(notRechecked, 'muted', 'not rechecked')] : []), ...(covered ? [`<span class="stat project-covered">last check: lines 1–${esc(covered)}</span>`] : [])]
       : [['checked', 'green'], ['refuted', 'red'], ['conditional', 'amber'], ['stale', 'amber'], ['open', ''], ['failed', 'red'], ['unknown', 'amber']]
         .filter(([k]) => count(k)).map(([k, t]) => stat(count(k), t, LABEL[k].toLowerCase()));
-    $('subline').innerHTML = bits.join('') + (d.checking.length ? `<span class="stat checking-badge">Checking ${d.checking.length}</span>` : '');
+    $('subline').innerHTML = (bits.length ? bits.join('') : project && !walkthroughUnchecked() && !d.preview.check && !d.checking.length ? '<span class="stat">No check results</span>' : '') + (d.checking.length ? `<span class="stat checking-badge">Checking ${d.checking.length}</span>` : '');
     const stale = cs.filter(c => c.status === 'stale' && !checking(c.name) && c.record);
     $('banner').hidden = !stale.length;
     $('banner-text').textContent = `${stale.length} result${stale.length > 1 ? 's' : ''} no longer match${stale.length > 1 ? '' : 'es'} the file: ${stale.map(c => c.name).join(', ')}.`;
@@ -174,12 +338,14 @@
     // One banner for a project Glitnir does not check; never on a static page.
     const unsupported = leanOff() || walkthroughUnchecked();
     $('lean-unsupported').hidden = !unsupported;
+    $('proof-availability').textContent = walkthroughUnchecked() ? 'Not checked' : 'Checking unavailable';
+    $('proof-availability').hidden = !unsupported;
     // The message already names any lean-toolchain read error: shown verbatim.
     $('lean-unsupported-text').textContent = unsupported ? walkthroughMessage() || d.preview.lean?.message || '' : '';
     if (unsupported) $('check-project').hidden = true;
     if (leanOff()) $('inspect-project').hidden = true;
     $('check-project').disabled = checkBusy();
-    $('project-check').hidden = !project || linked || (!d.preview.check && !walkthroughUnchecked());
+    $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
     const inspected = inspection();
     $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
@@ -202,11 +368,15 @@
       $('banner').classList.toggle('recorded', recorded());
       $('banner').dataset.state = recorded() ? 'recorded' : '';
       if (recorded()) { $('check-project').hidden = true; $('inspect-project').hidden = true; $('project-check').hidden = true; }
-      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : unsupported ? 'Saved-source preview.' : d.preview.notice;
+      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : unsupported ? '' : d.preview.notice;
       // A check through one claim is deliberate: said, not flagged.
       const scope = covered ? `The last check covered lines 1–${covered} only.` : '';
-      $('banner-text').textContent = [...attention, scope, notice, where].filter(Boolean).join(' ');
-    } else { $('banner').classList.remove('quiet', 'recorded'); $('banner').dataset.state = ''; }
+      $('project-context').textContent = [notice, where].filter(Boolean).join(' ');
+      const fallback = d.preview.notice?.match(/The file is shown as source.*$/)?.[0] || '';
+      $('banner-text').textContent = [...attention, scope, linked || recorded() ? notice : fallback].filter(Boolean).join(' ');
+      $('banner-text').hidden = !$('banner-text').textContent;
+      $('banner').hidden = !$('banner-text').textContent && $('check-project').hidden && $('inspect-project').hidden;
+    } else { $('project-context').textContent = ''; $('banner-text').hidden = false; $('banner').classList.remove('quiet', 'recorded'); $('banner').dataset.state = ''; }
     $('export-html').disabled = linked || Boolean(UI.exporting);
     $('export-html').title = linked ? `Go back to ${UI.main?.file || 'the notebook'} to export it` : '';
     $('preview-footer').textContent = project ? 'Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.' : 'Statuses describe saved files checked by sandboxed Lean.';
@@ -217,28 +387,20 @@
       + (revisions.length
         ? [...revisions].reverse().map(h => `<div class="rev"><b>r${esc(h.rev)}</b><span>${esc(h.label)} <span class="muted">${when(h.time)}</span></span><span class="effect" data-hit="${(h.made_stale || []).length > 0}">${esc(effect(h))}</span></div>`).join('')
         : '<p class="small muted">No recorded notebook activity.</p>');
-    $('outline').innerHTML = d.cells.flatMap(cell => {
-      if (cell.kind === 'claim') {
-        const c = claim(cell.id);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(c.name)}</span><span class="dot" data-tone="${statusOf(c).tone}" title="${statusOf(c).label}"></span></button></li>`] : [];
-      }
-      if (cell.kind === 'source' && cell.claim) {
-        const c = claim(cell.claim);
-        return c ? [`<li><button type="button" data-act="goto" data-id="${esc(c.name)}" aria-current="${UI.selected === c.name}" title="${esc(c.name)}"><span class="o-claim">${breakableName(claimLabel(c))}</span><span class="dot" data-tone="${toneOf(c)}" title="${esc(statusOf(c).label)}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}"></span></button></li>`] : [];
-      }
-      if (cell.kind === 'prose') {
-        return [...cell.markdown.matchAll(/^\s*(#{2,6}) (.+)$/gm)].map((m, i) => `<li class="outline-level-${m[1].length}"><button type="button" data-act="scroll" data-id="notebook-heading-${cell.index}-${i}">${inlineHTML(m[2].trim().replace(/\s+\{fold\}$/, ''))}</button></li>`);
-      }
-      return [];
-    }).join('');
+    renderOutline();
     $('chips-row').innerHTML = cs.map(c => `<button type="button" data-act="goto" data-id="${esc(c.name)}"><span class="dot" data-tone="${toneOf(c)}"></span> ${esc(claimLabel(c))}</button>`).join('');
     document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === UI.mode)));
     $('doc').hidden = UI.mode !== 'doc';
     $('source').hidden = UI.mode !== 'source';
     $('reading-view').hidden = UI.mode === 'graph';
     $('graph-view').hidden = UI.mode !== 'graph';
+    const notebookView = UI.mode === 'doc';
+    document.body.dataset.view = UI.mode;
+    $('workspace').classList.toggle('focused-view', !notebookView);
+    document.querySelector('.rail').hidden = !notebookView;
+    document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
-    $('panel-show').hidden = UI.panel;
+    $('panel-show').hidden = !notebookView || UI.panel;
     // Project records hold uses only from checks that recorded them: without
     // any, show no graph rather than a graph without its arcs.
     const graph = !project || cs.some(c => Array.isArray(c.project?.uses));
@@ -285,9 +447,10 @@
     const helpFocus = document.activeElement?.dataset.helpKey;
     const helpOpen = helpFocus && !$(helpFocus)?.hidden;
     const openHelpKey = document.querySelector('.help-tooltip:not([hidden])')?.id;
+    const outlineDocumentFocus = UI.mode === 'doc' && /^notebook-(entry|heading)-/.test(document.activeElement?.id || '') ? document.activeElement.id : null;
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
     const foldFocus = saveReadingFolds();
-    const linkSelector = '.source-link,.source-edit,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
+    const linkSelector = '.source-link,.source-edit,.source-inspect,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
     const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
@@ -300,7 +463,8 @@
     const graphDetail = $('graph-detail');
     const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
-    const atlasFocus = atlasActive ? {search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
+    const atlasFocus = atlasActive ? {controlRegion: ['.atlas-flow', '.atlas-route-controls', '.atlas-visit-history', '.atlas-overview', '.atlas-details', '.atlas-content'].find(selector => atlasActive.closest(selector)), search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
+      summary: atlasActive.matches('.atlas-details > summary') ? '.atlas-details > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const scroll = $('insp').scrollTop;
     const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
@@ -311,23 +475,23 @@
     }
     renderInspector();
     renderChrome();
-    typesetMath($('doc'), $('insp'), $('title'), $('outline'), $('graph-view'));
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
     if (UI.mode === 'doc' && UI.documentLine?.sha === UI.data.sha256) {
       const target = documentTarget(UI.documentLine.line);
       if (target) { target.classList.add('document-target'); target.tabIndex = -1; if (documentFocus) target.focus({preventScroll: true}); }
     }
+    if (outlineDocumentFocus) $(outlineDocumentFocus)?.focus({preventScroll: true});
     if (sourceFocus) $(sourceFocus)?.focus({preventScroll: true});
     if (sourceControl?.sha === UI.data.sha256) {
       const control = [...$('source').querySelectorAll('[data-act]')].find(el => el.dataset.act === sourceControl.act && el.dataset.line === sourceControl.line);
       control?.focus({preventScroll: true});
     }
     if (atlasFocus && UI.mode === 'graph') {
-      const controls = [...$('graph-view').querySelectorAll('[data-atlas]')];
+      const controls = [...$('graph-view').querySelectorAll((atlasFocus.controlRegion ? atlasFocus.controlRegion + ' ' : '') + '[data-atlas]')];
       const source = [...$('graph-view').querySelectorAll('[data-atlas-source]')].find(el => el.dataset.atlasSource === atlasFocus.source);
       const atlasLink = atlasFocus.region && [...$('graph-view').querySelectorAll(atlasFocus.region + ' a[href]')].find(el => el.getAttribute('href') === atlasFocus.href);
-      const control = atlasLink || (atlasFocus.search ? $('atlas-query') : atlasFocus.source ? source : atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value));
+      const control = (atlasFocus.summary && $('graph-view').querySelector(atlasFocus.summary)) || atlasLink || (atlasFocus.search ? $('atlas-query') : atlasFocus.source ? source : atlasFocus.heading ? $('atlas-selected') : atlasFocus.route ? $('graph-view').querySelector('[data-atlas-route]') : controls.find(el => el.dataset.atlas === atlasFocus.action && el.dataset.value === atlasFocus.value));
       control?.focus({preventScroll: true});
       if (atlasFocus.search && control) control.setSelectionRange(...atlasFocus.selection);
     }
@@ -419,25 +583,25 @@
   $('export-html').onclick = exportHTML;
 
   // ----- keyboard shortcuts ------------------------------------------------------
-  // The one list of shortcuts: the help dialog and the contents hint are drawn
-  // from it, and the user guide's table (docs/guide.md) must match it (a test compares them).
+  // The one list of shortcuts: the help dialog is drawn from it, and the
+  // user guide's table (docs/guide.md) must match it (a test compares them).
   // `editor` keys exist only in the VS Code preview, whose review layer
   // (review.js) handles n/p, c/t and e; `editorText` is their wording there.
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
   const SHORTCUTS = [
-    {group: 'Navigate', keys: ['j', 'k'], hint: 'claims', text: 'Next / previous claim'},
-    {group: 'Navigate', keys: ['n', 'p'], hint: 'needs attention', editor: true,
+    {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
+    {group: 'Navigate', keys: ['n', 'p'], editor: true,
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], hint: 'claims / proof steps', editor: true, text: 'Claims / Proof steps'},
-    {group: 'View', keys: ['s'], hint: 'document / source', text: 'Switch between document and Lean source'},
-    {group: 'View', keys: ['g'], hint: 'proof graph', text: 'Show the recorded proof graph'},
-    {group: 'View', keys: ['i'], hint: 'inspector', text: 'Show or hide the claim inspector'},
-    {group: 'Check and edit', keys: ['r'], hint: 'check through claim', text: 'Check the saved file through the selected claim',
+    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / inspect selected claim’s proof steps'},
+    {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
+    {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
+    {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
+    {group: 'Check and edit', keys: ['r'], text: 'Check the saved file through the selected claim',
       editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
-    {group: 'Check and edit', keys: ['e'], hint: 'edit in VS Code', editor: true, text: 'Edit the selected claim or proof step in VS Code'},
-    {group: 'General', keys: ['?'], hint: 'all shortcuts', text: 'Show these shortcuts'},
+    {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim or proof step in VS Code'},
+    {group: 'General', keys: ['?'], text: 'Show these shortcuts'},
     {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel',
-      editorText: 'Close the dialog; in Proof steps, return to Claims'},
+      editorText: 'Close the dialog; in Proof steps, return to the claim'},
     {group: 'General', keys: MAC ? ['⌘K', 'G'] : ['Ctrl+K', 'G'], chord: true, editor: true,
       text: 'In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G'},
   ].filter(s => HOST || !s.editor);
@@ -447,7 +611,6 @@
     const groups = [...new Set(SHORTCUTS.map(s => s.group))];
     $('keys-groups').innerHTML = groups.map(group => `<section class="keys-group"><h4 class="label">${esc(group)}</h4><dl>${SHORTCUTS.filter(s => s.group === group)
       .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc((HOST && s.editorText) || s.text)}</dd>`).join('')}</dl></section>`).join('');
-    $('key-hints').innerHTML = SHORTCUTS.filter(s => s.hint).map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc(s.hint)}</dd>`).join('');
   }
   renderShortcuts();
 
@@ -470,6 +633,7 @@
     render();
   }
   function select(name, scroll) {
+    UI.outlineTarget = null; revealOutline = true;
     UI.sourceCell = null;
     UI.selected = name;
     UI.graphSelected = `local:${name}`;
@@ -482,6 +646,7 @@
   function showSourceLines(start, end) {
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) return;
     if (!UI.data.cells.some(cell => start >= cell.start && start < cell.start + cell.text.split('\n').length)) return;
+    UI.hideSourceComments = false;
     UI.sourceRange = {start, end, sha: UI.data.sha256};
     UI.mode = 'source';
     render();
@@ -529,6 +694,7 @@
   }
 
   document.addEventListener('change', e => {
+    if (e.target.matches('#source-hide-comments')) { UI.hideSourceComments = e.target.checked; render(); return; }
     if (!e.target.matches('[data-diagram-contract]')) return;
     const key = e.target.dataset.diagramContract;
     if (!key.endsWith(UI.data.sha256)) return;
@@ -553,7 +719,6 @@
       case 'diagram': diagramAction(b); break;
       case 'diagram-close': closeDiagram(); break;
       case 'diagram-condition': { e.preventDefault(); const details = document.getElementById(b.getAttribute('href').slice(1)); if (details) { details.open = true; details.querySelector('summary').focus(); details.scrollIntoView({block: 'nearest'}); } break; }
-      case 'document-return': showDocument(); break;
       case 'document-line': e.preventDefault(); showDocument(Number(b.dataset.line), b.dataset.sha); break;
       case 'source-lines': e.preventDefault(); showSourceLines(Number(b.dataset.start), Number(b.dataset.end)); break;
       case 'source': if (linkedPath()) break; if (b.dataset.start && HOST) HOST.openSource({index: Number(b.dataset.index), sha256: b.dataset.sha, range: {start: Number(b.dataset.start), end: Number(b.dataset.end)}}); else openSource(Number(b.dataset.index)); break;
@@ -605,6 +770,7 @@
       // Stale buttons of an earlier saved file never check other lines.
       case 'check-through': if (b.dataset.sha === UI.data.sha256 && claim(id)) { UI.selected = id; checkProject(Number(b.dataset.line)); } break;
       case 'scroll': {
+        UI.outlineTarget = id; revealOutline = true;
         UI.mode = 'doc';
         render();
         const heading = document.getElementById(id);
@@ -635,14 +801,23 @@
   $('keys-open').onclick = () => keys(true);
   $('keys-close').onclick = () => keys(false);
   $('keys').onclick = e => { if (e.target === $('keys')) keys(false); };
+  document.addEventListener('click', e => {
+    if (!$('header-status').contains(e.target)) $('header-status').open = false;
+  });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if ($('header-status').open) {
+        $('header-status').open = false;
+        $('status-summary').focus({preventScroll: true});
+        e.stopPropagation();
+        return;
+      }
       hideHelp();
       keys(false);
       $('history').open = false;
       return;
     }
-    if (e.target.closest('#image-dialog,.context-help')) return;
+    if ($('header-status').open || e.target.closest('#image-dialog,.context-help,#header-status')) return;
     const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"],#graph-view [data-act="graph-select"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
@@ -654,7 +829,7 @@
       j: () => move(1), k: () => move(-1), '?': () => keys(true),
       s: () => { if (UI.mode === 'source') showDocument(); else { UI.mode = 'source'; render(); } },
       g: () => { UI.mode = 'graph'; render(); },
-      i: () => { UI.panel = !UI.panel; render(); },
+      i: () => { if (UI.mode === 'doc') { UI.panel = !UI.panel; render(); } },
       // Check through the selected claim; Check saved file checks all of it.
       r: () => { const c = claim(UI.selected); if (c?.project && !linkedPath()) checkProject(c.project.end_line); },
     };

@@ -116,12 +116,14 @@
   // runs no Lean (the server refuses every such request with the same words).
   // Saved results shown as recorded run nothing and say nothing about it.
   const leanOff = () => UI.data?.preview?.lean?.supported === false && !recorded();
-  const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : 'Saved file is up to date');
+  const upToDate = () => (linkedPath() && mainChanged ? `${UI.main?.file || 'The notebook'} changed on disk · go back to read the saved edits` : '');
   let readableSnapshot, heldRendering = false, highlightTimer;
   let highlighted = new Set(), highlightUntil = 0;
 
   function liveMessage(text) {
     if ($('live-status').textContent !== text) $('live-status').textContent = text;
+    $('live-status').hidden = !text;
+    renderConnection();
   }
   function scheduleLoad(delay) {
     clearTimeout(loadTimer);
@@ -132,7 +134,7 @@
     if (linkedPath()) { mainChanged = true; liveMessage(upToDate()); return; }
     sourceEpoch++;
     reloadPending = true;
-    liveMessage('Saved file changing…');
+    liveMessage('Updating preview…');
     scheduleLoad(250);
   });
 
@@ -217,6 +219,7 @@
     const changed = readableSnapshot && readableSnapshot.sha256 !== data.sha256;
     forgetFailedDrawings(Boolean(UI.data) && UI.data.preview?.check?.status !== data.preview?.check?.status, data.sha256);
     forgetImages(data);
+    if (UI.data?.sha256 !== data.sha256) UI.outlineTarget = null;
     UI.data = data;
     UI.connected = true;
     // Only the previewed notebook's snapshots reach the editor integration.
@@ -231,9 +234,9 @@
       highlightUntil = Date.now() + 2400;
       clearTimeout(highlightTimer);
       highlightTimer = setTimeout(markLiveChanges, 2450);
-      liveMessage('Saved edits received · checking is manual');
-    } else if (opening) liveMessage(linkedPath() && !mainChanged ? `Reading ${data.file} read-only · its saved results only` : upToDate());
-    else if (heldRendering) liveMessage('Saved source is readable again');
+      liveMessage(upToDate());
+    } else if (opening) liveMessage(upToDate());
+    else if (heldRendering) liveMessage(upToDate());
     else if (readableSnapshot) liveMessage(upToDate());
     opening = false;
     heldRendering = false;
@@ -258,8 +261,10 @@
     const epoch = sourceEpoch;
     const link = linkedPath();
     inFlight = (async () => {
+      let reachedServer = false;
       try {
         const response = await fetch(link ? `/api/linked?path=${encodeURIComponent(link)}` : '/api/notebook', {cache: 'no-store', headers: API});
+        reachedServer = true;
         if (!response.ok) {
           const answer = await response.json().catch(() => ({}));
           throw Object.assign(new Error(answer.error || `server said ${response.status}`), {refused: response.status >= 400 && response.status < 500});
@@ -269,11 +274,11 @@
         // opened: never flash the old reply.
         if (epoch === sourceEpoch) acceptSnapshot(data);
       } catch (error) {
+        if (epoch === sourceEpoch) UI.connected = reachedServer;
         if (epoch === sourceEpoch && link && (opening || error.refused)) {
           // The linked notebook cannot be read: say why and return.
           leaveLinked(`${link} could not be opened here: ${error.message}`);
         } else if (epoch === sourceEpoch) {
-          UI.connected = false;
           if (!link) document.dispatchEvent(new CustomEvent('glitnir-snapshot', {detail: undefined}));
           holdRendering(`Cannot read ${link || 'saved file'} · showing the last readable version; retrying`);
           renderConnection();
@@ -415,7 +420,7 @@
     const actions = staticPage ? '' : checkThroughHTML(saved, 'Check through here', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
-        ${window.glitnirCards.header({label: presentation.label, name: c.label, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end), badgesHTML: `<span class="pill" data-tone="${st.tone}">${esc(st.label)}</span>${stale}`})}
+        ${window.glitnirCards.header({label: presentation.label, name: c.label, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end, true, saved.name, staticPage), badgesHTML: `<span class="pill" data-tone="${st.tone}">${esc(st.label)}</span>${stale}`})}
         ${namespaceHTML(namespace)}
         ${reading?.doc ? `<div class="doc-line">${docHTML(reading.doc)}</div>` : ''}
         ${statement ? `<div class="claim-statement">${statement}</div>` : ''}${checked}
@@ -552,7 +557,7 @@
     if (!linkedPath()) mainChanged = false;
     clearTimeout(highlightTimer);
     highlighted = new Set();
-    Object.assign(UI, {selected: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
+    Object.assign(UI, {selected: null, outlineTarget: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
     closeDiagram();
     document.body.classList.toggle('glitnir-linked-view', Boolean(linkedPath()));
     const cached = snapshots.get(linkedPath() ?? '');

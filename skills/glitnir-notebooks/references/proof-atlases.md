@@ -6,10 +6,10 @@ formalization reading routes, or explanations that are awkward in one linear not
 Lean dependency extraction. The atlas is curated exposition, not checking evidence.
 
 Keep `outline.json` as the paper-to-Lean source map. Add `atlas.json` beside it;
-Glitnir offers **Reading first**, **Map first**, and the original **Statement graph**
-in Graph view. Both atlas layouts share selection, source details and Back/Forward.
-Use **Route overview** to see the selected route, shared steps and paged map;
-**Used by** follows the reverse curated links. Map first opens the overview.
+Glitnir offers **Read**, **Map**, and **Graph** (the full statement map)
+in Explore view. Both atlas layouts share selection, source details and Back/Forward.
+Choose **Map** to open the route overview and nearby supporting steps;
+**Used by** follows the reverse curated links. **Graph** opens the full statement dependency graph.
 A route switch explicitly starts at that route's result. Static export includes
 linked, expandable argument explanations and all declaration qualification notes.
 
@@ -139,3 +139,13 @@ For each route, read the reachable argument count, longest depth in support
 edges, arguments with multiple reachable parents, and boundaries where the
 route stops. Inspect named boundaries for missing explanation and repair any
 unreachable argument or broken source binding reported by the validator.
+
+In Explore, the notebook sidebars are hidden. Use **Actions** for restarting the
+route, copying an argument link and inspecting the source revision. **Source status** expands the mapped status details.
+
+The exploration sidebar shows the selected route and current argument. Use its
+**Lean proof / Paper proof** choices to change reading routes. Back/Forward name
+the arguments previously visited. Map includes its overview, with no independent
+overview toggle. Check sidebar paging and the current-step highlight after
+following a support or a backlink. Read should remain a bounded prose column,
+with assumptions and paper/Lean differences visible.
