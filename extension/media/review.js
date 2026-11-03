@@ -9,10 +9,10 @@
   let snapshot, sha, selected = null, dirty = false, mode = 'claims', trace, step = -1;
   let generation = 0, polling, helpFocus, sourceLine, sourceCharacter, pendingRefresh = false, pendingReveal;
   const positions = new Map();
+  let returnPosition, inspection;
   const nav = document.createElement('nav');
   nav.className = 'review-nav'; nav.setAttribute('aria-label', 'Review navigation');
-  nav.innerHTML = `<div class="seg" role="group" aria-label="Navigation mode"><button id="review-claims" aria-pressed="true">Claims <kbd>c</kbd></button><button id="review-proof" aria-pressed="false">Proof steps <kbd>t</kbd></button></div>
-    <label id="review-filter-label">Show <select id="review-filter" aria-label="Claims to review"><option value="attention">Needs attention</option><option value="all">All claims</option></select></label>
+  nav.innerHTML = `<label id="review-filter-label">Show <select id="review-filter" aria-label="Claims to review"><option value="attention">Needs attention</option><option value="all">All claims</option></select></label>
     <span id="review-position" class="small" role="status"></span><div class="review-controls"><button class="secondary" id="review-previous">Previous <kbd>p</kbd></button></div>`;
   const next = $('next-unresolved') || document.createElement('button');
   next.id = 'next-unresolved'; next.className = 'secondary'; next.innerHTML = 'Next <kbd>n</kbd>'; next.hidden = false;
@@ -21,7 +21,7 @@
   activity.prepend(nav);
   const proof = document.createElement('section');
   proof.id = 'proof-review'; proof.hidden = true;
-  proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-title"></h2><p id="proof-status" class="small"></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-cancel" class="secondary" hidden>Cancel</button><button id="proof-back" class="secondary">Back to claims <kbd>Esc</kbd></button></div></div>
+  proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-title"></h2><p id="proof-status" class="small"></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-cancel" class="secondary" hidden>Cancel</button><button id="proof-back" class="secondary">Back to claim <kbd>Esc</kbd></button></div></div>
     <p id="proof-message" role="status"></p><div class="proof-grid"><div><pre id="proof-statement"></pre><div id="proof-tactics" role="group" aria-label="Recorded tactics"></div></div><div class="proof-goals"><h3 id="proof-goal-title"></h3><details id="proof-before"><summary>Goals before this tactic</summary><pre id="proof-before-text"></pre></details><pre id="proof-after"></pre><p class="small" id="proof-scope"></p><details id="proof-diagnostics" hidden><summary>Lean messages</summary><pre></pre></details><p id="proof-provenance" class="small muted"></p></div></div>`;
   activity.after(proof);
   // The renderer draws the shortcut list (one source for every listing); this
@@ -65,16 +65,17 @@
   }
   function nodes() {
     if (!trace || !['ready', 'partial'].includes(trace.status) || trace.source_sha256 !== sha || (!project() && trace.claim !== currentClaim()?.name)) return [];
-    const cell = currentCell();
-    return (trace.nodes || []).filter(n => !cell || (n.range.start.line >= cell.start && n.range.start.line <= cell.end));
+    const scope = inspection?.sha === sha ? inspection : null;
+    return (trace.nodes || []).filter(n => scope && n.range.start.line >= scope.start && n.range.start.line <= scope.end);
   }
-  function remember() { if (trace?.id) positions.set(`${trace.id}:${selected}`, step); }
+  const positionKey = () => `${trace?.id}:${inspection?.sha}:${inspection?.name}:${inspection?.start}:${inspection?.end}`;
+  function remember() { if (trace?.id) positions.set(positionKey(), step); }
   function focusAfterRender(previous) {
     if (previous?.dataset.proofNode) {
       const found = [...$('proof-tactics').children].find(b => b.dataset.proofNode === String(nodes()[step]?.id));
-      (found || $('review-proof')).focus({preventScroll: true});
+      (found || $('proof-back')).focus({preventScroll: true});
     } else if (previous && (previous.hidden || previous.disabled || previous.closest('[hidden]') || (mode === 'proof' && previous.closest('.workspace')))) {
-      $(mode === 'proof' ? 'review-proof' : 'review-claims').focus({preventScroll: true});
+      if (mode === 'proof') $('proof-back').focus({preventScroll: true});
     }
   }
   function update() {
@@ -83,13 +84,14 @@
     nav.hidden = !snapshot || !!snapshot.error;
     proof.hidden = !inProof;
     document.body.classList.toggle('glitnir-proof-mode', inProof);
-    $('review-claims').setAttribute('aria-pressed', String(!inProof));
-    $('review-proof').setAttribute('aria-pressed', String(inProof));
     const unavailable = proofUnavailable();
-    $('review-proof').disabled = dirty || !!unavailable || (!project() && !claim);
-    $('review-proof').title = dirty ? 'Save or revert edits before viewing proof steps' : unavailable ? `Proof steps unavailable: ${unavailable}` : 'Explore saved tactics (t)';
-    if (unavailable) $('review-proof').setAttribute('aria-description', unavailable);
-    else $('review-proof').removeAttribute('aria-description');
+    for (const button of document.querySelectorAll('[data-act="inspect-proof"]')) {
+      const reason = dirty ? 'Save or revert edits before viewing proof steps.' : unavailable;
+      button.disabled = !!reason;
+      button.title = reason || 'Inspect this claim’s saved tactic goals (t)';
+      if (reason) button.setAttribute('aria-description', reason);
+      else button.removeAttribute('aria-description');
+    }
     $('review-filter-label').hidden = inProof || project();
     const previous = $('review-previous');
     previous.disabled = dirty || (inProof ? step < 0 : !queue.some(c => selected === null || c.index < selected));
@@ -109,9 +111,9 @@
     }
     $('review-position').hidden = !$('review-position').textContent;
     if (!inProof) { focusAfterRender(focused); return; }
-    $('proof-title').textContent = claim?.name || currentCell()?.id || snapshot?.file || 'Saved source unavailable';
+    $('proof-title').textContent = !snapshot ? 'Saved source unavailable' : inspection?.name || 'Selected claim';
     $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : 'Project observation · use Check saved file for proof checking';
-    $('proof-statement').textContent = claim ? `${claim.keyword} ${claim.name} ${claim.statement}` : currentCell()?.text || '';
+    $('proof-statement').textContent = claim ? `${claim.keyword} ${claim.name} ${claim.statement}` : currentCell()?.text.split('\n').slice(Math.max(0, (inspection?.start || currentCell().start) - currentCell().start), (inspection?.end || currentCell().end) - currentCell().start + 1).join('\n') || '';
     $('proof-refresh').disabled = dirty || !!unavailable || !snapshot || !!snapshot.error || trace?.status === 'running';
     $('proof-cancel').hidden = trace?.status !== 'running';
     $('proof-message').textContent = dirty ? 'Unsaved changes — save or revert, then refresh proof steps.' : (pendingRefresh ? 'Finishing the previous observation before loading this claim…' : trace?.message) || 'Load the saved proof to see its tactic goals.';
@@ -173,7 +175,7 @@
     } catch (error) { if (epoch === generation) { trace = {status: 'unavailable', message: String(error), nodes: []}; update(); } }
   }
   async function refresh() {
-    if (dirty || !snapshot || proofUnavailable()) return;
+    if (dirty || !snapshot || proofUnavailable() || !inspection || inspection.sha !== sha) return;
     if (trace?.status === 'running') {
       if (!project() && trace.claim !== currentClaim()?.name) {
         pendingRefresh = true;
@@ -205,10 +207,45 @@
   // Another notebook of the project read in this panel: review, proof steps
   // and editing belong to the previewed notebook, so they stay off.
   const linkedView = () => document.body.classList.contains('glitnir-linked-view');
-  function proofMode() {
-    if (dirty || proofUnavailable() || (!project() && !currentClaim()) || linkedView()) return;
-    mode = 'proof'; step = positions.get(`${trace?.id}:${selected}`) ?? -1; update();
+  function proofMode(action) {
+    if (dirty || proofUnavailable() || linkedView() || !snapshot) return;
+    const workbench = window.glitnirWorkbench;
+    const buttons = [...document.querySelectorAll('[data-act="inspect-proof"]')].filter(b => b.dataset.sha === sha);
+    let cell = currentCell();
+    if (!action && mode === 'proof' && !sourceLine && inspection) action = buttons.find(b => b.dataset.proofClaim === inspection.name && Number(b.dataset.start) === inspection.start);
+    if (!action) {
+      action = buttons.find(b => Number(b.dataset.index) === selected && (!sourceLine || Number(b.dataset.start) <= sourceLine && sourceLine <= Number(b.dataset.end)));
+      if (action && !cell?.claim && cell?.kind !== 'claim' && buttons.filter(b => Number(b.dataset.index) === selected).length > 1 && !sourceLine) action = null;
+      action ||= buttons.find(b => b.dataset.proofClaim === workbench?.UI.selected);
+    }
+    if (action) cell = snapshot.cells?.find(c => c.index === Number(action.dataset.index));
+    const name = action?.dataset.proofClaim || cell?.claim || (cell?.kind === 'claim' ? cell.id : null);
+    if (!cell || !name) return;
+    selected = cell.index;
+    inspection = {name, index: selected, start: action ? Number(action.dataset.start) : cell.start, end: action ? Number(action.dataset.end) : cell.end, sha};
+    if (mode !== 'proof') returnPosition = {claim: name, sha, scroll: workbench?.UI.mode === 'doc' ? [window.scrollX, window.scrollY] : null};
+    else if (returnPosition?.claim !== name) returnPosition = {claim: name, sha, scroll: null};
+    if (workbench) { workbench.UI.selected = name; workbench.UI.mode = 'doc'; workbench.render(); }
+    mode = 'proof'; step = Math.min(positions.get(positionKey()) ?? -1, nodes().length - 1); update();
+    $('proof-back').focus({preventScroll: true});
     if (!trace || trace.status === 'stale' || (!project() && trace.claim !== currentClaim()?.name)) void refresh();
+  }
+  function backToClaim(focus = true) {
+    if (mode !== 'proof') return;
+    const origin = returnPosition;
+    returnPosition = null;
+    claimsMode();
+    const workbench = window.glitnirWorkbench;
+    if (workbench) { workbench.UI.mode = 'doc'; workbench.render(); }
+    const action = [...document.querySelectorAll('[data-act="inspect-proof"]')].find(b => b.dataset.proofClaim === origin?.claim);
+    const target = action?.closest('.cell');
+    if (origin?.sha === sha && origin.scroll) window.scrollTo(...origin.scroll);
+    else if (target) { workbench?.revealSection?.(target); target.scrollIntoView?.({block: 'center'}); }
+    if (focus) {
+      if (action && !action.disabled) action.focus({preventScroll: true});
+      else if (target) { target.tabIndex = -1; target.classList.add('document-target'); if (workbench) workbench.UI.documentLine = {line: inspection?.start, sha}; target.focus({preventScroll: true}); }
+      else document.querySelector('[data-mode="doc"]')?.focus({preventScroll: true});
+    }
   }
   function edit() {
     const node = nodes()[step];
@@ -218,21 +255,26 @@
       host.openSource({index: cell.index, sha256: sha, trace: {id: trace.id, node: node.id}});
     } else host.openSelectedSource();
   }
-  $('review-claims').onclick = $('proof-back').onclick = claimsMode;
-  $('review-proof').onclick = proofMode; $('review-filter').onchange = update;
+  $('proof-back').onclick = () => backToClaim();
+  $('review-filter').onchange = update;
   $('review-previous').onclick = () => move(-1); next.onclick = () => move(1);
   $('proof-refresh').onclick = () => void refresh();
   $('proof-cancel').onclick = () => { pendingRefresh = false; void host.fetch('/api/proof/cancel', {method: 'POST', body: '{}'}).catch(() => {}); update(); };
   $('open-source').onclick = edit; $('open-source').title = 'Edit the selected claim or tactic in VS Code (e)';
   document.addEventListener('glitnir-snapshot', event => {
     const nextSnapshot = event.detail;
+    const inspectedName = mode === 'proof' ? inspection?.name : null;
     if (sha && nextSnapshot?.sha256 !== sha) { selected = null; invalidate('Saved source changed. Refresh proof steps.'); }
     snapshot = nextSnapshot; sha = snapshot?.sha256;
+    if (mode === 'proof' && inspectedName && inspection.sha !== sha && snapshot) {
+      const cell = snapshot.cells?.find(c => c.claim === inspectedName || c.kind === 'claim' && c.id === inspectedName);
+      if (cell) { selected = cell.index; inspection = {name: inspectedName, index: selected, start: cell.start, end: cell.end, sha}; }
+      else backToClaim(proof.contains(document.activeElement));
+    }
     if (mode === 'proof' && proofUnavailable()) {
-      const focused = proof.contains(document.activeElement) || document.activeElement === $('review-proof');
+      const focused = proof.contains(document.activeElement);
       invalidate(proofUnavailable());
-      claimsMode();
-      if (focused) $('review-claims').focus({preventScroll: true});
+      backToClaim(focused);
     }
     if (selected !== null && !currentCell()) selected = null;
     if (selected === null) selected = snapshot?.cells?.find(c => c.kind === (project() ? 'source' : 'claim'))?.index ?? null;
@@ -254,7 +296,7 @@
         invalidate('Saved source changed. Refreshing the notebook…');
       } else applySourceReveal(message);
     }
-    if (message.type === 'reviewCommand' && (!linkedView() || message.action === 'help')) ({next: () => move(1), previous: () => move(-1), claims: claimsMode, proof: proofMode, help: helpOpen})[message.action]?.();
+    if (message.type === 'reviewCommand' && (!linkedView() || message.action === 'help')) ({next: () => move(1), previous: () => move(-1), claims: () => backToClaim(), proof: proofMode, help: helpOpen})[message.action]?.();
   });
   document.addEventListener('click', event => {
     if (event.target.closest('[data-mode]')) claimsMode();
@@ -263,6 +305,13 @@
   }, true);
   document.addEventListener('click', event => {
     if (linkedView()) return;
+    const inspect = event.target.closest('[data-act="inspect-proof"]');
+    if (inspect) {
+      if (inspect.disabled || inspect.dataset.sha !== sha) return;
+      selected = Number(inspect.dataset.index);
+      proofMode(inspect);
+      return;
+    }
     const link = event.target.closest('[data-act="goto"]'), wrap = event.target.closest('.cellwrap'), row = event.target.closest('#source tr[data-claim]');
     if (link) selected = snapshot?.cells?.find(c => c.id === link.dataset.id)?.index ?? null;
     else if (wrap) selected = Number(wrap.dataset.index);
@@ -302,7 +351,7 @@
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const overlay = [...document.querySelectorAll('.overlay')].some(e => e !== help && !e.hidden);
     if (overlay || $('history')?.open) { if (event.key !== 'Escape') event.stopImmediatePropagation(); return; }
-    if (event.key === 'Escape' && mode === 'proof') { event.preventDefault(); event.stopImmediatePropagation(); claimsMode(); return; }
+    if (event.key === 'Escape' && mode === 'proof') { event.preventDefault(); event.stopImmediatePropagation(); backToClaim(); return; }
     if (!$('review-letter-keys').checked) { if (event.key.length === 1) event.stopImmediatePropagation(); return; }
     if (linkedView()) {
       // Only help and the renderer's own keys (j/k claims, s source, i inspector)
@@ -311,7 +360,7 @@
       else if (event.key.length === 1 && !'jksi'.includes(event.key)) event.stopImmediatePropagation();
       return;
     }
-    const actions = {n: () => move(1), p: () => move(-1), c: claimsMode, t: proofMode, e: edit, '?': helpOpen};
+    const actions = {n: () => move(1), p: () => move(-1), c: () => backToClaim(), t: proofMode, e: edit, '?': helpOpen};
     if (actions[event.key]) { event.preventDefault(); event.stopImmediatePropagation(); actions[event.key](); return; }
     if (['j', 'k', 's', 'i'].includes(event.key)) {
       claimsMode();

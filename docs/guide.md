@@ -166,8 +166,8 @@ action. Escape dismisses the explanation.
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
 - Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow live edits**, beside the Claims / Proof steps controls, scrolls to them after each save.
-- **Claims** (`c`) steps through the claims with `j` and `k`; `i` shows the claim
+  highlights the changed sections. **Follow live edits**, in the Notebook controls below the title, scrolls to them after each save.
+- `j` and `k` step through the claims; `i` shows the claim
   inspector for the selected claim.
 - `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
   Item**, step through the claims that need attention: out of date, not
@@ -176,10 +176,11 @@ action. Escape dismisses the explanation.
 
 ### Proof goals and steps
 
-**Glitnir: Explore Proof Steps** (or `t` in the preview) records the selected
+**Inspect proof steps** on a claim (or `t` for the selected claim, or
+**Glitnir: Inspect Selected Claim’s Proof Steps**) records the selected
 proof's tactic tree once with Lean, then lets you walk it with the goals before
 and after each step: `n` and `p` move between steps, `r` checks the whole saved
-file, and `Esc` returns to Claims. **Inspect proof goals** in the claim inspector
+file, and **Back to claim** or `Esc` returns to that claim and its reading position. **Inspect proof goals** in the claim inspector
 shows the goals after each tactic step of the selected claim from the same
 recording. Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`.
 Both are historical observations of the saved file and never change a status.
@@ -425,14 +426,14 @@ the preview for this list. Moving never starts a check.
 |---|---|
 | `j` `k` | Next / previous claim |
 | `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
-| `c` `t` | Claims / Proof steps |
+| `c` `t` | Return to claim / inspect selected claim’s proof steps |
 | `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
 | `i` | Show or hide the claim inspector in Notebook |
 | `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
 | `e` | Edit the selected claim or proof step in VS Code |
 | `?` | Show these shortcuts |
-| `Esc` | Close the dialog; in Proof steps, return to Claims |
+| `Esc` | Close the dialog; in Proof steps, return to the claim |
 | `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
 <!-- shortcuts:end -->
 
@@ -695,3 +696,7 @@ sidebar stays focused on navigating the notebook.
 Proof steps is disabled when the project or walkthrough requires an incompatible
 Lean toolchain. Its tooltip explains why; the shortcut and editor command also
 leave the reading view in place without requesting a tactic observation.
+
+Proof inspection is a claim action rather than a notebook-wide mode. The title
+stays in the same position in Notebook, Source and Explore; Notebook-only
+Previous/Next and Follow live edits controls sit below it.

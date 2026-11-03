@@ -308,7 +308,7 @@
     const openHelpKey = document.querySelector('.help-tooltip:not([hidden])')?.id;
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
     const foldFocus = saveReadingFolds();
-    const linkSelector = '.source-link,.source-edit,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
+    const linkSelector = '.source-link,.source-edit,.source-inspect,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
     const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
@@ -450,7 +450,7 @@
     {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
     {group: 'Navigate', keys: ['n', 'p'], editor: true,
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Claims / Proof steps'},
+    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / inspect selected claim’s proof steps'},
     {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
     {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
     {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
@@ -459,7 +459,7 @@
     {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim or proof step in VS Code'},
     {group: 'General', keys: ['?'], text: 'Show these shortcuts'},
     {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel',
-      editorText: 'Close the dialog; in Proof steps, return to Claims'},
+      editorText: 'Close the dialog; in Proof steps, return to the claim'},
     {group: 'General', keys: MAC ? ['⌘K', 'G'] : ['Ctrl+K', 'G'], chord: true, editor: true,
       text: 'In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G'},
   ].filter(s => HOST || !s.editor);

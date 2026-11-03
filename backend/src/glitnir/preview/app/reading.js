@@ -77,10 +77,14 @@
     while (!entries[to - 1][1].trim()) to--;
     return entries.slice(at, to);
   }
-  function lineLinkHTML(start, end, editable = true) {
+  function lineLinkHTML(start, end, editable = true, inspectName = '', staticPage = false) {
     const cell = UI.data.cells.find(c => c.start <= start && end <= c.end);
     const edit = editable && HOST && cell && !linkedPath() ? `<button type="button" class="source-edit" data-act="source" data-index="${cell.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" title="Edit in editor" aria-label="Edit in editor">${icon('edit')}</button>` : '';
-    return `<span class="source-controls"><a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
+    const reason = document.body.classList.contains('unsaved-lean') ? 'Save or revert edits before viewing proof steps.'
+      : UI.data.preview?.lean?.supported === false ? UI.data.preview.lean.message || 'Proof steps are unavailable for this Lean toolchain.'
+      : walkthroughUnchecked() ? walkthroughMessage() : '';
+    const inspect = HOST && inspectName && !staticPage && !linkedPath() ? `<button type="button" class="source-inspect secondary" data-act="inspect-proof" data-proof-claim="${esc(inspectName)}" data-index="${cell?.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" aria-label="Inspect proof steps for ${esc(inspectName)}" title="${esc(reason || 'Inspect this claim’s saved tactic goals (t)')}"${reason ? ` disabled aria-description="${esc(reason)}"` : ''}>Inspect proof steps</button>` : '';
+    return `<span class="source-controls">${inspect}<a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
   }
   const leanOf = entries => entries.map(e => e[1]).join('\n');
   // A cell's [line, text] entries; a source cell's text ends with a newline.
@@ -393,7 +397,7 @@
       kind: presentation.kind, label: presentation.label, name,
       signature: headerType, descriptionHTML: shortDoc ? inlineHTML(shortDoc) : '',
       classes: ['definition', ...(compact ? ['compact-definition'] : [])],
-      locationHTML: lineLinkHTML(entries[0][0], entries[entries.length - 1][0]),
+      locationHTML: lineLinkHTML(entries[0][0], entries[entries.length - 1][0], true, keyword === 'example' ? `${namespace ? namespace + ' · ' : ''}Example at line ${command.body[0][0]}` : ['theorem', 'lemma'].includes(keyword) ? [namespace, name].filter(Boolean).join('.') : ''),
       sourceHTML: sourceFoldHTML(entries, 'definition', ['example', 'theorem', 'lemma'].includes(keyword) ? 'Lean source & proof' : 'Lean source')
         + (details ? `<details class="def-lean definition-details" data-fold-key="definition-details:${esc(leanOf(entries))}"><summary>Details</summary>${details}</details>` : ''),
       bodyHTML: `${namespaceHTML(namespace)}
@@ -427,7 +431,7 @@
     const uses = c.uses.length ? `<div class="uses">uses ${c.uses.map(useHTML).join('')}</div>` : '';
     return `<section class="cell" id="cell-${esc(c.name)}" data-claim="${esc(c.name)}">
       <article class="claim card-proposition" data-tone="${st.tone}" data-selected="${UI.selected === c.name}" aria-label="${esc(c.keyword)} ${esc(c.name)}">
-        ${window.glitnirCards.header({label: window.glitnirCards.declarations[c.keyword]?.label || c.keyword, name: c.name, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end), badgesHTML: `${!staticPage && checking(c.name) ? '<span class="checking-badge">Checking in Lean</span>' : ''}<span class="pill" data-tone="${st.tone}">${st.label}</span>`})}
+        ${window.glitnirCards.header({label: window.glitnirCards.declarations[c.keyword]?.label || c.keyword, name: c.name, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end, true, c.name, staticPage), badgesHTML: `${!staticPage && checking(c.name) ? '<span class="checking-badge">Checking in Lean</span>' : ''}<span class="pill" data-tone="${st.tone}">${st.label}</span>`})}
         ${namespaceHTML(namespace)}
         ${c.doc ? `<div class="doc-line">${inlineHTML(c.doc)}</div>` : ''}
         <div class="claim-statement">${fieldHTML('Statement', c.statement.replace(/^:\s*/, ''))}</div>

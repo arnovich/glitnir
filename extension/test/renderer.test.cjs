@@ -93,6 +93,7 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
   window.setTimeout = (fn, delay) => delay === 4000 || delay === 1000 ? (window.glitnirPoll = fn, onPoll?.(fn, delay), 0) : schedule(fn, delay);
   window.Response = Response;
   window.matchMedia = () => ({matches: false});
+  window.scrollTo = () => {};
   window.acquireVsCodeApi = () => ({postMessage: message => {
     onMessage?.(message);
     if (message.type === 'exportTarget') {
@@ -1687,7 +1688,7 @@ test('shared theorem headers retain status and inline edit selects each declarat
     const controls = [...d.querySelectorAll('#doc .source-controls')];
     assert.equal(controls.length, 3);
     for (const [i, bounds] of [[0, [1, 1]], [1, [3, 3]], [2, [4, 5]]]) {
-      const button = controls[i].querySelector('button');
+      const button = controls[i].querySelector('.source-edit');
       assert.equal(button.title, 'Edit in editor');
       assert.equal(button.getAttribute('aria-label'), 'Edit in editor');
       button.click();
@@ -2600,7 +2601,7 @@ test('review follows source selection, exact editor returns and every help close
     assert.equal(sourceRow.dataset.claim, 'two');
     sourceRow.focus(); key('t'); await settle();
     assert.equal($('proof-title').textContent, 'two');
-    assert.equal(window.document.activeElement.id, 'review-proof');
+    assert.equal(window.document.activeElement.id, 'proof-back');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 1, sha256: snapshot.sha256, line: 4, character: 7}}));
     assert.equal($('review-position').textContent, 'Step 2 of 2');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 0, sha256: snapshot.sha256, line: 2, character: 7}}));
@@ -2614,8 +2615,8 @@ test('review follows source selection, exact editor returns and every help close
     snapshot.sha256 = 'b'.repeat(64); snapshot.cells[1].index = 2;
     await window.glitnirPoll(); await settle();
     assert.equal($('proof-title').textContent, 'two');
-    $('review-proof').focus(); key('?'); $('keys-close').click(); await settle();
-    assert.equal(window.document.activeElement.id, 'review-proof');
+    $('proof-back').focus(); key('?'); $('keys-close').click(); await settle();
+    assert.equal(window.document.activeElement.id, 'proof-back');
     $('keys-open').focus(); $('keys-open').click(); $('keys').click(); await settle();
     assert.equal(window.document.activeElement.id, 'keys-open');
     window.document.querySelector('[data-mode="source"]').click();
@@ -2648,7 +2649,7 @@ test('switching a running proof queues once and explicit cancel cancels that int
   const $ = id => window.document.getElementById(id);
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   try {
-    $('review-proof').click(); await settle(30);
+    window.document.querySelector('[data-act="inspect-proof"]').click(); await settle(30);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 1, sha256: snapshot.sha256, line: 2, character: 0}}));
     $('proof-cancel').click(); await settle(850);
     assert.equal(starts, 1, 'cancel also cancels the queued replacement');
@@ -2796,11 +2797,11 @@ test('reverse reveal waits for a fresh live snapshot after an obsolete poll', as
 });
 
 test('proof review becomes unavailable cleanly if its saved file cannot be read', async () => {
-  let reply = {json: {...liveSnapshot(), preview: {mode: 'project', project: {}, notice: ''}}};
+  let reply = {json: projectNotebook()};
   const window = await renderSnapshot(reply.json, {onNotebook: () => reply, onProof: () => ({status: 'ready', id: 'trace', source_sha256: 'a'.repeat(64), nodes: [], environment: {toolchain: 'Lean'}})});
   const $ = id => window.document.getElementById(id);
   try {
-    $('review-proof').click();
+    window.document.querySelector('[data-act="inspect-proof"]').click();
     await new Promise(resolve => setTimeout(resolve, 30));
     reply = {status: 409, json: {error: 'File temporarily missing'}};
     await window.glitnirPoll();
@@ -3486,7 +3487,7 @@ test('Explore Proof Steps joins the observation the inspector started', async ()
   try {
     window.document.querySelector('#insp [data-act="goal"]').click(); await settle(20);
     window.document.querySelector('#doc .cellwrap[data-index="3"]').click();
-    window.document.getElementById('review-proof').click(); await settle(20);
+    window.document.querySelector('[data-act="inspect-proof"]').click(); await settle(20);
     assert.equal(starts, 1, 'the running observation is joined');
     assert.match(window.document.getElementById('proof-message').textContent, /Recording saved tactic goals/);
     trace = goalTrace(snapshot.sha256, {id: '1'});
@@ -5580,7 +5581,7 @@ for (const walkthrough of [false,true]) {
   else snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:reason};
   const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m)});
   try {
-   const d=w.document, button=d.getElementById('review-proof');
+   const d=w.document, button=d.querySelector('[data-act="inspect-proof"]');
    assert.equal(button.disabled,true);
    assert.match(button.title,/4\.33\.1/);
    assert.equal(button.getAttribute('aria-description'),reason);
@@ -5602,25 +5603,126 @@ test('a compatibility change leaves active Proof steps without another observati
  try{
   const d=w.document;
   w.dispatchEvent(new w.MessageEvent('message',{data:{type:'revealCell',index:3,sha256:snapshot.sha256}}));
-  d.getElementById('review-proof').click();
+  d.querySelector('[data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(d.getElementById('proof-review').hidden,false);
   d.querySelector('#proof-tactics button').focus();
   snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:'Use a compatible Lean toolchain.'};
   await w.glitnirPoll();
-  assert.equal(d.getElementById('review-proof').disabled,true);
+  assert.equal(d.querySelector('[data-act="inspect-proof"]').disabled,true);
   assert.equal(d.getElementById('proof-review').hidden,true);
-  assert.equal(d.activeElement,d.getElementById('review-claims'));
+  assert.equal(d.activeElement.dataset.claim,'Demo.k_pos');
   const starts=messages.filter(m=>m.path==='/api/proof/start').length;
   d.getElementById('proof-refresh').click();
   assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,starts);
   snapshot.preview.lean.supported=true;
   await w.glitnirPoll();
-  d.getElementById('review-proof').click();
+  d.querySelector('[data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   d.getElementById('status-summary').focus();
   snapshot.preview.lean.supported=false;
   await w.glitnirPoll();
   assert.equal(d.activeElement,d.getElementById('status-summary'),'compatibility updates do not steal focus outside the proof inspector');
+ }finally{w.close();}
+});
+
+test('proof inspection belongs to each claim and returns to its reading position',async()=>{
+ const snapshot=projectNotebook(), messages=[];
+ const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m),onProof:()=>goalTrace(snapshot.sha256)});
+ let top=240, returned;
+ Object.defineProperty(w,'scrollY',{get:()=>top});
+ w.scrollTo=(x,y)=>{returned=[x,y];};
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
+ try{
+  const d=w.document;
+  assert.equal(d.querySelector('#review-proof,#review-claims'),null);
+  const actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.k_pos','Demo.floor']);
+  assert.equal(d.querySelector('.import-header [data-act="inspect-proof"]'),null);
+  assert.ok(d.querySelector('.heading').compareDocumentPosition(d.querySelector('.live-bar')) & w.Node.DOCUMENT_POSITION_FOLLOWING);
+  actions[1].click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
+  assert.match(d.getElementById('proof-back').textContent,/Back to claim/);
+  assert.equal(d.activeElement,d.getElementById('proof-back'));
+  d.getElementById('proof-back').click();
+  assert.equal(d.getElementById('proof-review').hidden,true);
+  assert.equal(d.activeElement.dataset.proofClaim,'Demo.floor');
+  assert.deepEqual(returned,[0,240]);
+  returned=null;
+  d.querySelector('[data-act="inspect-proof"]').focus();
+  const focused=d.activeElement;
+  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'c',bubbles:true}));
+  assert.equal(returned,null,'c outside inspection does not reuse an old return position');
+  assert.equal(d.activeElement,focused);
+  assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,1);
+ }finally{w.close();}
+});
+
+test('fresh project theorems have declaration-scoped proof actions before checking',async()=>{
+ const snapshot=projectNotebook();
+ snapshot.project_claims=[];
+ snapshot.cells=[{index:0,kind:'source',start:1,end:7,text:'import Mathlib\nnamespace Demo\ntheorem first : True := by\n  trivial\ntheorem second : True := by\n  trivial\nend Demo'}];
+ const trace={status:'ready',id:'fresh',source_sha256:snapshot.sha256,nodes:[{id:0,parent:null,text:'first tactic',range:{start:{line:4,character:2},end:{line:4,character:9}},before:['first'],after:[]},{id:1,parent:null,text:'second tactic',range:{start:{line:6,character:2},end:{line:6,character:9}},before:['second'],after:[]}]};
+ const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+ try{
+  const d=w.document, actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.first','Demo.second']);
+  actions[0].click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'n',bubbles:true}));
+  assert.equal(d.getElementById('review-position').textContent,'Step 1 of 1');
+  d.getElementById('proof-back').click();
+  d.querySelector('[data-proof-claim="Demo.second"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.second');
+  assert.equal(d.getElementById('review-position').textContent,'Initial goals');
+  assert.match(d.getElementById('proof-tactics').textContent,/second tactic/);
+  assert.doesNotMatch(d.getElementById('proof-tactics').textContent,/first tactic/);
+  assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib|theorem first/);
+ }finally{w.close();}
+});
+
+test('Source shortcut enters a named claim and saved edits retain its identity',async()=>{
+ const snapshot=projectNotebook(),w=await renderSnapshot(snapshot,{onProof:()=>goalTrace(snapshot.sha256)});
+ try{
+  const d=w.document;
+  d.querySelector('[data-mode="source"]').click();
+  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'t',bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.body.dataset.view,'doc');
+  assert.equal(d.querySelector('[data-mode="doc"]').getAttribute('aria-pressed'),'true');
+  d.getElementById('proof-back').click();
+  d.querySelector('[data-proof-claim="Demo.floor"]').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  snapshot.sha256='b'.repeat(64);
+  await w.glitnirPoll();
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
+  assert.match(d.getElementById('proof-statement').textContent,/theorem floor/);
+  assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib/);
+  d.getElementById('proof-refresh').click();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
+  snapshot.sha256='c'.repeat(64);
+  snapshot.cells=snapshot.cells.filter(c=>c.claim!=='Demo.floor');
+  snapshot.project_claims=snapshot.project_claims.filter(c=>c.name!=='Demo.floor');
+  await w.glitnirPoll();
+  assert.equal(d.getElementById('proof-review').hidden,true,'a removed claim leaves inspection');
+ }finally{w.close();}
+});
+
+test('anonymous examples have distinct proof actions and return to the matching example',async()=>{
+ const snapshot=projectNotebook();snapshot.project_claims=[];
+ snapshot.cells=[{index:0,kind:'source',start:1,end:6,text:'namespace Demo\nexample : True := by\n  trivial\nexample : True := by\n  trivial\nend Demo'}];
+ const w=await renderSnapshot(snapshot,{onProof:()=>({id:'examples',status:'ready',source_sha256:snapshot.sha256,nodes:[]})});
+ try{
+  const d=w.document, actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  assert.equal(actions.length,2);assert.notEqual(actions[0].dataset.proofClaim,actions[1].dataset.proofClaim);
+  const name=actions[1].dataset.proofClaim;
+  assert.match(name,/Example at line 4/);
+  actions[1].click();await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(d.getElementById('proof-title').textContent,name);
+  d.getElementById('proof-back').click();
+  assert.equal(d.activeElement.dataset.proofClaim,name);
  }finally{w.close();}
 });
