@@ -553,7 +553,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 /* Non-notebook views use their own content rather than notebook sidebars. */
 .workspace.focused-view{grid-template-columns:minmax(0,1fr)}
 body[data-view="source"]:not(.glitnir-proof-mode) .review-nav,body[data-view="graph"]:not(.glitnir-proof-mode) .review-nav{display:none}
-body[data-view="graph"]:not(.glitnir-proof-mode) .live-bar{display:none}
+body[data-view="graph"]:not(.glitnir-proof-mode) .live-bar,body[data-view="source"]:not(.glitnir-proof-mode) .live-bar{display:none}
 .proof-atlas .atlas-actions{border:0;padding:0;margin:8px 0}
 .proof-atlas .atlas-actions summary,.proof-atlas .atlas-qualification summary{cursor:pointer;color:var(--muted);font-size:12px}
 .proof-atlas .atlas-action-items{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px;border:1px solid var(--border);border-radius:8px}

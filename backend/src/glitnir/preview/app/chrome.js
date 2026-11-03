@@ -147,6 +147,8 @@
     document.title = `${title()} · Glitnir`;
     $('title').innerHTML = inlineHTML(title());
     $('file-name').textContent = d.file;
+    $('file-name').title = d.source_path || d.file;
+    $('file-name').setAttribute('aria-description', d.source_path || d.file);
     const linked = Boolean(linkedPath());
     $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : '';
     $('location').hidden = !linked;
@@ -212,11 +214,15 @@
       $('banner').classList.toggle('recorded', recorded());
       $('banner').dataset.state = recorded() ? 'recorded' : '';
       if (recorded()) { $('check-project').hidden = true; $('inspect-project').hidden = true; $('project-check').hidden = true; }
-      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : unsupported ? 'Saved-source preview.' : d.preview.notice;
+      const notice = linked ? `Read-only view of ${d.file} with its own saved results${d.preview.linked?.compared === false ? ', not compared with this project’s environment because it belongs to another Lake project' : ''}. Nothing is checked, run or drawn for it here; open it in its own preview to check it.` : unsupported ? '' : d.preview.notice;
       // A check through one claim is deliberate: said, not flagged.
       const scope = covered ? `The last check covered lines 1–${covered} only.` : '';
-      $('banner-text').textContent = [...attention, scope, notice, where].filter(Boolean).join(' ');
-    } else { $('banner').classList.remove('quiet', 'recorded'); $('banner').dataset.state = ''; }
+      $('project-context').textContent = [notice, where].filter(Boolean).join(' ');
+      const fallback = d.preview.notice?.match(/The file is shown as source.*$/)?.[0] || '';
+      $('banner-text').textContent = [...attention, scope, linked || recorded() ? notice : fallback].filter(Boolean).join(' ');
+      $('banner-text').hidden = !$('banner-text').textContent;
+      $('banner').hidden = !$('banner-text').textContent && $('check-project').hidden && $('inspect-project').hidden;
+    } else { $('project-context').textContent = ''; $('banner-text').hidden = false; $('banner').classList.remove('quiet', 'recorded'); $('banner').dataset.state = ''; }
     $('export-html').disabled = linked || Boolean(UI.exporting);
     $('export-html').title = linked ? `Go back to ${UI.main?.file || 'the notebook'} to export it` : '';
     $('preview-footer').textContent = project ? 'Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.' : 'Statuses describe saved files checked by sandboxed Lean.';
@@ -569,7 +575,6 @@
       case 'diagram': diagramAction(b); break;
       case 'diagram-close': closeDiagram(); break;
       case 'diagram-condition': { e.preventDefault(); const details = document.getElementById(b.getAttribute('href').slice(1)); if (details) { details.open = true; details.querySelector('summary').focus(); details.scrollIntoView({block: 'nearest'}); } break; }
-      case 'document-return': showDocument(); break;
       case 'document-line': e.preventDefault(); showDocument(Number(b.dataset.line), b.dataset.sha); break;
       case 'source-lines': e.preventDefault(); showSourceLines(Number(b.dataset.start), Number(b.dataset.end)); break;
       case 'source': if (linkedPath()) break; if (b.dataset.start && HOST) HOST.openSource({index: Number(b.dataset.index), sha256: b.dataset.sha, range: {start: Number(b.dataset.start), end: Number(b.dataset.end)}}); else openSource(Number(b.dataset.index)); break;

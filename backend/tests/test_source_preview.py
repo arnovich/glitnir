@@ -113,6 +113,7 @@ def test_source_preserved_without_statuses(
     before = path.read_bytes(), sidecar.read_bytes()
     snapshot = SourcePreviewService(path).snapshot()
     assert snapshot["preview"]["mode"] == "project"
+    assert snapshot["source_path"] == str(path.resolve())
     assert snapshot["claims"] == []
     assert snapshot["sha256"] == hashlib.sha256(text.encode()).hexdigest()
     assert "".join(c["text"] for c in snapshot["cells"]) == text

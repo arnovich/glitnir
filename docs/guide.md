@@ -194,7 +194,7 @@ claim. Use **Open in its own preview** to check it.
 ### Export and history
 
 - **Export HTML** saves an offline snapshot of the rendered notebook and its
-  exact saved Lean source, with images embedded. **Notebook** and **Lean source**
+  exact saved Lean source, with images embedded. **Notebook** and **Source**
   switch without a server or scripts, and source locations link between the two
   views. A link to another notebook stays a link when its `Module.html` export
   already exists beside the selected file; otherwise it becomes plain text.
@@ -679,3 +679,8 @@ not certify a proof and has no status message in the navigation toolbar.
 Refresh progress and errors appear in the same header group while relevant;
 a successful refresh clears that message without running a proof check.
 **Follow live edits** remains a separate scrolling preference.
+
+**Source** is a peer of **Notebook** and **Explore**. Use the mode controls or
+source line links to move between views. The filename tooltip identifies the full
+local path; exported snapshots omit that local path. Project setup details live
+in the header status panel, while actionable warnings stay visible.

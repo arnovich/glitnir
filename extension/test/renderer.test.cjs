@@ -1448,7 +1448,8 @@ test('line indicators switch to Source, focus and highlight the range without lo
       assert.equal(exported.window.document.querySelectorAll('[data-act="source-lines"]').length, 0);
       assert.equal(exported.window.document.querySelector('.definition .lines').getAttribute('href'), '#source-L260');
       assert.equal(exported.window.document.getElementById('source-L260').textContent.includes('def'), true);
-      assert.match(exported.window.document.querySelector('.source-note').textContent, new RegExp(snapshot.sha256));
+      assert.equal(exported.window.document.querySelector('.source-note'), null);
+      assert.match(exported.window.document.querySelector('.snapshot').textContent, new RegExp(snapshot.sha256));
       assert.equal(exported.window.document.querySelectorAll('script').length, 0);
     } finally { exported.window.close(); }
   } finally { window.close(); }
@@ -1576,10 +1577,11 @@ for (const browser of [false, true]) test(`Source returns to the exact document 
   try {
     const second = () => [...d.querySelectorAll('.definition')].find(el => el.textContent.includes('second'));
     second().querySelector('.lines').click();
-    d.querySelector('[data-act="document-return"]').focus();
+    assert.equal(d.querySelector('[data-act="document-return"]'), null);
+    d.querySelector('[data-mode="doc"]').focus();
     await window.glitnirPoll();
-    assert.equal(d.activeElement.dataset.act, 'document-return');
-    d.querySelector('[data-act="document-return"]').click();
+    assert.equal(d.activeElement.dataset.mode, 'doc');
+    d.querySelector('[data-mode="doc"]').click();
     assert.equal(d.getElementById('doc').hidden, false);
     assert.equal(scrolled, second());
     assert.equal(d.activeElement, second());
@@ -1606,7 +1608,7 @@ for (const browser of [false, true]) test(`Source returns to the exact document 
     snapshot.sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     scrolled = null;
-    d.querySelector('[data-act="document-return"]').click();
+    d.querySelector('[data-mode="doc"]').click();
     assert.equal(d.getElementById('doc').hidden, false);
     assert.equal(scrolled, null, 'a stale range cannot target different content');
   } finally { window.close(); }
@@ -1953,7 +1955,7 @@ test('project source preview reads Lean as cards, with source navigation and an 
     assert.equal(window.document.querySelector('#doc .cellwrap[data-index="1"]'), null, 'blank lines get no cell');
     assert.equal(window.document.querySelectorAll('#doc script,.pill').length, 0);
     assert.equal(window.document.getElementById('replay-all'), null);
-    assert.match(window.document.getElementById('banner-text').textContent, /Check this file explicitly/);
+    assert.match(window.document.getElementById('project-context').textContent, /Check this file explicitly/);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: false, mode: 'project'}}));
     assert.equal(window.document.getElementById('editor-state').hidden, true);
     assert.equal(window.document.getElementById('editor-state').textContent, '');
@@ -1966,8 +1968,8 @@ test('project source preview reads Lean as cards, with source navigation and an 
     window.document.querySelector('[data-mode="source"]').click();
     assert.deepEqual([...window.document.querySelectorAll('[data-source-line]')].map(row => row.id), ['source-L1', 'source-L2', 'source-L3']);
     assert.equal(window.document.querySelector('#source-L2 td:last-child').textContent, '-- <script>never</script>');
-    assert.doesNotMatch(window.document.querySelector('.source-note').textContent, /gutter shows each claim|checking unavailable/);
-    assert.match(window.document.querySelector('.source-note').textContent, /use Check saved file/);
+    assert.equal(window.document.querySelector('.source-note'), null);
+    assert.equal(window.document.getElementById('check-project').hidden, false);
     assert.equal(requests.filter(r => /api\/(goal|view|replay)/.test(r.path)).length, 0);
   } finally { dom.window.close(); }
 });
@@ -2917,7 +2919,7 @@ test('proof section summaries retain source controls and document return targets
     const summary = d.querySelector('#doc .proof-section > summary');
     assert.ok(summary.querySelector('.section-tools [data-act="source-lines"]'));
     summary.querySelector('[data-act="source-lines"]').click();
-    d.querySelector('[data-act="document-return"]').click();
+    d.querySelector('[data-mode="doc"]').click();
     assert.equal(d.activeElement, d.querySelector('#doc .proof-section > summary'));
     assert.equal(d.querySelector('.proof-section').open, true);
   } finally { window.close(); }
@@ -3335,7 +3337,8 @@ test('the project banner is amber only when a result needs attention', async () 
     const banner = window.document.getElementById('banner');
     assert.equal(banner.hidden, false, 'it holds the check actions');
     assert.ok(banner.classList.contains('quiet'));
-    assert.match(banner.textContent, /Project: \/p/);
+    assert.doesNotMatch(banner.textContent, /Project:/);
+    assert.match(window.document.getElementById('project-context').textContent, /Project: \/p/);
     assert.equal(window.document.getElementById('check-project').hidden, false);
   } finally { window.close(); }
   for (const change of [s => { s.project_claims[1].current = false; }, s => { s.project_withheld = {from_line: 18, message: 'x'}; },
@@ -4738,7 +4741,8 @@ test('nothing under the Lean banner asks to check or run again', async () => {
     assert.match(doc, /Out of date: the source or its environment changed since this run\./);
     assert.match(doc, /Out of date: the source through this directive or its environment changed since this run\./);
     for (const id of ['doc', 'banner-text', 'insp']) assert.doesNotMatch(d.getElementById(id).textContent, prompts, id);
-    assert.match(d.getElementById('banner-text').textContent, /Saved-source preview\./);
+    assert.doesNotMatch(d.getElementById('project-context').textContent, /Saved-source preview\./);
+    assert.match(d.getElementById('project-context').textContent, /Project:/);
   } finally { window.close(); }
   const empty = leanSupportNotebook({lean: UNSUPPORTED});
   empty.project_claims = [];
@@ -5375,7 +5379,7 @@ for (const browser of [false, true]) {
       assert.equal(d.getElementById('location').hidden, true);
       assert.equal(d.getElementById('location').textContent, '');
       assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'header-status', 'bar-right']);
-      assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Lean source', 'Explore']);
+      assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Source', 'Explore']);
       const row = d.querySelector('.live-bar');
       assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
       assert.equal(row.textContent.includes('Live · saved files'), false);
@@ -5516,4 +5520,24 @@ test('a network failure opening a linked notebook updates the header connection 
     assert.equal(d.getElementById('conn').dataset.state, 'down');
     assert.equal(d.getElementById('file-name').textContent, main.file);
   } finally {w.close();}
+});
+
+test('Source is a peer mode without an empty activity row or explanatory return controls', async () => {
+ const snapshot = projectNotebook();
+ snapshot.source_path = '/workspace/proofs/nested/Demo.lean';
+ snapshot.preview.recorded = true;
+ snapshot.walkthrough = {format: 'glitnir.walkthrough-outline/v1', nodes: [], formalization: {supported: false, declared: 'v4.33.1', toolchain: 'v4.35.0', message: 'Different Lean version'}};
+ snapshot.preview.lean = {supported: false, declared: 'v4.33.1', toolchain: 'v4.35.0', message: 'Different Lean version'};
+ const w = await renderSnapshot(snapshot);
+ try {
+  const d=w.document, style=d.createElement('style');
+  style.textContent=readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8'); d.head.append(style);
+  d.querySelector('[data-mode="source"]').click();
+  assert.equal(d.querySelector('[data-mode="source"]').textContent, 'Source');
+  assert.equal(w.getComputedStyle(d.querySelector('.live-bar')).display, 'none');
+  assert.equal(d.querySelector('#source [data-act="document-return"], #source .source-note'), null);
+  assert.equal(d.getElementById('file-name').title, snapshot.source_path);
+  assert.equal(d.getElementById('banner').hidden, true);
+  assert.doesNotMatch(d.getElementById('banner-text').textContent, /Saved-source preview/);
+ } finally {w.close();}
 });

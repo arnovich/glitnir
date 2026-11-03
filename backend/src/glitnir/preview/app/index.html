@@ -18,7 +18,7 @@
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
-      <button type="button" data-mode="source" aria-pressed="false">Lean source</button>
+      <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
     </div>
     <details class="header-status" id="header-status">
@@ -32,6 +32,7 @@
       <div class="status-details">
         <p id="connection-detail">Connecting to the local notebook server…</p>
         <p id="file-state"></p>
+        <p id="project-context"></p>
         <div id="lean-unsupported" data-tone="amber" hidden><p id="lean-unsupported-text"></p></div>
         <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
       </div>

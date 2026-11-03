@@ -28,7 +28,7 @@
     snapshot.textContent = `Static snapshot of ${file} · exported ${new Date().toISOString()} · source SHA-256 ${sha256}. ${words}`;
     heading.append(snapshot);
     const tabs = page.createElement('nav'); tabs.className = 'export-tabs'; tabs.setAttribute('aria-label', 'Notebook views');
-    tabs.innerHTML = `<a class="document-tab" id="document-tab" href="#document-view">Notebook</a>${source ? '<a class="source-tab" id="source-tab" href="#source-view">Lean source</a>' : ''}`;
+    tabs.innerHTML = `<a class="document-tab" id="document-tab" href="#document-view">Notebook</a>${source ? '<a class="source-tab" id="source-tab" href="#source-view">Source</a>' : ''}`;
     app.append(tabs);
     let sourceBody = null;
     if (source) {
