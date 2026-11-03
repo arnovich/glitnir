@@ -441,23 +441,23 @@
   $('export-html').onclick = exportHTML;
 
   // ----- keyboard shortcuts ------------------------------------------------------
-  // The one list of shortcuts: the help dialog and the contents hint are drawn
-  // from it, and the user guide's table (docs/guide.md) must match it (a test compares them).
+  // The one list of shortcuts: the help dialog is drawn from it, and the
+  // user guide's table (docs/guide.md) must match it (a test compares them).
   // `editor` keys exist only in the VS Code preview, whose review layer
   // (review.js) handles n/p, c/t and e; `editorText` is their wording there.
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
   const SHORTCUTS = [
-    {group: 'Navigate', keys: ['j', 'k'], hint: 'claims', text: 'Next / previous claim'},
-    {group: 'Navigate', keys: ['n', 'p'], hint: 'needs attention', editor: true,
+    {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
+    {group: 'Navigate', keys: ['n', 'p'], editor: true,
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], hint: 'claims / proof steps', editor: true, text: 'Claims / Proof steps'},
-    {group: 'View', keys: ['s'], hint: 'notebook / source', text: 'Switch between notebook and Lean source'},
-    {group: 'View', keys: ['g'], hint: 'proof graph', text: 'Show the recorded proof graph'},
-    {group: 'View', keys: ['i'], hint: 'inspector', text: 'Show or hide the claim inspector in Notebook'},
-    {group: 'Check and edit', keys: ['r'], hint: 'check through claim', text: 'Check the saved file through the selected claim',
+    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Claims / Proof steps'},
+    {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
+    {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
+    {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
+    {group: 'Check and edit', keys: ['r'], text: 'Check the saved file through the selected claim',
       editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
-    {group: 'Check and edit', keys: ['e'], hint: 'edit in VS Code', editor: true, text: 'Edit the selected claim or proof step in VS Code'},
-    {group: 'General', keys: ['?'], hint: 'all shortcuts', text: 'Show these shortcuts'},
+    {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim or proof step in VS Code'},
+    {group: 'General', keys: ['?'], text: 'Show these shortcuts'},
     {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel',
       editorText: 'Close the dialog; in Proof steps, return to Claims'},
     {group: 'General', keys: MAC ? ['⌘K', 'G'] : ['Ctrl+K', 'G'], chord: true, editor: true,
@@ -469,7 +469,6 @@
     const groups = [...new Set(SHORTCUTS.map(s => s.group))];
     $('keys-groups').innerHTML = groups.map(group => `<section class="keys-group"><h4 class="label">${esc(group)}</h4><dl>${SHORTCUTS.filter(s => s.group === group)
       .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc((HOST && s.editorText) || s.text)}</dd>`).join('')}</dl></section>`).join('');
-    $('key-hints').innerHTML = SHORTCUTS.filter(s => s.hint).map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc(s.hint)}</dd>`).join('');
   }
   renderShortcuts();
 

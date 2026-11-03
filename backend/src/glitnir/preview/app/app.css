@@ -148,9 +148,6 @@ svg.graph .node{cursor:pointer}
 .proof-graph-export .proof-graph-layout{display:block}
 .proof-graph-export .proof-graph-canvas{min-height:0}
 .proof-graph-export .proof-graph-layout>.proof-graph-canvas{max-height:none}
-.keys{font-size:11px;color:var(--muted);display:grid;grid-template-columns:max-content minmax(0,1fr);gap:5px 8px;align-items:center;margin:16px 0 0}
-.keys dt{white-space:nowrap}
-.keys dd{margin:0}
 
 /* document */
 .document{min-width:0;padding:20px 30px 34px}
@@ -332,7 +329,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .heading{padding:18px 16px 12px}
   h1{font-size:27px}
   .cell-tools{opacity:1;position:static;justify-content:flex-end;margin-bottom:4px}
-  .keys,#panel-hide{display:none}
+  #panel-hide{display:none}
   .proof-graph-view>header{display:block}
   .proof-graph-toolbar{margin-top:10px}
   .proof-graph-layout{grid-template-columns:1fr}

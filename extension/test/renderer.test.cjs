@@ -3313,7 +3313,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.deepEqual([...d.querySelectorAll('#outline .o-claim + .dot')].map(o => o.dataset.tone), ['green', 'amber']);
     assert.deepEqual([...d.querySelectorAll('#chips-row button')].map(b => b.textContent.trim()), ['k_pos', 'floor']);
     for (const id of ['graph', 'graph-label', 'graph-note']) assert.equal(d.getElementById(id).hidden, true, 'no uses: no claim graph');
-    assert.deepEqual([...d.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 's', 'g', 'i', 'r', '?'], 'no editor-only keys outside the editor');
+    assert.equal(d.getElementById('key-hints'), null, 'shortcuts live in Help rather than the contents sidebar');
     assert.deepEqual([...d.querySelectorAll('.proof-section .section-statuses .pill')].map(p => p.textContent), ['1 Kernel checked', '1 Contains sorry', '1 Out of date']);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
@@ -3328,7 +3328,7 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.equal(d.getElementById('source-L18').dataset.tone, undefined);
   } finally { window.close(); }
   const host = await renderSnapshot(projectNotebook());
-  try { assert.deepEqual([...host.document.querySelectorAll('#key-hints dt')].map(k => k.textContent), ['j k', 'n p', 'c t', 's', 'g', 'i', 'r', 'e', '?'], 'the editor preview handles e, n/p and c/t'); } finally { host.close(); }
+  try { assert.equal(host.document.getElementById('key-hints'), null); } finally { host.close(); }
 });
 
 test('the project banner is amber only when a result needs attention', async () => {
@@ -4429,8 +4429,8 @@ test('every shortcut listing comes from one list that matches the keys that work
     const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
     assert.deepEqual(listed, ['?', 'c', 'e', 'g', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
     assert.deepEqual(handledKeys(host).sort(), listed, 'the editor preview acts on exactly the listed keys');
-    const hinted = [...d.querySelectorAll('#key-hints kbd')].map(k => k.textContent);
-    assert.ok(hinted.length && hinted.every(k => listed.includes(k)), 'the contents hint is drawn from the same list');
+    assert.equal(d.querySelector('.rail [aria-label="Keyboard shortcuts"]'), null);
+    assert.equal(d.getElementById('key-hints'), null);
   } finally { host.close(); }
   const browser = await renderSnapshot(projectNotebook(), {browser: (url, options) => options?.method === 'POST' ? {ok: false, status: 409, json: async () => ({error: 'test'})} : {ok: true, json: async () => projectNotebook()}});
   try {

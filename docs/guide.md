@@ -688,3 +688,6 @@ in the header status panel, while actionable warnings stay visible.
 Source uses an editor-style layout with a fixed line-number gutter, restrained
 syntax colours and distinct documentation headings. Its source text and line
 links stay unchanged; saved-result and selected-range markers remain separate.
+
+Keyboard shortcuts are listed in the **?** help dialog. The Notebook contents
+sidebar stays focused on navigating the notebook.
