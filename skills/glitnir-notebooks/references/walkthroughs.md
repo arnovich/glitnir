@@ -58,7 +58,7 @@ that is `odd-sums-walkthrough/` next to `formal-proofs/`, never
 
 ```text
 outline.json      the outline, the source of truth
-Walkthrough.lean  the notebook that owns the Graph statement map
+Walkthrough.lean  the notebook that owns the statement map in Explore
 assets/           explanatory figures
 lakefile.toml     a Lake project requiring the original by relative path
 lean-toolchain    a copy of the original's lean-toolchain
@@ -265,7 +265,7 @@ levels only when asked. Node kinds are fixed:
 ### 3. Draw the map
 
 Open the walkthrough notebook beside `outline.json` in Glitnir and choose
-**Graph**. The map shows direct uses only: a use also reached through another
+**Explore** (or **Statement graph** when an atlas is present). The map shows direct uses only: a use also reached through another
 is not drawn. Edges into appendix nodes are dashed. A statement's box shows its
 kind, while its dot shows the saved status of the walkthrough claim named by
 the outline. The details panel links to the paper page and pinned public Lean
@@ -279,7 +279,7 @@ outline, not the picture. If you cannot view it, say that it was not inspected.
 
 Open with the title and scope; what is proved and which file a reader must
 trust; the original's authors and licence, as the rules say; tell the reader
-that **Graph** shows how the paper's statements fit together; and give the
+that **Explore** (or **Statement graph** when an atlas is present) shows how the paper's statements fit together; and give the
 strategy in one page. If the walkthrough cannot be checked (step 6), say so
 here. Then write one `{fold}` section per part of the argument, in
 reading order, whose first paragraph is its summary. In each, give the
