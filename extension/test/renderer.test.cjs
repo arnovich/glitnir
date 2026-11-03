@@ -5346,11 +5346,13 @@ test('a late sidebar argument is selected in the bounded full graph', async () =
 });
 
 for (const browser of [false, true]) {
-  test(`primary view navigation leads the header and saved edits share one activity row (${browser ? 'browser' : 'editor'})`, async () => {
+  test(`primary view navigation follows file identity before editor actions and saved edits share one activity row (${browser ? 'browser' : 'editor'})`, async () => {
     const w = await renderSnapshot(projectNotebook(), {browser});
     try {
       const d = w.document;
-      assert.ok(d.querySelector('.bar').firstElementChild.classList.contains('view-switcher'));
+      const header = d.querySelector('.bar');
+      assert.ok(header.firstElementChild.classList.contains('brand'));
+      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'save', 'seg view-switcher', 'bar-right']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Lean source', 'Explore']);
       const row = d.querySelector('.live-bar');
       assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
