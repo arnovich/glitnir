@@ -142,7 +142,69 @@
   $('history').addEventListener('toggle', () => { if ($('history').open) void loadGitHistory(); });
   renderGitHistory();
 
+  let outlineOwner = null, outlineCollapsed = new Set(), outlineWidth = 260;
+  let outlineSelection = null, revealOutline = false;
+  const sidebarHandle = $('outline-resize');
+  function saveOutlineLayout() {
+    const value = {width: outlineWidth, collapsed: [...outlineCollapsed].slice(0, 2000)};
+    try {
+      if (window.glitnirHost) window.glitnirHost.saveNotebookLayout?.(outlineOwner, value);
+      else localStorage.setItem('glitnir.outline.' + outlineOwner, JSON.stringify(value));
+    } catch { /* Preferences are optional. */ }
+  }
+  function applyOutlineWidth() {
+    const available = $('workspace').clientWidth || window.innerWidth;
+    const max = Math.max(200, Math.min(480, Math.floor(available * .32)));
+    const width = Math.min(max, Math.max(200, outlineWidth));
+    $('workspace').style.setProperty('--outline-width', width + 'px');
+    sidebarHandle.setAttribute('aria-valuemax', String(max));
+    sidebarHandle.setAttribute('aria-valuenow', String(width));
+  }
+  function readOutlineLayout() {
+    const key = JSON.stringify([UI.data.source_path || UI.data.preview?.project?.root || '', UI.data.file, linkedPath() || '']);
+    if (outlineOwner !== key) {
+      outlineOwner = key; outlineCollapsed = new Set(); outlineWidth = 260; outlineSelection = UI.outlineTarget || UI.selected || '';
+      try {
+        const value = window.glitnirHost ? window.glitnirHost.readNotebookLayout?.(key) : JSON.parse(localStorage.getItem('glitnir.outline.' + key) || 'null');
+        if (Number.isFinite(value?.width)) outlineWidth = Math.max(200, Math.min(480, value.width));
+        if (Array.isArray(value?.collapsed)) outlineCollapsed = new Set(value.collapsed.slice(0, 2000).filter(v => typeof v === 'string' && v.length < 4096));
+      } catch { /* Ignore unreadable preferences. */ }
+    }
+    applyOutlineWidth();
+  }
+  $('outline').addEventListener('click', event => {
+    const toggle = event.target.closest('[data-outline-toggle]');
+    if (!toggle) return;
+    const key = toggle.dataset.outlineKey;
+    if (outlineCollapsed.has(key)) outlineCollapsed.delete(key); else outlineCollapsed.add(key);
+    saveOutlineLayout(); renderOutline();
+  });
+  function resizeOutline(width, persist = true) {
+    const max = Number(sidebarHandle.getAttribute('aria-valuemax'));
+    outlineWidth = Math.max(200, Math.min(max, width)); applyOutlineWidth();
+    if (persist) saveOutlineLayout();
+  }
+  let sidebarDrag = null;
+  sidebarHandle.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    sidebarDrag = {id: event.pointerId, x: event.clientX, width: Number(sidebarHandle.getAttribute('aria-valuenow'))};
+    sidebarHandle.setPointerCapture?.(event.pointerId); sidebarHandle.focus({preventScroll: true}); event.preventDefault();
+  });
+  sidebarHandle.addEventListener('pointermove', event => {
+    if (sidebarDrag?.id === event.pointerId) resizeOutline(sidebarDrag.width + event.clientX - sidebarDrag.x, false);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) sidebarHandle.addEventListener(type, () => {if (sidebarDrag) saveOutlineLayout(); sidebarDrag = null;});
+  sidebarHandle.addEventListener('keydown', event => {
+    const width = Number(sidebarHandle.getAttribute('aria-valuenow'));
+    const next = {ArrowLeft: width - 20, ArrowRight: width + 20, Home: 200, End: Number(sidebarHandle.getAttribute('aria-valuemax'))}[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); event.stopPropagation(); resizeOutline(next);
+  });
+  sidebarHandle.addEventListener('dblclick', () => resizeOutline(260));
+  window.addEventListener('resize', applyOutlineWidth);
+
   function renderOutline() {
+    readOutlineLayout();
     const outline = $('outline'), rail = outline.closest('.rail');
     const scroll = rail.scrollTop;
     const focused = outline.contains(document.activeElement) ? {...document.activeElement.dataset} : null;
@@ -194,19 +256,44 @@
       }
     }
     for (const entry of declarations) if (entry.mappedKinds?.size === 1) entry.kind = [...entry.mappedKinds][0];
+    const selection = UI.outlineTarget || UI.selected || '';
+    const reveal = revealOutline || selection !== outlineSelection;
+    outlineSelection = selection; revealOutline = false;
+    const prepareAll = entries => {
+      let contains = false;
+      for (const entry of entries) {
+        entry.key = entry.id + '|' + entry.label;
+        const childCurrent = prepareAll(entry.children);
+        const current = UI.outlineTarget ? UI.outlineTarget === entry.id : entry.c && UI.selected === entry.c.name;
+        if (reveal && (current || childCurrent)) outlineCollapsed.delete(entry.key);
+        contains ||= Boolean(current || childCurrent);
+      }
+      return contains;
+    };
+    prepareAll(roots);
     const html = entries => entries.map(entry => {
       const saved = entry.c, current = UI.outlineTarget ? UI.outlineTarget === entry.id : saved && UI.selected === saved.name;
       const action = saved ? `data-act="goto" data-id="${esc(saved.name)}"` : `data-act="scroll" data-id="${esc(entry.id)}"`;
       const kind = entry.kind[0].toUpperCase() + entry.kind.slice(1);
       const content = entry.section ? inlineHTML(entry.label) : `<span class="o-kind" title="Declaration kind: ${esc(kind)}">${esc(kind)}</span><span class="o-name${saved ? ' o-claim' : ''}">${breakableName(entry.label)}</span>`;
       const dot = saved ? `<span class="dot" data-tone="${toneOf(saved)}" title="${esc(statusOf(saved).label)}${saved.project && currencyNoted(saved.project) ? ' · ' + esc(currencyText(saved.project)) : ''}"></span>` : '';
-      return `<li class="${entry.section ? 'outline-section' : 'outline-declaration'}" data-outline-kind="${entry.kind}"><button type="button" ${action} aria-current="${Boolean(current)}" title="${esc(entry.name || entry.label)}">${content}${dot}</button>${entry.children.length ? `<ol>${html(entry.children)}</ol>` : ''}</li>`;
+      const folded = outlineCollapsed.has(entry.key), childrenId = 'outline-children-' + entry.id;
+      const toggle = entry.children.length ? `<button type="button" class="outline-toggle" data-outline-toggle="${esc(entry.id)}" data-outline-key="${esc(entry.key)}" aria-label="${folded ? 'Expand' : 'Fold'} ${esc(entry.label)}" aria-expanded="${!folded}" aria-controls="${esc(childrenId)}">${folded ? '▸' : '▾'}</button>` : '';
+      return `<li class="${entry.children.length ? 'outline-branch ' : ''}${entry.section ? 'outline-section' : 'outline-declaration'}" data-outline-kind="${entry.kind}">${toggle}<button type="button" ${action} aria-current="${Boolean(current)}" title="${esc(entry.name || entry.label)}">${content}${dot}</button>${entry.children.length ? `<ol id="${esc(childrenId)}"${folded ? ' hidden' : ''}>${html(entry.children)}</ol>` : ''}</li>`;
     }).join('');
     outline.innerHTML = html(roots);
     // Keep the shared cache's full root set, including on standalone chrome updates.
     typesetMath($('doc'), $('insp'), $('title'), outline, $('graph-view'));
-    if (focused) [...outline.querySelectorAll('button')].find(b => b.dataset.act === focused.act && b.dataset.id === focused.id)?.focus({preventScroll: true});
+    if (focused) [...outline.querySelectorAll('button')].find(b => focused.outlineToggle ? b.dataset.outlineToggle === focused.outlineToggle : b.dataset.act === focused.act && b.dataset.id === focused.id)?.focus({preventScroll: true});
     rail.scrollTop = scroll;
+    if (reveal) {
+      const current = outline.querySelector('button[aria-current="true"]');
+      if (current) {
+        const item = current.getBoundingClientRect(), bounds = rail.getBoundingClientRect();
+        if (item.top < bounds.top) rail.scrollTop += item.top - bounds.top;
+        else if (item.bottom > bounds.bottom) rail.scrollTop += item.bottom - bounds.bottom;
+      }
+    }
   }
 
   function renderChrome() {
@@ -546,7 +633,7 @@
     render();
   }
   function select(name, scroll) {
-    UI.outlineTarget = null;
+    UI.outlineTarget = null; revealOutline = true;
     UI.sourceCell = null;
     UI.selected = name;
     UI.graphSelected = `local:${name}`;
@@ -683,7 +770,7 @@
       // Stale buttons of an earlier saved file never check other lines.
       case 'check-through': if (b.dataset.sha === UI.data.sha256 && claim(id)) { UI.selected = id; checkProject(Number(b.dataset.line)); } break;
       case 'scroll': {
-        UI.outlineTarget = id;
+        UI.outlineTarget = id; revealOutline = true;
         UI.mode = 'doc';
         render();
         const heading = document.getElementById(id);

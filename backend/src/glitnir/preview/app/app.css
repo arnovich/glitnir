@@ -72,8 +72,8 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .subline{color:var(--muted);font-size:12px;display:flex;gap:14px;flex-wrap:wrap}
 .subline .stat{display:inline-flex;align-items:center;gap:5px}
 
-.workspace{display:grid;grid-template-columns:200px minmax(0,1fr) 340px;align-items:start}
-.workspace.no-panel{grid-template-columns:200px minmax(0,1fr) 0}
+.workspace{display:grid;grid-template-columns:min(var(--outline-width,260px),32vw) minmax(0,1fr) 340px;align-items:start}
+.workspace.no-panel{grid-template-columns:min(var(--outline-width,260px),32vw) minmax(0,1fr) 0}
 .workspace.no-panel .inspector{display:none}
 
 /* rail */
@@ -648,3 +648,18 @@ body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-foll
 .proof-atlas .atlas-details{margin-top:28px;border-top:1px solid var(--border);padding-top:12px}
 .proof-atlas .atlas-details summary{cursor:pointer;color:var(--muted);font-size:12px}
 .proof-atlas .atlas-map-first{display:block}
+
+/* The separator shares the outline grid cell, keeping a full-height drag target. */
+.workspace>.rail{grid-column:1;grid-row:1}
+.workspace>.document{grid-column:2;grid-row:1}
+.workspace>.inspector{grid-column:3;grid-row:1}
+#outline-resize{grid-column:1;grid-row:1;justify-self:end;align-self:stretch;position:sticky;top:0;width:8px;max-height:100vh;z-index:3;cursor:col-resize;touch-action:none}
+#outline-resize:hover,#outline-resize:focus-visible{background:var(--blue-soft);outline:1px solid var(--blue)}
+.workspace.focused-view>.document{grid-column:1}
+.workspace.focused-view>#outline-resize{display:none}
+.rail #outline .outline-branch{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:start}
+.rail #outline .outline-branch>ol{grid-column:1/-1}
+.rail #outline .outline-toggle{display:block;width:18px;padding:4px 0;border:0;background:transparent;font-size:12px;text-align:center;color:var(--muted)}
+.rail #outline ol[hidden]{display:none}
+@media(max-width:1120px){#outline-resize{display:none}.workspace>.document{grid-column:1}.workspace>.inspector{grid-column:2}}
+@media(max-width:760px){.workspace>.inspector{grid-column:1;grid-row:2}}

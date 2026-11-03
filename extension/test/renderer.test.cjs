@@ -5743,7 +5743,7 @@ test('Notebook contents nests fresh declarations and colours kinds independently
   assert.ok(d.querySelector('#outline [data-outline-kind="definition"]'));
   const theorem=d.querySelector('#outline [data-outline-kind="theorem"]>button');
   assert.match(theorem.textContent,/Theorem.*result/);
-  assert.equal(theorem.closest('ol').parentElement.querySelector(':scope>button').textContent,'Facts');
+  assert.equal(theorem.closest('ol').parentElement.querySelector(':scope>button[data-act="scroll"]').textContent,'Facts');
   const corollary=d.querySelector('#outline [data-outline-kind="corollary"]>button');
   assert.match(corollary.textContent,/Corollary.*consequence/);
   assert.equal(corollary.querySelector('.dot'),null,'declaration colour does not invent a proof status');
@@ -5883,5 +5883,136 @@ test('Sources disclosure stays a view preference rather than a navigation visit'
     d.querySelector('[data-atlas="back"]').click();
     assert.equal(d.querySelector('.atlas-details').open, false);
     assert.doesNotMatch(d.querySelector('.atlas-visit-history').textContent, /sources/);
+  } finally {w.close();}
+});
+
+function foldingOutlineSnapshot() {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.cells = [{index:0,kind:'prose',start:1,end:4,text:'/-!\n## Setup\n### Facts {fold}\n-/',markdown:'## Setup\n### Facts {fold}'}, {index:1,kind:'source',start:5,end:6,text:'def first := 1\ndef second := 2'}];
+  return snapshot;
+}
+
+test('Notebook sidebar folds are independent and reveal a navigated declaration', async () => {
+  const w = await renderSnapshot(foldingOutlineSnapshot(), {onWindow:w => {w.HTMLElement.prototype.scrollIntoView=()=>{};}});
+  try {
+    const d=w.document, section=()=>d.querySelector('#outline .outline-section');
+    const target=d.querySelector('#outline .outline-declaration button').dataset.id;
+    const fold=section().querySelector('[data-outline-toggle]');
+    assert.ok(fold);
+    fold.focus(); fold.click();
+    assert.equal(section().querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+    assert.ok(section().querySelector(':scope>ol').hidden);
+    assert.equal(d.querySelector('.proof-section').open,false,'sidebar fold does not change document fold');
+    await w.glitnirPoll();
+    assert.ok(section().querySelector(':scope>ol').hidden);
+    assert.ok(d.activeElement.matches('[data-outline-toggle]'),'fold focus survives polling');
+    w.glitnirWorkbench.UI.outlineTarget=target;
+    w.glitnirWorkbench.render();
+    assert.equal(section().querySelector(':scope>ol').hidden,false);
+    assert.ok(d.querySelector('#outline [aria-current="true"]'));
+    section().querySelector('[data-outline-toggle]').click();
+    section().querySelector(':scope>button[data-act="scroll"]').click();
+    assert.match(d.activeElement.id,/notebook-heading/,'section title remains a navigation action');
+  } finally {w.close();}
+});
+
+test('Notebook sidebar folds and adjustable width survive browser reopening', async () => {
+  const snapshot=foldingOutlineSnapshot();
+  let stored=[];
+  const open=()=>renderSnapshot(snapshot,{browser:true,onWindow:w=>{for(const [key,value] of stored) w.localStorage.setItem(key,value);}});
+  let w=await open();
+  try {
+    const d=w.document;
+    d.querySelector('[data-outline-toggle]').click();
+    const handle=d.querySelector('[role="separator"][aria-label="Notebook sidebar width"]');
+    assert.ok(handle);
+    handle.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+    assert.equal(handle.getAttribute('aria-valuenow'),'280');
+    stored=Object.entries(w.localStorage);
+  } finally {w.close();}
+  w=await open();
+  try {
+    const d=w.document;
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+    assert.equal(d.querySelector('[role="separator"]').getAttribute('aria-valuenow'),'280');
+    d.querySelector('[role="separator"]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true}));
+    assert.ok(Number(d.querySelector('[role="separator"]').getAttribute('aria-valuenow'))<=480);
+    d.querySelector('[role="separator"]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));
+    assert.equal(d.querySelector('[role="separator"]').getAttribute('aria-valuenow'),'260');
+  } finally {w.close();}
+});
+
+test('VS Code remembers Notebook layout through webview state without task messages', async () => {
+  let state={unrelated:'keep'};
+  const w=await renderSnapshot(foldingOutlineSnapshot(),{onWindow:w=>{const api=w.acquireVsCodeApi();w.acquireVsCodeApi=()=>({...api,getState:()=>state,setState:value=>{state=value;}});}});
+  try {
+    w.document.querySelector('[data-outline-toggle]').click();
+    assert.equal(state.unrelated,'keep');
+    assert.ok(state.notebookLayouts);
+    assert.ok(Object.values(state.notebookLayouts)[0].collapsed.length);
+  } finally {w.close();}
+});
+
+test('Notebook sidebar pointer resizing clamps width and stops on release', async () => {
+  const w=await renderSnapshot(foldingOutlineSnapshot());
+  try {
+    const handle=w.document.getElementById('outline-resize');
+    const pointer=(type,x)=>{const e=new w.MouseEvent(type,{clientX:x,button:0,bubbles:true});Object.defineProperty(e,'pointerId',{value:1});handle.dispatchEvent(e);};
+    pointer('pointerdown',260);pointer('pointermove',300);
+    assert.equal(handle.getAttribute('aria-valuenow'),'300');
+    pointer('pointermove',-1000);assert.equal(handle.getAttribute('aria-valuenow'),'200');
+    pointer('pointerup',-1000);pointer('pointermove',1000);
+    assert.equal(handle.getAttribute('aria-valuenow'),'200');
+    assert.equal(w.document.activeElement,handle);
+  } finally {w.close();}
+});
+
+test('Notebook outline preferences are isolated by source path and tolerate unavailable storage', async () => {
+  const snapshot=foldingOutlineSnapshot();snapshot.source_path='/project/First.lean';
+  const w=await renderSnapshot(snapshot,{browser:true});
+  try {
+    const d=w.document;
+    d.querySelector('[data-outline-toggle]').click();
+    w.glitnirWorkbench.UI.data={...snapshot,source_path:'/other/First.lean'};
+    w.glitnirWorkbench.render();
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'true');
+    Object.defineProperty(w,'localStorage',{get(){throw new Error('blocked');}});
+    d.querySelector('[data-outline-toggle]').click();
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+    w.glitnirWorkbench.render();
+    assert.equal(d.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');
+  } finally {w.close();}
+});
+
+test('Notebook reopening preserves folds around an automatically selected saved claim', async () => {
+  const snapshot=foldingOutlineSnapshot();
+  snapshot.cells[1].text='theorem first : True := by trivial';snapshot.cells[1].claim='first';
+  snapshot.project_claims=[{name:'first',start_line:5,end_line:5,type:'True',status:'checked',axioms:[],current:true}];
+  let stored=[];
+  const open=()=>renderSnapshot(snapshot,{browser:true,onWindow:w=>{for(const [key,value] of stored) w.localStorage.setItem(key,value);}});
+  let w=await open();
+  try {
+    assert.ok(w.document.querySelector('#outline .o-claim'));
+    w.document.querySelector('[data-outline-toggle]').click();
+    stored=Object.entries(w.localStorage);
+  } finally {w.close();}
+  w=await open();
+  try {assert.equal(w.document.querySelector('[data-outline-toggle]').getAttribute('aria-expanded'),'false');}
+  finally {w.close();}
+});
+
+test('Notebook navigation reveals the current outline item within the sidebar without scrolling the page', async () => {
+  const w=await renderSnapshot(foldingOutlineSnapshot());
+  try {
+    const d=w.document, rail=d.querySelector('.rail');
+    w.HTMLElement.prototype.getBoundingClientRect=function(){return this===rail?{top:0,bottom:200}:this.matches('#outline button[aria-current="true"]')?{top:400,bottom:420}:{top:0,bottom:0};};
+    let pageScrolls=0;w.scrollTo=()=>{pageScrolls++;};
+    w.glitnirWorkbench.UI.outlineTarget=d.querySelector('#outline .outline-declaration button').dataset.id;
+    w.glitnirWorkbench.render();
+    assert.equal(rail.scrollTop,220);
+    await w.glitnirPoll();
+    assert.equal(rail.scrollTop,220,'polling preserves the sidebar position');
+    assert.equal(pageScrolls,0);
   } finally {w.close();}
 });

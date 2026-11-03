@@ -698,3 +698,11 @@ numbers stay unchanged and link back to Notebook; hover or focus makes the
 return action explicit. Static exports always include the complete saved source.
 Opening an explicit source range from Notebook shows comments again so the
 requested lines remain visible.
+
+The Notebook contents sidebar has independent section chevrons: use a chevron to
+fold its subitems, or the section title to navigate. Navigating to a declaration
+reveals its parent sections in the contents; notebook content folds stay independent.
+Drag the sidebar’s right edge to resize it, or focus that edge and use Left/Right
+(20 pixels), Home (minimum) or End (maximum). Double-click resets its width.
+Widths adapt to the available window space, and widths and folded sections are
+remembered for each notebook when preference storage is available.
