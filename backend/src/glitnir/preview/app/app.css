@@ -695,3 +695,29 @@ body:has(.live-bar:not([hidden])) :is(.rail,.inspector,#outline-resize){top:var(
 button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:2px 0;color:var(--ink);font:12px var(--mono);cursor:help;overflow-wrap:anywhere;text-align:left}
 .file-context{min-width:0}
 #file-path-tooltip{width:max-content;max-width:min(520px,calc(100vw - 24px));overflow-wrap:anywhere;font-family:var(--mono)}
+
+/* Equal side columns keep the primary view switcher at the header centre. */
+.bar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+.bar>.brand{grid-column:1;grid-row:1}
+.bar>.view-switcher{grid-column:2;grid-row:1;justify-self:center;width:max-content}
+.bar>.bar-right{grid-column:3;grid-row:1;justify-self:end;margin-left:0;flex-wrap:nowrap}
+.bar>.header-status{grid-column:1/-1;grid-row:2}
+.brand .crumbs{min-width:0}
+.brand .crumbs>span:not(.file-context){flex-shrink:0}
+.brand button.file.help-icon{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1050px){
+  .bar{grid-template-columns:minmax(0,1fr) auto}
+  .bar>.bar-right{grid-column:2;flex-wrap:wrap;justify-content:flex-end}
+  .bar>.view-switcher{grid-column:1/-1;grid-row:2;width:max-content;max-width:100%}
+  .bar>.header-status{grid-row:3}
+}
+@media(max-width:420px){
+  .bar{column-gap:8px;padding-inline:10px}
+  .bar>.bar-right{gap:4px}
+  .bar>.bar-right button,.bar>.bar-right>.notebook-view-options>summary{padding-inline:6px}
+}
+
+@media(max-width:600px){
+  .bar{grid-template-columns:minmax(150px,1fr) minmax(0,1fr)}
+  .bar>.bar-right{max-width:100%;min-width:0}
+}

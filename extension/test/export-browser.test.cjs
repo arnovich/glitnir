@@ -187,3 +187,50 @@ test('offline export switches views and follows source and sibling fragments in 
   if (testError) throw testError;
   if (cleanupError) throw cleanupError;
 });
+
+test('header views stay centred with long filenames and move below identity in narrow panels', {skip: !chrome}, async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'glitnir-header-browser-'));
+  const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run', '--no-default-browser-check',
+    '--disable-background-networking', '--remote-debugging-port=0', `--user-data-dir=${path.join(directory, 'profile')}`, 'about:blank'], {
+    detached: useProcessGroup, stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const closed = new Promise(resolve => child.once('close', resolve));
+  let client;
+  try {
+    const media = path.resolve(__dirname, '../../dist/media');
+    const dom = new JSDOM(readFileSync(path.join(media, 'index.html'), 'utf8'));
+    const d = dom.window.document;
+    d.querySelectorAll('link,script').forEach(el => el.remove());
+    const style = d.createElement('style'); style.textContent = readFileSync(path.join(media, 'app.css'), 'utf8'); d.head.append(style);
+    d.getElementById('panel-show').hidden = false;
+    d.querySelector('.bar-right').insertAdjacentHTML('afterbegin', '<button class="secondary">Edit in VS Code ↗</button>');
+    const file = path.join(directory, 'header.html'); writeFileSync(file, '<!doctype html>' + d.documentElement.outerHTML); dom.window.close();
+    client = await pageClient(await devtools(child));
+    await client.send('Page.enable');
+    const loaded = client.event('Page.loadEventFired');
+    await client.send('Page.navigate', {url: pathToFileURL(file).href}); await loaded;
+    const evaluate = async expression => (await client.send('Runtime.evaluate', {expression, returnByValue: true})).result.value;
+    for (const width of [1440, 1100, 1051, 1050, 900, 500, 360]) {
+      await client.send('Emulation.setDeviceMetricsOverride', {width, height: 800, deviceScaleFactor: 1, mobile: false});
+      for (const name of ['Demo.lean', 'AnExtremelyLongNotebookFilenameThatMustNotDisplaceTheViewSwitcher.lean']) {
+        await evaluate(`document.getElementById('file-name').textContent = ${JSON.stringify(name)}`);
+        const box = await evaluate(`(() => {
+          const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,centre:(r.left+r.right)/2}; };
+          return {header:rect('.bar'),views:rect('.view-switcher'),brand:rect('.brand'),actions:rect('.bar-right'),status:rect('.header-status'),filename:rect('#file-name'),overflow:document.documentElement.scrollWidth > innerWidth};
+        })()`);
+        assert.ok(Math.abs(box.views.centre - box.header.centre) < 1, `${width}: views centred for ${name}`);
+        assert.equal(box.overflow, false, `${width}: no horizontal overflow`);
+        assert.ok(box.filename.right - box.filename.left > 20, `${width}: filename remains visible`);
+        if (width > 1050) {
+          assert.ok(box.brand.right < box.views.left && box.views.right < box.actions.left, `${width}: header zones do not overlap`);
+        } else {
+          assert.ok(box.views.top >= Math.max(box.brand.bottom, box.actions.bottom), `${width}: views have their own row`);
+        }
+        assert.ok(box.status.top >= box.views.bottom, `${width}: status stays below primary navigation`);
+      }
+    }
+  } finally {
+    await stopBrowser(child, closed, client);
+    await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});
+  }
+});
