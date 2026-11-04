@@ -6176,6 +6176,9 @@ test('check progress separates target, stage and elapsed time without inventing 
     w.glitnirWorkbench.UI.checkTiming={sha:snapshot.sha256,through:14,started:74000};
     await w.glitnirPoll();
     assert.equal(d.querySelector('.check-progress-title').textContent,'Checking up to Demo.k_pos');
+    const expand = () => d.querySelector('#insp [data-act="inspect-proof"]');
+    assert.equal(expand().disabled,true,'expansion is disabled while a check is running');
+    assert.match(expand().getAttribute('aria-description'),/current check/);
     assert.equal(d.querySelector('.check-progress-stage').textContent,'Inspecting project dependencies…');
     assert.match(d.querySelector('.check-progress-meta').textContent,/Lines 1–14 · 26s elapsed/);
     assert.equal(d.querySelectorAll('.check-progress [role="progressbar"]').length,0);
@@ -6188,6 +6191,7 @@ test('check progress separates target, stage and elapsed time without inventing 
     snapshot.preview.check={status:'unavailable',source_sha256:snapshot.sha256,message:'Stopped',theorems:[]};
     await w.glitnirPoll();
     assert.equal(w.glitnirWorkbench.UI.checkTiming,null);
+    assert.equal(expand().disabled,false,'expansion returns after the check stops');
   } finally {w.close();}
 });
 

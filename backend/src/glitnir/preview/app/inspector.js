@@ -22,6 +22,7 @@
     const scope = proofScope(c.name);
     if (!HOST || !scope || linkedPath()) return '';
     const reason = document.body.classList.contains('unsaved-lean') ? 'Save or revert edits before viewing proof steps.'
+      : UI.checkRequested || UI.data.preview?.check?.status === 'running' || UI.inspecting || UI.data.preview?.inspection?.status === 'running' ? 'Wait for the current check to finish.'
       : walkthroughUnchecked() ? walkthroughMessage() : leanOff() ? UI.data.preview?.lean?.message || 'Proof steps are unavailable.' : '';
     return `<button type="button" class="secondary" data-act="inspect-proof" data-proof-claim="${esc(c.name)}" data-index="${scope.dataset.index}" data-start="${scope.dataset.start}" data-end="${scope.dataset.end}" data-sha="${esc(UI.data.sha256)}"${reason ? ` disabled title="${esc(reason)}" aria-description="${esc(reason)}"` : ''}>Expand proof steps</button>`;
   }
