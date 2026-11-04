@@ -2145,7 +2145,7 @@ test('project claim cards show saved status and out-of-date results', async () =
     cards[3].click();
     await new Promise(resolve => setTimeout(resolve, 20));
     const inspector = window.document.getElementById('insp');
-    assert.equal(inspector.querySelector('h5').textContent, 'Checked statement, as this project’s notation prints it');
+    assert.ok([...inspector.querySelectorAll('h5')].some(h => h.textContent === 'Checked statement, as this project’s notation prints it'));
     assert.equal(inspector.querySelector('.checked-statement').textContent, 'True ∧ <b>');
     assert.equal(inspector.querySelector('.checked-kernel .checked-statement').textContent, 'And True Demo.<b>');
     const plain = [...window.document.querySelectorAll('#doc .project-non-claim')];
@@ -3395,24 +3395,24 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     const button = insp.querySelector('.goal-section [data-act="goal"]');
-    assert.equal(button.textContent, 'Inspect proof goals');
+    assert.equal(button.textContent, 'Inspect proof');
     assert.match(insp.querySelector('.goal-section').textContent, /historical observation: it never changes a status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
     button.focus();
     button.click(); await settle(20);
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/proof/')).map(m => [m.method, m.path]), [['GET', '/api/proof/trace'], ['POST', '/api/proof/start']]);
     assert.deepEqual(JSON.parse(messages.find(m => m.path === '/api/proof/start').body), {sha256: snapshot.sha256});
-    assert.match(insp.querySelector('.goal-state').textContent, /Asking Lean… Recording saved tactic goals/);
+    assert.match(insp.querySelector('.goal-state').textContent, /Recording saved tactic goals/);
     assert.equal(d.activeElement.dataset.act, 'goal-cancel', 'focus stays in the goal controls');
     insp.querySelector('[data-act="goal"]')?.click();
     trace = goalTrace(snapshot.sha256);
     await settle(820);
     const steps = [...insp.querySelectorAll('.goal-step')];
-    assert.deepEqual(steps.map(step => step.querySelector('code').textContent), ['unfold k', 'norm_num', 'positivity']);
+    assert.deepEqual(steps.map(step => step.querySelector('.goal-full-tactic code').textContent), ['unfold k', 'norm_num', 'positivity']);
     assert.deepEqual(steps.map(step => step.dataset.depth), ['0', '0', '1'], 'nested tactics are indented under their parent');
     assert.equal(insp.querySelector('.goal-initial pre.goal').textContent, '⊢ 0 < k');
     assert.equal(steps[0].querySelector('pre.goal-block').textContent, '⊢ 0 < 1 / 2');
-    assert.equal(steps[1].querySelector('pre.goal').dataset.tone, 'green');
+    assert.equal(steps[1].querySelector('.goal-complete').dataset.tone, 'green');
     assert.match(steps[1].textContent, /No goals remain/);
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
     assert.match(insp.querySelector('.goal-section').textContent, /Recorded from source aaaaaaaa with leanprover\/lean4:v4\.35\.0.*never changes a status/s);
@@ -3452,7 +3452,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
     assert.ok(messages.some(m => m.path === '/api/proof/cancel'));
     assert.match(section(), /cancelled\. No goals were recorded/);
-    assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof goals');
+    assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
     // A failed observation says why.
     start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
@@ -3472,7 +3472,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     const sent = messages.filter(m => m.path === '/api/proof/start').length;
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, sent);
-    assert.match(section(), /No proof goals: Save or revert unsaved Lean files first/);
+    assert.equal(insp.querySelector('[data-act="goal"]').disabled, true, 'unsaved files disable inline inspection');
     assert.equal($('insp').querySelector('.focus .pill').textContent, 'Kernel checked');
   } finally { window.close(); }
 });
@@ -4057,16 +4057,20 @@ test('a claim card, the inspector and r check the saved file through that claim'
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const checks = () => messages.filter(m => m.path === '/api/project/check').map(m => JSON.parse(m.body));
   try {
+    const helpIds = [...d.querySelectorAll('[id^="help-check-"]')].map(el => el.id);
+    assert.equal(new Set(helpIds).size, helpIds.length, 'card and Inspector help have distinct IDs');
     const sha256 = snapshot.sha256;
-    const button = d.querySelector('[data-claim="Demo.floor"] .claim-actions [data-act="check-through"]');
-    assert.equal(button.textContent.trim(), 'Check through here');
+    d.querySelector('[data-claim="Demo.floor"] article').click();
+    assert.equal(d.querySelector('#doc [data-act="check-through"]'), null);
+    const button = d.querySelector('#insp [data-act="check-through"]');
+    assert.equal(button.textContent.trim(), 'Check up to this claim');
     assert.equal(button.dataset.line, '17');
-    assert.match(d.querySelector('[data-claim="Demo.floor"] .claim-actions').textContent, /Lines 1–17 only; later claims are not rechecked/);
+    assert.match(d.querySelector('#insp .insp-check').textContent, /later claims are not rechecked/);
     button.click(); await settle(30);
     assert.deepEqual(checks(), [{sha256, through_line: 17}]);
     assert.equal($('insp-title').textContent, 'floor', 'the claim checked through is selected');
     const inspector = d.querySelector('#insp .insp-check [data-act="check-through"]');
-    assert.equal(inspector.textContent.trim(), 'Check through this claim');
+    assert.equal(inspector.textContent.trim(), 'Check up to this claim');
     inspector.click(); await settle(30);
     assert.deepEqual(checks().at(-1), {sha256, through_line: 17});
     d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
@@ -4076,7 +4080,7 @@ test('a claim card, the inspector and r check the saved file through that claim'
     assert.deepEqual(checks().at(-1), {sha256}, 'Check saved file checks all of it');
     // A button of an earlier saved file never checks other lines.
     const count = checks().length;
-    const stale = d.querySelector('[data-claim="Demo.floor"] [data-act="check-through"]');
+    const stale = d.querySelector('#insp [data-act="check-through"]');
     stale.dataset.sha = 'b'.repeat(64);
     stale.click(); await settle(30);
     assert.equal(checks().length, count);
@@ -4084,7 +4088,9 @@ test('a claim card, the inspector and r check the saved file through that claim'
     snapshot.preview.check = {status: 'running', source_sha256: sha256, through_line: 17, message: 'Checking saved file', theorems: []};
     await window.glitnirPoll(); await settle(20);
     assert.ok([...d.querySelectorAll('[data-act="check-through"]')].every(b => b.disabled));
-    assert.match($('project-check').textContent, /Checking lines 1–17 · Checking saved file/);
+    assert.equal($('project-check').querySelector('.check-progress-title').textContent, 'Checking up to Demo.floor');
+    assert.match($('project-check').querySelector('.check-progress-stage').textContent, /Checking saved file/);
+    assert.match($('project-check').querySelector('.check-progress-meta').textContent, /Lines 1–17/);
   } finally { window.close(); }
 });
 
@@ -4146,7 +4152,7 @@ test('a linked notebook offers no check through its claims', async () => {
   window.HTMLElement.prototype.scrollIntoView = () => {};
   window.scrollTo = () => {};
   try {
-    assert.ok(d.querySelectorAll('#doc [data-act="check-through"]').length > 0);
+    assert.ok(d.querySelectorAll('#insp [data-act="check-through"]').length > 0);
     [...d.querySelectorAll('#doc a.notebook-reference')].find(a => a.textContent === 'the three states').click();
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.ok(d.body.classList.contains('glitnir-linked-view'));
@@ -4173,8 +4179,9 @@ test('a check through the last line asks for the whole file', async () => {
   const snapshot = projectNotebook();
   const window = await renderSnapshot(snapshot, {onMessage: m => messages.push(m)});
   try {
-    window.document.querySelector('[data-claim="Demo.floor"] [data-act="check-through"]').dataset.line = '18';
-    window.document.querySelector('[data-claim="Demo.floor"] [data-act="check-through"]').click();
+    window.document.querySelector('[data-claim="Demo.floor"] article').click();
+    window.document.querySelector('#insp [data-act="check-through"]').dataset.line = '18';
+    window.document.querySelector('#insp [data-act="check-through"]').click();
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.deepEqual(messages.filter(m => m.path === '/api/project/check').map(m => JSON.parse(m.body)), [{sha256: snapshot.sha256}]);
   } finally { window.close(); }
@@ -4510,11 +4517,26 @@ test('n and p step through the project claims that need attention, and steps in 
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     assert.equal($('next-unresolved').hidden, false, 'Next and Previous show in Claims');
-    assert.equal($('review-position').textContent, '5 need attention');
-    const visited = [];
-    for (let i = 0; i < 6; i++) { key('n'); await settle(); visited.push(revealed()); }
+    assert.equal($('review-position').textContent, '');
+    assert.equal($('review-queue-summary').textContent, 'Needs review · 5 items');
+    assert.deepEqual([...d.querySelectorAll('#review-items .review-item-reason')].map(el => el.textContent), ['Out of date', 'Contains sorry', 'Additional assumptions', 'Not rechecked', 'Checking stopped: unsolved goals']);
+    assert.equal($('review-position').parentElement, $('review-previous').parentElement);
+    $('review-queue').open = true;
+    const jump = $('review-items').querySelectorAll('button')[1];
+    jump.focus();
+    for (const key of ['n','p','t','j']) jump.dispatchEvent(new window.KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
+    assert.equal($('proof-review').hidden, true, 'jump-list keys do not open proof mode');
+    assert.equal(revealed(), undefined, 'jump-list keys do not navigate');
+    jump.click(); await settle();
+    assert.equal(revealed(), '3', 'jump directly to the named review item');
+    assert.equal($('review-position').textContent, 'Item 2 of 5');
+    assert.equal($('review-queue').open, false);
+    assert.equal(d.activeElement, $('review-queue-summary'), 'focus returns to the jump-list trigger');
+    key('p'); await settle();
+    const visited = [revealed()];
+    for (let i = 0; i < 5; i++) { key('n'); await settle(); visited.push(revealed()); }
     assert.deepEqual(visited, ['2', '3', '4', '5', '7', '7'], 'out of date, sorry, assumptions, not rechecked, then where checking stopped; no wrap');
-    assert.equal($('review-position').textContent, '5 of 5 needing attention');
+    assert.equal($('review-position').textContent, 'Item 5 of 5');
     key('p'); await settle();
     assert.equal(revealed(), '5');
     assert.equal($('insp-title').textContent, 'carried', 'the renderer selects the claim n and p reach');
@@ -4536,13 +4558,16 @@ test('n and p step through the project claims that need attention, and steps in 
     // A check stopped on request, or an older file's stop, is not a failure to review.
     snapshot.project_withheld = {from_line: 20, through_line: 19, message: 'Checked through line 19 on request'};
     await window.glitnirPoll(); await settle();
-    assert.equal($('review-position').textContent, '3 of 4 needing attention');
+    assert.equal($('review-position').textContent, 'Item 3 of 4');
+    $('review-previous').focus();
     snapshot.project_withheld = {from_line: 20, message: 'unsolved goals', stale: true};
     snapshot.project_claims.forEach(c => { c.status = 'checked'; c.current = true; delete c.not_rechecked; });
     await window.glitnirPoll(); await settle();
     assert.equal($('review-position').textContent, '');
     assert.equal($('review-position').hidden, true);
     assert.equal($('next-unresolved').disabled, true);
+    assert.equal(d.querySelector('.review-nav').hidden, true, 'empty queues have no review toolbar');
+    assert.equal(d.activeElement, d.querySelector('[data-mode="doc"]'), 'focus leaves disappearing controls');
   } finally { window.close(); }
 });
 
@@ -4694,7 +4719,7 @@ test('a supported project shows no Lean banner and keeps its controls', async ()
     assert.equal($('check-project').hidden, false);
     assert.equal($('inspect-project').hidden, false);
     for (const act of ['evidence-run', 'decision-run', 'accept']) assert.ok(d.querySelector(`#doc [data-act="${act}"]`), act);
-    assert.ok(d.querySelector('#doc [data-act="check-through"]'));
+    assert.ok(d.querySelector('#insp [data-act="check-through"]'));
     assert.equal(messages.filter(m => m.path?.startsWith('/api/view')).length, 1);
   } finally { window.close(); }
 });
@@ -5382,10 +5407,32 @@ for (const browser of [false, true]) {
       assert.ok(header.firstElementChild.classList.contains('brand'));
       assert.equal(d.getElementById('location').hidden, true);
       assert.equal(d.getElementById('location').textContent, '');
-      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'header-status', 'bar-right']);
+      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'bar-right', 'header-status']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Source', 'Explore']);
       const row = d.querySelector('.live-bar');
-      assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
+      assert.equal(row.querySelector('.live-follow-control'), null);
+      assert.ok(header.querySelector('#notebook-view-options #live-follow'));
+      const options = d.getElementById('notebook-view-options');
+      assert.match(options.querySelector('summary').textContent, /More/);
+      assert.ok(options.querySelector('#history'));
+      assert.ok(options.querySelector('#export-html'));
+      assert.equal(header.querySelector('.bar-right > #history, .bar-right > #export-html'), null);
+      options.open = true;
+      const menu = options.querySelector('.view-options-panel');
+      menu.getBoundingClientRect = () => ({top:w.innerHeight - 180});
+      options.dispatchEvent(new w.Event('toggle'));
+      assert.equal(menu.style.maxHeight, '168px', 'menu fits below its trigger in a short viewport');
+      d.getElementById('history').open = true;
+      d.getElementById('history').querySelector('summary').dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+      assert.equal(d.getElementById('history').open, false, 'Escape leaves nested history');
+      assert.equal(options.open, true, 'the actions dropdown stays open');
+      options.open = true;
+      options.querySelector('summary').dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+      assert.equal(options.open, false);
+      assert.equal(d.activeElement, options.querySelector('summary'));
+      options.open = true;
+      d.getElementById('title').click();
+      assert.equal(options.open, false);
       assert.equal(row.textContent.includes('Live · saved files'), false);
       assert.ok(header.querySelector('#live-status'));
       assert.equal(d.querySelector('.footer'), null);
@@ -5540,7 +5587,14 @@ test('Source is a peer mode without an empty activity row or explanatory return 
   assert.equal(d.querySelector('[data-mode="source"]').textContent, 'Source');
   assert.equal(w.getComputedStyle(d.querySelector('.live-bar')).display, 'none');
   assert.equal(d.querySelector('#source [data-act="document-return"], #source .source-note'), null);
-  assert.equal(d.getElementById('file-name').title, snapshot.source_path);
+  const filename = d.getElementById('file-name');
+  filename.dispatchEvent(new w.MouseEvent('mouseover', {bubbles:true}));
+  assert.equal(d.getElementById('file-path-tooltip').hidden, false);
+  assert.equal(d.getElementById('file-path-tooltip').textContent, snapshot.source_path);
+  filename.dispatchEvent(new w.KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
+  assert.equal(d.getElementById('file-path-tooltip').hidden, true);
+  filename.focus();
+  assert.equal(d.getElementById('file-path-tooltip').hidden, false);
   assert.equal(d.getElementById('banner').hidden, true);
   assert.doesNotMatch(d.getElementById('banner-text').textContent, /Saved-source preview/);
  } finally {w.close();}
@@ -5639,11 +5693,12 @@ test('proof inspection belongs to each claim and returns to its reading position
  try{
   const d=w.document;
   assert.equal(d.querySelector('#review-proof,#review-claims'),null);
-  const actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  const actions=[...d.querySelectorAll('#doc .source-controls[data-proof-claim]')];
   assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.k_pos','Demo.floor']);
   assert.equal(d.querySelector('.import-header [data-act="inspect-proof"]'),null);
   assert.ok(d.querySelector('.heading').compareDocumentPosition(d.querySelector('.live-bar')) & w.Node.DOCUMENT_POSITION_FOLLOWING);
-  actions[1].click();
+  actions[1].closest('.cell').click();
+  d.querySelector('#insp [data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
   assert.match(d.getElementById('proof-back').textContent,/Back to claim/);
@@ -5669,14 +5724,18 @@ test('fresh project theorems have declaration-scoped proof actions before checki
  const trace={status:'ready',id:'fresh',source_sha256:snapshot.sha256,nodes:[{id:0,parent:null,text:'first tactic',range:{start:{line:4,character:2},end:{line:4,character:9}},before:['first'],after:[]},{id:1,parent:null,text:'second tactic',range:{start:{line:6,character:2},end:{line:6,character:9}},before:['second'],after:[]}]};
  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
  try{
-  const d=w.document, actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  const d=w.document, actions=[...d.querySelectorAll('#doc .source-controls[data-proof-claim]')];
   assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.first','Demo.second']);
-  actions[0].click();
+  const entry=[...d.querySelectorAll('#outline button')].find(b=>b.textContent.includes('first'));
+  entry.focus(); entry.click();
+  assert.equal(d.getElementById('insp-title').textContent,'Demo.first');
+  d.querySelector('#insp [data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'n',bubbles:true}));
   assert.equal(d.getElementById('review-position').textContent,'Step 1 of 1');
   d.getElementById('proof-back').click();
-  d.querySelector('[data-proof-claim="Demo.second"]').click();
+  d.querySelector('#doc [data-proof-claim="Demo.second"]').closest('.cell').click();
+  d.querySelector('#insp [data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(d.getElementById('proof-title').textContent,'Demo.second');
   assert.equal(d.getElementById('review-position').textContent,'Initial goals');
@@ -5696,7 +5755,8 @@ test('Source shortcut enters a named claim and saved edits retain its identity',
   assert.equal(d.body.dataset.view,'doc');
   assert.equal(d.querySelector('[data-mode="doc"]').getAttribute('aria-pressed'),'true');
   d.getElementById('proof-back').click();
-  d.querySelector('[data-proof-claim="Demo.floor"]').click();
+  d.querySelector('#doc [data-proof-claim="Demo.floor"]').closest('.cell').click();
+  d.querySelector('#insp [data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   snapshot.sha256='b'.repeat(64);
   await w.glitnirPoll();
@@ -5719,11 +5779,13 @@ test('anonymous examples have distinct proof actions and return to the matching 
  snapshot.cells=[{index:0,kind:'source',start:1,end:6,text:'namespace Demo\nexample : True := by\n  trivial\nexample : True := by\n  trivial\nend Demo'}];
  const w=await renderSnapshot(snapshot,{onProof:()=>({id:'examples',status:'ready',source_sha256:snapshot.sha256,nodes:[]})});
  try{
-  const d=w.document, actions=[...d.querySelectorAll('[data-act="inspect-proof"]')];
+  const d=w.document, actions=[...d.querySelectorAll('#doc .source-controls[data-proof-claim]')];
   assert.equal(actions.length,2);assert.notEqual(actions[0].dataset.proofClaim,actions[1].dataset.proofClaim);
   const name=actions[1].dataset.proofClaim;
   assert.match(name,/Example at line 4/);
-  actions[1].click();await new Promise(resolve=>setTimeout(resolve,20));
+  const entry=[...d.querySelectorAll('#outline button')].filter(b=>b.textContent.includes('Example'))[1];
+  entry.focus(); entry.click();
+  d.querySelector('#insp [data-act="inspect-proof"]').click();await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(d.getElementById('proof-title').textContent,name);
   d.getElementById('proof-back').click();
   assert.equal(d.activeElement.dataset.proofClaim,name);
@@ -6014,5 +6076,274 @@ test('Notebook navigation reveals the current outline item within the sidebar wi
     await w.glitnirPoll();
     assert.equal(rail.scrollTop,220,'polling preserves the sidebar position');
     assert.equal(pageScrolls,0);
+  } finally {w.close();}
+});
+
+for (const browser of [false, true]) {
+  test(`selecting a theorem reopens the closed Inspector (${browser ? 'browser' : 'editor'})`, async () => {
+    const w = await renderSnapshot(projectNotebook(), {browser});
+    const d = w.document;
+    w.HTMLElement.prototype.scrollIntoView = () => {};
+    try {
+      const hide = () => d.getElementById('panel-hide').click();
+      const visible = () => !d.querySelector('.inspector').hidden;
+      hide(); assert.equal(visible(), false);
+      await w.glitnirPoll();
+      assert.equal(visible(), false, 'polling respects a closed Inspector');
+      d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
+      assert.equal(visible(), true, 'clicking the already selected theorem reopens it');
+      assert.equal(d.getElementById('insp-title').textContent, 'k_pos');
+      hide();
+      d.querySelector('[data-claim="Demo.floor"] article').click();
+      assert.equal(visible(), true, 'clicking a different theorem reopens it');
+      assert.equal(d.getElementById('insp-title').textContent, 'floor');
+      hide();
+      d.querySelector('#outline [data-act="goto"][data-id="Demo.k_pos"]').click();
+      assert.equal(visible(), true, 'selecting from Contents reopens it');
+      assert.equal(d.getElementById('insp-title').textContent, 'k_pos');
+      let revealed;
+      w.HTMLElement.prototype.scrollIntoView = function() { revealed = this; };
+      w.matchMedia = query => ({matches: query === '(max-width:760px)'});
+      hide();
+      d.querySelector('[data-claim="Demo.floor"] article').click();
+      assert.equal(revealed, d.querySelector('.inspector'), 'narrow panels bring the Inspector into view');
+      assert.equal(d.activeElement, d.getElementById('insp-title'));
+    } finally { w.close(); }
+  });
+}
+
+test('claim actions live in the Inspector and inline proof inspection expands without checking', async () => {
+  const snapshot = projectNotebook(), messages = [];
+  const trace = goalTrace(snapshot.sha256);
+  const w = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: () => trace});
+  w.HTMLElement.prototype.scrollIntoView = () => {};
+  const d = w.document, settle = () => new Promise(r => setTimeout(r, 30));
+  try {
+    assert.equal(d.querySelector('#doc [data-act="check-through"],#doc [data-act="inspect-proof"],#doc [data-act="goal"]'), null);
+    const check = d.querySelector('#insp [data-act="check-through"]');
+    assert.equal(check.textContent.trim(), 'Check up to this claim');
+    const inspect = d.querySelector('#insp [data-act="goal"]');
+    assert.equal(inspect.textContent, 'Inspect proof');
+    inspect.click(); await settle();
+    assert.equal(d.getElementById('proof-review').hidden, true);
+    assert.ok(d.querySelector('#insp .goal-steps'));
+    const results=d.querySelector('#insp .goal-results'); results.focus(); results.scrollTop=120;
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('#insp .goal-results').scrollTop,120);
+    assert.equal(d.activeElement,d.querySelector('#insp .goal-results'));
+    const starts = messages.filter(m => m.path === '/api/proof/start').length;
+    const expand = d.querySelector('#insp [data-act="inspect-proof"]');
+    assert.equal(expand.textContent, 'Expand proof steps');
+    expand.click(); await settle();
+    assert.equal(d.getElementById('proof-review').hidden, false);
+    assert.equal(messages.filter(m => m.path === '/api/proof/start').length, starts, 'expanding reuses the current recording');
+    d.getElementById('proof-back').click();
+    assert.equal(d.getElementById('proof-review').hidden, true);
+    assert.ok(d.querySelector('#insp .goal-steps'));
+    assert.equal(d.activeElement.dataset.act, 'inspect-proof');
+    assert.equal(messages.filter(m => m.path === '/api/project/check').length, 0);
+  } finally { w.close(); }
+});
+
+test('expansion cannot reuse inline goals recorded while dependencies changed', async () => {
+  const snapshot = projectNotebook();
+  let view, changed = false, starts = 0, trace = {status:'idle',nodes:[]};
+  const w = await renderSnapshot(snapshot, {onWindow: w => {view=w;}, onProof: message => {
+    if (message.path === '/api/proof/start') {
+      starts++;
+      if (!changed) { changed=true; view.dispatchEvent(new view.MessageEvent('message', {data:{type:'environmentChanged'}})); }
+      trace=goalTrace(snapshot.sha256);
+    }
+    return trace;
+  }});
+  const settle = () => new Promise(r => setTimeout(r,30));
+  try {
+    w.document.querySelector('#insp [data-act="goal"]').click(); await settle();
+    assert.equal(w.glitnirWorkbench.currentGoalTrace(), null);
+    assert.match(w.document.querySelector('#insp .goal-section').textContent, /dependencies changed/);
+    w.document.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
+    assert.equal(starts,2,'expansion refreshes the observation made under earlier dependencies');
+  } finally {w.close();}
+});
+
+test('check progress separates target, stage and elapsed time without inventing completion', async () => {
+  const snapshot=projectNotebook();
+  snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,through_line:14,message:'Resolving project environment',theorems:[]};
+  const w=await renderSnapshot(snapshot);
+  try {
+    const d=w.document;
+    w.Date.now=()=>100000;
+    w.glitnirWorkbench.UI.checkTiming={sha:snapshot.sha256,through:14,started:74000};
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('.check-progress-title').textContent,'Checking up to Demo.k_pos');
+    const expand = () => d.querySelector('#insp [data-act="inspect-proof"]');
+    assert.equal(expand().disabled,true,'expansion is disabled while a check is running');
+    assert.match(expand().getAttribute('aria-description'),/current check/);
+    assert.equal(d.querySelector('.check-progress-stage').textContent,'Inspecting project dependencies…');
+    assert.match(d.querySelector('.check-progress-meta').textContent,/Lines 1–14 · 26s elapsed/);
+    assert.equal(d.querySelectorAll('.check-progress [role="progressbar"]').length,0);
+    assert.equal(d.querySelector('.check-progress [role="status"] .check-progress-meta'),null,'elapsed time is outside live announcements');
+    assert.ok(d.querySelector('.check-progress [data-act="check-cancel"]'));
+    snapshot.preview.check.message='Replaying kernel declarations';
+    await w.glitnirPoll();
+    assert.match(d.querySelector('.check-progress-stage').textContent,/Replaying kernel declarations/);
+    assert.match(d.querySelector('.check-progress-meta').textContent,/26s elapsed/);
+    snapshot.preview.check={status:'unavailable',source_sha256:snapshot.sha256,message:'Stopped',theorems:[]};
+    await w.glitnirPoll();
+    assert.equal(w.glitnirWorkbench.UI.checkTiming,null);
+    assert.equal(expand().disabled,false,'expansion returns after the check stops');
+  } finally {w.close();}
+});
+
+test('an old poll cannot erase elapsed timing while a check request is pending', async () => {
+  const snapshot=projectNotebook();
+  let release;
+  const w=await renderSnapshot(snapshot,{browser:(url,options)=>options?.method==='POST' && url==='/api/project/check'
+    ? new Promise(resolve=>{release=resolve;}) : {ok:true,json:async()=>snapshot}});
+  try {
+    w.Date.now=()=>100000;
+    w.document.querySelector('#insp [data-act="check-through"]').click();
+    const timing=w.glitnirWorkbench.UI.checkTiming;
+    assert.ok(timing);
+    await w.glitnirPoll();
+    assert.equal(w.glitnirWorkbench.UI.checkTiming,timing);
+    snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,through_line:14,message:'Resolving project environment',theorems:[]};
+    release({ok:true,json:async()=>({queued:[]})});
+    await new Promise(r=>setTimeout(r,30));
+    assert.match(w.document.querySelector('.check-progress-meta').textContent,/0s elapsed/);
+  } finally {if(release) release({ok:true,json:async()=>({})});w.close();}
+});
+
+test('check timing survives an old poll resolving after the start request succeeds', async () => {
+  const snapshot=projectNotebook();
+  let hold=false, releaseOld, releasePost;
+  const w=await renderSnapshot(snapshot,{browser:(url,options)=>{
+    if (options?.method==='POST' && url==='/api/project/check') return new Promise(resolve=>{releasePost=resolve;});
+    if (url==='/api/notebook' && hold) {hold=false;return new Promise(resolve=>{releaseOld=resolve;});}
+    return {ok:true,json:async()=>snapshot};
+  }});
+  try {
+    const old=structuredClone(snapshot);
+    hold=true; const polling=w.glitnirPoll();
+    w.Date.now=()=>100000;
+    w.document.querySelector('#insp [data-act="check-through"]').click();
+    releasePost({ok:true,json:async()=>({queued:[]})});
+    await new Promise(r=>setTimeout(r,0));
+    snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,through_line:14,message:'Resolving project environment',theorems:[]};
+    releaseOld({ok:true,json:async()=>old}); await polling;
+    await new Promise(r=>setTimeout(r,30));
+    assert.match(w.document.querySelector('.check-progress-meta').textContent,/0s elapsed/);
+  } finally {
+    if(releasePost) releasePost({ok:true,json:async()=>({})});
+    if(releaseOld) releaseOld({ok:true,json:async()=>snapshot});
+    w.close();
+  }
+});
+
+test('refreshing proof goals shows activity and disables competing checks while Expand can join', async () => {
+  const snapshot=projectNotebook();
+  let trace=goalTrace(snapshot.sha256);
+  const w=await renderSnapshot(snapshot,{onProof:message=>{
+    if(message.path==='/api/proof/start') trace={status:'running',id:'refreshing',source_sha256:snapshot.sha256,nodes:[],message:'Recording saved tactic goals'};
+    return trace;
+  }});
+  const d=w.document, settle=()=>new Promise(r=>setTimeout(r,30));
+  try {
+    d.querySelector('#insp [data-act="goal"]').click(); await settle();
+    d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
+    d.getElementById('proof-back').click();
+    d.querySelector('#insp [data-act="goal"]').click(); await settle();
+    assert.match(d.querySelector('#insp .proof-progress-title').textContent,/Refreshing proof goals/);
+    assert.match(d.querySelector('#insp .proof-progress-stage').textContent,/Recording saved tactic goals/);
+    assert.equal(d.querySelector('#insp [data-act="check-through"]').disabled,true);
+    assert.equal(d.getElementById('check-project').disabled,true);
+    assert.equal(d.querySelector('#insp [data-act="inspect-proof"]').disabled,false);
+    assert.ok(d.querySelector('#insp .proof-progress [data-act="goal-cancel"]'));
+    d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
+    assert.equal(d.getElementById('proof-progress').hidden,false);
+    assert.match(d.getElementById('proof-progress-stage').textContent,/Recording saved tactic goals/);
+    assert.equal(d.getElementById('proof-cancel').closest('#proof-progress').id,'proof-progress');
+    assert.equal(d.getElementById('proof-message').hidden,true);
+    assert.equal(d.getElementById('proof-refresh').disabled,true);
+  } finally {w.close();}
+});
+
+test('goal results foreground the target and fold repeated context and tactic results', async () => {
+  const snapshot=projectNotebook();
+  const text='eta : ℝ\nheta : eta > 0\n⊢ eta + 1 > 1';
+  const trace=goalTrace(snapshot.sha256);
+  trace.nodes[0].before=[text]; trace.nodes[0].after=[text];
+  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+  try {
+    const d=w.document;
+    d.querySelector('#insp [data-act="goal"]').click(); await new Promise(r=>setTimeout(r,30));
+    const first=d.querySelector('#insp .goal-initial');
+    assert.equal(first.querySelector('.goal-target').textContent,'⊢ eta + 1 > 1');
+    assert.equal(first.querySelector('.goal-context').open,false);
+    assert.equal(first.querySelector('.goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
+    const step=d.querySelector('#insp .goal-step details');
+    step.open=true;
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('#insp .goal-step details').open,true);
+  } finally {w.close();}
+});
+
+test('active checks stay visible and cancellable in Notebook, Source and Explore', async () => {
+  const snapshot=projectNotebook(), messages=[];
+  snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,message:'Checking saved file',theorems:[]};
+  const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m)});
+  try {
+    const d=w.document;
+    for(const mode of ['doc','source','graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.ok(d.getElementById('project-check').closest('#run-activity'));
+      assert.ok(d.querySelector('#run-activity [data-act="check-cancel"]'));
+    }
+    d.querySelector('#run-activity [data-act="check-cancel"]').click();
+    await new Promise(r=>setTimeout(r,30));
+    assert.ok(messages.some(m=>m.path==='/api/project/check/cancel'));
+  } finally {w.close();}
+});
+
+test('inline proof progress remains visible after switching to Source and Explore', async () => {
+  const snapshot=projectNotebook();
+  const trace={status:'running',id:'shared',source_sha256:snapshot.sha256,nodes:[],message:'Recording saved tactic goals'};
+  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+  try {
+    const d=w.document;
+    d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
+    for(const mode of ['source','graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.match(d.querySelector('#proof-run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
+      assert.ok(d.querySelector('#proof-run-activity [data-act="goal-cancel"]'));
+    }
+  } finally {w.close();}
+});
+
+test('proof steps use compact headers, retain full tactics and fold recording details', async () => {
+  const snapshot=projectNotebook();
+  const trace=goalTrace(snapshot.sha256);
+  trace.nodes[0].text='exact AIFSafety.Cells.Bin3.Slab100.drift_in_mesh';
+  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+  try {
+    const d=w.document;
+    d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
+    const step=d.querySelector('.goal-step details');step.open=true;
+    assert.equal(step.querySelector('.goal-number').textContent,'Step 1');
+    assert.equal(step.querySelector('.goal-tactic code').textContent,'exact');
+    assert.equal(step.querySelector('.goal-full-tactic code').textContent,trace.nodes[0].text);
+    const details=d.querySelector('.goal-recording-details');
+    assert.equal(details.open,false);
+    assert.equal(details.querySelector('summary').textContent,'Recording details');
+    assert.ok(details.querySelector('.goal-caption'));
+    details.open=true;
+    const tactic=step.querySelector('.goal-full-tactic');tactic.focus();tactic.scrollLeft=120;
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('.goal-recording-details').open,true);
+    const refreshed=d.querySelector('.goal-full-tactic');
+    assert.equal(refreshed.scrollLeft,120);
+    assert.equal(d.activeElement,refreshed);
   } finally {w.close();}
 });

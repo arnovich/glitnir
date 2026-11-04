@@ -166,7 +166,7 @@ action. Escape dismisses the explanation.
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
 - Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow live edits**, in the Notebook controls below the title, scrolls to them after each save.
+  highlights the changed sections. **Follow live edits**, under **More**, scrolls to them after each save.
 - `j` and `k` step through the claims; `i` shows the claim
   inspector for the selected claim.
 - `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
@@ -174,16 +174,30 @@ action. Escape dismisses the explanation.
   rechecked, containing `sorry`, resting on additional assumptions, or where
   checking stopped.
 
+Selecting a theorem in the Notebook or Contents reopens the Inspector if it was
+closed. Background refreshes leave a closed Inspector closed.
+
 ### Proof goals and steps
 
-**Inspect proof steps** on a claim (or `t` for the selected claim, or
-**Glitnir: Inspect Selected Claim’s Proof Steps**) records the selected
-proof's tactic tree once with Lean, then lets you walk it with the goals before
-and after each step: `n` and `p` move between steps, `r` checks the whole saved
-file, and **Back to claim** or `Esc` returns to that claim and its reading position. **Inspect proof goals** in the claim inspector
-shows the goals after each tactic step of the selected claim from the same
-recording. Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`.
-Both are historical observations of the saved file and never change a status.
+Select a theorem to open its Inspector. **Inspect proof** records its saved proof
+with Lean and displays the goals after each tactic step in place. The check and
+inspection actions live in the Inspector, rather than on every theorem card.
+
+**Expand proof steps** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
+opens the larger tactic-tree view, reusing a current inline recording. `n` and `p`
+move between steps; `r` checks the whole saved file. **Back to claim** or `Esc`
+returns to the Inspector and the claim’s reading position.
+
+Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. Both
+views show historical observations of the saved file and never change a status. While a run is active,
+its activity and cancellation remain available in Notebook, Source and Explore.
+Competing check/refresh actions are disabled; expanding can follow the same run.
+As commands finish, proof recording reports the source line reached, lines left
+and tactic steps recorded. These are source-progress counts, not a time estimate.
+In the Inspector, each tactic’s results and the goal’s Context can be expanded
+separately; your open sections and reading position survive refreshes. Full tactic
+text is available inside each step. Source/toolchain provenance lives under
+**Recording details**.
 
 ### Linked notebooks
 
@@ -238,7 +252,7 @@ failing command withheld the claims after it, and 2 when checking is unavailable
 
 ### Checking through a claim
 
-**Check through here** on a claim (also in the inspector, or `r` on the selected
+**Check up to this claim** in the Inspector (or `r` on the selected
 claim) checks only lines 1 through that claim's last line: the same sandboxed
 compile and kernel replay of that prefix. Every checked prefix, also the one
 before a failing command, ends where Glitnir's own lexer finds a command end: the
@@ -426,7 +440,7 @@ the preview for this list. Moving never starts a check.
 |---|---|
 | `j` `k` | Next / previous claim |
 | `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
-| `c` `t` | Return to claim / inspect selected claim’s proof steps |
+| `c` `t` | Return to claim / expand selected claim’s proof steps |
 | `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
 | `i` | Show or hide the claim inspector in Notebook |
@@ -655,7 +669,7 @@ Static HTML exports retain route indexes, supporting links and backlinks so they
 be explored without the live sidebar. Malformed atlases produce diagnostics without
 removing the statement map.
 
-The header status group separates the server connection from proof-check results.
+The status line beneath the filename separates the server connection from proof-check results.
 Its dot reports connection only. Hover for a summary, or click the status group
 (or focus it and press Enter) for connection details, the displayed saved source's
 SHA-256 hash, and any Lean compatibility explanation. Escape closes the details.
@@ -669,7 +683,7 @@ a successful refresh clears that message without running a proof check.
 **Follow live edits** remains a separate scrolling preference.
 
 **Source** is a peer of **Notebook** and **Explore**. Use the mode controls or
-source line links to move between views. The filename tooltip identifies the full
+source line links to move between views. Hovering or focusing the filename shows the full
 local path; exported snapshots omit that local path. Project setup details live
 in the header status panel, while actionable warnings stay visible.
 
@@ -686,7 +700,12 @@ leave the reading view in place without requesting a tactic observation.
 
 Proof inspection is a claim action rather than a notebook-wide mode. The title
 stays in the same position in Notebook, Source and Explore; Notebook-only
-Previous/Next and Follow live edits controls sit below it.
+review navigation sits below it and stays visible as the title scrolls away.
+**Needs review · N items** opens a jump list of names and reasons. **Previous**,
+**Item X of N**, and **Next** stay together; the position identifies the selected
+review item, not completed work. The bar disappears when the review queue is empty,
+which does not certify the file. **More** groups **History**, **Export HTML**,
+and the **Follow live edits** notebook preference.
 
 Notebook contents nests rendered declarations and setup beneath section headings,
 including before any check results exist. Text badges and colours identify

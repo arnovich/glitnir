@@ -446,3 +446,101 @@ def test_a_trace_is_kept_awake_and_notes_sleep(tmp_path, monkeypatch, awake_dept
     assert messages and all(
         m.endswith(" (the computer slept for 3 min)") for m in messages
     )
+
+
+def test_observation_reports_bounded_source_progress(tmp_path):
+    """Counters describe source position and observed tactics, never time left."""
+    import json
+
+    from glitnir.lean.proof_trace import _progress_message
+
+    source = (
+        "-- λ\ntheorem first : True := by trivial\n"
+        "theorem second : True := by trivial\n"
+    ).encode()
+    report = tmp_path / "progress.json"
+    completed = source.index(b"\ntheorem second")
+    report.write_text(
+        json.dumps(
+            {"source_bytes": len(source), "completed_bytes": completed, "steps": 1}
+        )
+    )
+    assert _progress_message(report, source) == (
+        "Recording tactic goals · reached source line 2 of 3 · "
+        "1 source line left · 1 tactic step recorded"
+    )
+    for invalid in [
+        {"source_bytes": len(source) + 1, "completed_bytes": completed, "steps": 1},
+        {"source_bytes": len(source), "completed_bytes": len(source) + 1, "steps": 1},
+        {"source_bytes": len(source), "completed_bytes": True, "steps": 1},
+        {"source_bytes": len(source), "completed_bytes": completed, "steps": 4097},
+    ]:
+        report.write_text(json.dumps(invalid))
+        assert _progress_message(report, source) is None
+    report.write_text("incomplete")
+    assert _progress_message(report, source) is None
+    assert _progress_message(tmp_path / "missing", source) is None
+
+
+def test_trace_forwards_source_counters_while_observer_runs(tmp_path, monkeypatch):
+    """Advisory snapshots are forwarded without changing the final trace format."""
+    import json
+
+    from glitnir.lean import proof_trace
+
+    text = "theorem first : True := by trivial\ntheorem second : True := by trivial\n"
+    source = tmp_path / "A.lean"
+    source.write_text(text)
+    monkeypatch.setattr(proof_trace, "_toolchain", lambda: tmp_path)
+
+    def run(_runtime, arguments, **options):
+        report = Path(arguments[-1])
+        progress = Path(str(report) + ".progress.json")
+        for completed, steps in [(text.index("\n"), 1), (len(text.encode()), 2)]:
+            progress.write_text(
+                json.dumps(
+                    {
+                        "source_bytes": len(text.encode()),
+                        "completed_bytes": completed,
+                        "steps": steps,
+                    }
+                )
+            )
+            options["on_poll"]()
+        report.write_text(json.dumps({"nodes": [], "errors": [], "warnings": []}))
+
+    monkeypatch.setattr(proof_trace, "run_observer", run)
+    messages = []
+    result = proof_trace.trace_file(
+        source,
+        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+        progress=messages.append,
+    )
+    assert result["status"] == "ready"
+    assert any("source line 1 of 2" in message for message in messages)
+    assert any(
+        "0 source lines left · 2 tactic steps" in message for message in messages
+    )
+
+
+def test_live_trace_reports_source_position_before_finishing(tmp_path):
+    """A running Lean observer publishes a completed command before the next ends."""
+    import os
+
+    from glitnir.lean.proof_trace import trace_file
+
+    if os.environ.get("GLITNIR_TEST_PROOF_TRACE") != "1":
+        pytest.skip("set GLITNIR_TEST_PROOF_TRACE=1 for the confined Lean trace check")
+    text = "def first : Nat := 1\n#eval IO.sleep 200\ndef second : Nat := 2\n"
+    source = tmp_path / "Progress.lean"
+    source.write_text(text)
+    messages = []
+    result = trace_file(
+        source,
+        expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+        timeout_ms=90000,
+        progress=messages.append,
+    )
+    assert result["status"] == "ready", result
+    assert any("source line 1 of 3" in message for message in messages)
+    assert any("source line 3 of 3" in message for message in messages)

@@ -328,22 +328,24 @@
   // A check of the whole saved file, or, with `throughLine`, of its lines 1
   // through that line only: the end of a chosen claim.
   async function checkProject(throughLine = null) {
-    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff() || walkthroughUnchecked()) return;
+    if (checkBusy() || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff() || walkthroughUnchecked()) return;
     UI.checkRequested = true;
     render();
     const body = {sha256: UI.data.sha256};
     // A line with nothing after it asks for the whole file.
     const lastLine = Math.max(0, ...UI.data.cells.map(cell => cell.end));
     if (Number.isSafeInteger(throughLine) && throughLine > 0 && throughLine < lastLine) body.through_line = throughLine;
+    UI.checkTiming = {sha: UI.data.sha256, through: body.through_line ?? null, started: Date.now()};
     try { await post('/api/project/check', body); await refresh(); }
+    catch (error) { UI.checkTiming = null; throw error; }
     finally { UI.checkRequested = false; render(); }
   }
-  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running');
+  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.goals?.starting || UI.goals?.trace?.status === 'running' || UI.proofBusy);
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
-  function checkThroughHTML(saved, label, note) {
+  function checkThroughHTML(saved, label, note, scope = 'card') {
     if (linkedPath() || recorded() || leanOff() || walkthroughUnchecked() || !projectMode()) return '';
-    return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button>${helpHTML(`check-${saved.name}-${label}`, 'About checking through a claim', note)}`;
+    return `<button type="button" class="secondary" data-act="check-through" data-id="${esc(saved.name)}" data-line="${esc(saved.end_line)}" data-sha="${esc(UI.data.sha256)}"${checkBusy() ? ' disabled' : ''} title="Compile and kernel-replay lines 1–${esc(saved.end_line)} of the saved file">${icon('replay')}${label}</button>${helpHTML(`check-${scope}-${saved.name}`, 'About checking through a claim', note)}`;
   }
   function helpHTML(key, label, text) {
     const id = `help-${encodeURIComponent(key)}`;
@@ -417,7 +419,6 @@
     const compatibility = walkthroughUnchecked() ? `<div class="note-line walkthrough-compatibility" data-tone="muted">${icon('branch')}<span>${esc(walkthroughMessage())}</span></div>` : '';
     const note = compatibility + notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
       : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : `the saved source above this claim or its environment changed since it was checked.${leanOff() || walkthroughUnchecked() ? '' : ' Check the saved file to update it.'}`}</span></div>`);
-    const actions = staticPage ? '' : checkThroughHTML(saved, 'Check through here', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
         ${window.glitnirCards.header({label: presentation.label, name: c.label, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end, true, saved.name, staticPage), badgesHTML: `<span class="pill" data-tone="${st.tone}">${esc(st.label)}</span>${stale}`})}
@@ -429,7 +430,6 @@
         <p class="small muted claim-axioms">Assumptions: ${axioms}</p>
         ${source}
         ${note}
-        ${actions ? `<div class="claim-actions">${actions}</div>` : ''}
       </article></section>`;
   }
   // Optional display from the last compiled observation, with the same currency
@@ -498,9 +498,19 @@
   }
   function projectCheckHTML(result, sourceSha) {
     if (walkthroughUnchecked()) return `<p class="banner quiet walkthrough-compatibility" role="status">${esc(walkthroughMessage())}</p>`;
-    if (!result) return '';
+    if (!result) { if (!UI.checkRequested) UI.checkTiming = null; return ''; }
     const through = Number.isSafeInteger(result.through_line) ? result.through_line : null;
-    if (result.status === 'running') return `<p role="status">${through ? `Checking lines 1–${esc(through)} · ` : ''}${esc(result.message)}… <button type="button" class="secondary" data-act="check-cancel">${icon('x')}Stop</button></p>`;
+    if (result.status === 'running') {
+      const target = through && result.source_sha256 === sourceSha && (UI.data.project_claims || []).find(c => c.end_line === through);
+      const label = through ? `Checking up to ${target ? projectClaimLabel(target) : `line ${through}`}` : 'Checking saved file';
+      const stage = result.message === 'Resolving project environment' ? 'Inspecting project dependencies' : result.message;
+      const timing = UI.checkTiming;
+      const seconds = timing?.sha === sourceSha && timing.through === through ? Math.max(0, Math.floor((Date.now() - timing.started) / 1000)) : null;
+      const elapsed = seconds === null ? '' : `${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`} elapsed`;
+      const details = [through ? `Lines 1–${through}` : 'Whole saved file', elapsed].filter(Boolean).join(' · ');
+      return `<section class="check-progress" aria-label="Check progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="check-progress-title">${esc(label)}</strong><div class="check-progress-stage">${esc(stage)}…</div></div><div class="check-progress-meta small muted">${esc(details)}</div></div></div><button type="button" class="secondary" data-act="check-cancel" aria-label="Stop check">${icon('x')}Stop</button></section>`;
+    }
+    if (!UI.checkRequested) UI.checkTiming = null;
     if (result.status !== 'checked_snapshot') return `<h3>Check unavailable${through ? ` · lines 1–${esc(through)}` : ''}</h3><pre>${esc(result.message)}</pre>`;
     const labels = {checked: 'Kernel checked', admitted: 'Contains sorry', assumptions: 'Additional assumptions'};
     const stopped = !result.withheld ? '' : requestedCut(result.withheld)

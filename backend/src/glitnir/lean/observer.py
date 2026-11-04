@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
@@ -80,6 +81,7 @@ def run_observer(
     writable: bool,
     cancel: threading.Event,
     deadline: float,
+    on_poll: Callable[[], None] = lambda: None,
 ) -> str:
     """Run bounded Lean with only explicit read roots and private writable cwd.
 
@@ -117,6 +119,7 @@ def run_observer(
         )
         try:
             while process.poll() is None:
+                on_poll()
                 if writable:
                     _check_stage(cwd)
                 if cancel.is_set():
@@ -132,6 +135,7 @@ def run_observer(
                     process.wait(timeout=0.05)
                 except subprocess.TimeoutExpired:
                     pass
+            on_poll()
             if writable:
                 _check_stage(cwd)
             texts = []

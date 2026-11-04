@@ -80,11 +80,8 @@
   function lineLinkHTML(start, end, editable = true, inspectName = '', staticPage = false) {
     const cell = UI.data.cells.find(c => c.start <= start && end <= c.end);
     const edit = editable && HOST && cell && !linkedPath() ? `<button type="button" class="source-edit" data-act="source" data-index="${cell.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" title="Edit in editor" aria-label="Edit in editor">${icon('edit')}</button>` : '';
-    const reason = document.body.classList.contains('unsaved-lean') ? 'Save or revert edits before viewing proof steps.'
-      : UI.data.preview?.lean?.supported === false ? UI.data.preview.lean.message || 'Proof steps are unavailable for this Lean toolchain.'
-      : walkthroughUnchecked() ? walkthroughMessage() : '';
-    const inspect = HOST && inspectName && !staticPage && !linkedPath() ? `<button type="button" class="source-inspect secondary" data-act="inspect-proof" data-proof-claim="${esc(inspectName)}" data-index="${cell?.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}" aria-label="Inspect proof steps for ${esc(inspectName)}" title="${esc(reason || 'Inspect this claim’s saved tactic goals (t)')}"${reason ? ` disabled aria-description="${esc(reason)}"` : ''}>Inspect proof steps</button>` : '';
-    return `<span class="source-controls">${inspect}<a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
+    const scope = inspectName && !staticPage && !linkedPath() ? ` data-proof-claim="${esc(inspectName)}" data-index="${cell?.index}" data-start="${start}" data-end="${end}" data-sha="${esc(UI.data.sha256)}"` : '';
+    return `<span class="source-controls"${scope}><a class="lines source-link" href="#source-L${start}" data-act="source-lines" data-sha="${esc(UI.data.sha256)}" data-start="${start}" data-end="${end}" aria-label="Show lines ${start}–${end} in Source" title="Show in Source">L${start}–${end}</a>${edit}</span>`;
   }
   const leanOf = entries => entries.map(e => e[1]).join('\n');
   // A cell's [line, text] entries; a source cell's text ends with a newline.

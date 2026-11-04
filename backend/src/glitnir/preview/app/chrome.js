@@ -7,7 +7,7 @@
     currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, helpHTML, icon, images,
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
-    proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
+    proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
     showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
@@ -139,7 +139,16 @@
     } finally { gitDiffLoading = false; }
   }
 
-  $('history').addEventListener('toggle', () => { if ($('history').open) void loadGitHistory(); });
+  $('history').addEventListener('toggle', () => {
+    if ($('history').open) { $('notebook-view-options').open = true; void loadGitHistory(); }
+  });
+  function sizeActionsMenu() {
+    if (!$('notebook-view-options').open) return;
+    const panel = $('notebook-view-options').querySelector('.view-options-panel');
+    panel.style.maxHeight = `${Math.max(0, window.innerHeight - panel.getBoundingClientRect().top - 12)}px`;
+  }
+  $('notebook-view-options').addEventListener('toggle', sizeActionsMenu);
+  window.addEventListener('resize', sizeActionsMenu);
   renderGitHistory();
 
   let outlineOwner = null, outlineCollapsed = new Set(), outlineWidth = 260;
@@ -301,7 +310,7 @@
     document.title = `${title()} · Glitnir`;
     $('title').innerHTML = inlineHTML(title());
     $('file-name').textContent = d.file;
-    $('file-name').title = d.source_path || d.file;
+    $('file-path-tooltip').textContent = d.source_path || d.file;
     $('file-name').setAttribute('aria-description', d.source_path || d.file);
     const linked = Boolean(linkedPath());
     $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : '';
@@ -347,6 +356,14 @@
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
+    const activity = $('run-activity');
+    const checkingNow = !linked && project && d.preview.check?.status === 'running';
+    if (checkingNow) activity.append($('project-check'));
+    else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
+    const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : UI.proofActivity;
+    const showProof = !linked && proofRun && (proofRun.expanded || UI.mode !== 'doc' || !UI.panel);
+    $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
+    activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
     $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
     $('project-inspection').hidden = !project || linked || (!inspected && !inspecting());
@@ -466,8 +483,12 @@
     const atlasFocus = atlasActive ? {controlRegion: ['.atlas-flow', '.atlas-route-controls', '.atlas-visit-history', '.atlas-overview', '.atlas-details', '.atlas-content'].find(selector => atlasActive.closest(selector)), search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
       summary: atlasActive.matches('.atlas-details > summary') ? '.atlas-details > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
+    const activityFocus = document.activeElement?.closest('#run-activity')?.querySelector(':focus')?.dataset.act;
     const scroll = $('insp').scrollTop;
-    const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
+    const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
+    const tacticStates = new Map([...$('insp').querySelectorAll('.goal-full-tactic')].map(el => [el.dataset.tacticKey, {left: el.scrollLeft, top: el.scrollTop, focused: document.activeElement === el}]));
+    const results = $('insp').querySelector('.goal-results');
+    const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
     if (!heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
       else if (UI.mode === 'source') renderSource();
@@ -514,8 +535,21 @@
       const link = $('doc').querySelectorAll(linkSelector)[linkFocus.index];
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
+    if (activityFocus) [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)?.focus({preventScroll: true});
     $('insp').scrollTop = scroll;
-    if (goalFocus) $('insp').querySelector('.goal-section [data-act]')?.focus({preventScroll: true});
+    const nextResults = $('insp').querySelector('.goal-results');
+    if (nextResults && resultsState?.key === nextResults.dataset.goalKey) {
+      nextResults.scrollTop = resultsState.top; nextResults.scrollLeft = resultsState.left;
+      if (resultsState.focused) nextResults.focus({preventScroll: true});
+    }
+    for (const el of $('insp').querySelectorAll('.goal-full-tactic')) {
+      const state = tacticStates.get(el.dataset.tacticKey);
+      if (state) { el.scrollLeft = state.left; el.scrollTop = state.top; if (state.focused) el.focus({preventScroll: true}); }
+    }
+    if (goalFocus) {
+      const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);
+      (controls.find(el => el.dataset.act === goalFocus) || controls.find(el => el.dataset.act === 'goal-cancel') || controls[0])?.focus({preventScroll: true});
+    }
     restoreDiagramUI(diagramUI);
     if (helpFocus) {
       [...document.querySelectorAll('.help-icon')].find(button => button.dataset.helpKey === helpFocus)?.focus({preventScroll: true});
@@ -580,7 +614,12 @@
     finally { UI.exporting = false; $('export-html').disabled = false; }
   }
 
-  $('export-html').onclick = exportHTML;
+  $('export-html').onclick = () => {
+    $('notebook-view-options').open = false;
+    $('history').open = false;
+    $('notebook-view-options').querySelector('summary').focus({preventScroll: true});
+    return exportHTML();
+  };
 
   // ----- keyboard shortcuts ------------------------------------------------------
   // The one list of shortcuts: the help dialog is drawn from it, and the
@@ -592,7 +631,7 @@
     {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
     {group: 'Navigate', keys: ['n', 'p'], editor: true,
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / inspect selected claim’s proof steps'},
+    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / expand selected claim’s proof steps'},
     {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
     {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
     {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
@@ -632,15 +671,22 @@
     UI.graphFit = false;
     render();
   }
-  function select(name, scroll) {
+  function select(name, scroll, openInspector = false) {
+    if (openInspector) UI.panel = true;
     UI.outlineTarget = null; revealOutline = true;
     UI.sourceCell = null;
     UI.selected = name;
     UI.graphSelected = `local:${name}`;
     render();
     void loadResearch(name);
+    if (openInspector && UI.mode === 'doc' && window.matchMedia('(max-width:760px)').matches) {
+      $('insp-title').tabIndex = -1;
+      $('insp-title').focus({preventScroll: true});
+      document.querySelector('.inspector').scrollIntoView({block: 'start', behavior: reduced() ? 'auto' : 'smooth'});
+      return;
+    }
     if (!scroll) return;
-    const el = UI.mode === 'doc' ? $('cell-' + name) : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
+    const el = UI.mode === 'doc' ? $('cell-' + name) || [...$('doc').querySelectorAll('.source-controls[data-proof-claim]')].find(el => el.dataset.proofClaim === name)?.closest('.cell') : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
     if (el) { revealSection(el); el.scrollIntoView?.({behavior: reduced() ? 'auto' : 'smooth', block: UI.mode === 'doc' ? 'start' : 'center'}); }
   }
   function showSourceLines(start, end) {
@@ -706,8 +752,10 @@
     if (history.open && !history.contains(e.target)) history.open = false;
     const b = e.target.closest('[data-act]');
     if (!b) {
+      const freshScope = e.target.closest('.cell')?.querySelector('.source-controls[data-proof-claim]');
+      if (freshScope && !e.target.closest('button,summary,a') && !claim(freshScope.dataset.proofClaim)) { select(freshScope.dataset.proofClaim, false, true); return; }
       const cell = e.target.closest('[data-claim]');
-      if (cell && !e.target.closest('button,summary,a') && UI.selected !== cell.dataset.claim) select(cell.dataset.claim, false);
+      if (cell && !e.target.closest('button,summary,a') && (UI.selected !== cell.dataset.claim || !UI.panel)) select(cell.dataset.claim, false, true);
       return;
     }
     if (b.closest('.proof-section > summary')) e.preventDefault();
@@ -730,7 +778,7 @@
       case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
-      case 'goto': closeDiagram(); select(id, true); break;
+      case 'goto': closeDiagram(); select(id, true, true); break;
       case 'graph-select': {
         const node = graphNode(b.dataset.graphId);
         if (!node) break;
@@ -774,6 +822,13 @@
         UI.mode = 'doc';
         render();
         const heading = document.getElementById(id);
+        const scope = heading?.querySelector('.source-controls[data-proof-claim]');
+        if (scope) {
+          select(scope.dataset.proofClaim, true, true);
+          const target = document.getElementById(id);
+          if (target && !window.matchMedia('(max-width:760px)').matches) { target.tabIndex = -1; target.focus({preventScroll: true}); }
+          break;
+        }
         if (heading) {
           revealSection(heading);
           const target = heading.closest('summary') || heading;
@@ -802,10 +857,23 @@
   $('keys-close').onclick = () => keys(false);
   $('keys').onclick = e => { if (e.target === $('keys')) keys(false); };
   document.addEventListener('click', e => {
+    if (!e.composedPath().includes($('notebook-view-options'))) { $('notebook-view-options').open = false; $('history').open = false; }
     if (!$('header-status').contains(e.target)) $('header-status').open = false;
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if ($('notebook-view-options').open && $('history').open) {
+        $('history').open = false;
+        $('history').querySelector('summary').focus({preventScroll: true});
+        e.stopImmediatePropagation();
+        return;
+      }
+      if ($('notebook-view-options').open) {
+        $('notebook-view-options').open = false;
+        $('notebook-view-options').querySelector('summary').focus({preventScroll: true});
+        e.stopImmediatePropagation();
+        return;
+      }
       if ($('header-status').open) {
         $('header-status').open = false;
         $('status-summary').focus({preventScroll: true});
@@ -817,6 +885,7 @@
       $('history').open = false;
       return;
     }
+    if ($('notebook-view-options').open || e.target.closest('#notebook-view-options,#review-queue')) return;
     if ($('header-status').open || e.target.closest('#image-dialog,.context-help,#header-status')) return;
     const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"],#graph-view [data-act="graph-select"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {

@@ -130,6 +130,9 @@ To validate and publish a candidate:
 4. Review release notes and obtain the owner's publication approval. Publish the
    existing draft without rebuilding or changing its tag or assets. This starts
    Marketplace publication of the same VSIX (below), which waits for approval.
+   For every stable release, explicitly mark the published GitHub release as
+   **Latest** (`gh release edit TAG --latest`) and verify `/releases/latest`
+   resolves to that version. Do this on every release; do not move version tags.
 5. Verify anonymous discovery, matching-backend download and fresh installation.
    Confirm the private vulnerability-reporting channel advertised in `SECURITY.md`.
 

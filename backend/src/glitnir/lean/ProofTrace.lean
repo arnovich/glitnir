@@ -80,6 +80,7 @@ def main (args : List String) : IO UInt32 := do
   let mut nodes : Array Json := #[]
   let mut errors : Array String := #[]
   let mut warnings : Array String := #[]
+  let mut completed := 0
   repeat
     let scope := state.scopes.head!
     let context := {
@@ -109,6 +110,13 @@ def main (args : List String) : IO UInt32 := do
       if message.severity == .error then errors := errors.push (← message.data.toString)
       if message.severity == .warning then warnings := warnings.push (← message.data.toString)
     state := { state with messages := {}, snapshotTasks := #[], infoState := { enabled := true } }
+    completed := max completed (if atEnd then input.utf8ByteSize else
+      stx.getTailPos?.map (·.byteIdx) |>.getD completed)
+    let progress := Json.mkObj [
+      ("source_bytes", toJson input.utf8ByteSize),
+      ("completed_bytes", toJson completed), ("steps", toJson nodes.size)]
+    IO.FS.writeFile (report ++ ".progress.tmp") progress.compress
+    IO.FS.rename (report ++ ".progress.tmp") (report ++ ".progress.json")
     if atEnd then break
   IO.FS.writeFile report (Json.mkObj [
     ("nodes", toJson nodes), ("errors", toJson errors), ("warnings", toJson warnings)]).compress
