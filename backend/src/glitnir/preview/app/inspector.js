@@ -140,7 +140,7 @@
       if (at < 0) return `<pre class="goal goal-block goal-target">${esc(goal)}</pre>`;
       return `<div class="goal-block"><pre class="goal goal-target">${esc(goal.slice(at + 1))}</pre><details class="goal-context" data-fold-key="goal-context:${esc(goal)}"><summary>Context</summary><pre class="goal">${esc(goal.slice(0, at))}</pre></details></div>`;
     }).join('')
-    : '<pre class="goal" data-tone="green">No goals remain in this tactic’s scope.</pre>';
+    : '<p class="goal-complete" data-tone="green">No goals remain in this scope.</p>';
   function proofProgressHTML(run) {
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="${run.expanded ? 'proof-cancel' : 'goal-cancel'}">Cancel</button></section>`;
@@ -174,16 +174,15 @@
     const nodes = trace.nodes.filter(n => n.range.start.line >= start && n.range.start.line <= end);
     const messages = [...(trace.errors || []), ...(trace.warnings || [])];
     const messagesHTML = messages.length ? `<details class="goal-messages" data-fold-key="goal-messages"><summary class="small muted">Lean messages for the file · ${messages.length}</summary><pre>${esc(messages.join('\n\n'))}</pre></details>` : '';
-    const provenance = `<p class="small muted goal-caption">Recorded from source ${esc(String(trace.source_sha256).slice(0, 8))}${trace.environment?.toolchain ? ` with ${esc(trace.environment.toolchain)}` : ''}. Dependencies were read-only live inputs. Recorded elaboration attempts, not a proof certificate: this never changes a status.</p>`;
+    const provenance = `<details class="goal-recording-details" data-fold-key="goal-recording:${esc(c.name)}:${esc(trace.id)}"><summary>Recording details</summary><p class="small muted goal-caption">Recorded from source ${esc(String(trace.source_sha256).slice(0, 8))}${trace.environment?.toolchain ? ` with ${esc(trace.environment.toolchain)}` : ''}. Dependencies were read-only live inputs. Recorded elaboration attempts, not a proof certificate: this never changes a status.</p></details>`;
     if (!nodes.length) {
       return `<div class="note-line goal-note" data-tone="muted">${icon('branch')}<span>No tactic steps were recorded for this claim. It may be a term proof${trace.status === 'partial' ? ', or Lean stopped before it' : ''}.</span></div>${messagesHTML}${provenance}`;
     }
     const depth = n => { let d = 0; for (let p = n.parent; p !== null && p !== undefined && d < 6; p = byId.get(p)?.parent) d++; return d; };
     const shown = nodes.slice(0, MAX_GOAL_STEPS);
     const steps = shown.map((n, i) => {
-      const lines = n.text.split('\n');
-      const tactic = lines[0] + (lines.length > 1 ? ' …' : '');
-      return `<li class="goal-step" data-depth="${depth(n)}"><details data-fold-key="goal-step:${esc(c.name)}:${esc(trace.id)}:${n.id}"><summary class="goal-tactic"><span class="goal-number">${i + 1}</span><code title="${esc(n.text)}">${esc(tactic)}</code><span class="small muted">L${esc(n.range.start.line)}</span></summary>${lines.length > 1 ? `<pre class="goal-full-tactic">${esc(n.text)}</pre>` : ''}<div class="goal-after-label small muted">Goals after this step</div>${goalBlocksHTML(n.after)}</details></li>`;
+      const tactic = n.text.trim().split(/\s+/, 1)[0] || 'Tactic';
+      return `<li class="goal-step" data-depth="${depth(n)}"><details data-fold-key="goal-step:${esc(c.name)}:${esc(trace.id)}:${n.id}"><summary class="goal-tactic"><span class="goal-number">Step ${i + 1}</span><code title="${esc(n.text)}">${esc(tactic)}</code><span class="small muted">L${esc(n.range.start.line)}</span></summary><pre class="goal-full-tactic" data-tactic-key="${esc(JSON.stringify([c.name, UI.data.sha256, trace.id, n.id]))}" tabindex="0" role="region" aria-label="Full tactic for step ${i + 1}"><code>${esc(n.text)}</code></pre><div class="goal-after-label small muted">Result</div>${goalBlocksHTML(n.after)}</details></li>`;
     }).join('');
     return (trace.status === 'partial' ? `<div class="note-line goal-note" data-tone="amber">${icon('branch')}<span>Lean reported errors in the file; some steps may be missing.</span></div>` : '')
       + `<div class="goal-initial"><div class="field-label">Initial goal</div>${goalBlocksHTML(nodes[0].before)}</div>`

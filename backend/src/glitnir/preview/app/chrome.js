@@ -486,6 +486,7 @@
     const activityFocus = document.activeElement?.closest('#run-activity')?.querySelector(':focus')?.dataset.act;
     const scroll = $('insp').scrollTop;
     const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
+    const tacticStates = new Map([...$('insp').querySelectorAll('.goal-full-tactic')].map(el => [el.dataset.tacticKey, {left: el.scrollLeft, top: el.scrollTop, focused: document.activeElement === el}]));
     const results = $('insp').querySelector('.goal-results');
     const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
     if (!heldRendering()) {
@@ -540,6 +541,10 @@
     if (nextResults && resultsState?.key === nextResults.dataset.goalKey) {
       nextResults.scrollTop = resultsState.top; nextResults.scrollLeft = resultsState.left;
       if (resultsState.focused) nextResults.focus({preventScroll: true});
+    }
+    for (const el of $('insp').querySelectorAll('.goal-full-tactic')) {
+      const state = tacticStates.get(el.dataset.tacticKey);
+      if (state) { el.scrollLeft = state.left; el.scrollTop = state.top; if (state.focused) el.focus({preventScroll: true}); }
     }
     if (goalFocus) {
       const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);

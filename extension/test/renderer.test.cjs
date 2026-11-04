@@ -3408,11 +3408,11 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     trace = goalTrace(snapshot.sha256);
     await settle(820);
     const steps = [...insp.querySelectorAll('.goal-step')];
-    assert.deepEqual(steps.map(step => step.querySelector('code').textContent), ['unfold k', 'norm_num', 'positivity']);
+    assert.deepEqual(steps.map(step => step.querySelector('.goal-full-tactic code').textContent), ['unfold k', 'norm_num', 'positivity']);
     assert.deepEqual(steps.map(step => step.dataset.depth), ['0', '0', '1'], 'nested tactics are indented under their parent');
     assert.equal(insp.querySelector('.goal-initial pre.goal').textContent, '⊢ 0 < k');
     assert.equal(steps[0].querySelector('pre.goal-block').textContent, '⊢ 0 < 1 / 2');
-    assert.equal(steps[1].querySelector('pre.goal').dataset.tone, 'green');
+    assert.equal(steps[1].querySelector('.goal-complete').dataset.tone, 'green');
     assert.match(steps[1].textContent, /No goals remain/);
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
     assert.match(insp.querySelector('.goal-section').textContent, /Recorded from source aaaaaaaa with leanprover\/lean4:v4\.35\.0.*never changes a status/s);
@@ -6315,5 +6315,31 @@ test('inline proof progress remains visible after switching to Source and Explor
       assert.match(d.querySelector('#proof-run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
       assert.ok(d.querySelector('#proof-run-activity [data-act="goal-cancel"]'));
     }
+  } finally {w.close();}
+});
+
+test('proof steps use compact headers, retain full tactics and fold recording details', async () => {
+  const snapshot=projectNotebook();
+  const trace=goalTrace(snapshot.sha256);
+  trace.nodes[0].text='exact AIFSafety.Cells.Bin3.Slab100.drift_in_mesh';
+  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+  try {
+    const d=w.document;
+    d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
+    const step=d.querySelector('.goal-step details');step.open=true;
+    assert.equal(step.querySelector('.goal-number').textContent,'Step 1');
+    assert.equal(step.querySelector('.goal-tactic code').textContent,'exact');
+    assert.equal(step.querySelector('.goal-full-tactic code').textContent,trace.nodes[0].text);
+    const details=d.querySelector('.goal-recording-details');
+    assert.equal(details.open,false);
+    assert.equal(details.querySelector('summary').textContent,'Recording details');
+    assert.ok(details.querySelector('.goal-caption'));
+    details.open=true;
+    const tactic=step.querySelector('.goal-full-tactic');tactic.focus();tactic.scrollLeft=120;
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('.goal-recording-details').open,true);
+    const refreshed=d.querySelector('.goal-full-tactic');
+    assert.equal(refreshed.scrollLeft,120);
+    assert.equal(d.activeElement,refreshed);
   } finally {w.close();}
 });

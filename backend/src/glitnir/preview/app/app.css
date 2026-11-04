@@ -753,3 +753,12 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 
 .goal-tactic::before{content:"▸";flex-shrink:0;color:var(--muted)}
 .goal-step>details[open]>.goal-tactic::before{content:"▾"}
+
+.goal-number{font:500 12px var(--sans);min-width:0;text-align:left;white-space:nowrap;color:var(--ink)}
+.goal-tactic>.small{flex-shrink:0;margin-left:auto}
+.goal-full-tactic{max-width:100%;overflow-x:auto;white-space:pre;overflow-wrap:normal;margin:4px 0 10px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:5px}
+.goal-full-tactic code{font:inherit;color:var(--ink);background:none;padding:0;white-space:inherit;overflow-wrap:normal}
+.goal-complete{color:var(--green);font-size:12px;margin:6px 0 10px}
+.goal-recording-details{margin-top:12px;font-size:11px;color:var(--muted)}
+.goal-recording-details>summary{cursor:pointer}
+.goal-recording-details>.goal-caption{line-height:1.5;overflow-wrap:anywhere}

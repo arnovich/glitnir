@@ -195,7 +195,9 @@ Competing check/refresh actions are disabled; expanding can follow the same run.
 As commands finish, proof recording reports the source line reached, lines left
 and tactic steps recorded. These are source-progress counts, not a time estimate.
 In the Inspector, each tactic’s results and the goal’s Context can be expanded
-separately; your open sections and reading position survive refreshes.
+separately; your open sections and reading position survive refreshes. Full tactic
+text is available inside each step. Source/toolchain provenance lives under
+**Recording details**.
 
 ### Linked notebooks
 
