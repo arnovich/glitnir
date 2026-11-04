@@ -646,13 +646,20 @@
     UI.graphFit = false;
     render();
   }
-  function select(name, scroll) {
+  function select(name, scroll, openInspector = false) {
+    if (openInspector) UI.panel = true;
     UI.outlineTarget = null; revealOutline = true;
     UI.sourceCell = null;
     UI.selected = name;
     UI.graphSelected = `local:${name}`;
     render();
     void loadResearch(name);
+    if (openInspector && UI.mode === 'doc' && window.matchMedia('(max-width:760px)').matches) {
+      $('insp-title').tabIndex = -1;
+      $('insp-title').focus({preventScroll: true});
+      document.querySelector('.inspector').scrollIntoView({block: 'start', behavior: reduced() ? 'auto' : 'smooth'});
+      return;
+    }
     if (!scroll) return;
     const el = UI.mode === 'doc' ? $('cell-' + name) : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
     if (el) { revealSection(el); el.scrollIntoView?.({behavior: reduced() ? 'auto' : 'smooth', block: UI.mode === 'doc' ? 'start' : 'center'}); }
@@ -721,7 +728,7 @@
     const b = e.target.closest('[data-act]');
     if (!b) {
       const cell = e.target.closest('[data-claim]');
-      if (cell && !e.target.closest('button,summary,a') && UI.selected !== cell.dataset.claim) select(cell.dataset.claim, false);
+      if (cell && !e.target.closest('button,summary,a') && (UI.selected !== cell.dataset.claim || !UI.panel)) select(cell.dataset.claim, false, true);
       return;
     }
     if (b.closest('.proof-section > summary')) e.preventDefault();
@@ -744,7 +751,7 @@
       case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
-      case 'goto': closeDiagram(); select(id, true); break;
+      case 'goto': closeDiagram(); select(id, true, true); break;
       case 'graph-select': {
         const node = graphNode(b.dataset.graphId);
         if (!node) break;

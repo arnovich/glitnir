@@ -174,6 +174,9 @@ action. Escape dismisses the explanation.
   rechecked, containing `sorry`, resting on additional assumptions, or where
   checking stopped.
 
+Selecting a theorem in the Notebook or Contents reopens the Inspector if it was
+closed. Background refreshes leave a closed Inspector closed.
+
 ### Proof goals and steps
 
 **Inspect proof steps** on a claim (or `t` for the selected claim, or
@@ -238,7 +241,7 @@ failing command withheld the claims after it, and 2 when checking is unavailable
 
 ### Checking through a claim
 
-**Check through here** on a claim (also in the inspector, or `r` on the selected
+**Check up to this claim** on a claim (also in the inspector, or `r` on the selected
 claim) checks only lines 1 through that claim's last line: the same sandboxed
 compile and kernel replay of that prefix. Every checked prefix, also the one
 before a failing command, ends where Glitnir's own lexer finds a command end: the

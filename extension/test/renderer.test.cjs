@@ -4057,16 +4057,18 @@ test('a claim card, the inspector and r check the saved file through that claim'
   window.HTMLElement.prototype.scrollIntoView = () => {};
   const checks = () => messages.filter(m => m.path === '/api/project/check').map(m => JSON.parse(m.body));
   try {
+    const helpIds = [...d.querySelectorAll('[id^="help-check-"]')].map(el => el.id);
+    assert.equal(new Set(helpIds).size, helpIds.length, 'card and Inspector help have distinct IDs');
     const sha256 = snapshot.sha256;
     const button = d.querySelector('[data-claim="Demo.floor"] .claim-actions [data-act="check-through"]');
-    assert.equal(button.textContent.trim(), 'Check through here');
+    assert.equal(button.textContent.trim(), 'Check up to this claim');
     assert.equal(button.dataset.line, '17');
     assert.match(d.querySelector('[data-claim="Demo.floor"] .claim-actions').textContent, /Lines 1–17 only; later claims are not rechecked/);
     button.click(); await settle(30);
     assert.deepEqual(checks(), [{sha256, through_line: 17}]);
     assert.equal($('insp-title').textContent, 'floor', 'the claim checked through is selected');
     const inspector = d.querySelector('#insp .insp-check [data-act="check-through"]');
-    assert.equal(inspector.textContent.trim(), 'Check through this claim');
+    assert.equal(inspector.textContent.trim(), 'Check up to this claim');
     inspector.click(); await settle(30);
     assert.deepEqual(checks().at(-1), {sha256, through_line: 17});
     d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
@@ -6063,3 +6065,36 @@ test('Notebook navigation reveals the current outline item within the sidebar wi
     assert.equal(pageScrolls,0);
   } finally {w.close();}
 });
+
+for (const browser of [false, true]) {
+  test(`selecting a theorem reopens the closed Inspector (${browser ? 'browser' : 'editor'})`, async () => {
+    const w = await renderSnapshot(projectNotebook(), {browser});
+    const d = w.document;
+    w.HTMLElement.prototype.scrollIntoView = () => {};
+    try {
+      const hide = () => d.getElementById('panel-hide').click();
+      const visible = () => !d.querySelector('.inspector').hidden;
+      hide(); assert.equal(visible(), false);
+      await w.glitnirPoll();
+      assert.equal(visible(), false, 'polling respects a closed Inspector');
+      d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
+      assert.equal(visible(), true, 'clicking the already selected theorem reopens it');
+      assert.equal(d.getElementById('insp-title').textContent, 'k_pos');
+      hide();
+      d.querySelector('[data-claim="Demo.floor"] article').click();
+      assert.equal(visible(), true, 'clicking a different theorem reopens it');
+      assert.equal(d.getElementById('insp-title').textContent, 'floor');
+      hide();
+      d.querySelector('#outline [data-act="goto"][data-id="Demo.k_pos"]').click();
+      assert.equal(visible(), true, 'selecting from Contents reopens it');
+      assert.equal(d.getElementById('insp-title').textContent, 'k_pos');
+      let revealed;
+      w.HTMLElement.prototype.scrollIntoView = function() { revealed = this; };
+      w.matchMedia = query => ({matches: query === '(max-width:760px)'});
+      hide();
+      d.querySelector('[data-claim="Demo.floor"] article').click();
+      assert.equal(revealed, d.querySelector('.inspector'), 'narrow panels bring the Inspector into view');
+      assert.equal(d.activeElement, d.getElementById('insp-title'));
+    } finally { w.close(); }
+  });
+}
