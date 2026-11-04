@@ -4088,7 +4088,9 @@ test('a claim card, the inspector and r check the saved file through that claim'
     snapshot.preview.check = {status: 'running', source_sha256: sha256, through_line: 17, message: 'Checking saved file', theorems: []};
     await window.glitnirPoll(); await settle(20);
     assert.ok([...d.querySelectorAll('[data-act="check-through"]')].every(b => b.disabled));
-    assert.match($('project-check').textContent, /Checking lines 1–17 · Checking saved file/);
+    assert.equal($('project-check').querySelector('.check-progress-title').textContent, 'Checking up to Demo.floor');
+    assert.match($('project-check').querySelector('.check-progress-stage').textContent, /Checking saved file/);
+    assert.match($('project-check').querySelector('.check-progress-meta').textContent, /Lines 1–17/);
   } finally { window.close(); }
 });
 
@@ -6162,4 +6164,74 @@ test('expansion cannot reuse inline goals recorded while dependencies changed', 
     w.document.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
     assert.equal(starts,2,'expansion refreshes the observation made under earlier dependencies');
   } finally {w.close();}
+});
+
+test('check progress separates target, stage and elapsed time without inventing completion', async () => {
+  const snapshot=projectNotebook();
+  snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,through_line:14,message:'Resolving project environment',theorems:[]};
+  const w=await renderSnapshot(snapshot);
+  try {
+    const d=w.document;
+    w.Date.now=()=>100000;
+    w.glitnirWorkbench.UI.checkTiming={sha:snapshot.sha256,through:14,started:74000};
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('.check-progress-title').textContent,'Checking up to Demo.k_pos');
+    assert.equal(d.querySelector('.check-progress-stage').textContent,'Inspecting project dependencies…');
+    assert.match(d.querySelector('.check-progress-meta').textContent,/Lines 1–14 · 26s elapsed/);
+    assert.equal(d.querySelectorAll('.check-progress [role="progressbar"]').length,0);
+    assert.equal(d.querySelector('.check-progress [role="status"] .check-progress-meta'),null,'elapsed time is outside live announcements');
+    assert.ok(d.querySelector('.check-progress [data-act="check-cancel"]'));
+    snapshot.preview.check.message='Replaying kernel declarations';
+    await w.glitnirPoll();
+    assert.match(d.querySelector('.check-progress-stage').textContent,/Replaying kernel declarations/);
+    assert.match(d.querySelector('.check-progress-meta').textContent,/26s elapsed/);
+    snapshot.preview.check={status:'unavailable',source_sha256:snapshot.sha256,message:'Stopped',theorems:[]};
+    await w.glitnirPoll();
+    assert.equal(w.glitnirWorkbench.UI.checkTiming,null);
+  } finally {w.close();}
+});
+
+test('an old poll cannot erase elapsed timing while a check request is pending', async () => {
+  const snapshot=projectNotebook();
+  let release;
+  const w=await renderSnapshot(snapshot,{browser:(url,options)=>options?.method==='POST' && url==='/api/project/check'
+    ? new Promise(resolve=>{release=resolve;}) : {ok:true,json:async()=>snapshot}});
+  try {
+    w.Date.now=()=>100000;
+    w.document.querySelector('#insp [data-act="check-through"]').click();
+    const timing=w.glitnirWorkbench.UI.checkTiming;
+    assert.ok(timing);
+    await w.glitnirPoll();
+    assert.equal(w.glitnirWorkbench.UI.checkTiming,timing);
+    snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,through_line:14,message:'Resolving project environment',theorems:[]};
+    release({ok:true,json:async()=>({queued:[]})});
+    await new Promise(r=>setTimeout(r,30));
+    assert.match(w.document.querySelector('.check-progress-meta').textContent,/0s elapsed/);
+  } finally {if(release) release({ok:true,json:async()=>({})});w.close();}
+});
+
+test('check timing survives an old poll resolving after the start request succeeds', async () => {
+  const snapshot=projectNotebook();
+  let hold=false, releaseOld, releasePost;
+  const w=await renderSnapshot(snapshot,{browser:(url,options)=>{
+    if (options?.method==='POST' && url==='/api/project/check') return new Promise(resolve=>{releasePost=resolve;});
+    if (url==='/api/notebook' && hold) {hold=false;return new Promise(resolve=>{releaseOld=resolve;});}
+    return {ok:true,json:async()=>snapshot};
+  }});
+  try {
+    const old=structuredClone(snapshot);
+    hold=true; const polling=w.glitnirPoll();
+    w.Date.now=()=>100000;
+    w.document.querySelector('#insp [data-act="check-through"]').click();
+    releasePost({ok:true,json:async()=>({queued:[]})});
+    await new Promise(r=>setTimeout(r,0));
+    snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,through_line:14,message:'Resolving project environment',theorems:[]};
+    releaseOld({ok:true,json:async()=>old}); await polling;
+    await new Promise(r=>setTimeout(r,30));
+    assert.match(w.document.querySelector('.check-progress-meta').textContent,/0s elapsed/);
+  } finally {
+    if(releasePost) releasePost({ok:true,json:async()=>({})});
+    if(releaseOld) releaseOld({ok:true,json:async()=>snapshot});
+    w.close();
+  }
 });

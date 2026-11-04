@@ -335,7 +335,9 @@
     // A line with nothing after it asks for the whole file.
     const lastLine = Math.max(0, ...UI.data.cells.map(cell => cell.end));
     if (Number.isSafeInteger(throughLine) && throughLine > 0 && throughLine < lastLine) body.through_line = throughLine;
+    UI.checkTiming = {sha: UI.data.sha256, through: body.through_line ?? null, started: Date.now()};
     try { await post('/api/project/check', body); await refresh(); }
+    catch (error) { UI.checkTiming = null; throw error; }
     finally { UI.checkRequested = false; render(); }
   }
   const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running');
@@ -496,9 +498,19 @@
   }
   function projectCheckHTML(result, sourceSha) {
     if (walkthroughUnchecked()) return `<p class="banner quiet walkthrough-compatibility" role="status">${esc(walkthroughMessage())}</p>`;
-    if (!result) return '';
+    if (!result) { if (!UI.checkRequested) UI.checkTiming = null; return ''; }
     const through = Number.isSafeInteger(result.through_line) ? result.through_line : null;
-    if (result.status === 'running') return `<p role="status">${through ? `Checking lines 1–${esc(through)} · ` : ''}${esc(result.message)}… <button type="button" class="secondary" data-act="check-cancel">${icon('x')}Stop</button></p>`;
+    if (result.status === 'running') {
+      const target = through && result.source_sha256 === sourceSha && (UI.data.project_claims || []).find(c => c.end_line === through);
+      const label = through ? `Checking up to ${target ? projectClaimLabel(target) : `line ${through}`}` : 'Checking saved file';
+      const stage = result.message === 'Resolving project environment' ? 'Inspecting project dependencies' : result.message;
+      const timing = UI.checkTiming;
+      const seconds = timing?.sha === sourceSha && timing.through === through ? Math.max(0, Math.floor((Date.now() - timing.started) / 1000)) : null;
+      const elapsed = seconds === null ? '' : `${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`} elapsed`;
+      const details = [through ? `Lines 1–${through}` : 'Whole saved file', elapsed].filter(Boolean).join(' · ');
+      return `<section class="check-progress" aria-label="Check progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="check-progress-title">${esc(label)}</strong><div class="check-progress-stage">${esc(stage)}…</div></div><div class="check-progress-meta small muted">${esc(details)}</div></div></div><button type="button" class="secondary" data-act="check-cancel" aria-label="Stop check">${icon('x')}Stop</button></section>`;
+    }
+    if (!UI.checkRequested) UI.checkTiming = null;
     if (result.status !== 'checked_snapshot') return `<h3>Check unavailable${through ? ` · lines 1–${esc(through)}` : ''}</h3><pre>${esc(result.message)}</pre>`;
     const labels = {checked: 'Kernel checked', admitted: 'Contains sorry', assumptions: 'Additional assumptions'};
     const stopped = !result.withheld ? '' : requestedCut(result.withheld)

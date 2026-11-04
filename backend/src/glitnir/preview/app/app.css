@@ -724,3 +724,13 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 
 .goal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .goal-results{max-height:min(55vh,560px);overflow:auto;padding:2px}
+
+.check-progress{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin:12px 0;background:var(--chrome);border:1px solid var(--border);border-radius:6px}
+.check-progress-copy{display:flex;align-items:flex-start;gap:12px;min-width:0;overflow-wrap:anywhere}
+.check-progress-title{display:block;font-size:13px}
+.check-progress-stage{margin-top:3px;color:var(--muted)}
+.check-progress-meta{margin-top:5px}
+.check-progress>button{flex-shrink:0}
+.check-progress-indicator{width:14px;height:14px;margin-top:3px;flex-shrink:0;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:check-spin 1s linear infinite}
+@keyframes check-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.check-progress-indicator{animation:none}}
