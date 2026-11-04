@@ -33,7 +33,7 @@ kbd{font:500 10.5px var(--mono);border:1px solid var(--border);border-bottom-wid
 .sr{position:absolute;left:-9999px}
 
 .app{max-width:1400px;margin:0 auto;background:var(--paper);border:1px solid var(--border);border-radius:10px;overflow:clip}
-.app:has(.history[open]),.app:has(.header-status[open]){overflow:visible}
+.app:has(.history[open]),.app:has(.header-status[open]),.app:has(.notebook-view-options[open]){overflow:visible}
 
 /* top bar */
 .bar{position:relative;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 16px;background:var(--chrome);border-bottom:1px solid var(--border);border-radius:9px 9px 0 0}
@@ -669,12 +669,29 @@ body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-foll
 .live-bar>.review-nav{flex:0 1 auto}
 body:has(.live-bar:not([hidden])) .cell{scroll-margin-top:var(--review-offset,100px)}
 .notebook-view-options{position:relative;font-size:12px}
-.notebook-view-options>summary{cursor:pointer;padding:6px 10px}
-.view-options-panel{position:absolute;right:0;top:100%;z-index:30;width:260px;padding:14px;background:var(--paper);border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px var(--shadow)}
+.notebook-view-options>summary{display:flex;align-items:center;gap:7px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:5px;background:var(--paper);font-weight:500;list-style:none}
+.notebook-view-options>summary::-webkit-details-marker{display:none}
+.notebook-view-options>summary:hover,.notebook-view-options[open]>summary{background:var(--blue-soft)}
+.dropdown-chevron{margin-left:auto;color:var(--muted)}
+.view-options-panel{position:absolute;right:0;top:100%;z-index:30;width:min(340px,calc(100vw - 64px));padding:6px;max-height:75vh;overflow:auto;background:var(--paper);border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px var(--shadow)}
 .view-options-panel label{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .view-options-panel p{margin:8px 0 0;color:var(--muted)}
-body[data-view="source"] .notebook-view-options,body[data-view="graph"] .notebook-view-options,.glitnir-proof-mode .notebook-view-options{display:none}
+body[data-view="source"] .notebook-preferences,body[data-view="graph"] .notebook-preferences,.glitnir-proof-mode .notebook-preferences{display:none}
 @media(max-width:760px){.live-bar>.review-nav{flex-basis:100%}}
 
 body:has(.live-bar:not([hidden])) :is(.rail,.inspector,#outline-resize){top:var(--review-offset,100px);max-height:calc(100vh - var(--review-offset,100px))}
 .history-panel{z-index:25}
+
+/* File identity and primary navigation precede a quiet status line. */
+.header-status{flex-basis:100%;position:relative}
+.header-status>summary{width:fit-content;padding:0}
+.header-status .status-details{left:0;right:auto;top:calc(100% + 8px)}
+.view-options-panel>button,.view-options-panel>.history>summary{display:flex;align-items:center;width:100%;padding:9px 10px;border:0;background:none;border-radius:4px;font-size:12px;text-align:left;justify-content:flex-start}
+.view-options-panel>.history>summary:hover{background:var(--blue-soft)}
+.view-options-panel .history-panel{position:static;width:100%;max-height:none;box-shadow:none;border:0;border-radius:0;padding:10px;background:var(--chrome);margin:4px 0}
+.notebook-preferences{border-top:1px solid var(--border);margin-top:6px;padding:10px}
+.menu-label{color:var(--muted);font-size:11px;margin-bottom:8px}
+.notebook-preferences p{font-size:11px;margin-left:22px}
+button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:2px 0;color:var(--ink);font:12px var(--mono);cursor:help;overflow-wrap:anywhere;text-align:left}
+.file-context{min-width:0}
+#file-path-tooltip{width:max-content;max-width:min(520px,calc(100vw - 24px));overflow-wrap:anywhere;font-family:var(--mono)}

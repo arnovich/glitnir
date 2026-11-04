@@ -14,12 +14,35 @@
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name">…</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip">…</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden></span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"/></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden></section>
+              <section id="notebook-activity"></section>
+            </div>
+          </details>
+          <button type="button" id="export-html">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden><svg class="ic"><use href="#i-panel"/></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status and details">
@@ -37,23 +60,6 @@
         <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"/></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden></section>
-          <section id="notebook-activity"></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden><svg class="ic"><use href="#i-panel"/></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden></nav>

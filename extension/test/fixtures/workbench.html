@@ -2,12 +2,35 @@
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="Demo.lean" aria-description="Demo.lean">Demo.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="Demo.lean">Demo.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">Demo.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
@@ -29,23 +52,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -170,12 +176,35 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="Demo.lean" aria-description="Demo.lean">Demo.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="Demo.lean">Demo.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">Demo.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="false">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="true">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
@@ -197,23 +226,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -338,12 +350,35 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="Demo.lean" aria-description="Demo.lean">Demo.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="Demo.lean">Demo.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">Demo.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry. Show details" title="Connected to the local notebook server
@@ -365,23 +400,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -506,12 +524,35 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="E.lean" aria-description="E.lean">E.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="E.lean">E.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">E.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
@@ -533,23 +574,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -631,12 +655,35 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="E.lean" aria-description="E.lean">E.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="E.lean">E.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">E.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
@@ -658,23 +705,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -758,12 +788,35 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="Pictured.lean" aria-description="Pictured.lean">Pictured.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="Pictured.lean">Pictured.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">Pictured.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected. Show details" title="Connected to the local notebook server
@@ -784,23 +837,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -874,12 +910,35 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="A.lean" aria-description="A.lean">A.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="A.lean">A.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">A.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked. Show details" title="Connected to the local notebook server
@@ -901,23 +960,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -1013,12 +1055,35 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb<
 <div class="app">
   <header class="bar">
     <div class="brand"><span class="mark">∀</span>
-      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="file" id="file-name" title="E.lean" aria-description="E.lean">E.lean</span></nav>
+      <nav class="crumbs" aria-label="Location"><span>Glitnir</span><span class="sep">/</span><span class="context-help file-context"><button type="button" class="file help-icon" id="file-name" data-help-key="file-path-tooltip" aria-describedby="file-path-tooltip" aria-description="E.lean">E.lean</button><span class="help-tooltip" id="file-path-tooltip" role="tooltip" hidden="">E.lean</span></span></nav>
     </div>
     <div class="seg view-switcher" role="group" aria-label="View">
       <button type="button" data-mode="doc" aria-pressed="true">Notebook</button>
       <button type="button" data-mode="source" aria-pressed="false">Source</button>
       <button type="button" data-mode="graph" aria-pressed="false">Explore</button>
+    </div>
+    <div class="bar-right">
+
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary><span aria-hidden="true">⋯</span> More <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="view-options-panel">
+          <details class="history" id="history">
+            <summary><svg class="ic"><use href="#i-history"></use></svg>History <span class="dropdown-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="history-panel" id="history-panel">
+              <section id="git-history" hidden=""></section>
+              <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
+            </div>
+          </details>
+          <button type="button" id="export-html" title="">Export HTML</button>
+          <div class="notebook-preferences">
+            <div class="menu-label">Notebook</div>
+            <label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label>
+            <p>Scroll to changed sections after saving.</p>
+          </div>
+        </div>
+      </details>
+      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
+      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
     <details class="header-status" id="header-status">
       <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
@@ -1040,23 +1105,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
         <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
       </div>
     </details>
-    <div class="bar-right">
-
-      <details id="notebook-view-options" class="notebook-view-options">
-        <summary>View options</summary>
-        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
-      </details>
-      <details class="history" id="history">
-        <summary><svg class="ic"><use href="#i-history"></use></svg>History</summary>
-        <div class="history-panel" id="history-panel">
-          <section id="git-history" hidden=""></section>
-          <section id="notebook-activity"><h3>Notebook activity</h3><div class="small muted">Saved activity from the notebook's metadata file. These records summarize changes; they do not contain restorable source versions. Saves in VS Code are not added to this log.</div><p class="small muted">No recorded notebook activity.</p></section>
-        </div>
-      </details>
-      <button type="button" class="secondary" id="export-html" title="">Export HTML</button>
-      <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
-      <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
-    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>

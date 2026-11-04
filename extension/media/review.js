@@ -20,7 +20,7 @@
   nav.querySelector('.review-controls').append(next);
   const activity = app.querySelector('.live-bar');
   activity.prepend(nav);
-  $('notebook-view-options').querySelector('.view-options-panel').prepend($('review-filter-label'));
+  $('notebook-view-options').querySelector('.notebook-preferences').prepend($('review-filter-label'));
   const queueMenu = $('review-queue');
   const queueSummary = $('review-queue-summary');
   function closeQueue() { queueMenu.open = false; queueSummary.focus({preventScroll: true}); }

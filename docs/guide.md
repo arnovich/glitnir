@@ -166,7 +166,7 @@ action. Escape dismisses the explanation.
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
 - Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow live edits**, under **View options**, scrolls to them after each save.
+  highlights the changed sections. **Follow live edits**, under **More**, scrolls to them after each save.
 - `j` and `k` step through the claims; `i` shows the claim
   inspector for the selected claim.
 - `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
@@ -655,7 +655,7 @@ Static HTML exports retain route indexes, supporting links and backlinks so they
 be explored without the live sidebar. Malformed atlases produce diagnostics without
 removing the statement map.
 
-The header status group separates the server connection from proof-check results.
+The status line beneath the filename separates the server connection from proof-check results.
 Its dot reports connection only. Hover for a summary, or click the status group
 (or focus it and press Enter) for connection details, the displayed saved source's
 SHA-256 hash, and any Lean compatibility explanation. Escape closes the details.
@@ -669,7 +669,7 @@ a successful refresh clears that message without running a proof check.
 **Follow live edits** remains a separate scrolling preference.
 
 **Source** is a peer of **Notebook** and **Explore**. Use the mode controls or
-source line links to move between views. The filename tooltip identifies the full
+source line links to move between views. Hovering or focusing the filename shows the full
 local path; exported snapshots omit that local path. Project setup details live
 in the header status panel, while actionable warnings stay visible.
 
@@ -690,7 +690,8 @@ review navigation sits below it and stays visible as the title scrolls away.
 **Needs review · N items** opens a jump list of names and reasons. **Previous**,
 **Item X of N**, and **Next** stay together; the position identifies the selected
 review item, not completed work. The bar disappears when the review queue is empty,
-which does not certify the file. **Follow live edits** lives under **View options**.
+which does not certify the file. **More** groups **History**, **Export HTML**,
+and the **Follow live edits** notebook preference.
 
 Notebook contents nests rendered declarations and setup beneath section headings,
 including before any check results exist. Text badges and colours identify

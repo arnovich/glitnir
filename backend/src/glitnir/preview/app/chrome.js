@@ -139,7 +139,16 @@
     } finally { gitDiffLoading = false; }
   }
 
-  $('history').addEventListener('toggle', () => { if ($('history').open) void loadGitHistory(); });
+  $('history').addEventListener('toggle', () => {
+    if ($('history').open) { $('notebook-view-options').open = true; void loadGitHistory(); }
+  });
+  function sizeActionsMenu() {
+    if (!$('notebook-view-options').open) return;
+    const panel = $('notebook-view-options').querySelector('.view-options-panel');
+    panel.style.maxHeight = `${Math.max(0, window.innerHeight - panel.getBoundingClientRect().top - 12)}px`;
+  }
+  $('notebook-view-options').addEventListener('toggle', sizeActionsMenu);
+  window.addEventListener('resize', sizeActionsMenu);
   renderGitHistory();
 
   let outlineOwner = null, outlineCollapsed = new Set(), outlineWidth = 260;
@@ -301,7 +310,7 @@
     document.title = `${title()} · Glitnir`;
     $('title').innerHTML = inlineHTML(title());
     $('file-name').textContent = d.file;
-    $('file-name').title = d.source_path || d.file;
+    $('file-path-tooltip').textContent = d.source_path || d.file;
     $('file-name').setAttribute('aria-description', d.source_path || d.file);
     const linked = Boolean(linkedPath());
     $('location').textContent = linked ? `Linked from ${UI.main?.file || 'the notebook'} · read-only` : '';
@@ -580,7 +589,12 @@
     finally { UI.exporting = false; $('export-html').disabled = false; }
   }
 
-  $('export-html').onclick = exportHTML;
+  $('export-html').onclick = () => {
+    $('notebook-view-options').open = false;
+    $('history').open = false;
+    $('notebook-view-options').querySelector('summary').focus({preventScroll: true});
+    return exportHTML();
+  };
 
   // ----- keyboard shortcuts ------------------------------------------------------
   // The one list of shortcuts: the help dialog is drawn from it, and the
@@ -802,11 +816,17 @@
   $('keys-close').onclick = () => keys(false);
   $('keys').onclick = e => { if (e.target === $('keys')) keys(false); };
   document.addEventListener('click', e => {
-    if (!$('notebook-view-options').contains(e.target)) $('notebook-view-options').open = false;
+    if (!e.composedPath().includes($('notebook-view-options'))) { $('notebook-view-options').open = false; $('history').open = false; }
     if (!$('header-status').contains(e.target)) $('header-status').open = false;
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if ($('notebook-view-options').open && $('history').open) {
+        $('history').open = false;
+        $('history').querySelector('summary').focus({preventScroll: true});
+        e.stopImmediatePropagation();
+        return;
+      }
       if ($('notebook-view-options').open) {
         $('notebook-view-options').open = false;
         $('notebook-view-options').querySelector('summary').focus({preventScroll: true});
