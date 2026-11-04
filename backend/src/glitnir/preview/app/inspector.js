@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const workbench = window.glitnirWorkbench;
-  const {$, API, HOST, UI, cellEntries, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
+  const {$, API, HOST, UI, cellEntries, checkBusy, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
     currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, helpHTML, icon, inlineHTML,
     leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
     researchHTML, useChipsHTML, walkthroughMessage, walkthroughUnchecked} = workbench;
@@ -71,10 +71,11 @@
   // change was recorded under the current dependencies.
   const reusable = (trace, sha256) => traceFinished(trace) && trace.source_sha256 === sha256 && trace.id && traceSeen.get(trace.id) === environmentEpoch();
   async function inspectGoals(refresh = false) {
-    if (!UI.data || linkedPath() || !projectMode() || leanOff() || walkthroughUnchecked() || document.body.classList.contains('unsaved-lean') || UI.goals?.starting || traceRunning(UI.goals?.trace)) return;
+    if (UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.inspecting || UI.data?.preview?.inspection?.status === 'running' || !UI.data || linkedPath() || !projectMode() || leanOff() || walkthroughUnchecked() || document.body.classList.contains('unsaved-lean') || UI.goals?.starting || traceRunning(UI.goals?.trace)) return;
     const sha256 = UI.data.sha256, epoch = ++goalEpoch, environment = environmentEpoch();
     clearTimeout(goalTimer);
-    UI.goals = {starting: true, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
+    const started = Date.now();
+    UI.goals = {starting: true, started, refreshing: refresh, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
     render();
     try {
       // Reuse a finished observation of this saved text, or join a running
@@ -92,7 +93,7 @@
       }
       if (epoch !== goalEpoch) return;
       const cancel = UI.goals.cancel;
-      UI.goals = {environment, trace, owned};
+      UI.goals = {started, refreshing: refresh, environment, trace, owned};
       render();
       if (cancel && traceRunning(trace)) { cancelGoals(); if (!owned) return; }
       if (traceRunning(trace)) goalTimer = setTimeout(() => pollGoals(trace.id, epoch), 750);
@@ -134,20 +135,28 @@
     await fetch('/api/proof/cancel', {method: 'POST', headers: {...API, 'Content-Type': 'application/json'}, body: '{}'}).catch(() => null);
   }
   const goalBlocksHTML = goals => goals.length
-    ? goals.map(goal => `<pre class="goal goal-block">${esc(goal)}</pre>`).join('')
+    ? goals.map(goal => {
+      const at = goal.indexOf('\n⊢');
+      if (at < 0) return `<pre class="goal goal-block goal-target">${esc(goal)}</pre>`;
+      return `<div class="goal-block"><pre class="goal goal-target">${esc(goal.slice(at + 1))}</pre><details class="goal-context" data-fold-key="goal-context:${esc(goal)}"><summary>Context</summary><pre class="goal">${esc(goal.slice(0, at))}</pre></details></div>`;
+    }).join('')
     : '<pre class="goal" data-tone="green">No goals remain in this tactic’s scope.</pre>';
+  function proofProgressHTML(run) {
+    const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
+    return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="${run.expanded ? 'proof-cancel' : 'goal-cancel'}">Cancel</button></section>`;
+  }
   function goalSectionHTML(c) {
     const head = `<h5>Proof goals ${helpHTML('proof-goals', 'About proof goals', 'Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.')}</h5>`;
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
     if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p>${expandProofHTML(c)}</div>`;
     const goals = UI.goals, trace = goals?.trace;
     const dirty = document.body.classList.contains('unsaved-lean');
-    const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}${dirty ? ' disabled title="Save or revert edits before viewing the saved proof."' : ''}>${label}</button>`;
+    const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${label}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
     let body = '', action = button('Inspect proof');
     if (traceRunning(trace)) {
-      body = `<p class="small muted goal-state" role="status">Asking Lean… ${esc(trace.message || '')}</p>`;
-      action = '<button type="button" class="secondary" data-act="goal-cancel">Cancel</button>';
+      body = proofProgressHTML(goals);
+      action = '';
     } else if (trace) {
       if (trace.source_sha256 !== UI.data.sha256) { body = note('amber', 'The saved source changed since these goals were recorded.'); action = button('Refresh proof goals'); }
       else if (goals.environment !== environmentEpoch()) { body = note('amber', 'The source or its dependencies changed since these goals were recorded.'); action = button('Refresh proof goals'); }
@@ -156,7 +165,7 @@
       else if (!['ready', 'partial'].includes(trace.status)) body = note('red', `No proof goals: ${esc(trace.message || trace.status)}`);
       else { body = goalStepsHTML(c, trace); action = button('Refresh proof goals'); }
     }
-    return `<div class="insp-section goal-section">${head}<div class="goal-actions">${action}${expandProofHTML(c)}</div>${body ? `<div class="goal-results" data-goal-key="${esc(JSON.stringify([c.name, UI.data.sha256, trace?.id || trace?.status, goals?.environment]))}" tabindex="0" role="region" aria-label="Recorded proof goals">${body}</div>` : ''}</div>`;
+    return `<div class="insp-section goal-section">${head}<div class="goal-actions">${action}${expandProofHTML(c)}</div>${traceRunning(trace) ? body : body ? `<div class="goal-results" data-goal-key="${esc(JSON.stringify([c.name, UI.data.sha256, trace?.id || trace?.status, goals?.environment]))}" tabindex="0" role="region" aria-label="Recorded proof goals">${body}</div>` : ''}</div>`;
   }
 
   function goalStepsHTML(c, trace) {
@@ -174,7 +183,7 @@
     const steps = shown.map((n, i) => {
       const lines = n.text.split('\n');
       const tactic = lines[0] + (lines.length > 1 ? ' …' : '');
-      return `<li class="goal-step" data-depth="${depth(n)}"><div class="goal-tactic"><span class="goal-number">${i + 1}</span><code title="${esc(n.text)}">${esc(tactic)}</code><span class="small muted">L${esc(n.range.start.line)}</span></div>${goalBlocksHTML(n.after)}</li>`;
+      return `<li class="goal-step" data-depth="${depth(n)}"><details data-fold-key="goal-step:${esc(c.name)}:${esc(trace.id)}:${n.id}"><summary class="goal-tactic"><span class="goal-number">${i + 1}</span><code title="${esc(n.text)}">${esc(tactic)}</code><span class="small muted">L${esc(n.range.start.line)}</span></summary>${lines.length > 1 ? `<pre class="goal-full-tactic">${esc(n.text)}</pre>` : ''}<div class="goal-after-label small muted">Goals after this step</div>${goalBlocksHTML(n.after)}</details></li>`;
     }).join('');
     return (trace.status === 'partial' ? `<div class="note-line goal-note" data-tone="amber">${icon('branch')}<span>Lean reported errors in the file; some steps may be missing.</span></div>` : '')
       + `<div class="goal-initial"><div class="field-label">Initial goal</div>${goalBlocksHTML(nodes[0].before)}</div>`
@@ -224,5 +233,5 @@
   function currentGoalTrace() {
     return UI.goals?.environment === environmentEpoch() && reusable(UI.goals?.trace, UI.data?.sha256) ? UI.goals.trace : null;
   }
-  Object.assign(workbench, {currentGoalTrace, cancelGoals, inspectGoals, refutationHTML, renderInspector});
+  Object.assign(workbench, {proofProgressHTML, currentGoalTrace, cancelGoals, inspectGoals, refutationHTML, renderInspector});
 })();

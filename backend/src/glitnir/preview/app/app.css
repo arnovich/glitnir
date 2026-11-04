@@ -734,3 +734,22 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .check-progress-indicator{width:14px;height:14px;margin-top:3px;flex-shrink:0;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:check-spin 1s linear infinite}
 @keyframes check-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.check-progress-indicator{animation:none}}
+
+.proof-progress{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;margin:10px 0;background:var(--chrome);border:1px solid var(--border);border-radius:6px}
+.proof-progress-title{display:block;font-size:13px}
+.proof-progress-stage{margin-top:4px;color:var(--muted)}
+.proof-progress-time{margin-top:6px}
+.proof-progress>button{flex-shrink:0}
+.proof-grid.proof-loading{grid-template-columns:minmax(0,1fr)}
+#run-activity{padding:0 16px}
+.glitnir-proof-mode #run-activity{display:none}
+.goal-context{margin-top:8px;color:var(--muted)}
+.goal-context>summary{cursor:pointer;font:12px var(--sans)}
+.goal-target{color:var(--ink);margin-top:8px}
+.goal-tactic{cursor:pointer;padding:8px 0}
+.goal-tactic code{background:none;padding:0;border-radius:0;font-size:11.5px}
+.goal-after-label{margin:4px 0}
+.goal-step>details{border-bottom:1px solid var(--rule);padding-bottom:6px}
+
+.goal-tactic::before{content:"▸";flex-shrink:0;color:var(--muted)}
+.goal-step>details[open]>.goal-tactic::before{content:"▾"}

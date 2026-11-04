@@ -7,7 +7,7 @@
     currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, helpHTML, icon, images,
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
-    proofGraphHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
+    proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
     showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
@@ -356,6 +356,14 @@
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
     $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
+    const activity = $('run-activity');
+    const checkingNow = !linked && project && d.preview.check?.status === 'running';
+    if (checkingNow) activity.append($('project-check'));
+    else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
+    const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : UI.proofActivity;
+    const showProof = !linked && proofRun && (proofRun.expanded || UI.mode !== 'doc' || !UI.panel);
+    $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
+    activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
     $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
     $('project-inspection').hidden = !project || linked || (!inspected && !inspecting());
@@ -475,6 +483,7 @@
     const atlasFocus = atlasActive ? {controlRegion: ['.atlas-flow', '.atlas-route-controls', '.atlas-visit-history', '.atlas-overview', '.atlas-details', '.atlas-content'].find(selector => atlasActive.closest(selector)), search: atlasActive.id === 'atlas-query', selection: atlasActive.id === 'atlas-query' ? [atlasActive.selectionStart, atlasActive.selectionEnd, atlasActive.selectionDirection] : null,
       summary: atlasActive.matches('.atlas-details > summary') ? '.atlas-details > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
+    const activityFocus = document.activeElement?.closest('#run-activity')?.querySelector(':focus')?.dataset.act;
     const scroll = $('insp').scrollTop;
     const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
     const results = $('insp').querySelector('.goal-results');
@@ -525,6 +534,7 @@
       const link = $('doc').querySelectorAll(linkSelector)[linkFocus.index];
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
+    if (activityFocus) [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)?.focus({preventScroll: true});
     $('insp').scrollTop = scroll;
     const nextResults = $('insp').querySelector('.goal-results');
     if (nextResults && resultsState?.key === nextResults.dataset.goalKey) {
@@ -532,8 +542,8 @@
       if (resultsState.focused) nextResults.focus({preventScroll: true});
     }
     if (goalFocus) {
-      const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')];
-      (controls.find(el => el.dataset.act === goalFocus) || controls[0])?.focus({preventScroll: true});
+      const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);
+      (controls.find(el => el.dataset.act === goalFocus) || controls.find(el => el.dataset.act === 'goal-cancel') || controls[0])?.focus({preventScroll: true});
     }
     restoreDiagramUI(diagramUI);
     if (helpFocus) {

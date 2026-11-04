@@ -33,6 +33,38 @@ MAX_NODES = 4096
 MAX_TRACE_TEXT_BYTES = 8 * 1024**2
 
 
+def _progress_message(path: Path, source: bytes) -> str | None:
+    """Read bounded advisory counters; they cannot grant a proof status."""
+    try:
+        value = json.loads(read_regular(path, 4096))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    total, completed, steps = (
+        value.get("source_bytes"),
+        value.get("completed_bytes"),
+        value.get("steps"),
+    )
+    if (
+        type(total) is not int
+        or type(completed) is not int
+        or type(steps) is not int
+        or total != len(source)
+        or not 0 <= completed <= total
+        or not 0 <= steps <= MAX_NODES
+    ):
+        return None
+    lines = max(1, len(source.splitlines()))
+    reached = min(lines, source[:completed].count(b"\n") + 1)
+    remaining = lines - reached
+    return (
+        f"Recording tactic goals · reached source line {reached} of {lines} · "
+        f"{remaining} source {'line' if remaining == 1 else 'lines'} left · "
+        f"{steps} tactic {'step' if steps == 1 else 'steps'} recorded"
+    )
+
+
 def _texts(value: Any) -> list[str]:
     """Validate bounded display text emitted by untrusted elaboration."""
     if (
@@ -251,6 +283,18 @@ def trace_file(
             output.mkdir()
             report = output / "trace.json"
             progress("Recording saved tactic goals")
+            last_progress: str | None = None
+            progress_source = saved.encode()
+
+            def report_progress() -> None:
+                nonlocal last_progress
+                message = _progress_message(
+                    Path(str(report) + ".progress.json"), progress_source
+                )
+                if message is not None and message != last_progress:
+                    progress(message)
+                    last_progress = message
+
             run_observer(
                 toolchain,
                 [
@@ -273,6 +317,7 @@ def trace_file(
                 writable=True,
                 cancel=cancellation,
                 deadline=time.monotonic() + timeout,
+                on_poll=report_progress,
             )
             result = _validate_trace(
                 json.loads(read_regular(report, OUTPUT_BYTES)), saved

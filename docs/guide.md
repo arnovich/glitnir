@@ -189,7 +189,13 @@ move between steps; `r` checks the whole saved file. **Back to claim** or `Esc`
 returns to the Inspector and the claim’s reading position.
 
 Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. Both
-views show historical observations of the saved file and never change a status.
+views show historical observations of the saved file and never change a status. While a run is active,
+its activity and cancellation remain available in Notebook, Source and Explore.
+Competing check/refresh actions are disabled; expanding can follow the same run.
+As commands finish, proof recording reports the source line reached, lines left
+and tactic steps recorded. These are source-progress counts, not a time estimate.
+In the Inspector, each tactic’s results and the goal’s Context can be expanded
+separately; your open sections and reading position survive refreshes.
 
 ### Linked notebooks
 

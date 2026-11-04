@@ -3402,7 +3402,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     button.click(); await settle(20);
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/proof/')).map(m => [m.method, m.path]), [['GET', '/api/proof/trace'], ['POST', '/api/proof/start']]);
     assert.deepEqual(JSON.parse(messages.find(m => m.path === '/api/proof/start').body), {sha256: snapshot.sha256});
-    assert.match(insp.querySelector('.goal-state').textContent, /Asking Lean… Recording saved tactic goals/);
+    assert.match(insp.querySelector('.goal-state').textContent, /Recording saved tactic goals/);
     assert.equal(d.activeElement.dataset.act, 'goal-cancel', 'focus stays in the goal controls');
     insp.querySelector('[data-act="goal"]')?.click();
     trace = goalTrace(snapshot.sha256);
@@ -6234,4 +6234,86 @@ test('check timing survives an old poll resolving after the start request succee
     if(releaseOld) releaseOld({ok:true,json:async()=>snapshot});
     w.close();
   }
+});
+
+test('refreshing proof goals shows activity and disables competing checks while Expand can join', async () => {
+  const snapshot=projectNotebook();
+  let trace=goalTrace(snapshot.sha256);
+  const w=await renderSnapshot(snapshot,{onProof:message=>{
+    if(message.path==='/api/proof/start') trace={status:'running',id:'refreshing',source_sha256:snapshot.sha256,nodes:[],message:'Recording saved tactic goals'};
+    return trace;
+  }});
+  const d=w.document, settle=()=>new Promise(r=>setTimeout(r,30));
+  try {
+    d.querySelector('#insp [data-act="goal"]').click(); await settle();
+    d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
+    d.getElementById('proof-back').click();
+    d.querySelector('#insp [data-act="goal"]').click(); await settle();
+    assert.match(d.querySelector('#insp .proof-progress-title').textContent,/Refreshing proof goals/);
+    assert.match(d.querySelector('#insp .proof-progress-stage').textContent,/Recording saved tactic goals/);
+    assert.equal(d.querySelector('#insp [data-act="check-through"]').disabled,true);
+    assert.equal(d.getElementById('check-project').disabled,true);
+    assert.equal(d.querySelector('#insp [data-act="inspect-proof"]').disabled,false);
+    assert.ok(d.querySelector('#insp .proof-progress [data-act="goal-cancel"]'));
+    d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
+    assert.equal(d.getElementById('proof-progress').hidden,false);
+    assert.match(d.getElementById('proof-progress-stage').textContent,/Recording saved tactic goals/);
+    assert.equal(d.getElementById('proof-cancel').closest('#proof-progress').id,'proof-progress');
+    assert.equal(d.getElementById('proof-message').hidden,true);
+    assert.equal(d.getElementById('proof-refresh').disabled,true);
+  } finally {w.close();}
+});
+
+test('goal results foreground the target and fold repeated context and tactic results', async () => {
+  const snapshot=projectNotebook();
+  const text='eta : ℝ\nheta : eta > 0\n⊢ eta + 1 > 1';
+  const trace=goalTrace(snapshot.sha256);
+  trace.nodes[0].before=[text]; trace.nodes[0].after=[text];
+  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+  try {
+    const d=w.document;
+    d.querySelector('#insp [data-act="goal"]').click(); await new Promise(r=>setTimeout(r,30));
+    const first=d.querySelector('#insp .goal-initial');
+    assert.equal(first.querySelector('.goal-target').textContent,'⊢ eta + 1 > 1');
+    assert.equal(first.querySelector('.goal-context').open,false);
+    assert.equal(first.querySelector('.goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
+    const step=d.querySelector('#insp .goal-step details');
+    step.open=true;
+    await w.glitnirPoll();
+    assert.equal(d.querySelector('#insp .goal-step details').open,true);
+  } finally {w.close();}
+});
+
+test('active checks stay visible and cancellable in Notebook, Source and Explore', async () => {
+  const snapshot=projectNotebook(), messages=[];
+  snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,message:'Checking saved file',theorems:[]};
+  const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m)});
+  try {
+    const d=w.document;
+    for(const mode of ['doc','source','graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.ok(d.getElementById('project-check').closest('#run-activity'));
+      assert.ok(d.querySelector('#run-activity [data-act="check-cancel"]'));
+    }
+    d.querySelector('#run-activity [data-act="check-cancel"]').click();
+    await new Promise(r=>setTimeout(r,30));
+    assert.ok(messages.some(m=>m.path==='/api/project/check/cancel'));
+  } finally {w.close();}
+});
+
+test('inline proof progress remains visible after switching to Source and Explore', async () => {
+  const snapshot=projectNotebook();
+  const trace={status:'running',id:'shared',source_sha256:snapshot.sha256,nodes:[],message:'Recording saved tactic goals'};
+  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+  try {
+    const d=w.document;
+    d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
+    for(const mode of ['source','graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.match(d.querySelector('#proof-run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
+      assert.ok(d.querySelector('#proof-run-activity [data-act="goal-cancel"]'));
+    }
+  } finally {w.close();}
 });

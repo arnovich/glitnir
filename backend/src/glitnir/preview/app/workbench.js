@@ -328,7 +328,7 @@
   // A check of the whole saved file, or, with `throughLine`, of its lines 1
   // through that line only: the end of a chosen claim.
   async function checkProject(throughLine = null) {
-    if (UI.checkRequested || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff() || walkthroughUnchecked()) return;
+    if (checkBusy() || UI.data?.preview?.mode !== 'project' || UI.data.preview.check?.status === 'running' || linkedPath() || recorded() || leanOff() || walkthroughUnchecked()) return;
     UI.checkRequested = true;
     render();
     const body = {sha256: UI.data.sha256};
@@ -340,7 +340,7 @@
     catch (error) { UI.checkTiming = null; throw error; }
     finally { UI.checkRequested = false; render(); }
   }
-  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running');
+  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.goals?.starting || UI.goals?.trace?.status === 'running' || UI.proofBusy);
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note, scope = 'card') {
