@@ -721,3 +721,6 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
   .bar{grid-template-columns:minmax(150px,1fr) minmax(0,1fr)}
   .bar>.bar-right{max-width:100%;min-width:0}
 }
+
+.goal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.goal-results{max-height:min(55vh,560px);overflow:auto;padding:2px}

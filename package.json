@@ -106,7 +106,7 @@
       },
       {
         "command": "glitnir.reviewProof",
-        "title": "Inspect Selected Claim’s Proof Steps",
+        "title": "Expand Selected Claim’s Proof Steps",
         "category": "Glitnir"
       },
       {

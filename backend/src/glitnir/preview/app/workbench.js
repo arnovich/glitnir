@@ -417,7 +417,6 @@
     const compatibility = walkthroughUnchecked() ? `<div class="note-line walkthrough-compatibility" data-tone="muted">${icon('branch')}<span>${esc(walkthroughMessage())}</span></div>` : '';
     const note = compatibility + notRechecked + (saved.current === null ? `<div class="note-line" data-tone="muted">${icon('branch')}<span>${NOT_COMPARED}</span></div>`
       : saved.current ? '' : `<div class="note-line" data-tone="amber">${icon('branch')}<span>Out of date: ${recorded() ? 'the saved source above this claim changed since it was checked.' : `the saved source above this claim or its environment changed since it was checked.${leanOff() || walkthroughUnchecked() ? '' : ' Check the saved file to update it.'}`}</span></div>`);
-    const actions = staticPage ? '' : checkThroughHTML(saved, 'Check up to this claim', `Lines 1–${esc(saved.end_line)} only; later claims are not rechecked`);
     return `<section class="cell project-claim" id="cell-${esc(saved.name)}" data-claim="${esc(saved.name)}">
       <article class="claim card-${presentation.kind}" data-tone="${toneOf(c)}" data-selected="${UI.selected === saved.name}" aria-label="${esc(presentation.label)} ${esc(c.label)}">
         ${window.glitnirCards.header({label: presentation.label, name: c.label, classes: ['claim-head'], locationHTML: lineLinkHTML(cell.start, cell.end, true, saved.name, staticPage), badgesHTML: `<span class="pill" data-tone="${st.tone}">${esc(st.label)}</span>${stale}`})}
@@ -429,7 +428,6 @@
         <p class="small muted claim-axioms">Assumptions: ${axioms}</p>
         ${source}
         ${note}
-        ${actions ? `<div class="claim-actions">${actions}</div>` : ''}
       </article></section>`;
   }
   // Optional display from the last compiled observation, with the same currency

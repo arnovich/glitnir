@@ -476,7 +476,9 @@
       summary: atlasActive.matches('.atlas-details > summary') ? '.atlas-details > summary' : atlasActive.matches('.atlas-permalink') ? '.atlas-permalink' : null,
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const scroll = $('insp').scrollTop;
-    const goalFocus = Boolean(document.activeElement?.matches('#insp .goal-section [data-act]'));
+    const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
+    const results = $('insp').querySelector('.goal-results');
+    const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
     if (!heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
       else if (UI.mode === 'source') renderSource();
@@ -524,7 +526,15 @@
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
     $('insp').scrollTop = scroll;
-    if (goalFocus) $('insp').querySelector('.goal-section [data-act]')?.focus({preventScroll: true});
+    const nextResults = $('insp').querySelector('.goal-results');
+    if (nextResults && resultsState?.key === nextResults.dataset.goalKey) {
+      nextResults.scrollTop = resultsState.top; nextResults.scrollLeft = resultsState.left;
+      if (resultsState.focused) nextResults.focus({preventScroll: true});
+    }
+    if (goalFocus) {
+      const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')];
+      (controls.find(el => el.dataset.act === goalFocus) || controls[0])?.focus({preventScroll: true});
+    }
     restoreDiagramUI(diagramUI);
     if (helpFocus) {
       [...document.querySelectorAll('.help-icon')].find(button => button.dataset.helpKey === helpFocus)?.focus({preventScroll: true});
@@ -606,7 +616,7 @@
     {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
     {group: 'Navigate', keys: ['n', 'p'], editor: true,
       text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / inspect selected claim’s proof steps'},
+    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / expand selected claim’s proof steps'},
     {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
     {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
     {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
@@ -661,7 +671,7 @@
       return;
     }
     if (!scroll) return;
-    const el = UI.mode === 'doc' ? $('cell-' + name) : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
+    const el = UI.mode === 'doc' ? $('cell-' + name) || [...$('doc').querySelectorAll('.source-controls[data-proof-claim]')].find(el => el.dataset.proofClaim === name)?.closest('.cell') : UI.mode === 'source' ? document.querySelector(`#source tr[data-claim="${CSS.escape(name)}"]`) : document.querySelector(`#graph-view [data-graph-name="${CSS.escape(name)}"]`);
     if (el) { revealSection(el); el.scrollIntoView?.({behavior: reduced() ? 'auto' : 'smooth', block: UI.mode === 'doc' ? 'start' : 'center'}); }
   }
   function showSourceLines(start, end) {
@@ -727,6 +737,8 @@
     if (history.open && !history.contains(e.target)) history.open = false;
     const b = e.target.closest('[data-act]');
     if (!b) {
+      const freshScope = e.target.closest('.cell')?.querySelector('.source-controls[data-proof-claim]');
+      if (freshScope && !e.target.closest('button,summary,a') && !claim(freshScope.dataset.proofClaim)) { select(freshScope.dataset.proofClaim, false, true); return; }
       const cell = e.target.closest('[data-claim]');
       if (cell && !e.target.closest('button,summary,a') && (UI.selected !== cell.dataset.claim || !UI.panel)) select(cell.dataset.claim, false, true);
       return;
@@ -795,6 +807,13 @@
         UI.mode = 'doc';
         render();
         const heading = document.getElementById(id);
+        const scope = heading?.querySelector('.source-controls[data-proof-claim]');
+        if (scope) {
+          select(scope.dataset.proofClaim, true, true);
+          const target = document.getElementById(id);
+          if (target && !window.matchMedia('(max-width:760px)').matches) { target.tabIndex = -1; target.focus({preventScroll: true}); }
+          break;
+        }
         if (heading) {
           revealSection(heading);
           const target = heading.closest('summary') || heading;

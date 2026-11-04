@@ -179,14 +179,17 @@ closed. Background refreshes leave a closed Inspector closed.
 
 ### Proof goals and steps
 
-**Inspect proof steps** on a claim (or `t` for the selected claim, or
-**Glitnir: Inspect Selected Claim’s Proof Steps**) records the selected
-proof's tactic tree once with Lean, then lets you walk it with the goals before
-and after each step: `n` and `p` move between steps, `r` checks the whole saved
-file, and **Back to claim** or `Esc` returns to that claim and its reading position. **Inspect proof goals** in the claim inspector
-shows the goals after each tactic step of the selected claim from the same
-recording. Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`.
-Both are historical observations of the saved file and never change a status.
+Select a theorem to open its Inspector. **Inspect proof** records its saved proof
+with Lean and displays the goals after each tactic step in place. The check and
+inspection actions live in the Inspector, rather than on every theorem card.
+
+**Expand proof steps** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
+opens the larger tactic-tree view, reusing a current inline recording. `n` and `p`
+move between steps; `r` checks the whole saved file. **Back to claim** or `Esc`
+returns to the Inspector and the claim’s reading position.
+
+Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. Both
+views show historical observations of the saved file and never change a status.
 
 ### Linked notebooks
 
@@ -241,7 +244,7 @@ failing command withheld the claims after it, and 2 when checking is unavailable
 
 ### Checking through a claim
 
-**Check up to this claim** on a claim (also in the inspector, or `r` on the selected
+**Check up to this claim** in the Inspector (or `r` on the selected
 claim) checks only lines 1 through that claim's last line: the same sandboxed
 compile and kernel replay of that prefix. Every checked prefix, also the one
 before a failing command, ends where Glitnir's own lexer finds a command end: the
@@ -429,7 +432,7 @@ the preview for this list. Moving never starts a check.
 |---|---|
 | `j` `k` | Next / previous claim |
 | `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
-| `c` `t` | Return to claim / inspect selected claim’s proof steps |
+| `c` `t` | Return to claim / expand selected claim’s proof steps |
 | `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
 | `i` | Show or hide the claim inspector in Notebook |

@@ -143,7 +143,7 @@
     proof.hidden = !inProof;
     document.body.classList.toggle('glitnir-proof-mode', inProof);
     const unavailable = proofUnavailable();
-    for (const button of document.querySelectorAll('[data-act="inspect-proof"]')) {
+    for (const button of document.querySelectorAll('[data-act="inspect-proof"],#insp [data-act="goal"]')) {
       const reason = dirty ? 'Save or revert edits before viewing proof steps.' : unavailable;
       button.disabled = !!reason;
       button.title = reason || 'Inspect this claim’s saved tactic goals (t)';
@@ -268,7 +268,7 @@
   function proofMode(action) {
     if (dirty || proofUnavailable() || linkedView() || !snapshot) return;
     const workbench = window.glitnirWorkbench;
-    const buttons = [...document.querySelectorAll('[data-act="inspect-proof"]')].filter(b => b.dataset.sha === sha);
+    const buttons = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].filter(b => b.dataset.sha === sha);
     let cell = currentCell();
     if (!action && mode === 'proof' && !sourceLine && inspection) action = buttons.find(b => b.dataset.proofClaim === inspection.name && Number(b.dataset.start) === inspection.start);
     if (!action) {
@@ -283,7 +283,9 @@
     inspection = {name, index: selected, start: action ? Number(action.dataset.start) : cell.start, end: action ? Number(action.dataset.end) : cell.end, sha};
     if (mode !== 'proof') returnPosition = {claim: name, sha, scroll: workbench?.UI.mode === 'doc' ? [window.scrollX, window.scrollY] : null};
     else if (returnPosition?.claim !== name) returnPosition = {claim: name, sha, scroll: null};
-    if (workbench) { workbench.UI.selected = name; workbench.UI.mode = 'doc'; workbench.render(); }
+    if (workbench) { workbench.UI.selected = name; workbench.UI.mode = 'doc'; workbench.UI.panel = true; workbench.render(); }
+    const inlineTrace = workbench?.currentGoalTrace?.();
+    if (project() && inlineTrace) trace = inlineTrace;
     mode = 'proof'; step = Math.min(positions.get(positionKey()) ?? -1, nodes().length - 1); update();
     $('proof-back').focus({preventScroll: true});
     if (!trace || trace.status === 'stale' || (!project() && trace.claim !== currentClaim()?.name)) void refresh();
@@ -295,8 +297,9 @@
     claimsMode();
     const workbench = window.glitnirWorkbench;
     if (workbench) { workbench.UI.mode = 'doc'; workbench.render(); }
-    const action = [...document.querySelectorAll('[data-act="inspect-proof"]')].find(b => b.dataset.proofClaim === origin?.claim);
-    const target = action?.closest('.cell');
+    const action = [...document.querySelectorAll('#insp [data-act="inspect-proof"]')].find(b => b.dataset.proofClaim === origin?.claim);
+    const scope = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].find(el => el.dataset.proofClaim === origin?.claim);
+    const target = scope?.closest('.cell');
     if (origin?.sha === sha && origin.scroll) window.scrollTo(...origin.scroll);
     else if (target) { workbench?.revealSection?.(target); target.scrollIntoView?.({block: 'center'}); }
     if (focus) {
