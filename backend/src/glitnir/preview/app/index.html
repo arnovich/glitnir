@@ -39,6 +39,10 @@
     </details>
     <div class="bar-right">
 
+      <details id="notebook-view-options" class="notebook-view-options">
+        <summary>View options</summary>
+        <div class="view-options-panel"><label class="live-follow-control"><input type="checkbox" id="live-follow"> Follow live edits</label><p>Scroll to changed sections after saving the Lean file.</p></div>
+      </details>
       <details class="history" id="history">
         <summary><svg class="ic"><use href="#i-history"/></svg>History</summary>
         <div class="history-panel" id="history-panel">
@@ -59,11 +63,7 @@
     <h1 id="title">Loading…</h1>
   </div>
 
-  <div class="live-bar" aria-label="Review and saved-file updates">
-    <div class="live-controls">
-      <label class="live-follow-control" title="Scroll the Notebook to changed sections after the Lean file is saved"><input type="checkbox" id="live-follow"> Follow live edits</label>
-    </div>
-  </div>
+  <div class="live-bar" aria-label="Review navigation" hidden></div>
 
   <div class="workspace" id="workspace">
     <nav class="rail" aria-label="Notebook outline">

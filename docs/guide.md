@@ -166,7 +166,7 @@ action. Escape dismisses the explanation.
   Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
   macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
 - Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow live edits**, in the Notebook controls below the title, scrolls to them after each save.
+  highlights the changed sections. **Follow live edits**, under **View options**, scrolls to them after each save.
 - `j` and `k` step through the claims; `i` shows the claim
   inspector for the selected claim.
 - `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
@@ -686,7 +686,11 @@ leave the reading view in place without requesting a tactic observation.
 
 Proof inspection is a claim action rather than a notebook-wide mode. The title
 stays in the same position in Notebook, Source and Explore; Notebook-only
-Previous/Next and Follow live edits controls sit below it.
+review navigation sits below it and stays visible as the title scrolls away.
+**Needs review · N items** opens a jump list of names and reasons. **Previous**,
+**Item X of N**, and **Next** stay together; the position identifies the selected
+review item, not completed work. The bar disappears when the review queue is empty,
+which does not certify the file. **Follow live edits** lives under **View options**.
 
 Notebook contents nests rendered declarations and setup beneath section headings,
 including before any check results exist. Text badges and colours identify

@@ -4510,11 +4510,26 @@ test('n and p step through the project claims that need attention, and steps in 
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     assert.equal($('next-unresolved').hidden, false, 'Next and Previous show in Claims');
-    assert.equal($('review-position').textContent, '5 need attention');
-    const visited = [];
-    for (let i = 0; i < 6; i++) { key('n'); await settle(); visited.push(revealed()); }
+    assert.equal($('review-position').textContent, '');
+    assert.equal($('review-queue-summary').textContent, 'Needs review · 5 items');
+    assert.deepEqual([...d.querySelectorAll('#review-items .review-item-reason')].map(el => el.textContent), ['Out of date', 'Contains sorry', 'Additional assumptions', 'Not rechecked', 'Checking stopped: unsolved goals']);
+    assert.equal($('review-position').parentElement, $('review-previous').parentElement);
+    $('review-queue').open = true;
+    const jump = $('review-items').querySelectorAll('button')[1];
+    jump.focus();
+    for (const key of ['n','p','t','j']) jump.dispatchEvent(new window.KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
+    assert.equal($('proof-review').hidden, true, 'jump-list keys do not open proof mode');
+    assert.equal(revealed(), undefined, 'jump-list keys do not navigate');
+    jump.click(); await settle();
+    assert.equal(revealed(), '3', 'jump directly to the named review item');
+    assert.equal($('review-position').textContent, 'Item 2 of 5');
+    assert.equal($('review-queue').open, false);
+    assert.equal(d.activeElement, $('review-queue-summary'), 'focus returns to the jump-list trigger');
+    key('p'); await settle();
+    const visited = [revealed()];
+    for (let i = 0; i < 5; i++) { key('n'); await settle(); visited.push(revealed()); }
     assert.deepEqual(visited, ['2', '3', '4', '5', '7', '7'], 'out of date, sorry, assumptions, not rechecked, then where checking stopped; no wrap');
-    assert.equal($('review-position').textContent, '5 of 5 needing attention');
+    assert.equal($('review-position').textContent, 'Item 5 of 5');
     key('p'); await settle();
     assert.equal(revealed(), '5');
     assert.equal($('insp-title').textContent, 'carried', 'the renderer selects the claim n and p reach');
@@ -4536,13 +4551,16 @@ test('n and p step through the project claims that need attention, and steps in 
     // A check stopped on request, or an older file's stop, is not a failure to review.
     snapshot.project_withheld = {from_line: 20, through_line: 19, message: 'Checked through line 19 on request'};
     await window.glitnirPoll(); await settle();
-    assert.equal($('review-position').textContent, '3 of 4 needing attention');
+    assert.equal($('review-position').textContent, 'Item 3 of 4');
+    $('review-previous').focus();
     snapshot.project_withheld = {from_line: 20, message: 'unsolved goals', stale: true};
     snapshot.project_claims.forEach(c => { c.status = 'checked'; c.current = true; delete c.not_rechecked; });
     await window.glitnirPoll(); await settle();
     assert.equal($('review-position').textContent, '');
     assert.equal($('review-position').hidden, true);
     assert.equal($('next-unresolved').disabled, true);
+    assert.equal(d.querySelector('.review-nav').hidden, true, 'empty queues have no review toolbar');
+    assert.equal(d.activeElement, d.querySelector('[data-mode="doc"]'), 'focus leaves disappearing controls');
   } finally { window.close(); }
 });
 
@@ -5385,7 +5403,16 @@ for (const browser of [false, true]) {
       assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'header-status', 'bar-right']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Source', 'Explore']);
       const row = d.querySelector('.live-bar');
-      assert.match(row.querySelector('.live-follow-control').textContent, /Follow live edits/);
+      assert.equal(row.querySelector('.live-follow-control'), null);
+      assert.ok(header.querySelector('#notebook-view-options #live-follow'));
+      const options = d.getElementById('notebook-view-options');
+      options.open = true;
+      options.querySelector('summary').dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+      assert.equal(options.open, false);
+      assert.equal(d.activeElement, options.querySelector('summary'));
+      options.open = true;
+      d.getElementById('title').click();
+      assert.equal(options.open, false);
       assert.equal(row.textContent.includes('Live · saved files'), false);
       assert.ok(header.querySelector('#live-status'));
       assert.equal(d.querySelector('.footer'), null);

@@ -802,10 +802,17 @@
   $('keys-close').onclick = () => keys(false);
   $('keys').onclick = e => { if (e.target === $('keys')) keys(false); };
   document.addEventListener('click', e => {
+    if (!$('notebook-view-options').contains(e.target)) $('notebook-view-options').open = false;
     if (!$('header-status').contains(e.target)) $('header-status').open = false;
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if ($('notebook-view-options').open) {
+        $('notebook-view-options').open = false;
+        $('notebook-view-options').querySelector('summary').focus({preventScroll: true});
+        e.stopImmediatePropagation();
+        return;
+      }
       if ($('header-status').open) {
         $('header-status').open = false;
         $('status-summary').focus({preventScroll: true});
@@ -817,6 +824,7 @@
       $('history').open = false;
       return;
     }
+    if ($('notebook-view-options').open || e.target.closest('#notebook-view-options,#review-queue')) return;
     if ($('header-status').open || e.target.closest('#image-dialog,.context-help,#header-status')) return;
     const graphAction = e.target.closest?.('#graph-view [data-act="graph-node"],#graph-view [data-act="graph-select"]');
     if (graphAction && (e.key === 'Enter' || e.key === ' ')) {

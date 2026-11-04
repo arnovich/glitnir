@@ -13,12 +13,25 @@
   const nav = document.createElement('nav');
   nav.className = 'review-nav'; nav.setAttribute('aria-label', 'Review navigation');
   nav.innerHTML = `<label id="review-filter-label">Show <select id="review-filter" aria-label="Claims to review"><option value="attention">Needs attention</option><option value="all">All claims</option></select></label>
-    <span id="review-position" class="small" role="status"></span><div class="review-controls"><button class="secondary" id="review-previous">Previous <kbd>p</kbd></button></div>`;
+    <details id="review-queue"><summary id="review-queue-summary"></summary><div id="review-items" aria-label="Items to review"></div></details>
+    <div class="review-controls"><button class="secondary" id="review-previous">Previous <kbd>p</kbd></button><span id="review-position" role="status"></span></div>`;
   const next = $('next-unresolved') || document.createElement('button');
   next.id = 'next-unresolved'; next.className = 'secondary'; next.innerHTML = 'Next <kbd>n</kbd>'; next.hidden = false;
   nav.querySelector('.review-controls').append(next);
   const activity = app.querySelector('.live-bar');
   activity.prepend(nav);
+  $('notebook-view-options').querySelector('.view-options-panel').prepend($('review-filter-label'));
+  const queueMenu = $('review-queue');
+  const queueSummary = $('review-queue-summary');
+  function closeQueue() { queueMenu.open = false; queueSummary.focus({preventScroll: true}); }
+  document.addEventListener('click', event => { if (!queueMenu.contains(event.target)) queueMenu.open = false; });
+  queueMenu.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeQueue(); }
+    else if (event.key.length === 1) event.stopPropagation();
+  });
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--review-offset', `${activity.getBoundingClientRect().height + 12}px`);
+  }).observe(activity);
   const proof = document.createElement('section');
   proof.id = 'proof-review'; proof.hidden = true;
   proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-title"></h2><p id="proof-status" class="small"></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-cancel" class="secondary" hidden>Cancel</button><button id="proof-back" class="secondary">Back to claim <kbd>Esc</kbd></button></div></div>
@@ -63,6 +76,48 @@
     const names = new Set(claims.filter(c => $('review-filter').value === 'all' || !['checked', 'refuted'].includes(c.status) || snapshot.check_errors?.[c.name]).map(c => c.name));
     return (snapshot?.cells || []).filter(c => c.kind === 'claim' && names.has(c.id));
   }
+  function reviewReason(cell) {
+    if (cell === stoppedCell()) return `Checking stopped: ${snapshot.project_withheld.message || 'Lean command failed'}`;
+    if (!project()) {
+      const claim = snapshot.claims.find(c => c.name === cell.id);
+      return snapshot.check_errors?.[cell.id] || claim?.reason || labels[claim?.status] || 'Needs review';
+    }
+    const saved = snapshot.project_claims.find(c => c.name === cell.claim);
+    const reasons = [];
+    if (saved.current === false) reasons.push('Out of date');
+    else if (saved.current !== true) reasons.push('Not compared');
+    if (saved.not_rechecked) reasons.push('Not rechecked');
+    if (saved.status !== 'checked') reasons.push(({admitted: 'Contains sorry', assumptions: 'Additional assumptions'})[saved.status] || labels[saved.status] || 'Not checked');
+    return reasons.join(' · ');
+  }
+  function updateQueue(queue, inProof) {
+    queueMenu.hidden = inProof || !queue.length;
+    if (queueMenu.hidden) queueMenu.open = false;
+    queueSummary.textContent = `${project() || $('review-filter').value !== 'all' ? 'Needs review' : 'All claims'} · ${queue.length} ${queue.length === 1 ? 'item' : 'items'}`;
+    // Keep focused list buttons intact during polling and selection updates.
+    const signature = JSON.stringify(queue.map(cell => [cell.index, cell.claim || cell.id, reviewReason(cell)]));
+    if ($('review-items').dataset.signature !== signature) {
+      const hadFocus = $('review-items').contains(document.activeElement);
+      $('review-items').dataset.signature = signature;
+      $('review-items').replaceChildren(...queue.map(cell => {
+        const button = document.createElement('button');
+        button.type = 'button'; button.dataset.index = cell.index;
+        const name = document.createElement('span');
+        name.textContent = cell.claim || cell.id || `Line ${cell.start}`;
+        const reason = document.createElement('span'); reason.className = 'review-item-reason';
+        reason.textContent = reviewReason(cell);
+        button.append(name, reason);
+        button.onclick = () => { if (!dirty) { closeQueue(); reveal(cell); } };
+        return button;
+      }));
+      if (hadFocus && !nav.hidden) closeQueue();
+    }
+    for (const button of $('review-items').children) {
+      button.disabled = dirty;
+      if (Number(button.dataset.index) === selected) button.setAttribute('aria-current', 'true');
+      else button.removeAttribute('aria-current');
+    }
+  }
   function nodes() {
     if (!trace || !['ready', 'partial'].includes(trace.status) || trace.source_sha256 !== sha || (!project() && trace.claim !== currentClaim()?.name)) return [];
     const scope = inspection?.sha === sha ? inspection : null;
@@ -81,7 +136,10 @@
   function update() {
     const focused = document.activeElement;
     const inProof = mode === 'proof', queue = cells(), nodeList = nodes(), claim = currentClaim();
-    nav.hidden = !snapshot || !!snapshot.error;
+    nav.hidden = !snapshot || !!snapshot.error || (!inProof && !queue.length && (project() || $('review-filter').value !== 'all'));
+    activity.hidden = nav.hidden;
+    if (nav.hidden && nav.contains(focused)) document.querySelector('[data-mode="doc"]').focus({preventScroll: true});
+    updateQueue(queue, inProof);
     proof.hidden = !inProof;
     document.body.classList.toggle('glitnir-proof-mode', inProof);
     const unavailable = proofUnavailable();
@@ -103,7 +161,7 @@
     } else if (project()) {
       previous.title = 'Previous claim that needs attention (p)';
       next.title = queue.length ? `${queue.length} need attention; next in source order (n)` : 'No claims queued for review';
-      $('review-position').textContent = !queue.length ? '' : index >= 0 ? `${index + 1} of ${queue.length} needing attention` : `${queue.length} need attention`;
+      $('review-position').textContent = index >= 0 ? `Item ${index + 1} of ${queue.length}` : '';
     } else {
       previous.title = 'Previous matching claim (p)';
       next.title = queue.length ? `${queue.length} matching claims; next in source order (n)` : 'No matching claims';
@@ -342,6 +400,11 @@
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }
       event.stopImmediatePropagation(); return;
+    }
+    if (queueMenu.open || event.target.closest('#review-queue,#notebook-view-options')) {
+      if (event.key === 'Escape' && queueMenu.open) { event.preventDefault(); event.stopImmediatePropagation(); closeQueue(); }
+      else if (event.key !== 'Escape' && event.key.length === 1 && ![' ', 'Enter'].includes(event.key)) event.stopImmediatePropagation();
+      return;
     }
     if ($('header-status')?.open || event.target.closest('#header-status')) {
       if (event.key !== 'Escape') event.stopImmediatePropagation();
