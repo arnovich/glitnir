@@ -3612,7 +3612,7 @@ test('the Graph view layers recorded direct uses, includes linked claims, and na
     assert.equal($('graph-view').hidden, false);
     assert.equal($('doc').hidden, true);
     assert.match($('graph-view').textContent, /Claim graph/);
-    assert.match($('graph-view').textContent, /does not check or update/);
+    assert.match($('graph-view').textContent, /Arrows point from a supporting statement/);
 
     const nodes = [...d.querySelectorAll('#graph-view .proof-node')];
     assert.deepEqual(nodes.map(node => node.dataset.graphName), [
@@ -3666,6 +3666,8 @@ test('graph inspection preserves recorded uses and qualifies un-compared results
     const node = model.byId.get('local:Demo.k_pos');
     assert.equal(node.tone, 'muted');
     assert.match(node.status, /Not compared/);
+    window.document.querySelector('[data-mode="graph"]').click();
+    assert.match(window.document.getElementById('graph-detail').textContent, /Freshness unknown/);
     const claims = ['base', 'middle', 'result'].map((name, i) => ({name, status: 'checked', record: {verdict: 'holds'}, uses: i === 2 ? ['base', 'middle'] : i === 1 ? ['base'] : []}));
     const reduced = window.glitnirWorkbench.claimGraphModel({claims});
     assert.deepEqual([...reduced.byId.get('local:result').uses], ['local:base', 'local:middle']);
@@ -3730,6 +3732,7 @@ test('Contents opens the selected claim in Explore and returns to it in Notebook
 test('the Contents shortcut opens Statement graph within a proof atlas', async () => {
   const snapshot = atlasExplorationSnapshot();
   snapshot.walkthrough.nodes[2].claim = 'Demo.floor';
+  snapshot.project_claims[1].current = false;
   const window = await renderSnapshot(snapshot);
   try {
     const d = window.document;
@@ -3745,6 +3748,8 @@ test('the Contents shortcut opens Statement graph within a proof atlas', async (
     scope.focus();
     scope.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'g', bubbles: true}));
     assert.equal(d.activeElement, d.querySelector('#atlas-selected'), 'the Explore shortcut opens guided reading and moves focus');
+    d.querySelector('.atlas-flow [data-value="n2"]').click();
+    assert.match(d.querySelector('.atlas-details').textContent, /Saved result is out of date/);
   } finally { window.close(); }
 });
 
@@ -3754,10 +3759,60 @@ test('Explore distinguishes empty dependency records from missing observations',
   const window = await renderSnapshot(snapshot);
   try {
     const d = window.document;
-    d.querySelector('[data-mode="graph"]').click();
+    const shortcut = d.querySelector('#claim-graph-mobile button');
+    assert.equal(shortcut.textContent, 'View claim graph');
+    shortcut.click();
+    assert.equal(d.querySelector('[data-act="graph-focus"]').textContent, 'Selected claim');
+    assert.equal(d.querySelector('.proof-graph-detail-picker').firstChild.textContent, 'Choose a claim');
+    assert.deepEqual([...d.querySelectorAll('.proof-graph-toolbar button')].map(button => button.textContent), ['−', '+', 'Fit width', 'Reset zoom']);
     assert.equal(d.querySelector('#graph-detail dd').textContent, 'No recorded dependencies');
+    d.querySelector('[data-act="graph-full"]').click();
+    const notes = d.querySelector('.proof-graph-notes');
+    assert.equal(notes.open, false);
+    notes.open = true;
+    notes.querySelector('summary').focus();
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-graph-notes').open, true);
+    assert.equal(d.activeElement, d.querySelector('.proof-graph-notes summary'));
     d.querySelector('[data-graph-name="Demo.floor"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
     assert.equal(d.querySelector('#graph-detail dd').textContent, 'Dependencies haven’t been recorded');
+    d.querySelector('.proof-graph-notes summary').focus();
+    snapshot.project_claims[1].uses = [];
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-graph-notes'), null);
+    assert.equal(d.activeElement, d.querySelector('[data-act="graph-detail-picker"]'));
+  } finally { window.close(); }
+});
+
+test('Explore gives an empty notebook a message instead of graph controls', async () => {
+  const snapshot = projectNotebook();
+  snapshot.cells = [];
+  snapshot.project_claims = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const explore = d.getElementById('graph-view');
+    assert.match(explore.textContent, /This notebook has no claims/);
+    assert.equal(explore.querySelector('.proof-map,select,button'), null);
+  } finally { window.close(); }
+});
+
+test('Explore explains a saved result whose declaration is gone', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims[0].current = false;
+  snapshot.project_claims.push({...snapshot.project_claims[0], name: 'Demo.removed'});
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const detail = () => d.getElementById('graph-detail');
+    assert.equal(detail().querySelector('h3').textContent, 'k_pos');
+    assert.match(detail().textContent, /Previously kernel checked/);
+    assert.match(detail().textContent, /Saved result is out of date/);
+    d.querySelector('[data-graph-name="Demo.removed"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.match(detail().textContent, /No matching declaration in this file/);
+    assert.equal(detail().querySelector('[data-act="graph-node"]'), null);
   } finally { window.close(); }
 });
 
@@ -3820,7 +3875,7 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.equal(d.querySelector('[data-graph-name="result"]').dataset.tone, 'amber');
     assert.match(d.querySelector('[data-graph-name="result"] title').textContent, /result — Out of date/);
     assert.equal(d.querySelector('[data-graph-name="unchecked"]').dataset.tone, 'muted');
-    assert.match(d.getElementById('graph-view').textContent, /Dependency observations are unknown for unchecked/);
+    assert.match(d.getElementById('graph-view').textContent, /Dependency records are unavailable for unchecked/);
     const graphToolbar = d.querySelector('.proof-graph-toolbar');
     assert.ok(graphToolbar.closest('.proof-graph-stage'));
     assert.ok(graphToolbar.nextElementSibling.classList.contains('proof-graph-canvas'));
@@ -3890,7 +3945,7 @@ test('the Graph view bounds dense input and preserves cyclic saved relationships
     const recordlessModel = window.glitnirWorkbench.claimGraphModel(recordless);
     assert.deepEqual([...recordlessModel.nodes].map(node => [node.status, node.tone]), [['Unknown', 'muted'], ['Unknown', 'muted']]);
     assert.deepEqual([...recordlessModel.nodes].map(node => node.relationsKnown), [false, false]);
-    assert.match(window.glitnirWorkbench.proofGraphHTML(recordless), /Dependency observations are unknown for one, two/);
+    assert.match(window.glitnirWorkbench.proofGraphHTML(recordless), /Dependency records are unavailable for one, two/);
 
     const wide = {claims: Array.from({length: 20}, (_, index) => claim(`Wide.claim${index}`)), cells: [], links: [], checking: [], project_claims: []};
     const widePage = new JSDOM(window.glitnirWorkbench.proofGraphHTML(wide, {staticPage: true})).window.document;
@@ -3942,6 +3997,7 @@ test('the Graph view shows a walkthrough statement map with statuses, direct use
     assert.equal(window.glitnirWorkbench.walkthroughCompatibility(snapshot).supported, true);
     d.querySelector('[data-mode="graph"]').click();
     assert.match(d.getElementById('graph-view').textContent, /Paper map/);
+    assert.match(d.getElementById('graph-view').textContent, /The whole proof/);
     assert.equal(d.querySelector('#graph-view .walkthrough-map').getAttribute('aria-label'), 'Paper map statement map');
     assert.equal(d.querySelectorAll('#graph-view .proof-node').length, 21, 'the eth-sized map remains readable');
     assert.equal(d.querySelector('[data-graph-name="Theorem 20"]').dataset.tone, 'amber', 'a stale saved claim marks its paper statement');
@@ -3954,7 +4010,7 @@ test('the Graph view shows a walkthrough statement map with statuses, direct use
     assert.match(d.getElementById('graph-view').textContent, /unknown statement absent/);
 
     const picker = d.querySelector('[data-act="graph-detail-picker"]');
-    assert.match([...picker.options].find(option => option.value === 'walkthrough:step20').textContent, /^theorem — Theorem 20/);
+    assert.equal([...picker.options].find(option => option.value === 'walkthrough:step20').textContent, 'Theorem 20');
     picker.value = 'walkthrough:step20';
     picker.dispatchEvent(new window.Event('change', {bubbles: true}));
     const detail = d.getElementById('graph-detail');
@@ -5142,7 +5198,7 @@ test('atlas overview exposes shared steps with bounded paging and sidebar naviga
     assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 8);
     d.querySelector('.atlas-overview [data-value="n31"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
     assert.equal(d.querySelector('.atlas-backlinks'), null);
-    assert.match(d.querySelector('.atlas-flow').textContent, /Shared support/);
+    assert.match(d.querySelector('.atlas-flow').textContent, /Shared by several arguments/);
     d.querySelector('.atlas-flow [data-value="n2"]').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
   } finally { window.close(); }
@@ -5178,7 +5234,7 @@ test('atlas missing notebook observations name the binding without a null status
   const window = await renderSnapshot(snapshot);
   try {
     window.document.querySelector('[data-mode="graph"]').click();
-    assert.match(window.document.querySelector('.proof-atlas').textContent, /missingClaim: no matching notebook result/);
+    assert.match(window.document.querySelector('.proof-atlas').textContent, /No saved result for missingClaim/);
   } finally {window.close();}
 });
 
@@ -5376,7 +5432,7 @@ test('the full graph is a visible exploration view and keeps Read and Map availa
     assert.equal(d.querySelector('[data-atlas="layout"][data-value="graph"]').getAttribute('aria-pressed'), 'true');
     d.querySelector('[data-atlas="layout"][data-value="map"]').click();
     assert.ok(d.querySelector('.atlas-map-first'));
-    assert.match(d.querySelector('.atlas-view-help').textContent, /curated support links/);
+    assert.match(d.querySelector('.atlas-view-help').textContent, /arguments in this reading route connect/);
     d.querySelector('[data-atlas="layout"][data-value="reading"]').click();
     assert.match(d.querySelector('.atlas-view-help').textContent, /Read/);
     assert.equal(d.querySelector('.atlas-overview'), null);
@@ -5974,7 +6030,7 @@ test('Explore keeps navigation in the sidebar and consolidates argument details'
     assert.equal(d.querySelector('.atlas-actions,.atlas-qualification,.atlas-supports,.atlas-backlinks,[data-atlas="pane"]'), null);
     const details = d.querySelector('.atlas-details');
     assert.equal(details.querySelector('summary').textContent, 'Sources and details');
-    assert.match(details.textContent, /navigation grants no proof status/);
+    assert.match(details.textContent, /No saved Lean result is linked to this argument/);
     assert.ok(d.querySelector('article.atlas-explanation'));
     details.open = true;
     details.dispatchEvent(new w.Event('toggle'));

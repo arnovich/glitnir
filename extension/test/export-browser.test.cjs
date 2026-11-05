@@ -188,7 +188,7 @@ test('offline export switches views and follows source and sibling fragments in 
   if (cleanupError) throw cleanupError;
 });
 
-test('header views stay centred with long filenames and move below identity in narrow panels', {skip: !chrome}, async () => {
+test('header views and Explore controls reflow in narrow panels', {skip: !chrome}, async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'glitnir-header-browser-'));
   const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--remote-debugging-port=0', `--user-data-dir=${path.join(directory, 'profile')}`, 'about:blank'], {
@@ -229,6 +229,21 @@ test('header views stay centred with long filenames and move below identity in n
         assert.ok(box.status.top >= box.views.bottom, `${width}: status stays below primary navigation`);
       }
     }
+    const narrow = await evaluate(`(() => {
+      const mobile = document.getElementById('claim-graph-mobile');
+      mobile.hidden = false;
+      const graph = document.getElementById('graph-view');
+      graph.hidden = false;
+      graph.innerHTML = '<div class="proof-graph-layout"><aside class="proof-graph-detail"><label class="proof-graph-detail-picker">Choose a claim<select><option>Demo.first</option></select></label></aside><div class="proof-graph-stage">Graph</div></div>';
+      const detail = graph.querySelector('.proof-graph-detail').getBoundingClientRect();
+      const stage = graph.querySelector('.proof-graph-stage').getBoundingClientRect();
+      return {
+        mobile: getComputedStyle(mobile).display,
+        rail: getComputedStyle(document.querySelector('.rail')).display,
+        pickerFirst: detail.bottom <= stage.top,
+      };
+    })()`);
+    assert.deepEqual(narrow, {mobile: 'block', rail: 'none', pickerFirst: true});
   } finally {
     await stopBrowser(child, closed, client);
     await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});

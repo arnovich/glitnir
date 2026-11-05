@@ -375,17 +375,20 @@ module the project builds itself, not a dependency). Cards show them as chips.
 selected claim, its recorded dependencies and the claims that use it. Switch
 to **Full graph** to see the notebook overview with the same selection. The
 top **Explore** tab opens the overview or the guided view for a proof atlas.
+In narrow panels, the Notebook body shows the shortcut above its claims.
+In Explore, **Choose a claim** changes the selection and **Show in Notebook**
+returns to its declaration.
 The full graph lays relationships out from foundations at the bottom to results
 at the top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
 reads its notebook in the same panel when that notebook is available. Node
 colours are recorded claim statuses, with out-of-date results shown in amber
-and results not compared with this project's environment muted and labelled
-**Not compared**.
-Claims without a saved result remain visible as unknown, and a missing `uses`
-observation is labelled unknown rather than treated as an empty dependency
-list. Maps start at readable node size; **Fit width** shows the overview and
-**Actual size** restores readable labels. Zoomed maps retain their scroll
+and results not compared with this project's environment labelled
+**Freshness unknown**. The details distinguish **No saved result** from an
+existing saved result whose freshness is unknown. **Dependencies haven’t been
+recorded** means the saved result has no dependency list. **No recorded
+dependencies** means the list is present and empty. Maps start at readable node size; **Fit width** shows the overview and
+**Reset zoom** restores actual size. Zoomed maps retain their scroll
 position through refreshes. The graph can be zoomed and scrolled,
 and the static HTML export includes an inert copy.
 

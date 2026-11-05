@@ -66,6 +66,7 @@
       ? (data.cells || []).filter(cell => cell.kind === 'source' && typeof cell.claim === 'string' && cell.claim).map(cell => cell.claim)
       : rendered.map(entry => entry.name);
     const savedByName = new Map((data.project_claims || []).filter(saved => typeof saved?.name === 'string').map(saved => [saved.name, saved]));
+    const sourceTargets = new Set((data.cells || []).flatMap(cell => [cell.id, cell.claim]));
     const allNames = [...new Set([...sourceNames, ...rendered.map(entry => entry.name), ...savedByName.keys()])];
     const recordedUses = name => project ? savedByName.get(name)?.uses : claimsByName.get(name)?.uses;
     const useId = use => {
@@ -116,7 +117,8 @@
       const stale = saved?.current === false || (!project && entry?.status === 'stale');
       const notCompared = saved?.current === null;
       add({id: localId(name), name, label: entry ? claimLabel(entry) : shortName(name), kind: 'local', path: null,
-        fullLabel: name, tone: notCompared ? 'muted' : stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone, status: status.label + (notCompared ? ' · Not compared' : ''), stale,
+        fullLabel: name, hasSource: sourceTargets.has(name), hasRecord: Boolean(saved) || !project && hasLegacyRecord,
+        freshnessUnknown: notCompared, statusTone: status.tone, tone: notCompared ? 'muted' : stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone, status: status.label + (notCompared ? ' · Not compared' : ''), stale,
         relationsKnown: project ? Array.isArray(saved?.uses) : hasLegacyRecord && Array.isArray(entry?.uses),
         truncated: project ? saved?.uses_truncated === true : entry?.uses_truncated === true, malformed: false});
     }
@@ -231,7 +233,7 @@
         pages: typeof raw.pages === 'string' ? raw.pages : '', statement: typeof raw.statement === 'string' ? raw.statement : '', idea: typeof raw.idea === 'string' ? raw.idea : '',
         paper: typeof outline.paper === 'string' ? outline.paper : '', paperLocal: outline.paper_local === true, lean: Array.isArray(raw.lean) ? raw.lean.slice(0, 32) : [], rawUses: Array.isArray(raw.uses) ? raw.uses.slice(0, MAX_GRAPH_NODES) : [],
         claimRequested: typeof raw.claim === 'string' ? raw.claim : '', tone: notCompared ? 'muted' : stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone,
-        status: status.label + (notCompared ? ' · Not compared' : ''), stale, hasRecord, sourceLine: Number.isSafeInteger(matchedClaim?.start) ? matchedClaim.start : null,
+        status: status.label + (notCompared ? ' · Not compared' : ''), freshnessUnknown: notCompared, statusTone: status.tone, stale, hasRecord, sourceLine: Number.isSafeInteger(matchedClaim?.start) ? matchedClaim.start : null,
         relationsKnown: true, truncated: false, malformed: !Array.isArray(raw.uses), path: null};
       nodes.push(node); byId.set(node.id, node);
     }
@@ -353,23 +355,44 @@
     }).filter(Boolean).join('');
     return `${paperLink ? `<p>${paperLink}</p>` : localPaper}${lean ? `<h4>Lean declarations</h4><ul class="walkthrough-lean">${lean}</ul>` : '<p class="small muted">No Lean declaration is recorded for this statement.</p>'}`;
   }
+  function graphResultLabel(node) {
+    if (node.status === 'Unknown') {
+      return node.kind === 'imported' ? 'Result unavailable' : node.hasRecord ? 'Result status unavailable' : 'No saved result';
+    }
+    return node.freshnessUnknown ? node.status.replace(/ · Not compared$/, '') : node.status;
+  }
+
+  function graphStatusHTML(node, staticPage) {
+    if (staticPage) {
+      return `<p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>`;
+    }
+    const status = graphResultLabel(node);
+    const label = status === 'Kernel checked' ? 'Previously kernel checked' : status;
+    const badge = status === 'Out of date' ? '' : `<p><span class="pill" data-tone="${esc(node.statusTone || node.tone)}">${esc(label)}</span></p>`;
+    if (node.stale || status === 'Out of date') return badge + '<p class="graph-freshness"><span class="pill" data-tone="amber">Saved result is out of date</span></p>';
+    if (node.freshnessUnknown) return badge + '<p class="graph-freshness"><span class="pill" data-tone="muted">Freshness unknown</span></p><p class="small muted">The saved result hasn’t been compared with this project’s environment.</p>';
+    return badge;
+  }
+
   function graphDetailHTML(node, model, staticPage) {
     if (!node) return '<h3>Pick a statement</h3><p class="muted">Use Statement details to read its saved relationships.</p>';
     if (node.kind === 'walkthrough') {
       const action = node.name
-        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
-        : node.claimRequested ? `<p class="small muted">No saved walkthrough result matches ${esc(node.claimRequested)}.</p>` : '<p class="small muted">This paper statement has no mapped walkthrough result.</p>';
+        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="primary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
+        : node.claimRequested ? `<p class="small muted">No saved walkthrough result matches ${esc(node.claimRequested)}.</p>` : '<p class="small muted">No saved Lean result is linked to this statement.</p>';
       const where = [node.statementKind, node.section, node.pages ? `pp. ${node.pages}` : ''].filter(Boolean).join(' · ');
-      return `<h3${staticPage ? '' : ' tabindex="-1"'}>${esc(node.fullLabel)}</h3><p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>
+      return `<h3${staticPage ? '' : ' tabindex="-1"'}>${esc(node.fullLabel)}</h3>${staticPage ? '' : action}${graphStatusHTML(node, staticPage)}
         ${where ? `<p class="small muted">${esc(where)}</p>` : ''}<div class="walkthrough-statement">${inlineHTML(node.statement)}</div><p>${inlineHTML(node.idea)}</p>
-        <dl><dt>Uses</dt><dd>${nodeList(node.uses, model, staticPage)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model, staticPage)}</dd></dl>${walkthroughLinks(node)}${action}`;
+        <dl><dt>Uses</dt><dd>${nodeList(node.uses, model, staticPage)}</dd><dt>Used by</dt><dd>${nodeList(node.usedBy, model, staticPage)}</dd></dl>${walkthroughLinks(node)}${staticPage ? action : ''}`;
     }
     const action = !staticPage && node.kind === 'local'
-      ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
-      : !staticPage && node.path ? `<button type="button" class="primary" data-act="graph-node" data-graph-id="${esc(node.id)}">Open notebook</button>` : '';
+      ? node.hasSource
+        ? `<button type="button" class="primary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
+        : '<p class="small muted">No matching declaration in this file.</p>'
+      : !staticPage && node.path ? `<button type="button" class="primary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Open notebook</button>` : '';
     let uses = nodeList(node.uses, model, staticPage);
     if (!staticPage && !node.uses.length) {
-      if (!node.relationsKnown) uses = 'Dependencies haven’t been recorded';
+      if (!node.relationsKnown) uses = node.kind === 'imported' ? 'Dependencies aren’t available here' : 'Dependencies haven’t been recorded';
       else if (node.truncated || node.malformed || node.unavailable || node.omittedUses) uses = 'No dependencies shown';
       else uses = 'No recorded dependencies';
     }
@@ -377,14 +400,18 @@
       ? model.omittedNodes || model.omittedEdges ? 'None shown' : 'None recorded'
       : nodeList(node.usedBy, model, staticPage);
     const truncated = node.truncated ? '<p class="small warn-text">The saved check recorded only the first uses; more dependencies may exist.</p>' : '';
-    const malformed = node.malformed ? '<p class="small warn-text">Malformed dependency observations were ignored.</p>' : '';
-    const unavailable = node.unavailable ? `<p class="small muted">${node.unavailable} saved use could not be matched to a statement in this notebook.</p>` : '';
-    return `<h3 tabindex="-1">${esc(node.fullLabel || node.name)}</h3><p><span class="pill" data-tone="${esc(node.tone)}">${esc(node.status)}</span>${node.stale && node.status !== 'Out of date' ? ' <span class="pill" data-tone="amber">Out of date</span>' : ''}</p>
-      <dl><dt>Uses</dt><dd>${uses}</dd><dt>Used by</dt><dd>${usedBy}</dd></dl>${truncated}${malformed}${unavailable}${action}`;
+    const malformed = node.malformed ? '<p class="small warn-text">Some dependency records could not be read.</p>' : '';
+    const unavailable = node.unavailable ? `<p class="small muted">${node.unavailable} recorded reference could not be matched in this notebook.</p>` : '';
+    return `<h3 tabindex="-1">${esc(staticPage ? node.fullLabel || node.name : node.label)}</h3>${action}${graphStatusHTML(node, staticPage)}
+      <dl><dt>Uses</dt><dd>${uses}</dd><dt>Used by</dt><dd>${usedBy}</dd></dl>${truncated}${malformed}${unavailable}`;
   }
 
   function proofGraphHTML(data, {staticPage = false, selected = null, zoom = 1, fit = false, focused = false} = {}) {
     const model = graphModel(data, selected, null, focused && !staticPage);
+    if (!staticPage && !model.nodes.length) {
+      const message = model.walkthrough ? 'No statements to graph in this walkthrough.' : 'This notebook has no claims';
+      return `<section class="proof-graph-view" aria-label="Graph"><h2 tabindex="-1">${esc(message)}</h2></section>`;
+    }
     const showFocus = focused && !staticPage && model.byId.has(selected);
     const canvas = showFocus ? focusedGraph(model, selected) : model;
     const layout = graphLayout(canvas, showFocus), boxWidth = 188, boxHeight = 50;
@@ -398,41 +425,57 @@
       const point = layout.positions.get(node.id), chosen = node.id === selected ? ' chosen' : '';
       const fullLabel = node.fullLabel || node.name;
       const accessibleKind = node.kind === 'walkthrough' ? `${node.statementKind}, ` : '';
-      const nodeLabel = `${accessibleKind}${fullLabel}, ${node.status}. Show details`;
+      const status = staticPage ? node.status : graphResultLabel(node);
+      const freshness = node.stale && status !== 'Out of date' ? ' · Out of date' : !staticPage && node.freshnessUnknown ? ' · Freshness unknown' : '';
+      const nodeLabel = `${accessibleKind}${fullLabel}, ${status}${freshness}. Show details`;
       const attrs = staticPage ? '' : ` data-act="graph-select" data-graph-id="${esc(node.id)}" tabindex="0" role="button" aria-pressed="${node.id === selected}" aria-label="${esc(nodeLabel)}"`;
       const graphName = node.kind === 'walkthrough' || node.kind === 'imported' ? node.label : node.name;
-      const meta = node.kind === 'imported' ? 'Imported · ' + node.status : node.kind === 'walkthrough' ? `${node.statementKind} · ${node.status}` : node.status + (node.stale && node.status !== 'Out of date' ? ' · Out of date' : '');
+      const staticMeta = node.kind === 'walkthrough' ? `${node.statementKind} · ${status}` : status + freshness;
+      let meta = status;
+      if (staticPage) meta = node.kind === 'imported' ? 'Imported · ' + status : staticMeta;
+      else if (node.stale) meta = 'Saved result out of date';
+      else if (node.freshnessUnknown) meta = 'Freshness unknown';
+      else if (node.kind === 'imported') meta = 'Imported';
       const kindClass = node.kind === 'walkthrough' ? ` walkthrough-node statement-${node.statementKind}` : '';
       const group = `<g class="proof-node${kindClass}${chosen}" data-graph-name="${esc(graphName)}" data-kind="${node.kind}"${node.statementKind ? ` data-statement-kind="${esc(node.statementKind)}"` : ''} data-tone="${esc(node.tone)}" transform="translate(${point.x},${point.y})"${attrs}>
         <rect x="${-boxWidth / 2}" y="${-boxHeight / 2}" width="${boxWidth}" height="${boxHeight}" rx="8"/><circle class="proof-node-status" cx="${-boxWidth / 2 + 15}" cy="0" r="5"/>
-        <title>${esc(fullLabel)} — ${esc(node.status)}</title><text class="proof-node-label" text-anchor="middle" y="-3">${esc(node.label.length > 27 ? node.label.slice(0, 26) + '…' : node.label)}</text><text class="proof-node-meta" text-anchor="middle" y="15">${esc(meta)}</text></g>`;
+        <title>${esc(fullLabel)} — ${esc(status + freshness)}</title><text class="proof-node-label" text-anchor="middle" y="-3">${esc(node.label.length > 27 ? node.label.slice(0, 26) + '…' : node.label)}</text><text class="proof-node-meta" text-anchor="middle" y="15">${esc(meta)}</text></g>`;
       return staticPage && node.kind === 'walkthrough' && node.name && node.hasRecord ? `<a href="#cell-${esc(node.name)}" aria-label="${esc(nodeLabel)}">${group}</a>` : group;
     }).join('');
-    const unknown = canvas.nodes.filter(node => !node.relationsKnown).map(node => node.label);
+    const unknown = canvas.nodes.filter(node => !node.relationsKnown && (staticPage || node.kind !== 'imported')).map(node => node.label);
     const malformed = model.nodes.filter(node => node.malformed).map(node => node.label);
     const truncated = model.nodes.filter(node => node.truncated).map(node => node.fullLabel || node.name);
-    const explanation = unknown.length ? `<p class="small muted graph-observation-note">Dependency observations are unknown for ${esc(unknown.join(', '))}.</p>` : '';
+    const explanation = unknown.length ? `<p class="small muted graph-observation-note">Dependency records are unavailable for ${esc(unknown.join(', '))}.</p>` : '';
     const malformedNote = malformed.length ? `<p class="small warn-text">Malformed dependency observations were ignored for ${esc(malformed.join(', '))}.</p>` : '';
     const truncatedNote = truncated.length ? `<p class="small warn-text">The saved check recorded only the first uses for ${esc(truncated.join(', '))}; more dependencies may exist.</p>` : '';
-    const cyclicNote = model.cyclic ? '<p class="small warn-text">A dependency cycle was recorded. All saved relationships are shown without transitive reduction.</p>' : '';
+    const cyclicNote = model.cyclic ? '<p class="small warn-text">A dependency cycle was recorded. The full graph shows the available links in the cycle.</p>' : '';
     const bounded = model.omittedNodes || model.omittedEdges ? `<p class="small warn-text">Graph limit reached: ${model.omittedNodes ? `${model.omittedNodes} additional node${model.omittedNodes === 1 ? '' : 's'}` : ''}${model.omittedNodes && model.omittedEdges ? ' and ' : ''}${model.omittedEdges ? `${model.omittedEdges} additional relationship${model.omittedEdges === 1 ? '' : 's'}` : ''} omitted.</p>` : '';
     const outlineProblems = model.walkthrough && model.problems.length ? `<p class="small warn-text">${esc(model.problems.join(' '))}</p>` : '';
     const compatibility = model.walkthrough && !model.compatibility.supported ? `<p class="banner quiet walkthrough-compatibility" role="status">${esc(model.compatibility.message)}</p>` : '';
     const statementKinds = model.walkthrough ? [...new Set(model.nodes.map(node => node.statementKind))] : [];
     const legend = statementKinds.length ? `<div class="walkthrough-legend" aria-label="Statement kinds">${statementKinds.map(kind => `<span><i class="statement-swatch statement-${kind}" aria-hidden="true"></i>${esc(kind)}</span>`).join('')}</div>` : '';
-    const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" role="group" aria-label="Graph zoom"><span class="small muted">Zoom</span><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-fit">Fit width</button><button type="button" class="secondary" data-act="graph-reset">Actual size</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button></div>`;
-    const detailOptions = model.nodes.map(node => `<option value="${esc(node.id)}"${node.id === selected ? ' selected' : ''}>${node.kind === 'walkthrough' ? `${esc(node.statementKind)} — ` : ''}${esc(node.fullLabel || node.name)} — ${esc(node.status)}</option>`).join('');
+    const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" role="group" aria-label="Graph zoom"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button><button type="button" class="secondary" data-act="graph-fit" aria-pressed="${fit}">Fit width</button><button type="button" class="secondary" data-act="graph-reset">Reset zoom</button></div>`;
+    const detailOptions = model.nodes.map(node => `<option value="${esc(node.id)}"${node.id === selected ? ' selected' : ''}>${esc(node.fullLabel || node.name)}</option>`).join('');
     const picker = '<se' + `lect data-act="graph-detail-picker">${detailOptions}</se` + 'lect>';
-    const detail = staticPage ? '' : `<aside class="proof-graph-detail" id="graph-detail" aria-live="polite"><label class="proof-graph-detail-picker">Statement details${picker}</label>${graphDetailHTML(model.byId.get(selected), model, false)}</aside>`;
+    const pickerLabel = model.walkthrough ? 'Choose a statement' : 'Choose a claim';
+    const detail = staticPage ? '' : `<aside class="proof-graph-detail" id="graph-detail" aria-label="Selected details" aria-live="polite"><label class="proof-graph-detail-picker">${pickerLabel}${picker}</label>${graphDetailHTML(model.byId.get(selected), model, false)}</aside>`;
     const staticDetails = staticPage && model.walkthrough ? `<div class="walkthrough-static-details">${model.nodes.map(node => `<section id="walkthrough-detail-${esc(node.outlineId)}">${graphDetailHTML(node, model, true)}</section>`).join('')}</div>` : '';
     const svgRole = staticPage && !model.walkthrough ? ' role="img"' : ' role="group"';
     const svgWidth = !staticPage && fit && !showFocus ? '100%' : Math.round(layout.width * (!staticPage && fit ? 1 : zoom));
-    const scope = staticPage || !model.nodes.length ? '' : `<div class="proof-graph-scope" role="group" aria-label="Graph scope"><button type="button" class="secondary" data-act="graph-focus" aria-pressed="${showFocus}">Focused</button><button type="button" class="secondary" data-act="graph-full" aria-pressed="${!showFocus}">Full graph</button></div>`;
+    const scopeLabel = model.walkthrough ? 'Selected statement' : 'Selected claim';
+    const scope = staticPage ? '' : `<div class="proof-graph-scope" role="group" aria-label="Graph scope"><button type="button" class="secondary" data-act="graph-focus" aria-pressed="${showFocus}">${scopeLabel}</button><button type="button" class="secondary" data-act="graph-full" aria-pressed="${!showFocus}">Full graph</button></div>`;
     const heading = model.walkthrough ? model.title : staticPage ? 'Recorded proof graph' : 'Claim graph';
-    const description = showFocus ? 'Shows what the selected statement uses and what uses it.' : model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows the displayed walkthrough result status.` : 'Arrows run from supporting statements to results above them. Implied arrows are hidden to simplify the map; details list every recorded use. This view does not check or update results.';
-    const label = model.walkthrough ? `${model.title} statement map` : 'Recorded proof graph';
-    return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2><p>${description}</p>${legend}</div>${scope}</header>
-      ${compatibility}<div class="proof-graph-layout">${detail}${staticPage ? '' : '<div class="proof-graph-stage">'}${toolbar}<div class="proof-graph-canvas"${staticPage ? '' : ` data-scope="${showFocus ? 'focused' : 'full'}" data-fit="${fit}"`}><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${staticPage ? '' : '</div>'}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}${staticPage ? workbench.atlasStaticHTML?.(data) || '' : ''}</section>`;
+    const arrowGuide = model.walkthrough
+      ? 'Arrows show relationships mapped from the paper. Badges show saved Lean results.'
+      : 'Arrows point from a supporting statement to the statement that uses it.';
+    const description = showFocus ? `Shows the selection and its direct connections. ${arrowGuide}` : arrowGuide;
+    const overview = model.walkthrough && model.overview ? `<p>${inlineHTML(model.overview)}</p>` : '';
+    const label = model.walkthrough ? `${model.title} statement map` : heading;
+    const incomplete = explanation || malformedNote || truncatedNote || bounded || outlineProblems;
+    const diagnostics = explanation + malformedNote + truncatedNote + cyclicNote + bounded + outlineProblems;
+    const notes = !staticPage && diagnostics ? `<details class="proof-graph-notes" data-fold-key="graph-notes"><summary>${incomplete ? 'Some links are unavailable' : 'About this graph'}</summary>${diagnostics}</details>` : '';
+    return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2>${overview}<p>${description}</p>${legend}</div>${scope}</header>
+      ${compatibility}${notes}<div class="proof-graph-layout">${detail}${staticPage ? '' : '<div class="proof-graph-stage">'}${toolbar}<div class="proof-graph-canvas"${staticPage ? '' : ` data-scope="${showFocus ? 'focused' : 'full'}" data-fit="${fit}"`}><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${staticPage ? '' : '</div>'}</div>${staticPage ? diagnostics : ''}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}${staticPage ? workbench.atlasStaticHTML?.(data) || '' : ''}</section>`;
   }
 
   function renderProofGraph({openClaimGraph = false, openExplore = false} = {}) {
@@ -445,12 +488,12 @@
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }
     const readingSidebarScroll = root.querySelector('.atlas-sidebar')?.scrollTop || 0;
-    const graphContent = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') + '<p class="atlas-view-help small muted">Statement graph shows notebook statements and their recorded links. Select a statement to inspect it, or choose Read or Route map for the guided argument.</p>' : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true, focused: UI.graphFocused});
+    const graphContent = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true, focused: UI.graphFocused});
     root.innerHTML = UI.data.walkthrough?.atlas ? workbench.atlasShell(UI.data, graphContent) : graphContent;
     const readingSidebar = root.querySelector('.atlas-sidebar');
     if (readingSidebar) readingSidebar.scrollTop = readingSidebarScroll;
   }
   const graphNode = id => graphModel(UI.data, UI.graphSelected, null, UI.graphFocused).byId.get(id);
 
-  Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, proofGraphHTML, renderProofGraph, walkthroughGraphModel, walkthroughId});
+  Object.assign(workbench, {claimGraphModel, graphDetailHTML, graphNode, graphStatusHTML, proofGraphHTML, renderProofGraph, walkthroughGraphModel, walkthroughId});
 })();

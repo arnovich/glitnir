@@ -83,6 +83,7 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .label{margin:0 0 8px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .contents-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 6px;margin-bottom:8px}
 .contents-heading .label{margin:0}
+#claim-graph-mobile{display:none}
 #claim-graph-shortcut{display:inline-flex;align-items:center;white-space:nowrap}
 #claim-graph-shortcut>[data-act=open-claim-graph]{padding:3px 0;color:var(--blue);font-size:11px}
 .rail ol{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:1px}
@@ -103,7 +104,7 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .proof-graph-view>header h2{font-size:18px;margin:0 0 4px}
 .proof-graph-view>header p{font-size:12px;color:var(--muted);margin:0;max-width:720px}
 .proof-graph-scope{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:4px}
-.proof-graph-scope button[aria-pressed=true]{background:var(--blue-soft);color:var(--blue);border-color:var(--blue)}
+.proof-graph-scope button[aria-pressed=true],.proof-graph-toolbar button[aria-pressed=true]{background:var(--blue-soft);color:var(--blue);border-color:var(--blue)}
 .proof-graph-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px;align-items:start}
 .proof-graph-canvas{border:1px solid var(--border);border-radius:8px;background:var(--paper);overflow:auto;min-height:220px}
 .proof-graph-layout>.proof-graph-canvas{grid-column:1;grid-row:1;max-height:72vh}
@@ -138,7 +139,12 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .proof-graph-toolbar{display:flex;gap:4px;white-space:nowrap}
 .proof-graph-toolbar button{font-size:11px;padding:3px 8px}
 .proof-graph-detail{border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--chrome);font-size:12px;overflow-wrap:anywhere}
-.proof-graph-detail h3{font:600 15px var(--mono);margin:0 0 10px}
+.proof-graph-detail h3{font:600 15px var(--mono);margin:0 0 8px}
+.proof-graph-detail .graph-open{margin:0 0 10px}
+.proof-graph-detail .graph-freshness{margin:6px 0 0}
+.proof-graph-notes{margin:0 0 12px;color:var(--muted);font-size:12px}
+.proof-graph-notes summary{cursor:pointer}
+.proof-graph-notes p{margin:5px 0 0}
 .proof-graph-detail dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 9px;margin:12px 0}
 .proof-graph-detail dt{font-weight:600}.proof-graph-detail dd{margin:0;color:var(--muted)}
 .proof-graph-detail button{margin-top:8px}
@@ -151,7 +157,7 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .walkthrough-static-details h3{margin:0 0 8px}.walkthrough-static-details h4{margin:12px 0 4px}
 .walkthrough-claim-link{display:inline-block;padding:6px 10px;border:1px solid var(--blue);border-radius:5px;text-decoration:none}
 .proof-graph-detail-picker{display:grid;gap:5px;margin-bottom:14px;color:var(--muted);font-weight:600}
-.proof-graph-detail-picker select{min-height:30px;max-width:100%;font-weight:400}
+.proof-graph-detail-picker select{min-height:30px;width:100%;min-width:0;font-weight:400}
 .proof-graph-export{margin:0 0 28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
 .proof-graph-export .proof-graph-layout{display:block}
 .proof-graph-export .proof-graph-canvas{min-height:0}
@@ -325,6 +331,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .workspace{grid-template-columns:minmax(0,1fr) 310px}
   .workspace.no-panel{grid-template-columns:minmax(0,1fr) 0}
   .rail{display:none}
+  #claim-graph-mobile{display:block;margin-bottom:10px}
   .chips-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
   .chips-row button{border:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:400;padding:3px 8px}
 }
@@ -341,8 +348,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .proof-graph-view>header{flex-direction:column;gap:8px}
   .proof-graph-toolbar{margin-top:10px}
   .proof-graph-layout{grid-template-columns:1fr}
-  .proof-graph-layout>.proof-graph-canvas{grid-column:1;grid-row:1}
-  .proof-graph-layout>.proof-graph-detail{grid-column:1;grid-row:2;position:static;max-height:none}
+  .proof-graph-layout>:is(.proof-graph-stage,.proof-graph-canvas){grid-column:1;grid-row:2}
+  .proof-graph-layout>.proof-graph-detail{grid-column:1;grid-row:1;position:static;max-height:none}
 }
 
 /* app additions */
@@ -596,7 +603,6 @@ body[data-view="source"] .doc-inner{max-width:none}
 /* Zoom controls belong to the diagram, outside its scrolling canvas. */
 .proof-graph-stage{grid-column:1;grid-row:1;min-width:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--paper)}
 .proof-graph-stage>.proof-graph-toolbar{justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:8px;margin:0;border-bottom:1px solid var(--border);background:var(--chrome)}
-.proof-graph-stage>.proof-graph-toolbar>span{margin-right:auto}
 .proof-graph-stage>.proof-graph-canvas{border:0;border-radius:0;max-height:72vh}
 
 /* Primary views lead the header. Saved-update controls share the review row. */

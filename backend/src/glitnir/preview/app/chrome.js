@@ -48,9 +48,10 @@
     + helpHTML('claim-graph', 'About the claim graph', 'Open the graph in Explore. Select a statement to see its dependencies.');
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
-    const shortcut = $('claim-graph-shortcut').querySelector('button');
-    shortcut.disabled = heldRendering();
-    shortcut.title = shortcut.disabled ? 'Available when the notebook reconnects.' : '';
+    for (const shortcut of document.querySelectorAll('[data-act="open-claim-graph"]')) {
+      shortcut.disabled = heldRendering();
+      shortcut.title = shortcut.disabled ? 'Available when the notebook reconnects.' : '';
+    }
     $('conn').dataset.state = UI.connected ? 'up' : 'down';
     $('conn-text').textContent = UI.connected ? 'Connected' : 'Reconnecting…';
     $('connection-detail').textContent = UI.connected ? 'Connected to the local notebook server' : 'Server not reachable · retrying';
@@ -405,8 +406,9 @@
     document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
     $('panel-show').hidden = !notebookView || UI.panel;
-    const shortcut = $('claim-graph-shortcut');
-    shortcut.hidden = !(cs.length || d.cells.some(cell => cell.claim));
+    const graphAvailable = Boolean(cs.length || d.cells.some(cell => cell.claim));
+    $('claim-graph-shortcut').hidden = !graphAvailable;
+    $('claim-graph-mobile').hidden = !notebookView || !graphAvailable;
     renderConnection();
   }
 
@@ -414,7 +416,7 @@
   // identical declarations in different scopes. No source is interpreted here.
   function readingDetails() {
     const counts = new Map();
-    return [$('doc'), $('insp'), $('diagram-dialog')].filter(Boolean).flatMap(root => [...root.querySelectorAll('details[data-fold-key]')].map(fold => {
+    return [$('doc'), $('insp'), $('diagram-dialog'), $('graph-view')].filter(Boolean).flatMap(root => [...root.querySelectorAll('details[data-fold-key]')].map(fold => {
       const identity = JSON.stringify([root.id, fold.dataset.foldKey]);
       const occurrence = counts.get(identity) || 0;
       counts.set(identity, occurrence + 1);
@@ -447,6 +449,7 @@
     const openHelpKey = document.querySelector('.help-tooltip:not([hidden])')?.id;
     const outlineDocumentFocus = UI.mode === 'doc' && /^notebook-(entry|heading)-/.test(document.activeElement?.id || '') ? document.activeElement.id : null;
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
+    const graphNotesFocus = document.activeElement?.matches('.proof-graph-notes > summary');
     const foldFocus = saveReadingFolds();
     const linkSelector = '.source-link,.source-edit,.source-inspect,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
     const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
@@ -479,6 +482,9 @@
     renderChrome();
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
+    if (graphNotesFocus && UI.mode === 'graph' && !$('graph-view').querySelector('.proof-graph-notes')) {
+      ($('graph-view').querySelector('[data-act="graph-detail-picker"]') || document.querySelector('[data-mode="graph"]')).focus({preventScroll: true});
+    }
     if (UI.mode === 'doc' && UI.documentLine?.sha === UI.data.sha256) {
       const target = documentTarget(UI.documentLine.line);
       if (target) { target.classList.add('document-target'); target.tabIndex = -1; if (documentFocus) target.focus({preventScroll: true}); }
