@@ -24,7 +24,7 @@
     const reason = document.body.classList.contains('unsaved-lean') ? 'Save or revert edits before viewing proof steps.'
       : UI.checkRequested || UI.data.preview?.check?.status === 'running' || UI.inspecting || UI.data.preview?.inspection?.status === 'running' ? 'Wait for the current check to finish.'
       : walkthroughUnchecked() ? walkthroughMessage() : leanOff() ? UI.data.preview?.lean?.message || 'Proof steps are unavailable.' : '';
-    return `<button type="button" class="secondary" data-act="inspect-proof" data-proof-claim="${esc(c.name)}" data-index="${scope.dataset.index}" data-start="${scope.dataset.start}" data-end="${scope.dataset.end}" data-sha="${esc(UI.data.sha256)}"${reason ? ` disabled title="${esc(reason)}" aria-description="${esc(reason)}"` : ''}>Expand proof steps</button>`;
+    return `<button type="button" class="secondary" data-act="inspect-proof" data-proof-claim="${esc(c.name)}" data-index="${scope.dataset.index}" data-start="${scope.dataset.start}" data-end="${scope.dataset.end}" data-sha="${esc(UI.data.sha256)}"${reason ? ` disabled title="${esc(reason)}" aria-description="${esc(reason)}"` : ''}>Open full view</button>`;
   }
   function projectInspectorHTML(c) {
     const saved = c.project;
@@ -52,7 +52,8 @@
   // saved file, so one observation serves every claim. It is historical: it
   // never changes a status, and a source or dependency change makes it stale.
   let goalTimer, goalEpoch = 0;
-  const MAX_GOAL_STEPS = 200;
+  let goalPosition;
+  let inspectorHTML;
   const traceRunning = trace => trace?.status === 'running';
   const traceFinished = trace => ['ready', 'partial'].includes(trace?.status);
   // The dependency epoch in which this page first saw each observation. An
@@ -76,7 +77,8 @@
     const sha256 = UI.data.sha256, epoch = ++goalEpoch, environment = environmentEpoch();
     clearTimeout(goalTimer);
     const started = Date.now();
-    UI.goals = {starting: true, started, refreshing: refresh, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
+    const previous = currentGoalTrace();
+    UI.goals = {previous, starting: true, started, refreshing: refresh, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
     render();
     try {
       // Reuse a finished observation of this saved text, or join a running
@@ -94,13 +96,13 @@
       }
       if (epoch !== goalEpoch) return;
       const cancel = UI.goals.cancel;
-      UI.goals = {started, refreshing: refresh, environment, trace, owned};
+      UI.goals = {previous: traceFinished(trace) ? null : previous, started, refreshing: refresh, environment, trace, owned};
       render();
       if (cancel && traceRunning(trace)) { cancelGoals(); if (!owned) return; }
       if (traceRunning(trace)) goalTimer = setTimeout(() => pollGoals(trace.id, epoch), 750);
     } catch (error) {
       if (epoch !== goalEpoch) return;
-      UI.goals = {environment, trace: {status: 'unavailable', source_sha256: sha256, message: error.message || String(error), nodes: []}};
+      UI.goals = {previous, environment, trace: {status: 'unavailable', source_sha256: sha256, message: error.message || String(error), nodes: []}};
       render();
     }
   }
@@ -109,7 +111,7 @@
       const trace = await readTrace();
       if (epoch !== goalEpoch) return;
       if (trace.id !== id) throw new Error('Another proof observation replaced this one. Inspect the goals again.');
-      UI.goals = {...UI.goals, trace};
+      UI.goals = {...UI.goals, previous: traceFinished(trace) ? null : UI.goals.previous, trace};
       render();
       if (traceRunning(trace)) goalTimer = setTimeout(() => pollGoals(id, epoch), 750);
     } catch (error) {
@@ -135,43 +137,61 @@
     // Cancelling only stops work, so unsaved edits never hold it back.
     await fetch('/api/proof/cancel', {method: 'POST', headers: {...API, 'Content-Type': 'application/json'}, body: '{}'}).catch(() => null);
   }
-  const goalBlocksHTML = goals => goals.length
+  const goalBlocksHTML = (goals, empty) => goals.length
     ? goals.map(goal => {
       const at = goal.indexOf('\n⊢');
       if (at < 0) return `<pre class="goal goal-block goal-target">${esc(goal)}</pre>`;
       return `<div class="goal-block"><pre class="goal goal-target">${esc(goal.slice(at + 1))}</pre><details class="goal-context" data-fold-key="goal-context:${esc(goal)}"><summary>Context</summary><pre class="goal">${esc(goal.slice(0, at))}</pre></details></div>`;
     }).join('')
-    : '<p class="goal-complete" data-tone="green">No goals remain in this scope.</p>';
+    : empty;
   function proofProgressHTML(run) {
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="${run.expanded ? 'proof-cancel' : 'goal-cancel'}">Cancel</button></section>`;
   }
   function goalSectionHTML(c) {
-    const head = `<h5>Proof goals ${helpHTML('proof-goals', 'About proof goals', 'Shows the goals Lean reports at each tactic step of this claim’s saved proof. A historical observation: it never changes a status.')}</h5>`;
+    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'Shows the goals Lean reports at each tactic step of this claim’s saved proof. Use Check saved file to update the check status.')}</h5>`;
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
     if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p>${expandProofHTML(c)}</div>`;
     const goals = UI.goals, trace = goals?.trace;
     const dirty = document.body.classList.contains('unsaved-lean');
     const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${label}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
-    let body = '', action = button('Inspect proof');
+    let message = '', display = null;
+    let action = button('Inspect proof');
     if (traceRunning(trace)) {
-      body = proofProgressHTML(goals);
+      message = '<div class="goal-run-progress"></div>';
       action = '';
     } else if (trace) {
-      if (trace.source_sha256 !== UI.data.sha256) { body = note('amber', 'The saved source changed since these goals were recorded.'); action = button('Refresh proof goals'); }
-      else if (goals.environment !== environmentEpoch()) { body = note('amber', 'The source or its dependencies changed since these goals were recorded.'); action = button('Refresh proof goals'); }
-      else if (trace.status === 'detached') body = note('muted', 'Stopped following the proof observation Proof steps started; it keeps running there.');
-      else if (trace.status === 'cancelled') body = note('muted', 'The proof observation was cancelled. No goals were recorded.');
-      else if (!['ready', 'partial'].includes(trace.status)) body = note('red', `No proof goals: ${esc(trace.message || trace.status)}`);
-      else { body = goalStepsHTML(c, trace); action = button('Refresh proof goals'); }
+      if (trace.source_sha256 !== UI.data.sha256) { message = note('amber', 'The saved source changed since these goals were recorded.'); action = button('Refresh proof goals'); }
+      else if (goals.environment !== environmentEpoch()) { message = note('amber', 'The source or its dependencies changed since these goals were recorded.'); action = button('Refresh proof goals'); }
+      else if (trace.status === 'detached') message = note('muted', 'Stopped following the proof observation Proof steps started; it keeps running there.');
+      else if (trace.status === 'cancelled') message = note('muted', 'Recording cancelled. No goals were recorded in this run.');
+      else if (!traceFinished(trace)) message = note('red', `No proof goals: ${esc(trace.message || trace.status)}`);
+      else { display = trace; action = button('Refresh proof goals'); }
     }
-    return `<div class="insp-section goal-section">${head}<div class="goal-actions">${action}${expandProofHTML(c)}</div>${traceRunning(trace) ? body : body ? `<div class="goal-results" data-goal-key="${esc(JSON.stringify([c.name, UI.data.sha256, trace?.id || trace?.status, goals?.environment]))}" tabindex="0" role="region" aria-label="Recorded proof goals">${body}</div>` : ''}</div>`;
+    const previous = !display && previousGoalTrace();
+    if (previous) {
+      display = previous;
+      if (!traceRunning(trace)) action = button('Refresh proof goals');
+    }
+    const key = display ? goalKey(c.name, display) : '';
+    const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${goalStepsHTML(c, display, key)}</div>` : '';
+    return `<div class="insp-section goal-section">${head}<p class="small muted goal-intro">See what Lean still needs to prove after each step.</p>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}<div class="goal-actions">${action}${expandProofHTML(c)}</div></div>`;
   }
 
-  function goalStepsHTML(c, trace) {
+  function goalKey(name, trace) {
+    return JSON.stringify([name, UI.data.sha256, trace?.id, environmentEpoch()]);
+  }
+  function selectGoalStep(control) {
+    const key = control.closest('.goal-results')?.dataset.goalKey;
+    const picker = control.closest('.goal-navigation')?.querySelector('select');
+    const index = Number(control.value);
+    if (!key || !picker || !Number.isInteger(index) || index < 0 || index >= picker.options.length) return;
+    goalPosition = {key, index};
+    render();
+  }
+  function goalStepsHTML(c, trace, key) {
     const {start_line: start, end_line: end} = c.project;
-    const byId = new Map(trace.nodes.map(n => [n.id, n]));
     const nodes = trace.nodes.filter(n => n.range.start.line >= start && n.range.start.line <= end);
     const messages = [...(trace.errors || []), ...(trace.warnings || [])];
     const messagesHTML = messages.length ? `<details class="goal-messages" data-fold-key="goal-messages"><summary class="small muted">Lean messages for the file · ${messages.length}</summary><pre>${esc(messages.join('\n\n'))}</pre></details>` : '';
@@ -179,17 +199,36 @@
     if (!nodes.length) {
       return `<div class="note-line goal-note" data-tone="muted">${icon('branch')}<span>No tactic steps were recorded for this claim. It may be a term proof${trace.status === 'partial' ? ', or Lean stopped before it' : ''}.</span></div>${messagesHTML}${provenance}`;
     }
-    const depth = n => { let d = 0; for (let p = n.parent; p !== null && p !== undefined && d < 6; p = byId.get(p)?.parent) d++; return d; };
-    const shown = nodes.slice(0, MAX_GOAL_STEPS);
-    const steps = shown.map((n, i) => {
-      const tactic = n.text.trim().split(/\s+/, 1)[0] || 'Tactic';
-      return `<li class="goal-step" data-depth="${depth(n)}"><details data-fold-key="goal-step:${esc(c.name)}:${esc(trace.id)}:${n.id}"><summary class="goal-tactic"><span class="goal-number">Step ${i + 1}</span><code title="${esc(n.text)}">${esc(tactic)}</code><span class="small muted">L${esc(n.range.start.line)}</span></summary><pre class="goal-full-tactic" data-tactic-key="${esc(JSON.stringify([c.name, UI.data.sha256, trace.id, n.id]))}" tabindex="0" role="region" aria-label="Full tactic for step ${i + 1}"><code>${esc(n.text)}</code></pre><div class="goal-after-label small muted">Result</div>${goalBlocksHTML(n.after)}</details></li>`;
+    const index = goalPosition?.key === key ? Math.min(goalPosition.index, nodes.length) : 0;
+    const selected = nodes[index - 1];
+    const option = (value, label) => `<option value="${value}"${index === value ? ' selected' : ''}>${esc(label)}</option>`;
+    const options = option(0, 'Starting goals') + nodes.map((node, i) => {
+      const tactic = node.text.trim().split(/\s+/, 1)[0] || 'Tactic';
+      return option(i + 1, `Step ${i + 1} of ${nodes.length} · ${tactic.slice(0, 40)}`);
     }).join('');
+    const navButton = (act, label, value, disabled) => `<button type="button" class="secondary" data-act="${act}" value="${value}" aria-controls="goal-result"${disabled ? ' disabled' : ''}>${label}</button>`;
+    const pickerTag = 'select';
+    const nav = `<div class="goal-navigation" role="group" aria-label="Proof step navigation">${navButton('goal-prev', 'Previous', index - 1, index === 0)}<${pickerTag} data-act="goal-picker" aria-label="Select a proof step" aria-controls="goal-result">${options}</${pickerTag}>${navButton('goal-next', 'Next', index + 1, index === nodes.length)}</div>`;
+    const tactic = selected ? `<details class="goal-tactic-details" data-fold-key="goal-step:${esc(key)}:${esc(selected.id)}"><summary>Tactic code</summary><pre class="goal-full-tactic" data-tactic-key="${esc(JSON.stringify([key, selected.id]))}" tabindex="0" role="region" aria-label="Full tactic for step ${index}"><code>${esc(selected.text)}</code></pre></details>` : '';
+    const empty = !selected ? '<p class="small muted">No starting goals were recorded.</p>'
+      : trace.status === 'partial' ? '<p class="small muted">Lean recorded no remaining goals for this step.</p>'
+      : '<p class="goal-complete" data-tone="green">No goals remain in this step’s scope.</p>';
+    const result = `<section id="goal-result" class="goal-result${selected ? '' : ' goal-initial'}" aria-labelledby="goal-result-title"><h6 id="goal-result-title" class="goal-result-title">${selected ? `Goals after step ${index}` : 'Starting goals'}</h6>${goalBlocksHTML(selected ? selected.after : nodes[0].before, empty)}${tactic}</section>`;
     return (trace.status === 'partial' ? `<div class="note-line goal-note" data-tone="amber">${icon('branch')}<span>Lean reported errors in the file; some steps may be missing.</span></div>` : '')
-      + `<div class="goal-initial"><div class="field-label">Initial goal</div>${goalBlocksHTML(nodes[0].before)}</div>`
-      + `<ol class="goal-steps" aria-label="Goals after each tactic step">${steps}</ol>`
-      + (nodes.length > shown.length ? `<p class="small muted">Showing the first ${shown.length} of ${nodes.length} steps. Proof steps shows them all.</p>` : '')
+      + nav + result
       + messagesHTML + provenance;
+  }
+
+  function updateInspector(html) {
+    const root = $('insp');
+    // Keep the native step picker open during passive polls. Progress has
+    // its own slot so elapsed time and stage changes can update separately.
+    if (inspectorHTML !== html) {
+      root.innerHTML = html;
+      inspectorHTML = html;
+    }
+    const progress = root.querySelector('.goal-run-progress');
+    if (progress) progress.innerHTML = proofProgressHTML(UI.goals);
   }
 
   function renderInspector() {
@@ -198,40 +237,53 @@
     if (!c && scope && projectMode()) {
       $('insp-title').textContent = UI.selected;
       $('insp-sub').textContent = 'No saved check result';
-      $('insp').innerHTML = goalSectionHTML({name: UI.selected, project: {start_line: Number(scope.dataset.start), end_line: Number(scope.dataset.end)}});
+      updateInspector(goalSectionHTML({name: UI.selected, project: {start_line: Number(scope.dataset.start), end_line: Number(scope.dataset.end)}}));
       return;
     }
     if (!c) {
       const project = projectMode();
       $('insp-title').textContent = project && UI.data.cells.length ? 'No saved results' : 'No claims';
       $('insp-sub').textContent = '';
-      $('insp').innerHTML = project
+      updateInspector(project
         ? `<p class="small muted">No claim of this file has a saved result.${leanOff() ? '' : ' Check the saved file to see each claim\'s status here.'}</p>`
-        : '<p class="small muted">This notebook has no theorems yet.</p>';
+        : '<p class="small muted">This notebook has no theorems yet.</p>');
       return;
     }
     if (c.project) {
       $('insp-title').textContent = c.label;
       $('insp-sub').textContent = `${c.keyword || 'claim'} · ${statusOf(c).label.toLowerCase()}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}`;
-      $('insp').innerHTML = projectInspectorHTML(c);
+      updateInspector(projectInspectorHTML(c));
       return;
     }
     const st = statusOf(c);
     const r = c.record;
     $('insp-title').textContent = c.name;
     $('insp-sub').textContent = `${c.keyword} · ${st.label.toLowerCase()}`;
-    $('insp').innerHTML = `
+    updateInspector(`
       <div class="focus"><div class="row"><span class="pill" data-tone="${st.tone}">${st.label}</span></div>${c.doc ? `<div class="eq">${inlineHTML(c.doc)}</div>` : ''}
         <dl><dt>context</dt><dd>${c.context.slice(0, 12)}</dd><dt>last check</dt><dd>${r ? `${esc(r.verdict)}${r.context === c.context ? '' : ' · old context'}` : 'none'}</dd><dt>uses</dt><dd>${esc(c.uses.join(', ') || '—')}</dd></dl></div>
       ${c.reason ? `<div class="insp-section"><h5>Why</h5><p class="small">${esc(c.reason)}</p></div>` : ''}
       <div class="insp-section">${expandProofHTML(c)}</div>
       ${refutationHTML(c)}
       ${r && r.axioms.length ? `<div class="insp-section"><h5>Axioms from the last check</h5><div class="axioms">${r.axioms.map(a => `<code>${esc(a)}</code>`).join('')}</div></div>` : ''}
-`;
+`);
   }
 
   function currentGoalTrace() {
-    return UI.goals?.environment === environmentEpoch() && reusable(UI.goals?.trace, UI.data?.sha256) ? UI.goals.trace : null;
+    const trace = UI.goals?.trace;
+    if (traceRunning(trace)) return null;
+    if (UI.goals?.environment === environmentEpoch() && reusable(trace, UI.data?.sha256)) return trace;
+    return previousGoalTrace();
   }
-  Object.assign(workbench, {proofProgressHTML, currentGoalTrace, cancelGoals, inspectGoals, refutationHTML, renderInspector});
+  function previousGoalTrace() {
+    const trace = UI.goals?.previous;
+    return UI.goals?.environment === environmentEpoch() && reusable(trace, UI.data?.sha256) ? trace : null;
+  }
+  function inlineGoalStep(name, trace) {
+    return trace && goalPosition?.key === goalKey(name, trace) ? goalPosition.index - 1 : undefined;
+  }
+  function rememberInlineGoalStep(name, trace, step) {
+    if (trace?.id && currentGoalTrace()?.id === trace.id) goalPosition = {key: goalKey(name, trace), index: step + 1};
+  }
+  Object.assign(workbench, {inlineGoalStep, rememberInlineGoalStep, proofProgressHTML, currentGoalTrace, cancelGoals, inspectGoals, selectGoalStep, refutationHTML, renderInspector});
 })();

@@ -3417,7 +3417,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   try {
     const button = insp.querySelector('.goal-section [data-act="goal"]');
     assert.equal(button.textContent, 'Inspect proof');
-    assert.match(insp.querySelector('.goal-section').textContent, /historical observation: it never changes a status/);
+    assert.match(insp.querySelector('.goal-section').textContent, /Use Check saved file to update the check status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
     button.focus();
     button.click(); await settle(20);
@@ -3428,13 +3428,20 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     insp.querySelector('[data-act="goal"]')?.click();
     trace = goalTrace(snapshot.sha256);
     await settle(820);
-    const steps = [...insp.querySelectorAll('.goal-step')];
-    assert.deepEqual(steps.map(step => step.querySelector('.goal-full-tactic code').textContent), ['unfold k', 'norm_num', 'positivity']);
-    assert.deepEqual(steps.map(step => step.dataset.depth), ['0', '0', '1'], 'nested tactics are indented under their parent');
+    const picker = () => insp.querySelector('[data-act="goal-picker"]');
+    assert.deepEqual([...picker().options].map(option => option.textContent),
+      ['Starting goals', 'Step 1 of 3 · unfold', 'Step 2 of 3 · norm_num', 'Step 3 of 3 · positivity']);
     assert.equal(insp.querySelector('.goal-initial pre.goal').textContent, '⊢ 0 < k');
-    assert.equal(steps[0].querySelector('pre.goal-block').textContent, '⊢ 0 < 1 / 2');
-    assert.equal(steps[1].querySelector('.goal-complete').dataset.tone, 'green');
-    assert.match(steps[1].textContent, /No goals remain/);
+    assert.equal(insp.querySelector('[data-act="goal-prev"]').disabled, true);
+    insp.querySelector('[data-act="goal-next"]').click();
+    assert.equal(insp.querySelector('.goal-result-title').textContent, 'Goals after step 1');
+    assert.equal(insp.querySelector('pre.goal-block').textContent, '⊢ 0 < 1 / 2');
+    assert.equal(insp.querySelector('.goal-full-tactic code').textContent, 'unfold k');
+    picker().value = '2';
+    picker().dispatchEvent(new window.Event('change', {bubbles: true}));
+    assert.equal(insp.querySelector('.goal-result-title').textContent, 'Goals after step 2');
+    assert.equal(insp.querySelector('.goal-complete').dataset.tone, 'green');
+    assert.equal(insp.querySelector('.goal-full-tactic code').textContent, 'norm_num');
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
     assert.match(insp.querySelector('.goal-section').textContent, /Recorded from source aaaaaaaa with leanprover\/lean4:v4\.35\.0.*never changes a status/s);
     assert.equal(insp.querySelector('.goal-section [data-act="goal"]').textContent, 'Refresh proof goals');
@@ -3443,16 +3450,60 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     // The same observation serves the next claim: here a term proof records no steps.
     d.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
     assert.equal(d.getElementById('insp-title').textContent, 'floor');
-    assert.equal(insp.querySelectorAll('.goal-step').length, 0);
+    assert.equal(insp.querySelectorAll('.goal-navigation').length, 0);
     assert.match(insp.querySelector('.goal-section').textContent, /No tactic steps were recorded for this claim\. It may be a term proof/);
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1);
     // A saved edit or a dependency change makes the goals stale.
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'environmentChanged'}}));
     assert.match(insp.querySelector('.goal-section').textContent, /dependencies changed since these goals were recorded/);
-    assert.equal(insp.querySelectorAll('.goal-step').length, 0);
+    assert.equal(insp.querySelectorAll('.goal-navigation').length, 0);
     snapshot.sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     assert.match(insp.querySelector('.goal-section').textContent, /saved source changed since these goals were recorded/);
+  } finally { window.close(); }
+});
+
+test('refreshing Inspector goals keeps the previous step visible until new goals arrive', async () => {
+  const snapshot = projectNotebook();
+  let trace = goalTrace(snapshot.sha256);
+  const requests = [];
+  const window = await renderSnapshot(snapshot, {onProof: message => {
+    requests.push(message.path);
+    if (message.path === '/api/proof/start') trace = goalTrace(snapshot.sha256, {id: 'refresh', status: 'running', nodes: []});
+    if (message.path === '/api/proof/cancel') trace = {...trace, status: 'cancelled'};
+    return trace;
+  }});
+  const insp = window.document.getElementById('insp');
+  const click = act => insp.querySelector(`[data-act="${act}"]`).click();
+  const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const heading = () => insp.querySelector('.goal-result-title')?.textContent;
+  try {
+    click('goal'); await settle(20);
+    click('goal-next');
+    click('goal'); await settle(20);
+    assert.match(insp.querySelector('.goal-previous-recording').textContent, /Previous recording/);
+    assert.equal(heading(), 'Goals after step 1');
+    const picker = insp.querySelector('[data-act="goal-picker"]');
+    await window.glitnirPoll();
+    assert.equal(insp.querySelector('[data-act="goal-picker"]'), picker);
+    click('goal-cancel'); await settle(820);
+    assert.equal(heading(), 'Goals after step 1');
+    assert.match(insp.querySelector('.goal-note').textContent, /cancelled/);
+    window.scrollTo = () => {};
+    click('inspect-proof'); await settle(20);
+    const doc = window.document;
+    assert.equal(requests.filter(path => path === '/api/proof/start').length, 1);
+    assert.equal(doc.getElementById('proof-goal-title').textContent, 'Goals after step 1');
+    doc.querySelectorAll('#proof-tactics button')[1].click();
+    doc.getElementById('proof-back').click();
+    assert.equal(heading(), 'Goals after step 2');
+    click('goal'); await settle(20);
+    insp.querySelector('.goal-results').focus();
+    trace = goalTrace(snapshot.sha256, {id: 'refresh'});
+    await settle(820);
+    assert.equal(insp.querySelector('.goal-previous-recording'), null);
+    assert.equal(heading(), 'Starting goals');
+    assert.equal(doc.activeElement, insp.querySelector('[data-act="goal-picker"]'));
   } finally { window.close(); }
 });
 
@@ -3472,7 +3523,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
     assert.ok(messages.some(m => m.path === '/api/proof/cancel'));
-    assert.match(section(), /cancelled\. No goals were recorded/);
+    assert.match(section(), /cancelled\. No goals were recorded in this run/);
     assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
     // A failed observation says why.
     start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
@@ -3486,7 +3537,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     assert.match(section(), /Resolving project environment/);
     trace = goalTrace(snapshot.sha256, {id: 'steps'});
     await settle(820);
-    assert.equal(insp.querySelectorAll('.goal-step').length, 3);
+    assert.equal(insp.querySelector('[data-act="goal-picker"]').options.length, 4);
     // Unsaved Lean files hold the start back in the bridge.
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
     trace = {status: 'idle', nodes: []};
@@ -4548,7 +4599,7 @@ test('proof goals reuse a finished observation of the saved file and only cancel
   try {
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(starts(), 0, 'a finished observation of this saved file is reused');
-    assert.equal(insp.querySelectorAll('.goal-step').length, 3);
+    assert.equal(insp.querySelector('[data-act="goal-picker"]').options.length, 4);
     // Refresh asks for a new recording.
     insp.querySelector('[data-act="goal"][data-refresh="true"]').click(); await settle(20);
     assert.equal(starts(), 1);
@@ -6296,20 +6347,20 @@ test('claim actions live in the Inspector and inline proof inspection expands wi
     assert.equal(inspect.textContent, 'Inspect proof');
     inspect.click(); await settle();
     assert.equal(d.getElementById('proof-review').hidden, true);
-    assert.ok(d.querySelector('#insp .goal-steps'));
+    assert.ok(d.querySelector('#insp .goal-navigation'));
     const results=d.querySelector('#insp .goal-results'); results.focus(); results.scrollTop=120;
     await w.glitnirPoll();
     assert.equal(d.querySelector('#insp .goal-results').scrollTop,120);
     assert.equal(d.activeElement,d.querySelector('#insp .goal-results'));
     const starts = messages.filter(m => m.path === '/api/proof/start').length;
     const expand = d.querySelector('#insp [data-act="inspect-proof"]');
-    assert.equal(expand.textContent, 'Expand proof steps');
+    assert.equal(expand.textContent, 'Open full view');
     expand.click(); await settle();
     assert.equal(d.getElementById('proof-review').hidden, false);
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, starts, 'expanding reuses the current recording');
     d.getElementById('proof-back').click();
     assert.equal(d.getElementById('proof-review').hidden, true);
-    assert.ok(d.querySelector('#insp .goal-steps'));
+    assert.ok(d.querySelector('#insp .goal-navigation'));
     assert.equal(d.activeElement.dataset.act, 'inspect-proof');
     assert.equal(messages.filter(m => m.path === '/api/project/check').length, 0);
   } finally { w.close(); }
@@ -6431,6 +6482,7 @@ test('refreshing proof goals shows activity and disables competing checks while 
     assert.ok(d.querySelector('#insp .proof-progress [data-act="goal-cancel"]'));
     d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
     assert.equal(d.getElementById('proof-progress').hidden,false);
+    assert.equal(d.getElementById('proof-source').hidden,true);
     assert.match(d.getElementById('proof-progress-stage').textContent,/Recording saved tactic goals/);
     assert.equal(d.getElementById('proof-cancel').closest('#proof-progress').id,'proof-progress');
     assert.equal(d.getElementById('proof-message').hidden,true);
@@ -6438,7 +6490,7 @@ test('refreshing proof goals shows activity and disables competing checks while 
   } finally {w.close();}
 });
 
-test('goal results foreground the target and fold repeated context and tactic results', async () => {
+test('goal results foreground the target and preserve the selected step and open context', async () => {
   const snapshot=projectNotebook();
   const text='eta : ℝ\nheta : eta > 0\n⊢ eta + 1 > 1';
   const trace=goalTrace(snapshot.sha256);
@@ -6451,10 +6503,11 @@ test('goal results foreground the target and fold repeated context and tactic re
     assert.equal(first.querySelector('.goal-target').textContent,'⊢ eta + 1 > 1');
     assert.equal(first.querySelector('.goal-context').open,false);
     assert.equal(first.querySelector('.goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
-    const step=d.querySelector('#insp .goal-step details');
-    step.open=true;
+    d.querySelector('#insp [data-act="goal-next"]').click();
+    d.querySelector('#insp .goal-context').open=true;
     await w.glitnirPoll();
-    assert.equal(d.querySelector('#insp .goal-step details').open,true);
+    assert.equal(d.querySelector('#insp [data-act="goal-picker"]').value,'1');
+    assert.equal(d.querySelector('#insp .goal-context').open,true);
   } finally {w.close();}
 });
 
@@ -6500,9 +6553,10 @@ test('proof steps use compact headers, retain full tactics and fold recording de
   try {
     const d=w.document;
     d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
-    const step=d.querySelector('.goal-step details');step.open=true;
-    assert.equal(step.querySelector('.goal-number').textContent,'Step 1');
-    assert.equal(step.querySelector('.goal-tactic code').textContent,'exact');
+    d.querySelector('#insp [data-act="goal-next"]').click();
+    const step=d.querySelector('.goal-tactic-details');step.open=true;
+    assert.equal(step.querySelector('summary').textContent,'Tactic code');
+    assert.equal(d.querySelector('[data-act="goal-picker"] option:checked').textContent,'Step 1 of 3 · exact');
     assert.equal(step.querySelector('.goal-full-tactic code').textContent,trace.nodes[0].text);
     const details=d.querySelector('.goal-recording-details');
     assert.equal(details.open,false);

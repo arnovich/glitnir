@@ -237,7 +237,7 @@
     $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : '';
     const cell = currentCell();
     $('proof-statement').textContent = cell?.text.split('\n').slice(Math.max(0, (inspection?.start || cell.start) - cell.start), (inspection?.end || cell.end) - cell.start + 1).join('\n') || '';
-    $('proof-source').hidden = !$('proof-statement').textContent;
+    $('proof-source').hidden = trace?.status === 'running' || !$('proof-statement').textContent;
     $('proof-refresh').disabled = dirty || !!unavailable || !snapshot || !!snapshot.error || trace?.status === 'running' || !!competingRun();
     const recording = trace?.status === 'running';
     $('proof-progress').hidden = !recording;
@@ -393,7 +393,8 @@
     const inlineTrace = workbench?.currentGoalTrace?.();
     if (project() && inlineTrace) trace = inlineTrace;
     else if (project() && workbench?.UI.goals?.trace?.status === 'running') trace = {status: 'stale', nodes: []};
-    mode = 'proof'; step = Math.min(positions.get(positionKey()) ?? -1, nodes().length - 1); update();
+    const inlineStep = mode !== 'proof' ? workbench?.inlineGoalStep?.(name, inlineTrace) : undefined;
+    mode = 'proof'; step = Math.min(inlineStep ?? positions.get(positionKey()) ?? -1, nodes().length - 1); update();
     $('proof-back').focus({preventScroll: true});
     if (!trace || trace.status === 'stale' || (!project() && trace.claim !== currentClaim()?.name)) void refresh();
   }
@@ -401,8 +402,9 @@
     if (mode !== 'proof') return;
     const origin = returnPosition;
     returnPosition = null;
-    claimsMode();
     const workbench = window.glitnirWorkbench;
+    if (inspection && nodes().length) workbench?.rememberInlineGoalStep?.(inspection.name, trace, step);
+    claimsMode();
     if (workbench) { workbench.UI.mode = 'doc'; workbench.render(); }
     const action = [...document.querySelectorAll('#insp [data-act="inspect-proof"]')].find(b => b.dataset.proofClaim === origin?.claim);
     const scope = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].find(el => el.dataset.proofClaim === origin?.claim);

@@ -9,7 +9,7 @@
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
-    showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
+    selectGoalStep, showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
   let helpTimer;
@@ -472,6 +472,7 @@
     const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
     const tacticStates = new Map([...$('insp').querySelectorAll('.goal-full-tactic')].map(el => [el.dataset.tacticKey, {left: el.scrollLeft, top: el.scrollTop, focused: document.activeElement === el}]));
     const results = $('insp').querySelector('.goal-results');
+    const resultFocus = results?.contains(document.activeElement);
     const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
     if (!heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
@@ -533,9 +534,11 @@
       const state = tacticStates.get(el.dataset.tacticKey);
       if (state) { el.scrollLeft = state.left; el.scrollTop = state.top; if (state.focused) el.focus({preventScroll: true}); }
     }
-    if (goalFocus) {
+    if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
       const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);
-      (controls.find(el => el.dataset.act === goalFocus) || controls.find(el => el.dataset.act === 'goal-cancel') || controls[0])?.focus({preventScroll: true});
+      (controls.find(el => el.dataset.act === goalFocus)
+        || (goalFocus && controls.find(el => el.dataset.act === (goalFocus === 'goal-cancel' ? 'goal' : 'goal-cancel')))
+        || controls.find(el => el.dataset.act === 'goal-picker') || controls[0])?.focus({preventScroll: true});
     }
     restoreDiagramUI(diagramUI);
     if (helpFocus) {
@@ -741,6 +744,7 @@
   }
 
   document.addEventListener('change', e => {
+    if (e.target.matches('#insp [data-act="goal-picker"]')) { selectGoalStep(e.target); return; }
     if (e.target.matches('#source-hide-comments')) { UI.hideSourceComments = e.target.checked; render(); return; }
     if (!e.target.matches('[data-diagram-contract]')) return;
     const key = e.target.dataset.diagramContract;
@@ -836,6 +840,8 @@
       case 'notebook-at': showNotebookAt(Number(b.dataset.at)); break;
       case 'goal': UI.selected = id; inspectGoals(b.dataset.refresh === 'true'); break;
       case 'goal-cancel': cancelGoals(); break;
+      case 'goal-prev':
+      case 'goal-next': if (!b.disabled) selectGoalStep(b); break;
       // Stale buttons of an earlier saved file never check other lines.
       case 'check-through': if (b.dataset.sha === UI.data.sha256 && claim(id)) { UI.selected = id; checkProject(Number(b.dataset.line)); } break;
       case 'scroll': {

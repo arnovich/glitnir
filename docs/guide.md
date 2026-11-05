@@ -179,28 +179,25 @@ closed. Background refreshes leave a closed Inspector closed.
 
 ### Proof goals and steps
 
-Select a theorem to open its Inspector. **Inspect proof** records its saved proof
-with Lean and displays the goals after each tactic step in place. The check and
-inspection actions live in the Inspector, rather than on every theorem card.
+Select a theorem to open its Inspector. **Inspect proof** records the saved proof
+with Lean. The Inspector shows **Starting goals** first, then what Lean still
+needs to prove after the step you choose. Use **Previous**, **Next**, or the step
+picker. Open **Context** for the variables and hypotheses in a goal, or **Tactic
+code** for the full command. While refreshing, the Inspector labels any still
+current results **Previous recording** until the new goals arrive.
 
-**Expand proof steps** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
-opens a larger view, reusing a current inline recording. Select **Starting
-goals** to see what Lean needed to prove before the first recorded step, or
-select a step to see the goals it leaves. Previous and Next (or `p` and `n`)
-move through the steps. **Lean source** and **Recording details** can be opened
-for reference. `r` checks the whole saved file. **Back to claim** or `Esc`
-returns to the Inspector and the claim’s reading position.
+**Open full view** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
+opens a wider walkthrough, reusing the recording when available. **Lean source**
+and **Recording details** are available for reference. **Back to claim** or
+`Esc` returns to the Inspector and the claim’s reading position.
 
-Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. Both
-views show historical observations of the saved file and never change a status. While a run is active,
-its activity and cancellation remain available in Notebook, Source and Explore.
-Competing check/refresh actions are disabled; expanding can follow the same run.
-As commands finish, proof recording reports the source line reached, lines left
-and tactic steps recorded. These are source-progress counts, not a time estimate.
-In the Inspector, each tactic’s results and the goal’s Context can be expanded
-separately; your open sections and reading position survive refreshes. Full tactic
-text is available inside each step. Source/toolchain provenance lives under
-**Recording details**.
+Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. It
+shows what Lean reported for the saved file without updating the claim’s check
+status. To check the file, use **Check saved file** or `r`. Activity and
+cancellation stay available in Notebook, Source and Explore. Competing check and
+refresh actions are disabled during recording. When Lean reports source progress,
+the counts show lines reached, lines left, and recorded tactics. They do not
+estimate time remaining.
 
 ### Linked notebooks
 
