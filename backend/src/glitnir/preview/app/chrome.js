@@ -438,7 +438,7 @@
     }
   }
 
-  function render({openClaimGraph = false} = {}) {
+  function render({openClaimGraph = false, openExplore = false} = {}) {
     if (!UI.data) return;
     workbench.syncAtlasLocation?.(UI.data);
     const diagramUI = saveDiagramUI();
@@ -457,7 +457,7 @@
     const graphHeading = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail h3');
     const graphLink = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail a[href]') ? document.activeElement.getAttribute('href') : null;
     const graphCanvas = $('graph-view').querySelector('.proof-graph-canvas');
-    const graphScroll = graphCanvas ? {left: graphCanvas.scrollLeft, top: graphCanvas.scrollTop, sha: UI.data.sha256, selected: graphCanvas.querySelector('.chosen')?.dataset.graphId} : null;
+    const graphScroll = graphCanvas ? {left: graphCanvas.scrollLeft, top: graphCanvas.scrollTop, sha: UI.data.sha256, scope: graphCanvas.dataset.scope, selected: graphCanvas.querySelector('.chosen')?.dataset.graphId} : null;
     const graphDetail = $('graph-detail');
     const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
@@ -473,7 +473,7 @@
     if (!heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
       else if (UI.mode === 'source') renderSource();
-      else renderProofGraph(openClaimGraph);
+      else renderProofGraph({openClaimGraph, openExplore});
     }
     renderInspector();
     renderChrome();
@@ -505,7 +505,7 @@
       if (graphHeading) $('graph-detail')?.querySelector('h3')?.focus({preventScroll: true});
       if (graphLink) [...$('graph-view').querySelectorAll('#graph-detail a[href]')].find(link => link.getAttribute('href') === graphLink)?.focus({preventScroll: true});
       const canvas = $('graph-view').querySelector('.proof-graph-canvas');
-      if (canvas && graphScroll?.sha === UI.data.sha256 && graphScroll.selected === canvas.querySelector('.chosen')?.dataset.graphId) {
+      if (canvas && graphScroll?.sha === UI.data.sha256 && graphScroll.scope === canvas.dataset.scope && graphScroll.selected === canvas.querySelector('.chosen')?.dataset.graphId) {
         canvas.scrollLeft = graphScroll.left; canvas.scrollTop = graphScroll.top;
         const detail = $('graph-detail');
         if (detail && detailScroll) { detail.scrollLeft = detailScroll.left; detail.scrollTop = detailScroll.top; }
@@ -643,11 +643,25 @@
     canvas.scrollLeft += node.left - box.left - (canvas.clientWidth - node.width) / 2;
     canvas.scrollTop += node.top - box.top - (canvas.clientHeight - node.height) / 2;
   }
+  function openExplore() {
+    if (heldRendering()) return;
+    hideHelp();
+    const active = document.activeElement;
+    UI.mode = 'graph';
+    UI.graphFocused = false;
+    render({openExplore: true});
+    if (active && (!active.isConnected || active.closest('[hidden]'))) {
+      ($('atlas-selected') || document.querySelector('[data-mode="graph"]')).focus({preventScroll: true});
+    }
+  }
   function zoomGraph(factor) {
     const canvas = $('graph-view').querySelector('.proof-graph-canvas');
     const svg = canvas?.querySelector('.proof-map');
     const width = Number(svg?.getAttribute('viewBox').split(' ')[2]);
-    const scale = UI.graphFit && width > 0 ? canvas.clientWidth / width : UI.graphZoom || 1;
+    const fitScale = canvas?.clientWidth / width;
+    const scale = UI.graphFit && width > 0
+      ? UI.graphFocused ? Math.min(1, fitScale) : fitScale
+      : UI.graphZoom || 1;
     UI.graphZoom = Math.max(.0001, Math.min(8, scale * factor));
     UI.graphFit = false;
     render();
@@ -764,6 +778,7 @@
         if (heldRendering()) break;
         hideHelp();
         UI.mode = 'graph';
+        UI.graphFocused = true;
         render({openClaimGraph: true});
         const heading = $('graph-detail')?.querySelector('h3') || $('graph-view').querySelector('h2');
         if (heading) {
@@ -800,6 +815,11 @@
         } else render();
         break;
       }
+      case 'graph-focus':
+      case 'graph-full':
+        UI.graphFocused = b.dataset.act === 'graph-focus';
+        render();
+        break;
       case 'graph-reset': UI.graphZoom = 1; UI.graphFit = false; render(); break;
       case 'graph-zoom-in': zoomGraph(1.25); break;
       case 'graph-zoom-out': zoomGraph(.8); break;
@@ -842,7 +862,7 @@
     UI.graphSelected = picker.value;
     render();
   });
-  document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });
+  document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'graph') openExplore(); else if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });
   $('inspect-project').onclick = inspectProject;
   $('check-project').onclick = () => checkProject();
   $('panel-hide').onclick = () => { UI.panel = false; render(); };
@@ -892,7 +912,7 @@
     const map = {
       j: () => move(1), k: () => move(-1), '?': () => keys(true),
       s: () => { if (UI.mode === 'source') showDocument(); else { UI.mode = 'source'; render(); } },
-      g: () => { UI.mode = 'graph'; render(); },
+      g: openExplore,
       i: () => { if (UI.mode === 'doc') { UI.panel = !UI.panel; render(); } },
       // Check through the selected claim; Check saved file checks all of it.
       r: () => { const c = claim(UI.selected); if (c?.project && !linkedPath()) checkProject(c.project.end_line); },

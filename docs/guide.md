@@ -371,9 +371,12 @@ environment is identified shows saved results as out of date once, too.
 Each result also records the claims it uses: the theorems its statement and proof
 name directly, from this notebook or from another notebook of the project (a
 module the project builds itself, not a dependency). Cards show them as chips.
-**View claim graph**, beside **Contents**, opens **Explore** on the selected
-claim. Explore lays recorded relationships out from foundations at the bottom
-to results at the top. It drops an edge when the same dependency is already visible through
+**View claim graph**, beside **Contents**, opens a focused graph of the
+selected claim, its recorded dependencies and the claims that use it. Switch
+to **Full graph** to see the notebook overview with the same selection. The
+top **Explore** tab opens the overview or the guided view for a proof atlas.
+The full graph lays relationships out from foundations at the bottom to results
+at the top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
 reads its notebook in the same panel when that notebook is available. Node
 colours are recorded claim statuses, with out-of-date results shown in amber

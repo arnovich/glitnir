@@ -176,10 +176,11 @@
     const forwardLabel = next ? 'Forward to ' + visitLabel(next) : 'Forward';
     return `<div class="atlas-shell"><aside class="atlas-sidebar" aria-label="Proof navigation"><h3>Follow the proof</h3><div class="atlas-search"><label for="atlas-query">Search proof</label><input id="atlas-query" type="search" maxlength="256" placeholder="Arguments or Lean names" value="${esc(query)}"><div class="atlas-matches">${matchesHTML(m)}</div></div><div class="atlas-route-controls" role="group" aria-label="Reading route">${choices}</div><p class="small muted">Each route follows its own explanation of the result.</p><nav class="atlas-flow" aria-label="Reading route steps"><h3>${esc(route.label)}</h3><p class="small muted">${index.order.length} arguments · current step highlighted</p><ol>${steps}</ol>${start ? button('Earlier steps', 'flow-page', String(state.flowPage - 1)) : ''}${start + OVERVIEW_SIZE < index.order.length ? button('More steps', 'flow-page', String(state.flowPage + 1)) : ''}</nav><div class="atlas-visit-history"><h3>Navigation history</h3>${button(backLabel, 'back', '', history.length ? '' : 'disabled')}${button(forwardLabel, 'forward', '', future.length ? '' : 'disabled')}</div></aside><div class="atlas-content">${content}</div></div>`;
   }
-  function renderAtlas(data, openClaimGraph = false) {
+  function renderAtlas(data, {openClaimGraph = false, openExplore = false} = {}) {
     const m = model(data); if (!m) return false;
     initialize(data, m);
     if (openClaimGraph) state.layout = 'graph';
+    if (openExplore && state.layout === 'graph') state.layout = 'reading';
     if (state.layout === 'graph') return false;
     const n = m.byId.get(state.node), route = m.routes.find(r => r.id === state.route);
     const compatibility = walkthroughCompatibility(data);
@@ -229,7 +230,7 @@
       if (action === 'node' && m.byId.has(value)) state = {...state, node: value, scroll: 0};
       if (action === 'flow-page') state = {...state, flowPage: Number(value)};
       if (action === 'overview-page') state = {...state, overviewPage: Number(value)};
-      if (action === 'layout') state = {...state, layout: value};
+      if (action === 'layout') { state = {...state, layout: value}; UI.graphFocused = false; }
       if (action === 'route') {const r = m.routes.find(r => r.id === value); state = {...state, route: value, node: r.root, overviewPage: 0, scroll: 0};}
     }
     linkMessage = '';

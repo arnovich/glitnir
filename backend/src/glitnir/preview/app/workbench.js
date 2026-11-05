@@ -39,7 +39,7 @@
   const TONE = {checked: 'green', refuted: 'red', conditional: 'amber', stale: 'amber', unknown: 'amber', failed: 'red', open: 'blue'};
   const LABEL = {checked: 'Checked', refuted: 'Refuted', conditional: 'Conditional', stale: 'Out of date', unknown: 'Unknown', failed: 'Failed', open: 'Open goal'};
 
-  const UI = {drawings: {}, diagrams: {}, expandedDiagram: null, data: null, selected: null, mode: 'doc', panel: true, connected: true, notice: '', sourceCell: null, sourceRange: null, documentLine: null,
+  const UI = {drawings: {}, diagrams: {}, expandedDiagram: null, data: null, selected: null, mode: 'doc', graphFocused: false, panel: true, connected: true, notice: '', sourceCell: null, sourceRange: null, documentLine: null,
     // Notebooks read in this panel: null is the previewed notebook, a string
     // the link to another notebook of its project. `at` is the one shown.
     trail: [null], at: 0, main: null, goals: null, research: {}, researchLoading: {}, researchEvidence: {}};
@@ -567,7 +567,7 @@
     if (!linkedPath()) mainChanged = false;
     clearTimeout(highlightTimer);
     highlighted = new Set();
-    Object.assign(UI, {selected: null, outlineTarget: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
+    Object.assign(UI, {selected: null, outlineTarget: null, mode: 'doc', graphFocused: false, sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
     closeDiagram();
     document.body.classList.toggle('glitnir-linked-view', Boolean(linkedPath()));
     const cached = snapshots.get(linkedPath() ?? '');

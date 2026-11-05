@@ -3681,6 +3681,7 @@ test('graph inspection preserves recorded uses and qualifies un-compared results
 
 test('Contents opens the selected claim in Explore and returns to it in Notebook', async () => {
   const {main} = notebooksWithUses();
+  main.project_claims.push({...main.project_claims[0], name: 'Demo.unrelated'});
   let reconnecting = false;
   const window = await renderSnapshot(main, {browser: () => ({
     ok: !reconnecting, status: reconnecting ? 503 : 200, json: async () => main,
@@ -3703,13 +3704,26 @@ test('Contents opens the selected claim in Explore and returns to it in Notebook
     shortcut.click();
     assert.equal(d.querySelector('[data-mode="graph"]').getAttribute('aria-pressed'), 'true');
     assert.equal(d.querySelector('.proof-node.chosen').dataset.graphName, 'Demo.floor');
+    assert.equal(d.querySelector('[data-act="graph-focus"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(d.querySelector('[data-graph-name="Demo.unrelated"]'), null);
+    assert.ok(d.querySelector('[data-from="local:Demo.k_pos"][data-to="local:Demo.floor"]'));
     const heading = d.querySelector('#graph-detail h3');
     assert.equal(d.activeElement, heading);
     assert.ok(d.querySelector('#graph-detail dd [data-graph-id="local:Demo.k_pos"]'));
     await window.glitnirPoll();
     assert.equal(d.querySelector('.proof-node.chosen').dataset.graphName, 'Demo.floor');
+    const full = d.querySelector('[data-act="graph-full"]');
+    full.focus();
+    full.click();
+    assert.ok(d.querySelector('[data-graph-name="Demo.unrelated"]'));
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphName, 'Demo.floor');
+    assert.equal(d.activeElement.dataset.act, 'graph-full');
+    d.querySelector('[data-act="graph-focus"]').click();
+    assert.equal(d.querySelector('[data-graph-name="Demo.unrelated"]'), null);
     d.querySelector('#graph-detail [data-act="graph-node"]').click();
     assert.equal(d.activeElement.closest('.cell')?.id, 'cell-Demo.floor');
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('[data-act="graph-full"]').getAttribute('aria-pressed'), 'true');
   } finally { window.close(); }
 });
 
@@ -3726,6 +3740,24 @@ test('the Contents shortcut opens Statement graph within a proof atlas', async (
     assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
     await window.glitnirPoll();
     assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+    assert.equal(d.querySelector('[data-act="graph-focus"]').getAttribute('aria-pressed'), 'true');
+    const scope = d.querySelector('[data-act="graph-focus"]');
+    scope.focus();
+    scope.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'g', bubbles: true}));
+    assert.equal(d.activeElement, d.querySelector('#atlas-selected'), 'the Explore shortcut opens guided reading and moves focus');
+  } finally { window.close(); }
+});
+
+test('Explore distinguishes empty dependency records from missing observations', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims[0].uses = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('#graph-detail dd').textContent, 'No recorded dependencies');
+    d.querySelector('[data-graph-name="Demo.floor"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.equal(d.querySelector('#graph-detail dd').textContent, 'Dependencies haven’t been recorded');
   } finally { window.close(); }
 });
 
@@ -3822,6 +3854,23 @@ test('the Graph view bounds dense input and preserves cyclic saved relationships
     const denseHTML = window.glitnirWorkbench.proofGraphHTML(dense);
     assert.match(denseHTML, /Graph limit reached/);
     assert.doesNotMatch(denseHTML, /style=/, 'the graph does not require CSP-blocked inline styles');
+
+    const lateClaims = Array.from({length: 241}, (_, index) => claim(`late${index}`, index === 240 ? ['late239', 'Other:support'] : []));
+    const late = {...dense, claims: lateClaims};
+    const focused = new JSDOM(window.glitnirWorkbench.proofGraphHTML(late, {selected: 'local:late240', focused: true, fit: true}));
+    try {
+      const d = focused.window.document;
+      assert.deepEqual([...d.querySelectorAll('.proof-node')].map(node => node.dataset.graphName), ['late240', 'late239', 'Other:support']);
+      assert.ok(d.querySelector('[data-from="local:late239"][data-to="local:late240"]'));
+      assert.equal(d.querySelector('.proof-map').getAttribute('width'), '440', 'focused fit keeps a compact graph at actual size');
+      assert.equal(d.querySelector('.proof-map').hasAttribute('style'), false, 'fit works under the webview content security policy');
+    } finally { focused.window.close(); }
+    const imported = new JSDOM(window.glitnirWorkbench.proofGraphHTML(late, {selected: 'import:Other:support', focused: true}));
+    try {
+      assert.equal(imported.window.document.querySelector('.proof-node.chosen').dataset.graphId, 'import:Other:support');
+      assert.ok(imported.window.document.querySelector('[data-from="import:Other:support"][data-to="local:late240"]'));
+    } finally { imported.window.close(); }
+
 
     const cyclic = {claims: [
       claim('Alpha.same', ['Beta.same', 'Cycle.other']),
