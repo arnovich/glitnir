@@ -17,7 +17,8 @@
     <div class="review-controls"><button class="secondary" id="review-previous">Previous <kbd>p</kbd></button><span id="review-position" role="status"></span></div>`;
   const next = $('next-unresolved') || document.createElement('button');
   next.id = 'next-unresolved'; next.className = 'secondary'; next.innerHTML = 'Next <kbd>n</kbd>'; next.hidden = false;
-  nav.querySelector('.review-controls').append(next);
+  const navigation = nav.querySelector('.review-controls');
+  navigation.append(next);
   const activity = app.querySelector('.live-bar');
   activity.prepend(nav);
   $('notebook-view-options').querySelector('.notebook-preferences').prepend($('review-filter-label'));
@@ -34,10 +35,32 @@
   }).observe(activity);
   const proof = document.createElement('section');
   proof.id = 'proof-review'; proof.hidden = true;
-  proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-title"></h2><p id="proof-status" class="small"></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-back" class="secondary">Back to claim <kbd>Esc</kbd></button></div></div>
+  proof.setAttribute('aria-labelledby', 'proof-heading-title');
+  proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-heading-title">Proof steps</h2><p id="proof-title"></p><p id="proof-status" class="small" hidden></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-back" class="secondary">Back to claim <kbd>Esc</kbd></button></div></div>
     <section id="proof-progress" class="proof-progress" hidden><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong id="proof-progress-title" class="proof-progress-title">Recording proof goals</strong><div id="proof-progress-stage" class="proof-progress-stage"></div></div><div id="proof-progress-time" class="small muted"></div><div class="small muted">Counts update after each command.</div></div></div><button id="proof-cancel" class="secondary">Cancel</button></section>
-    <p id="proof-message" role="status"></p><div class="proof-grid"><div><pre id="proof-statement"></pre><div id="proof-tactics" role="group" aria-label="Recorded tactics"></div></div><div class="proof-goals"><h3 id="proof-goal-title"></h3><details id="proof-before"><summary>Goals before this tactic</summary><pre id="proof-before-text"></pre></details><pre id="proof-after"></pre><p class="small" id="proof-scope"></p><details id="proof-diagnostics" hidden><summary>Lean messages</summary><pre></pre></details><p id="proof-provenance" class="small muted"></p></div></div>`;
+    <p id="proof-message" role="status" hidden></p>
+    <div class="proof-grid">
+      <div class="proof-steps">
+        <section id="proof-step-list" aria-labelledby="proof-step-list-title" hidden>
+          <h3 id="proof-step-list-title">Select a step</h3>
+          <p id="proof-step-intro" class="small muted">The goals show what Lean still needs to prove.</p>
+          <div id="proof-step-nav"></div>
+          <button id="proof-start" type="button" class="proof-tactic secondary" aria-controls="proof-goals"><span>Starting goals</span><span aria-hidden="true">›</span></button>
+          <div id="proof-tactics" role="group" aria-label="Proof steps"></div>
+        </section>
+        <details id="proof-source" hidden><summary>Lean source</summary><pre id="proof-statement"></pre></details>
+      </div>
+      <section class="proof-goals" id="proof-goals" aria-labelledby="proof-goal-title" hidden>
+        <h3 id="proof-goal-title" tabindex="-1"></h3>
+        <pre id="proof-after"></pre><p id="proof-complete" hidden>No goals remain in this part of the proof.</p>
+        <details id="proof-tactic-code" hidden><summary>Tactic code</summary><pre tabindex="0" role="region" aria-label="Tactic code"></pre></details>
+        <details id="proof-before"><summary>Goals before this step</summary><pre id="proof-before-text"></pre></details>
+      </section>
+    </div>
+    <details id="proof-diagnostics" hidden><summary>Lean messages</summary><pre></pre></details>
+    <details id="proof-recording" hidden><summary>Recording details</summary><p id="proof-provenance" class="small muted"></p></details>`;
   activity.after(proof);
+  $('proof-start').onclick = () => selectStep(-1, true);
   // The renderer draws the shortcut list (one source for every listing); this
   // layer adds only its own setting.
   const help = $('keys');
@@ -126,12 +149,36 @@
   }
   const positionKey = () => `${trace?.id}:${inspection?.sha}:${inspection?.name}:${inspection?.start}:${inspection?.end}`;
   function remember() { if (trace?.id) positions.set(positionKey(), step); }
-  function focusAfterRender(previous) {
+  function focusAfterRender(previous, followStep = false) {
+    const list = $('proof-tactics');
+    const selectedStep = () => step < 0 ? $('proof-start') : list.querySelector('[aria-current="true"]');
     if (previous?.dataset.proofNode) {
-      const found = [...$('proof-tactics').children].find(b => b.dataset.proofNode === String(nodes()[step]?.id));
-      (found || $('proof-back')).focus({preventScroll: true});
+      const focusedStep = [...list.children].find(b => b.dataset.proofNode === previous.dataset.proofNode);
+      const target = followStep ? selectedStep() : focusedStep || selectedStep();
+      (target && !target.disabled && !target.closest('[hidden]') ? target : $('proof-back')).focus({preventScroll: true});
     } else if (previous && (previous.hidden || previous.disabled || previous.closest('[hidden]') || (mode === 'proof' && previous.closest('.workspace')))) {
-      if (mode === 'proof') $('proof-back').focus({preventScroll: true});
+      if (mode === 'proof') {
+        const target = followStep && previous.closest('#proof-step-nav') ? selectedStep() : null;
+        (target && !target.disabled ? target : $('proof-back')).focus({preventScroll: true});
+      }
+    }
+  }
+  function selectStep(index, revealGoals = false) {
+    if (dirty || !nodes().length) return;
+    step = index;
+    remember();
+    update({followStep: true});
+    const list = $('proof-tactics');
+    const active = list.querySelector('[aria-current="true"]');
+    if (active) {
+      const box = list.getBoundingClientRect(), row = active.getBoundingClientRect();
+      if (row.top < box.top) list.scrollTop += row.top - box.top;
+      else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom;
+    }
+    const heading = $('proof-goal-title');
+    if (revealGoals && window.matchMedia('(max-width:800px)').matches && heading.getBoundingClientRect().bottom > window.innerHeight) {
+      heading.focus({preventScroll: true});
+      heading.scrollIntoView?.({block: 'start'});
     }
   }
   function competingRun() {
@@ -139,10 +186,12 @@
     return ui?.checkRequested || ui?.data?.preview?.check?.status === 'running' || ui?.inspecting || ui?.data?.preview?.inspection?.status === 'running';
   }
   function cancelProof() { pendingRefresh = false; void host.fetch('/api/proof/cancel', {method: 'POST', body: '{}'}).catch(() => {}); }
-  function update() {
+  function update({followStep = false} = {}) {
     const focused = document.activeElement;
     const inProof = mode === 'proof', queue = cells(), nodeList = nodes(), claim = currentClaim();
-    nav.hidden = !snapshot || !!snapshot.error || (!inProof && !queue.length && (project() || $('review-filter').value !== 'all'));
+    const destination = inProof ? $('proof-step-nav') : nav;
+    if (navigation.parentElement !== destination) destination.append(navigation);
+    nav.hidden = inProof || !snapshot || !!snapshot.error || (!queue.length && (project() || $('review-filter').value !== 'all'));
     activity.hidden = nav.hidden;
     if (nav.hidden && nav.contains(focused)) document.querySelector('[data-mode="doc"]').focus({preventScroll: true});
     updateQueue(queue, inProof);
@@ -171,7 +220,7 @@
     const index = queue.findIndex(c => c.index === selected);
     if (inProof) {
       previous.title = 'Previous recorded proof state (p)'; next.title = 'Next recorded proof state (n)';
-      $('review-position').textContent = nodeList.length ? step < 0 ? 'Initial goals' : `Step ${step + 1} of ${nodeList.length}` : 'No recorded steps';
+      $('review-position').textContent = nodeList.length ? step < 0 ? 'Starting goals' : `Step ${step + 1} of ${nodeList.length}` : 'No recorded steps';
     } else if (project()) {
       previous.title = 'Previous claim that needs attention (p)';
       next.title = queue.length ? `${queue.length} need attention; next in source order (n)` : 'No claims queued for review';
@@ -182,10 +231,13 @@
       $('review-position').textContent = index >= 0 ? `Claim ${index + 1} of ${queue.length}` : queue.length ? `${queue.length} matching claims` : '';
     }
     $('review-position').hidden = !$('review-position').textContent;
-    if (!inProof) { focusAfterRender(focused); return; }
+    if (!inProof) { focusAfterRender(focused, followStep); return; }
     $('proof-title').textContent = !snapshot ? 'Saved source unavailable' : inspection?.name || 'Selected claim';
-    $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : 'Project observation · use Check saved file for proof checking';
-    $('proof-statement').textContent = claim ? `${claim.keyword} ${claim.name} ${claim.statement}` : currentCell()?.text.split('\n').slice(Math.max(0, (inspection?.start || currentCell().start) - currentCell().start), (inspection?.end || currentCell().end) - currentCell().start + 1).join('\n') || '';
+    $('proof-status').hidden = !claim;
+    $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : '';
+    const cell = currentCell();
+    $('proof-statement').textContent = cell?.text.split('\n').slice(Math.max(0, (inspection?.start || cell.start) - cell.start), (inspection?.end || cell.end) - cell.start + 1).join('\n') || '';
+    $('proof-source').hidden = !$('proof-statement').textContent;
     $('proof-refresh').disabled = dirty || !!unavailable || !snapshot || !!snapshot.error || trace?.status === 'running' || !!competingRun();
     const recording = trace?.status === 'running';
     $('proof-progress').hidden = !recording;
@@ -193,34 +245,59 @@
     $('proof-progress-title').textContent = proofRefreshing ? 'Refreshing proof goals' : 'Recording proof goals';
     $('proof-progress-stage').textContent = trace?.message || 'Preparing the saved proof';
     $('proof-progress-time').textContent = `${Math.max(0, Math.floor((Date.now() - (proofStarted ?? Date.now())) / 1000))}s waiting here`;
-    $('proof-message').hidden = recording;
-    $('proof-message').textContent = dirty ? 'Unsaved changes — save or revert, then refresh proof steps.' : (pendingRefresh ? 'Finishing the previous observation before loading this claim…' : trace?.message) || 'Load the saved proof to see its tactic goals.';
+    let message = '';
+    if (dirty) message = 'Save or revert your edits, then refresh proof steps.';
+    else if (pendingRefresh) message = 'Finishing the previous recording before loading these steps…';
+    else if (trace?.status === 'ready') {
+      if (!nodeList.length) message = 'No proof steps were recorded for this claim.';
+    } else if (trace?.status === 'partial') message = 'Some proof steps may be missing.';
+    else message = trace?.message || 'Load the saved proof to see its steps.';
+    $('proof-message').hidden = recording || !message;
+    $('proof-message').textContent = message;
+    $('proof-step-list').hidden = !nodeList.length;
+    $('proof-start').disabled = dirty;
+    $('proof-start').setAttribute('aria-current', String(step < 0));
     const buttons = nodeList.map((n, i) => {
-      const b = document.createElement('button'); b.className = 'proof-tactic'; b.dataset.proofNode = String(n.id);
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'proof-tactic secondary'; b.dataset.proofNode = String(n.id);
+      b.disabled = dirty;
       b.setAttribute('aria-current', String(i === step));
+      b.setAttribute('aria-controls', 'proof-goals');
       b.setAttribute('aria-label', `Step ${i + 1}: ${n.text}`);
       let depth = 0, parent = n.parent;
       while (parent !== null && depth < 12) { depth++; parent = trace.nodes[parent]?.parent ?? null; }
-      b.style.paddingInlineStart = `${12 + depth * 12}px`;
-      b.textContent = `${i + 1}  ${n.text}`;
-      b.onclick = () => { step = i; remember(); update(); };
+      b.style.paddingInlineStart = `${10 + Math.min(depth, 6) * 8}px`;
+      const number = document.createElement('span'); number.textContent = `Step ${i + 1}`;
+      const tactic = document.createElement('code'); tactic.textContent = n.text;
+      tactic.title = n.text;
+      const arrow = document.createElement('span'); arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
+      b.append(number, tactic, arrow);
+      b.onclick = () => selectStep(i, true);
       return b;
     });
     $('proof-tactics').replaceChildren(...buttons);
     const node = nodeList[step < 0 ? 0 : step];
-    $('proof-goal-title').textContent = step < 0 ? 'Initial goals in this scope' : `Goals after step ${step + 1}`;
+    const goals = node ? (step < 0 ? node.before : node.after).join('\n\n') : '';
+    $('proof-goal-title').textContent = step < 0 ? 'Starting goals' : `Goals after step ${step + 1}`;
+    $('proof-tactic-code').hidden = step < 0 || !node;
+    $('proof-tactic-code').querySelector('pre').textContent = step < 0 ? '' : node?.text || '';
     $('proof-before').hidden = step < 0 || !node;
-    $('proof-before-text').textContent = node?.before?.join('\n\n') || 'No goals in this tactic scope.';
-    document.querySelector('.proof-goals').hidden = recording && !node;
-    document.querySelector('.proof-grid').classList.toggle('proof-loading', recording && !node);
-    $('proof-after').textContent = node ? (step < 0 ? node.before : node.after).join('\n\n') || 'No goals in this tactic scope.' : trace?.status === 'running' ? '' : 'No tactic observations. This may be a term proof or an unavailable trace.';
-    $('proof-scope').textContent = node ? 'Goals belong to this tactic scope. Other branches may remain; the claim’s check status is unchanged.' : '';
-    const matching = project() || trace?.claim === claim?.name;
+    $('proof-before-text').textContent = node?.before?.join('\n\n') || 'No goals before this step.';
+    $('proof-goals').hidden = !node;
+    document.querySelector('.proof-grid').classList.toggle('proof-loading', !node);
+    $('proof-after').hidden = !goals;
+    $('proof-after').textContent = goals;
+    $('proof-complete').hidden = !node || !!goals;
+    $('proof-complete').textContent = step < 0 ? 'No starting goals were recorded.'
+      : trace?.status === 'partial' ? 'No goals were recorded after this step.' : 'No goals remain in this part of the proof.';
+    const matching = trace?.source_sha256 === sha && (project() || trace?.claim === claim?.name);
     const messages = matching ? [...(trace?.errors || []), ...(trace?.warnings || [])] : [];
     $('proof-diagnostics').hidden = !messages.length;
     $('proof-diagnostics').querySelector('pre').textContent = messages.join('\n\n');
-    $('proof-provenance').textContent = matching && trace?.environment ? `Recorded source ${trace.source_sha256.slice(0, 8)} · ${trace.environment.toolchain}. Dependencies were read-only live inputs; refresh after changes. Recorded elaboration attempts, not a proof certificate.` : '';
-    focusAfterRender(focused);
+    const environment = matching && trace?.environment;
+    $('proof-recording').hidden = !environment;
+    $('proof-provenance').textContent = environment ? `Saved source ${trace.source_sha256.slice(0, 8)} · ${environment.toolchain}. Dependencies were read from the project when these steps were recorded. Refresh steps after dependency changes. Use Check saved file to verify the proof.` : '';
+    focusAfterRender(focused, followStep);
   }
   function reveal(cell) {
     selected = cell.index;
@@ -229,7 +306,7 @@
   }
   function move(direction) {
     if (dirty || linkedView()) return;
-    if (mode === 'proof') { step = Math.max(-1, Math.min(nodes().length - 1, step + direction)); remember(); update(); return; }
+    if (mode === 'proof') { selectStep(Math.max(-1, Math.min(nodes().length - 1, step + direction))); return; }
     const queue = cells();
     const cell = direction > 0 ? queue.find(c => selected === null || c.index > selected) : queue.findLast(c => selected === null || c.index < selected);
     if (cell) reveal(cell);

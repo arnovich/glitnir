@@ -184,8 +184,11 @@ with Lean and displays the goals after each tactic step in place. The check and
 inspection actions live in the Inspector, rather than on every theorem card.
 
 **Expand proof steps** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
-opens the larger tactic-tree view, reusing a current inline recording. `n` and `p`
-move between steps; `r` checks the whole saved file. **Back to claim** or `Esc`
+opens a larger view, reusing a current inline recording. Select **Starting
+goals** to see what Lean needed to prove before the first recorded step, or
+select a step to see the goals it leaves. Previous and Next (or `p` and `n`)
+move through the steps. **Lean source** and **Recording details** can be opened
+for reference. `r` checks the whole saved file. **Back to claim** or `Esc`
 returns to the Inspector and the claim’s reading position.
 
 Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. Both

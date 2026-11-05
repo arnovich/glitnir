@@ -2539,11 +2539,32 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     key('t');
     await new Promise(resolve => setTimeout(resolve, 30));
     assert.equal($('proof-review').hidden, false);
-    assert.equal($('review-position').textContent, 'Initial goals');
+    assert.equal($('proof-review').querySelector('h2').textContent, 'Proof steps');
+    assert.equal($('proof-step-list-title').textContent, 'Select a step');
+    assert.match($('proof-step-intro').textContent, /what Lean still needs to prove/);
+    assert.equal($('proof-start').getAttribute('aria-current'), 'true');
+    assert.equal($('proof-step-nav').contains($('review-position')), true);
+    assert.equal($('proof-source').open, false);
+    assert.equal($('proof-recording').open, false);
+    const firstStep = $('proof-tactics').querySelector('button');
+    assert.equal(firstStep.getAttribute('aria-controls'), 'proof-goals');
+    firstStep.focus();
+    firstStep.click();
+    assert.equal($('proof-goal-title').textContent, 'Goals after step 1');
+    assert.match($('proof-after').textContent, /right/);
+    assert.equal($('proof-tactic-code').querySelector('pre').textContent, 'constructor');
+    assert.equal($('proof-tactic-code').open, false);
+    assert.equal(window.document.activeElement, $('proof-tactics').querySelector('button'));
+    $('proof-tactics').children[1].focus();
+    await window.glitnirPoll();
+    assert.equal(window.document.activeElement, $('proof-tactics').children[1], 'polling preserves focus on an unselected step');
+    $('proof-start').click();
+    assert.equal($('proof-goal-title').textContent, 'Starting goals');
+    assert.equal($('review-position').textContent, 'Starting goals');
     $('header-status').open = true;
     $('status-summary').focus();
     key('n', $('status-summary'));
-    assert.equal($('review-position').textContent, 'Initial goals', 'status focus does not navigate proof steps');
+    assert.equal($('review-position').textContent, 'Starting goals', 'status focus does not navigate proof steps');
     key('Escape', $('status-summary'));
     assert.equal($('header-status').open, false);
     assert.equal($('proof-review').hidden, false, 'Escape closes status without leaving proof steps');
@@ -2552,7 +2573,7 @@ test('proof review uses scoped observations, stays read-only while stepping, and
     assert.equal(requested.length, 1);
     assert.deepEqual(JSON.parse(requested[0].body), {sha256: snapshot.sha256, claim: 'pair'});
     key('n'); assert.match($('proof-after').textContent, /right/);
-    key('n'); assert.match($('proof-after').textContent, /No goals in this tactic scope/);
+    key('n'); assert.match($('proof-complete').textContent, /No goals remain in this part of the proof/);
     assert.match($('proof-before-text').textContent, /left/);
     assert.match($('proof-status').textContent, /Out of date/);
     assert.equal($('next-unresolved').disabled, true);
@@ -3493,7 +3514,7 @@ test('Explore Proof Steps joins the observation the inspector started', async ()
     assert.match(window.document.getElementById('proof-message').textContent, /Recording saved tactic goals/);
     trace = goalTrace(snapshot.sha256, {id: '1'});
     await settle(820);
-    assert.equal(window.document.getElementById('review-position').textContent, 'Initial goals');
+    assert.equal(window.document.getElementById('review-position').textContent, 'Starting goals');
     assert.ok(window.document.querySelectorAll('#proof-tactics button').length > 0);
   } finally { window.close(); }
 });
@@ -4696,7 +4717,7 @@ test('n and p step through the project claims that need attention, and steps in 
     // Proof steps: n and p walk the recorded steps of the selected claim's cell.
     key('t'); await settle();
     assert.equal($('proof-review').hidden, false);
-    assert.equal($('review-position').textContent, 'Initial goals');
+    assert.equal($('review-position').textContent, 'Starting goals');
     key('n'); assert.equal($('review-position').textContent, 'Step 1 of 2');
     key('n'); assert.equal($('review-position').textContent, 'Step 2 of 2');
     key('p'); assert.equal($('review-position').textContent, 'Step 1 of 2');
@@ -5887,7 +5908,7 @@ test('fresh project theorems have declaration-scoped proof actions before checki
   d.querySelector('#insp [data-act="inspect-proof"]').click();
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(d.getElementById('proof-title').textContent,'Demo.second');
-  assert.equal(d.getElementById('review-position').textContent,'Initial goals');
+  assert.equal(d.getElementById('review-position').textContent,'Starting goals');
   assert.match(d.getElementById('proof-tactics').textContent,/second tactic/);
   assert.doesNotMatch(d.getElementById('proof-tactics').textContent,/first tactic/);
   assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib|theorem first/);
