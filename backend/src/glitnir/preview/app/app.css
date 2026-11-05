@@ -78,6 +78,8 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 
 /* rail */
 .rail{position:sticky;top:0;padding:18px 14px 18px 14px;border-right:1px solid var(--border);align-self:start;max-height:100vh;overflow:auto}
+/* Raise the sticky rail's stacking layer while its help overlaps the document. */
+.rail:has(.help-tooltip:not([hidden])){z-index:4}
 .label{margin:0 0 8px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .rail ol{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:1px}
 /* Names wrap at their parts; status dots keep one column inside the rail. */

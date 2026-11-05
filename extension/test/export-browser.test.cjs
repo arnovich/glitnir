@@ -234,3 +234,45 @@ test('header views stay centred with long filenames and move below identity in n
     await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});
   }
 });
+
+test('claim graph help appears above the adjacent theorem card', {skip: !chrome}, async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'glitnir-help-browser-'));
+  const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
+    `--user-data-dir=${directory}`, '--remote-debugging-port=0', 'about:blank'], {
+    stdio: ['ignore', 'ignore', 'pipe'], detached: useProcessGroup,
+  });
+  const closed = new Promise(resolve => child.once('close', resolve));
+  let client;
+  try {
+    const css = readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8');
+    const file = path.join(directory, 'help.html');
+    writeFileSync(file, `<!doctype html><style>${css}</style><div class="workspace no-panel">
+      <nav class="rail"><h4 class="label">Claim graph <span class="context-help">
+        <button class="help-icon" aria-describedby="claim-graph-help">?</button>
+        <span class="help-tooltip" id="claim-graph-help" role="tooltip" style="left:100px;top:60px" hidden>Recorded claim dependencies.</span>
+      </span></h4></nav>
+      <main class="document"><section class="cell"><div class="claim-head" style="height:160px">Theorem</div></section></main>
+    </div>`);
+    client = await pageClient(await devtools(child));
+    await client.send('Page.enable');
+    await client.send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 800, deviceScaleFactor: 1, mobile: false});
+    const loaded = client.event('Page.loadEventFired');
+    await client.send('Page.navigate', {url: pathToFileURL(file).href});
+    await loaded;
+    const {result} = await client.send('Runtime.evaluate', {returnByValue: true, expression: `(() => {
+      const tip = document.getElementById('claim-graph-help');
+      const theorem = document.querySelector('.claim-head');
+      const x = theorem.getBoundingClientRect().left + 12, y = 70;
+      const hit = () => document.elementFromPoint(x, y);
+      const before = theorem.contains(hit());
+      tip.hidden = false;
+      const during = tip.contains(hit());
+      tip.hidden = true;
+      return {before, during, after: theorem.contains(hit())};
+    })()`});
+    assert.deepEqual(result.value, {before: true, during: true, after: true});
+  } finally {
+    await stopBrowser(child, closed, client);
+    await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});
+  }
+});
