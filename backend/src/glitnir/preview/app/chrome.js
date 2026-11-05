@@ -44,8 +44,13 @@
   });
   document.addEventListener('scroll', hideHelp, true);
   window.addEventListener('resize', hideHelp);
+  $('claim-graph-shortcut').innerHTML = '<button type="button" class="ghost" data-act="open-claim-graph">View claim graph</button>'
+    + helpHTML('claim-graph', 'About the claim graph', 'Open the graph in Explore. Select a statement to see its dependencies.');
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
+    const shortcut = $('claim-graph-shortcut').querySelector('button');
+    shortcut.disabled = heldRendering();
+    shortcut.title = shortcut.disabled ? 'Available when the notebook reconnects.' : '';
     $('conn').dataset.state = UI.connected ? 'up' : 'down';
     $('conn-text').textContent = UI.connected ? 'Connected' : 'Reconnecting…';
     $('connection-detail').textContent = UI.connected ? 'Connected to the local notebook server' : 'Server not reachable · retrying';
@@ -56,24 +61,6 @@
       $('lean-unsupported').hidden ? $('subline').textContent : $('lean-unsupported-text').textContent,
       $('live-status').textContent,
     ].filter(Boolean).join('\n');
-  }
-
-  function drawGraph() {
-    const svg = $('graph'), cs = claims(), rowH = 30, x = 34, W = 172, pos = new Map();
-    cs.forEach((c, i) => { pos.set(c.name, 14 + i * rowH); });
-    const H = Math.max(28, 14 + (cs.length - 1) * rowH + 14);
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    svg.setAttribute('height', H);
-    const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', muted: 'var(--faint)'})[t] || 'var(--blue)';
-    const arcs = cs.flatMap(c => (Array.isArray(c.uses) ? c.uses : []).filter(u => pos.has(u) && u !== c.name).map(u => {
-      const y1 = pos.get(u), y2 = pos.get(c.name), bend = x - 10 - (y2 - y1) / 5;
-      return `<path d="M${x - 7} ${y1}C${bend} ${y1} ${bend} ${y2} ${x - 9} ${y2}" fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#g-arr)"/>`;
-    })).join('');
-    svg.innerHTML = `<defs><marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8" fill="var(--faint)"/></marker></defs>${arcs}` +
-      cs.map(c => {
-        const tone = toneOf(c), y = pos.get(c.name), sel = UI.selected === c.name;
-        return `<g class="node" data-act="goto" data-id="${esc(c.name)}"><title>${esc(claimLabel(c))}: ${esc(statusOf(c).label)}${c.project && currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}</title><rect x="0" y="${y - 12}" width="${W}" height="24" fill="transparent"/><circle cx="${x}" cy="${y}" r="${sel ? 6.5 : 5.5}" fill="${tone === 'blue' ? 'var(--paper)' : color(tone)}" stroke="${color(tone)}" stroke-width="${sel ? 3 : 1.8}"/><text x="${x + 13}" y="${y + 3.5}" font-size="10.5" font-family="var(--mono)" fill="${sel ? 'var(--ink)' : 'var(--muted)'}">${esc(claimLabel(c))}</text></g>`;
-      }).join('');
   }
 
   // Git is an on-demand host observation, independent of notebook check records.
@@ -418,14 +405,8 @@
     document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
     $('panel-show').hidden = !notebookView || UI.panel;
-    // Project records hold uses only from checks that recorded them: without
-    // any, show no graph rather than a graph without its arcs.
-    const graph = !project || cs.some(c => Array.isArray(c.project?.uses));
-    for (const id of ['graph-label', 'graph', 'graph-note']) $(id).hidden = !graph;
-    $('graph-note').innerHTML = helpHTML('claim-graph', 'About the claim graph', project
-      ? 'Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.'
-      : 'Arcs come from Lean: the earlier claims a proof\'s axioms name.');
-    if (graph) drawGraph();
+    const shortcut = $('claim-graph-shortcut');
+    shortcut.hidden = !(cs.length || d.cells.some(cell => cell.claim));
     renderConnection();
   }
 
@@ -457,7 +438,7 @@
     }
   }
 
-  function render() {
+  function render({openClaimGraph = false} = {}) {
     if (!UI.data) return;
     workbench.syncAtlasLocation?.(UI.data);
     const diagramUI = saveDiagramUI();
@@ -492,7 +473,7 @@
     if (!heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
       else if (UI.mode === 'source') renderSource();
-      else renderProofGraph();
+      else renderProofGraph(openClaimGraph);
     }
     renderInspector();
     renderChrome();
@@ -779,6 +760,20 @@
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'goto': closeDiagram(); select(id, true, true); break;
+      case 'open-claim-graph': {
+        if (heldRendering()) break;
+        hideHelp();
+        UI.mode = 'graph';
+        render({openClaimGraph: true});
+        const heading = $('graph-detail')?.querySelector('h3') || $('graph-view').querySelector('h2');
+        if (heading) {
+          heading.tabIndex = -1;
+          heading.focus({preventScroll: true});
+        }
+        $('graph-view').scrollIntoView?.({block: 'start'});
+        revealGraphSelection();
+        break;
+      }
       case 'graph-select': {
         const node = graphNode(b.dataset.graphId);
         if (!node) break;

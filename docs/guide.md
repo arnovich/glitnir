@@ -370,10 +370,10 @@ environment is identified shows saved results as out of date once, too.
 
 Each result also records the claims it uses: the theorems its statement and proof
 name directly, from this notebook or from another notebook of the project (a
-module the project builds itself, not a dependency). Cards show them as chips,
-the sidebar draws a compact claim graph, and the **Explore** view lays the same
-recorded relationships out from foundations at the bottom to results at the
-top. It drops an edge when the same dependency is already visible through
+module the project builds itself, not a dependency). Cards show them as chips.
+**View claim graph**, beside **Contents**, opens **Explore** on the selected
+claim. Explore lays recorded relationships out from foundations at the bottom
+to results at the top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
 reads its notebook in the same panel when that notebook is available. Node
 colours are recorded claim statuses, with out-of-date results shown in amber

@@ -148,14 +148,10 @@
   }
 
   const walkthroughId = id => `walkthrough:${id}`;
-  function walkthroughGraphModel(data, selected = null) {
+  function walkthroughGraphModel(data, selected = null, selectedClaim = null) {
     const outline = data.walkthrough || {};
     const compatibility = walkthroughCompatibility(data);
     const allNodes = Array.isArray(outline.nodes) ? outline.nodes : [];
-    const selectedIndex = allNodes.findIndex(node => node && walkthroughId(node.id) === selected);
-    const rawNodes = selectedIndex >= MAX_GRAPH_NODES
-      ? [allNodes[selectedIndex], ...allNodes.slice(0, MAX_GRAPH_NODES - 1)]
-      : allNodes.slice(0, MAX_GRAPH_NODES);
     const rendered = data.preview?.mode === 'project' ? projectClaims(data) : (Array.isArray(data.claims) ? data.claims : []);
     const sourceClaims = (data.cells || []).filter(cell => typeof cell?.claim === 'string' && cell.claim)
       .map(cell => ({name: cell.claim, label: shortName(cell.claim), sourceOnly: true, start: cell.start}));
@@ -169,6 +165,12 @@
       const suffix = walkthroughClaims.filter(entry => entry.name.endsWith(`.${requested}`));
       return suffix.length === 1 ? suffix[0] : null;
     };
+    const selectedIndex = selectedClaim
+      ? allNodes.findIndex(node => node?.claim && matchingClaim(node.claim)?.name === selectedClaim)
+      : allNodes.findIndex(node => node && walkthroughId(node.id) === selected);
+    const rawNodes = selectedIndex >= MAX_GRAPH_NODES
+      ? [allNodes[selectedIndex], ...allNodes.slice(0, MAX_GRAPH_NODES - 1)]
+      : allNodes.slice(0, MAX_GRAPH_NODES);
     const nodes = [], byId = new Map(), claimProblems = [];
     for (const raw of rawNodes) {
       if (!raw || typeof raw.id !== 'string' || !raw.id || byId.has(walkthroughId(raw.id))) continue;
@@ -217,7 +219,9 @@
       problems, missingReferences});
   }
 
-  const graphModel = (data, selected = null) => data.walkthrough ? walkthroughGraphModel(data, selected) : claimGraphModel(data, selected?.startsWith('local:') ? selected.slice(6) : null);
+  const graphModel = (data, selected = null, selectedClaim = null) => data.walkthrough
+    ? walkthroughGraphModel(data, selected, selectedClaim)
+    : claimGraphModel(data, selectedClaim || (selected?.startsWith('local:') ? selected.slice(6) : null));
 
   function graphLayout(model) {
     const depth = new Map(model.nodes.map(node => [node.id, 0]));
@@ -353,19 +357,19 @@
     const staticDetails = staticPage && model.walkthrough ? `<div class="walkthrough-static-details">${model.nodes.map(node => `<section id="walkthrough-detail-${esc(node.outlineId)}">${graphDetailHTML(node, model, true)}</section>`).join('')}</div>` : '';
     const svgRole = staticPage && !model.walkthrough ? ' role="img"' : ' role="group"';
     const svgWidth = !staticPage && fit ? '100%' : Math.round(layout.width * zoom);
-    const heading = model.walkthrough ? model.title : 'Recorded proof graph';
+    const heading = model.walkthrough ? model.title : staticPage ? 'Recorded proof graph' : 'Claim graph';
     const description = model.walkthrough ? `${model.overview ? inlineHTML(model.overview) + ' ' : ''}Arrows show direct paper-level dependencies. Statement colour shows its kind; the dot shows the displayed walkthrough result status.` : 'Arrows run from supporting statements to results above them. Implied arrows are hidden to simplify the map; details list every recorded use. This view does not check or update results.';
     const label = model.walkthrough ? `${model.title} statement map` : 'Recorded proof graph';
     return `<section class="proof-graph-view${staticPage ? ' proof-graph-export' : ''}${model.walkthrough ? ' walkthrough-map' : ''}" aria-label="${esc(label)}"><header><div><h2>${esc(heading)}</h2><p>${description}</p>${legend}</div></header>
       ${compatibility}<div class="proof-graph-layout">${detail}${staticPage ? '' : '<div class="proof-graph-stage">'}${toolbar}<div class="proof-graph-canvas"><svg class="proof-map" width="${svgWidth}" viewBox="0 0 ${layout.width} ${layout.height}"${svgRole} aria-label="Statement dependencies"><defs><marker id="${marker}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${paths}${nodes}</svg></div>${staticPage ? '' : '</div>'}</div>${explanation}${truncatedNote}${malformedNote}${cyclicNote}${bounded}${outlineProblems}${staticDetails}${staticPage ? '<p class="small muted">Static copy of the saved graph; it does not check or update results.</p>' : ''}${staticPage ? workbench.atlasStaticHTML?.(data) || '' : ''}</section>`;
   }
 
-  function renderProofGraph() {
+  function renderProofGraph(openClaimGraph = false) {
     const root = document.getElementById('graph-view');
     if (!root || !UI.data) return;
-    if (workbench.renderAtlas?.(UI.data)) return;
-    const model = graphModel(UI.data, UI.graphSelected || localId(UI.selected));
-    if (!model.byId.has(UI.graphSelected)) {
+    if (workbench.renderAtlas?.(UI.data, openClaimGraph)) return;
+    const model = graphModel(UI.data, UI.graphSelected || localId(UI.selected), openClaimGraph ? UI.selected : null);
+    if (openClaimGraph || !model.byId.has(UI.graphSelected)) {
       const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }

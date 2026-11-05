@@ -75,10 +75,11 @@
 
   <div class="workspace" id="workspace">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut" hidden></span>
+      </div>
       <ol id="outline"></ol>
-      <h4 class="label" id="graph-label">Claim graph <span id="graph-note"></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="480" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>

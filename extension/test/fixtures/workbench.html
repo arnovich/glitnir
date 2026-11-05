@@ -67,10 +67,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut"><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="setup"><button type="button" data-act="scroll" data-id="notebook-entry-0-1" aria-current="false" title="1 import"><span class="o-kind" title="Declaration kind: Setup">Setup</span><span class="o-name">1 import</span></button></li><li class="outline-branch outline-section" data-outline-kind="section"><button type="button" class="outline-toggle" data-outline-toggle="notebook-heading-1-0" data-outline-key="notebook-heading-1-0|Facts" aria-label="Fold Facts" aria-expanded="true" aria-controls="outline-children-notebook-heading-1-0">▾</button><button type="button" data-act="scroll" data-id="notebook-heading-1-0" aria-current="false" title="Facts">Facts</button><ol id="outline-children-notebook-heading-1-0"><li class="outline-declaration" data-outline-kind="setup"><button type="button" data-act="scroll" data-id="notebook-entry-2-7" aria-current="false" title="namespace Demo"><span class="o-kind" title="Declaration kind: Setup">Setup</span><span class="o-name">namespace Demo</span></button></li><li class="outline-declaration" data-outline-kind="definition"><button type="button" data-act="scroll" data-id="notebook-entry-2-9" aria-current="false" title="Demo.k"><span class="o-kind" title="Declaration kind: Definition">Definition</span><span class="o-name">k</span></button></li><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="Demo.k_pos" aria-current="true" title="Demo.k_pos"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">k_<wbr>pos</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="Demo.floor" aria-current="false" title="Demo.floor"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">floor</span><span class="dot" data-tone="amber" title="Contains sorry · out of date"></span></button></li></ol></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -242,10 +243,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace focused-view" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline" hidden="">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut"><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="setup"><button type="button" data-act="scroll" data-id="notebook-entry-0-1" aria-current="false" title="1 import"><span class="o-kind" title="Declaration kind: Setup">Setup</span><span class="o-name">1 import</span></button></li><li class="outline-branch outline-section" data-outline-kind="section"><button type="button" class="outline-toggle" data-outline-toggle="notebook-heading-1-0" data-outline-key="notebook-heading-1-0|Facts" aria-label="Fold Facts" aria-expanded="true" aria-controls="outline-children-notebook-heading-1-0">▾</button><button type="button" data-act="scroll" data-id="notebook-heading-1-0" aria-current="false" title="Facts">Facts</button><ol id="outline-children-notebook-heading-1-0"><li class="outline-declaration" data-outline-kind="setup"><button type="button" data-act="scroll" data-id="notebook-entry-2-7" aria-current="false" title="namespace Demo"><span class="o-kind" title="Declaration kind: Setup">Setup</span><span class="o-name">namespace Demo</span></button></li><li class="outline-declaration" data-outline-kind="definition"><button type="button" data-act="scroll" data-id="notebook-entry-2-9" aria-current="false" title="Demo.k"><span class="o-kind" title="Declaration kind: Definition">Definition</span><span class="o-name">k</span></button></li><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="Demo.k_pos" aria-current="true" title="Demo.k_pos"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">k_<wbr>pos</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="Demo.floor" aria-current="false" title="Demo.floor"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">floor</span><span class="dot" data-tone="amber" title="Contains sorry · out of date"></span></button></li></ol></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -417,10 +419,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut"><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="setup"><button type="button" data-act="scroll" data-id="notebook-entry-0-1" aria-current="false" title="1 import"><span class="o-kind" title="Declaration kind: Setup">Setup</span><span class="o-name">1 import</span></button></li><li class="outline-branch outline-section" data-outline-kind="section"><button type="button" class="outline-toggle" data-outline-toggle="notebook-heading-1-0" data-outline-key="notebook-heading-1-0|Facts" aria-label="Fold Facts" aria-expanded="true" aria-controls="outline-children-notebook-heading-1-0">▾</button><button type="button" data-act="scroll" data-id="notebook-heading-1-0" aria-current="false" title="Facts">Facts</button><ol id="outline-children-notebook-heading-1-0"><li class="outline-declaration" data-outline-kind="setup"><button type="button" data-act="scroll" data-id="notebook-entry-2-7" aria-current="false" title="namespace Demo"><span class="o-kind" title="Declaration kind: Setup">Setup</span><span class="o-name">namespace Demo</span></button></li><li class="outline-declaration" data-outline-kind="definition"><button type="button" data-act="scroll" data-id="notebook-entry-2-9" aria-current="false" title="Demo.k"><span class="o-kind" title="Declaration kind: Definition">Definition</span><span class="o-name">k</span></button></li><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="Demo.k_pos" aria-current="true" title="Demo.k_pos"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">k_<wbr>pos</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="Demo.floor" aria-current="false" title="Demo.floor"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">floor</span><span class="dot" data-tone="amber" title="Contains sorry"></span></button></li></ol></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -592,10 +595,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut" hidden=""><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="definition"><button type="button" data-act="scroll" data-id="notebook-entry-0-1" aria-current="false" title="M"><span class="o-kind" title="Declaration kind: Definition">Definition</span><span class="o-name">M</span></button></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -725,10 +729,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut" hidden=""><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="definition"><button type="button" data-act="scroll" data-id="notebook-entry-0-1" aria-current="false" title="M"><span class="o-kind" title="Declaration kind: Definition">Definition</span><span class="o-name">M</span></button></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -859,10 +864,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut" hidden=""><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"></ol>
-      <h4 class="label" id="graph-label">Claim graph <span id="graph-note"><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the earlier claims a proof's axioms name.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses" viewBox="0 0 172 28" height="28"><defs><marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8" fill="var(--faint)"></path></marker></defs></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -984,10 +990,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut"><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="theorem"><button type="button" data-act="goto" data-id="t" aria-current="true" title="t"><span class="o-kind" title="Declaration kind: Theorem">Theorem</span><span class="o-name o-claim">t</span><span class="dot" data-tone="green" title="Kernel checked"></span></button></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>
@@ -1131,10 +1138,11 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
-      <h4 class="label">Contents</h4>
+      <div class="contents-heading">
+        <h4 class="label">Contents</h4>
+        <span id="claim-graph-shortcut" hidden=""><button type="button" class="ghost" data-act="open-claim-graph" title="">View claim graph</button><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Open the graph in Explore. Select a statement to see its dependencies.</span></span></span>
+      </div>
       <ol id="outline"><li class="outline-declaration" data-outline-kind="definition"><button type="button" data-act="scroll" data-id="notebook-entry-0-1" aria-current="false" title="M"><span class="o-kind" title="Declaration kind: Definition">Definition</span><span class="o-name">M</span></button></li></ol>
-      <h4 class="label" id="graph-label" hidden="">Claim graph <span id="graph-note" hidden=""><span class="context-help"><button type="button" class="help-icon" data-help-key="help-claim-graph" aria-label="About the claim graph" aria-describedby="help-claim-graph">?</button><span class="help-tooltip" id="help-claim-graph" role="tooltip" hidden="">Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.</span></span></span></h4>
-      <svg class="graph" id="graph" role="img" aria-label="Which claims each claim uses"></svg>
     </nav>
 
     <div id="outline-resize" role="separator" tabindex="0" aria-label="Notebook sidebar width" aria-orientation="vertical" aria-controls="outline" aria-valuemin="200" aria-valuemax="327" aria-valuenow="260" title="Drag to resize; arrow keys adjust; double-click to reset"></div>

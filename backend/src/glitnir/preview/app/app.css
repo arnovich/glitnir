@@ -81,6 +81,10 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 /* Raise the sticky rail's stacking layer while its help overlaps the document. */
 .rail:has(.help-tooltip:not([hidden])){z-index:4}
 .label{margin:0 0 8px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.contents-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 6px;margin-bottom:8px}
+.contents-heading .label{margin:0}
+#claim-graph-shortcut{display:inline-flex;align-items:center;white-space:nowrap}
+#claim-graph-shortcut>[data-act=open-claim-graph]{padding:3px 0;color:var(--blue);font-size:11px}
 .rail ol{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:1px}
 /* Names wrap at their parts; status dots keep one column inside the rail. */
 .rail li button{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 8px;align-items:start;justify-items:start;text-align:left;font-weight:400;padding:4px 8px;font-size:12px;column-gap:10px}
@@ -94,8 +98,6 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .dot[data-tone=amber]{background:var(--amber);border-color:var(--amber)}
 .dot[data-tone=red]{background:var(--red);border-color:var(--red)}
 .dot[data-tone=muted]{border-color:var(--faint);border-style:dashed}
-svg.graph{width:100%;display:block;margin-bottom:6px}
-svg.graph .node{cursor:pointer}
 .proof-graph-view{max-width:1180px;margin:0 auto}
 .proof-graph-view>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:12px}
 .proof-graph-view>header h2{font-size:18px;margin:0 0 4px}
