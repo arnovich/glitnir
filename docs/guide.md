@@ -182,14 +182,12 @@ closed. Background refreshes leave a closed Inspector closed.
 Select a theorem to open its Inspector. **Inspect proof** records the saved proof
 with Lean. The Inspector shows **Starting goals** first, then what Lean still
 needs to prove after the step you choose. Use **Previous**, **Next**, or the step
-picker. Open **Context** for the variables and hypotheses in a goal, or **Tactic
-code** for the full command. While refreshing, the Inspector labels any still
-current results **Previous recording** until the new goals arrive.
+picker. For each step, the Inspector shows the tactic, its source lines, and
+the goals and context before and after it. While refreshing, any still current
+results stay visible under **Previous recording** until the new goals arrive.
 
-**Open full view** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
-opens a wider walkthrough, reusing the recording when available. **Lean source**
-and **Recording details** are available for reference. **Back to claim** or
-`Esc` returns to the Inspector and the claim’s reading position.
+The separate walkthrough is also available via `t` or **Glitnir: Expand Selected
+Claim’s Proof Steps**. **Back to claim** or `Esc` returns to the Notebook.
 
 Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. It
 shows what Lean reported for the saved file without updating the claim’s check

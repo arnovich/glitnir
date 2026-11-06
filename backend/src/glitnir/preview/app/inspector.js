@@ -141,7 +141,7 @@
     ? goals.map(goal => {
       const at = goal.indexOf('\n⊢');
       if (at < 0) return `<pre class="goal goal-block goal-target">${esc(goal)}</pre>`;
-      return `<div class="goal-block"><pre class="goal goal-target">${esc(goal.slice(at + 1))}</pre><details class="goal-context" data-fold-key="goal-context:${esc(goal)}"><summary>Context</summary><pre class="goal">${esc(goal.slice(0, at))}</pre></details></div>`;
+      return `<div class="goal-block"><pre class="goal goal-target">${esc(goal.slice(at + 1))}</pre><div class="goal-context"><div class="goal-detail-label">Context</div><pre class="goal">${esc(goal.slice(0, at))}</pre></div></div>`;
     }).join('')
     : empty;
   function proofProgressHTML(run) {
@@ -151,7 +151,7 @@
   function goalSectionHTML(c) {
     const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'Shows the goals Lean reports at each tactic step of this claim’s saved proof. Use Check saved file to update the check status.')}</h5>`;
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
-    if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p>${expandProofHTML(c)}</div>`;
+    if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
     const dirty = document.body.classList.contains('unsaved-lean');
     const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${label}</button>`;
@@ -176,7 +176,7 @@
     }
     const key = display ? goalKey(c.name, display) : '';
     const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${goalStepsHTML(c, display, key)}</div>` : '';
-    return `<div class="insp-section goal-section">${head}<p class="small muted goal-intro">See what Lean still needs to prove after each step.</p>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}<div class="goal-actions">${action}${expandProofHTML(c)}</div></div>`;
+    return `<div class="insp-section goal-section">${head}<p class="small muted goal-intro">See what Lean still needs to prove after each step.</p>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}${action ? `<div class="goal-actions">${action}</div>` : ''}</div>`;
   }
 
   function goalKey(name, trace) {
@@ -189,13 +189,15 @@
     if (!key || !picker || !Number.isInteger(index) || index < 0 || index >= picker.options.length) return;
     goalPosition = {key, index};
     render();
+    $('insp').querySelector('.goal-results').scrollTop = 0;
   }
   function goalStepsHTML(c, trace, key) {
     const {start_line: start, end_line: end} = c.project;
     const nodes = trace.nodes.filter(n => n.range.start.line >= start && n.range.start.line <= end);
     const messages = [...(trace.errors || []), ...(trace.warnings || [])];
-    const messagesHTML = messages.length ? `<details class="goal-messages" data-fold-key="goal-messages"><summary class="small muted">Lean messages for the file · ${messages.length}</summary><pre>${esc(messages.join('\n\n'))}</pre></details>` : '';
-    const provenance = `<details class="goal-recording-details" data-fold-key="goal-recording:${esc(c.name)}:${esc(trace.id)}"><summary>Recording details</summary><p class="small muted goal-caption">Recorded from source ${esc(String(trace.source_sha256).slice(0, 8))}${trace.environment?.toolchain ? ` with ${esc(trace.environment.toolchain)}` : ''}. Dependencies were read-only live inputs. Recorded elaboration attempts, not a proof certificate: this never changes a status.</p></details>`;
+    const messagesHTML = messages.length ? `<section class="goal-messages" aria-label="Lean messages for the file"><h6 class="goal-detail-label">Lean messages for the file · ${messages.length}</h6><pre>${esc(messages.join('\n\n'))}</pre></section>` : '';
+    const version = leanVersion(trace.environment?.toolchain);
+    const provenance = version ? `<p class="small muted goal-recording">Recorded with Lean ${esc(version)}</p>` : '';
     if (!nodes.length) {
       return `<div class="note-line goal-note" data-tone="muted">${icon('branch')}<span>No tactic steps were recorded for this claim. It may be a term proof${trace.status === 'partial' ? ', or Lean stopped before it' : ''}.</span></div>${messagesHTML}${provenance}`;
     }
@@ -209,13 +211,14 @@
     const navButton = (act, label, value, disabled) => `<button type="button" class="secondary" data-act="${act}" value="${value}" aria-controls="goal-result"${disabled ? ' disabled' : ''}>${label}</button>`;
     const pickerTag = 'select';
     const nav = `<div class="goal-navigation" role="group" aria-label="Proof step navigation">${navButton('goal-prev', 'Previous', index - 1, index === 0)}<${pickerTag} data-act="goal-picker" aria-label="Select a proof step" aria-controls="goal-result">${options}</${pickerTag}>${navButton('goal-next', 'Next', index + 1, index === nodes.length)}</div>`;
-    const tactic = selected ? `<details class="goal-tactic-details" data-fold-key="goal-step:${esc(key)}:${esc(selected.id)}"><summary>Tactic code</summary><pre class="goal-full-tactic" data-tactic-key="${esc(JSON.stringify([key, selected.id]))}" tabindex="0" role="region" aria-label="Full tactic for step ${index}"><code>${esc(selected.text)}</code></pre></details>` : '';
+    const tactic = selected ? `<div class="goal-tactic-details"><div class="goal-tactic-heading"><h6 class="goal-detail-label">Tactic</h6>${lineLinkHTML(selected.range.start.line, selected.range.end.line, false)}</div><pre class="goal-full-tactic" data-tactic-key="${esc(JSON.stringify([key, selected.id]))}" tabindex="0" role="region" aria-label="Full tactic for step ${index}"><code>${esc(selected.text)}</code></pre></div>` : '';
     const empty = !selected ? '<p class="small muted">No starting goals were recorded.</p>'
       : trace.status === 'partial' ? '<p class="small muted">Lean recorded no remaining goals for this step.</p>'
       : '<p class="goal-complete" data-tone="green">No goals remain in this step’s scope.</p>';
-    const result = `<section id="goal-result" class="goal-result${selected ? '' : ' goal-initial'}" aria-labelledby="goal-result-title"><h6 id="goal-result-title" class="goal-result-title">${selected ? `Goals after step ${index}` : 'Starting goals'}</h6>${goalBlocksHTML(selected ? selected.after : nodes[0].before, empty)}${tactic}</section>`;
+    const result = `<section id="goal-result" class="goal-result${selected ? '' : ' goal-initial'}" aria-labelledby="goal-result-title"><h6 id="goal-result-title" class="goal-result-title">${selected ? `Goals after step ${index}` : 'Starting goals'}</h6>${goalBlocksHTML(selected ? selected.after : nodes[0].before, empty)}</section>`;
+    const before = selected ? `<section class="goal-result goal-before" aria-labelledby="goal-before-title"><h6 id="goal-before-title" class="goal-result-title">Goals before step ${index}</h6>${goalBlocksHTML(selected.before, '<p class="small muted">No goals were recorded before this step.</p>')}</section>` : '';
     return (trace.status === 'partial' ? `<div class="note-line goal-note" data-tone="amber">${icon('branch')}<span>Lean reported errors in the file; some steps may be missing.</span></div>` : '')
-      + nav + result
+      + nav + tactic + result + before
       + messagesHTML + provenance;
   }
 

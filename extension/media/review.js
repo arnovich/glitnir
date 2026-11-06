@@ -377,6 +377,7 @@
     const buttons = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].filter(b => b.dataset.sha === sha);
     let cell = currentCell();
     if (!action && mode === 'proof' && !sourceLine && inspection) action = buttons.find(b => b.dataset.proofClaim === inspection.name && Number(b.dataset.start) === inspection.start);
+    if (!action && mode !== 'proof' && !sourceLine && workbench?.UI.mode === 'doc') action = buttons.find(b => b.dataset.proofClaim === workbench.UI.selected);
     if (!action) {
       action = buttons.find(b => Number(b.dataset.index) === selected && (!sourceLine || Number(b.dataset.start) <= sourceLine && sourceLine <= Number(b.dataset.end)));
       if (action && !cell?.claim && cell?.kind !== 'claim' && buttons.filter(b => Number(b.dataset.index) === selected).length > 1 && !sourceLine) action = null;
@@ -406,13 +407,14 @@
     if (inspection && nodes().length) workbench?.rememberInlineGoalStep?.(inspection.name, trace, step);
     claimsMode();
     if (workbench) { workbench.UI.mode = 'doc'; workbench.render(); }
-    const action = [...document.querySelectorAll('#insp [data-act="inspect-proof"]')].find(b => b.dataset.proofClaim === origin?.claim);
+    const action = [...document.querySelectorAll('#insp [data-act="inspect-proof"], #insp [data-act="goal"]')].find(b => !b.disabled && (b.dataset.proofClaim || b.dataset.id) === origin?.claim);
+    const picker = action?.closest('.goal-section')?.querySelector('[data-act="goal-picker"]');
     const scope = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].find(el => el.dataset.proofClaim === origin?.claim);
     const target = scope?.closest('.cell');
     if (origin?.sha === sha && origin.scroll) window.scrollTo(...origin.scroll);
     else if (target) { workbench?.revealSection?.(target); target.scrollIntoView?.({block: 'center'}); }
     if (focus) {
-      if (action && !action.disabled) action.focus({preventScroll: true});
+      if (action) (picker || action).focus();
       else if (target) { target.tabIndex = -1; target.classList.add('document-target'); if (workbench) workbench.UI.documentLine = {line: inspection?.start, sha}; target.focus({preventScroll: true}); }
       else document.querySelector('[data-mode="doc"]')?.focus({preventScroll: true});
     }
@@ -487,7 +489,10 @@
     if (link) selected = snapshot?.cells?.find(c => c.id === link.dataset.id)?.index ?? null;
     else if (wrap) selected = Number(wrap.dataset.index);
     else if (row) selected = snapshot?.cells?.find(c => c.id === row.dataset.claim)?.index ?? null;
-    if (link || wrap || row) { claimsMode(); update(); }
+    if (link || wrap || row) {
+      sourceLine = sourceCharacter = undefined;
+      claimsMode();
+    }
   });
   function helpOpen() { helpFocus = document.activeElement; $('keys-open').click(); }
   function restoreHelpFocus() { (helpFocus?.isConnected && !helpFocus.closest('[hidden]') ? helpFocus : $('keys-open')).focus(); }

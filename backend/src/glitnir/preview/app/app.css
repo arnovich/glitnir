@@ -513,10 +513,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .goal-section pre.goal{padding:6px 9px;background:var(--sunk);border-radius:5px;font-size:11.5px}
 .goal-section .goal-note{margin:4px 0 8px;border-radius:5px}
 .goal-section>button{margin-top:4px}
-.goal-caption{margin:6px 0 0}
 .goal-state{margin:0 0 6px}
 .goal-messages{margin:8px 0}
-.goal-messages summary{cursor:pointer}
 .goal-messages pre{margin-top:4px;padding:6px 9px;background:var(--sunk);border-radius:5px;font-size:11px}
 /* Another notebook of the project read in this panel, with a way back. */
 .notebook-trail{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 26px;border-bottom:1px solid var(--border);background:var(--violet-soft);font-size:12px}
@@ -730,14 +728,14 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 
 .goal-intro{margin:0 0 8px}
 .goal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.goal-navigation{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:stretch;gap:5px}
+.goal-navigation{position:sticky;top:0;z-index:1;background:var(--chrome);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:stretch;gap:5px}
 .goal-navigation button,.goal-navigation select{min-height:30px;padding:3px 6px;font-size:12px}
 .goal-navigation select{width:100%;min-width:0}
 .goal-result{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:6px}
 .goal-result-title{font-size:12px;margin:0 0 4px}
 .goal-previous-recording{margin:4px 0}
 .goal-tactic-details{margin-top:8px;color:var(--muted)}
-.goal-tactic-details>summary{cursor:pointer;font-size:12px}
+.goal-tactic-heading{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .goal-results{max-height:min(55vh,560px);overflow:auto;padding:2px}
 
 .check-progress{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin:12px 0;background:var(--chrome);border:1px solid var(--border);border-radius:6px}
@@ -759,11 +757,9 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 #run-activity{padding:0 16px}
 .glitnir-proof-mode #run-activity{display:none}
 .goal-context{margin-top:8px;color:var(--muted)}
-.goal-context>summary{cursor:pointer;font:12px var(--sans)}
+.goal-detail-label{margin:0 0 4px;color:var(--muted);font:500 12px var(--sans)}
 .goal-target{color:var(--ink);margin-top:8px}
-.goal-full-tactic{max-width:100%;overflow-x:auto;white-space:pre;overflow-wrap:normal;margin:4px 0 10px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:5px}
-.goal-full-tactic code{font:inherit;color:var(--ink);background:none;padding:0;white-space:inherit;overflow-wrap:normal}
+.goal-full-tactic{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 10px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:5px}
+.goal-full-tactic code{font:inherit;color:var(--ink);background:none;padding:0;white-space:inherit;overflow-wrap:inherit}
 .goal-complete{color:var(--green);font-size:12px;margin:6px 0 10px}
-.goal-recording-details{margin-top:12px;font-size:11px;color:var(--muted)}
-.goal-recording-details>summary{cursor:pointer}
-.goal-recording-details>.goal-caption{line-height:1.5;overflow-wrap:anywhere}
+.goal-recording{margin:8px 0 0}
