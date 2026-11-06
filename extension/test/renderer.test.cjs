@@ -3142,7 +3142,10 @@ test('routine explainers live behind focusable help icons', async () => {
     }
     assert.equal(d.querySelector('#insp .goal-caption'), null);
     assert.equal(d.querySelector('#insp .insp-check > .small'), null);
-    assert.ok(d.querySelector('#insp [data-act="goal"]'));
+    const proofHeading = d.querySelector('#insp .goal-heading');
+    assert.equal(proofHeading.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
+    assert.match(proofHeading.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
+    assert.equal(d.querySelector('#insp .goal-section > p'), null, 'proof help stays in the tooltip');
     assert.ok(d.querySelector('#insp [data-act="check-through"]'));
   } finally { window.close(); }
 });

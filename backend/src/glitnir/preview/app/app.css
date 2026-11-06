@@ -271,7 +271,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .insp-head .who{flex:1;min-width:0}
 .insp-head .who b{font-weight:600;display:block}
 .insp-head button{padding:4px}
-.focus{margin:0 16px 10px;padding:10px 11px;border:1px solid var(--border);border-radius:7px;background:var(--paper);display:grid;gap:6px}
+.focus{margin:12px 0;padding-top:12px;border-top:1px solid var(--border);display:grid;gap:6px}
 .focus .row{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
 .focus .eq{font:400 16px/1.65 var(--sans)}
 .focus dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0;font-size:11px}
@@ -512,7 +512,6 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .goal-block+.goal-block{margin-top:10px}
 .goal-section pre.goal{padding:6px 9px;background:var(--sunk);border-radius:5px;font-size:11.5px}
 .goal-section .goal-note{margin:4px 0 8px;border-radius:5px}
-.goal-section>button{margin-top:4px}
 .goal-state{margin:0 0 6px}
 .goal-messages{margin:8px 0}
 .goal-messages pre{margin-top:4px;padding:6px 9px;background:var(--sunk);border-radius:5px;font-size:11px}
@@ -726,8 +725,9 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
   .bar>.bar-right{max-width:100%;min-width:0}
 }
 
-.goal-intro{margin:0 0 8px}
-.goal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.goal-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.goal-heading h5{margin:0}
+.goal-heading+.goal-results{margin-top:8px}
 .goal-navigation{position:sticky;top:0;z-index:1;background:var(--chrome);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:stretch;gap:5px}
 .goal-navigation button,.goal-navigation select{min-height:30px;padding:3px 6px;font-size:12px}
 .goal-navigation select{width:100%;min-width:0}

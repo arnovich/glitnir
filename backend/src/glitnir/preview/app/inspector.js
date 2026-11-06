@@ -138,7 +138,7 @@
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
   }
   function goalSectionHTML(c, range = c.project) {
-    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'Shows the goals Lean reports at each tactic step of this claim’s saved proof. Use Check saved file to update the check status.')}</h5>`;
+    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
     if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
@@ -165,7 +165,7 @@
     }
     const key = display ? goalKey(c.name, display) : '';
     const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${goalStepsHTML(c, display, key, range)}</div>` : '';
-    return `<div class="insp-section goal-section">${head}<p class="small muted goal-intro">See what Lean still needs to prove after each step.</p>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}${action ? `<div class="goal-actions">${action}</div>` : ''}</div>`;
+    return `<div class="insp-section goal-section"><div class="goal-heading">${head}${action}</div>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}</div>`;
   }
 
   function goalKey(name, trace) {
