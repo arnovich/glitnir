@@ -3142,9 +3142,13 @@ test('routine explainers live behind focusable help icons', async () => {
     }
     assert.equal(d.querySelector('#insp .goal-caption'), null);
     assert.equal(d.querySelector('#insp .insp-check > .small'), null);
-    const proofHeading = d.querySelector('#insp .goal-heading');
-    assert.equal(proofHeading.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
-    assert.match(proofHeading.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
+    const proof = d.querySelector('#insp .goal-section');
+    assert.ok(d.querySelector('#insp .focus').compareDocumentPosition(proof) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(proof.nextElementSibling.querySelector('h5').textContent, 'Assumptions from the last check');
+    const actions = d.getElementById('insp').lastElementChild;
+    assert.deepEqual([...actions.querySelectorAll('[data-act]')].map(button => button.dataset.act), ['check-through', 'goal']);
+    assert.equal(actions.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
+    assert.match(proof.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
     assert.equal(d.querySelector('#insp .goal-section > p'), null, 'proof help stays in the tooltip');
     assert.ok(d.querySelector('#insp [data-act="check-through"]'));
   } finally { window.close(); }
@@ -3243,7 +3247,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
-    const button = insp.querySelector('.goal-section [data-act="goal"]');
+    const button = insp.querySelector('.insp-actions [data-act="goal"]');
     assert.equal(button.textContent, 'Inspect proof');
     assert.match(insp.querySelector('.goal-section').textContent, /Use Check saved file to update the check status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
@@ -3275,7 +3279,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
     assert.match(insp.querySelector('.goal-recording').textContent, /Recorded with Lean 4\.35\.0/);
     assert.equal(insp.querySelector('.goal-results details'), null, 'proof details are visible without opening folds');
-    assert.equal(insp.querySelector('.goal-section [data-act="goal"]').textContent, 'Refresh proof goals');
+    assert.equal(insp.querySelector('.insp-actions [data-act="goal"]').textContent, 'Refresh proof goals');
     assert.equal(insp.querySelector('.focus .pill').textContent, 'Kernel checked', 'the status is the saved record’s');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1, 'one observation at a time');
     // The same observation serves the next claim: here a term proof records no steps.

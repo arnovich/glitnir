@@ -469,7 +469,9 @@
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const activityFocus = document.activeElement?.closest('#run-activity')?.querySelector(':focus')?.dataset.act;
     const scroll = $('insp').scrollTop;
-    const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
+    const goalControls = '.goal-section [data-act], .insp-actions [data-act="goal"]';
+    const active = document.activeElement;
+    const goalFocus = $('insp').contains(active) && active.matches(goalControls) ? active.dataset.act : null;
     const tacticStates = new Map([...$('insp').querySelectorAll('.goal-full-tactic')].map(el => [el.dataset.tacticKey, {left: el.scrollLeft, top: el.scrollTop, focused: document.activeElement === el}]));
     const results = $('insp').querySelector('.goal-results');
     const resultFocus = results?.contains(document.activeElement);
@@ -535,9 +537,9 @@
       if (state) { el.scrollLeft = state.left; el.scrollTop = state.top; if (state.focused) el.focus({preventScroll: true}); }
     }
     if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
-      const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);
+      const controls = [...$('insp').querySelectorAll(goalControls)].filter(el => !el.disabled);
       const target = controls.find(el => el.dataset.act === goalFocus)
-        || (goalFocus && controls.find(el => el.dataset.act === (goalFocus === 'goal-cancel' ? 'goal' : 'goal-cancel')))
+        || (goalFocus === 'goal' && controls.find(el => el.dataset.act === 'goal-cancel'))
         || controls.find(el => el.dataset.act === 'goal-picker') || controls[0];
       if (target) target.focus({preventScroll: true});
       else {
