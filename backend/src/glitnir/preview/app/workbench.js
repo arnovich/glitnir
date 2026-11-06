@@ -190,7 +190,7 @@
     }
   }
   function canFollow() {
-    return $('live-follow').checked && UI.mode === 'doc' && !document.body.classList.contains('glitnir-proof-mode')
+    return $('live-follow').checked && UI.mode === 'doc'
       && !document.querySelector('.overlay:not([hidden]), #history[open]');
   }
   function holdRendering(message) {
@@ -243,7 +243,8 @@
     for (const id of ['doc', 'source', 'insp']) { $(id).inert = false; $(id).classList.remove('live-held'); }
     readableSnapshot = data;
     snapshots.set(linkedPath() ?? '', data);
-    if (!UI.selected || !claim(UI.selected)) UI.selected = claims().length ? claims()[0].name : null;
+    // Fresh declarations can have a scope before they have a saved result.
+    if (!claim(UI.selected) && !workbench.proofScope(UI.selected)) UI.selected = claims()[0]?.name ?? null;
     const pending = takePendingClaim();
     render();
     void workbench.loadResearch?.(UI.selected);
@@ -340,7 +341,7 @@
     catch (error) { UI.checkTiming = null; throw error; }
     finally { UI.checkRequested = false; render(); }
   }
-  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.goals?.starting || UI.goals?.trace?.status === 'running' || UI.proofBusy);
+  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.goals?.starting || UI.goals?.trace?.status === 'running');
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note, scope = 'card') {

@@ -100,16 +100,6 @@
         "category": "Glitnir"
       },
       {
-        "command": "glitnir.reviewClaims",
-        "title": "Return to Claim",
-        "category": "Glitnir"
-      },
-      {
-        "command": "glitnir.reviewProof",
-        "title": "Expand Selected Claim’s Proof Steps",
-        "category": "Glitnir"
-      },
-      {
         "command": "glitnir.reviewHelp",
         "title": "Keyboard Shortcuts",
         "category": "Glitnir"

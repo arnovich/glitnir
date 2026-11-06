@@ -4,7 +4,7 @@
   const workbench = window.glitnirWorkbench;
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
-    currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, helpHTML, icon, images,
+    currencyNoted, currencyText, decisionAction, diagramAction, editGoalSource, esc, fetch, heldRendering, helpHTML, icon, images,
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
@@ -348,8 +348,8 @@
     const checkingNow = !linked && project && d.preview.check?.status === 'running';
     if (checkingNow) activity.append($('project-check'));
     else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
-    const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : UI.proofActivity;
-    const showProof = !linked && proofRun && (proofRun.expanded || UI.mode !== 'doc' || !UI.panel);
+    const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
+    const showProof = !linked && proofRun && (UI.mode !== 'doc' || !UI.panel || !$('insp').querySelector('.goal-run-progress'));
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
     activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
@@ -440,7 +440,7 @@
     }
   }
 
-  function render({openClaimGraph = false, openExplore = false} = {}) {
+  function render({openClaimGraph = false, openExplore = false, inspectorOnly = false} = {}) {
     if (!UI.data) return;
     workbench.syncAtlasLocation?.(UI.data);
     const diagramUI = saveDiagramUI();
@@ -474,13 +474,13 @@
     const results = $('insp').querySelector('.goal-results');
     const resultFocus = results?.contains(document.activeElement);
     const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
-    if (!heldRendering()) {
+    if (!inspectorOnly && !heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
       else if (UI.mode === 'source') renderSource();
       else renderProofGraph({openClaimGraph, openExplore});
     }
     renderInspector();
-    renderChrome();
+    if (!inspectorOnly) renderChrome();
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
     if (graphNotesFocus && UI.mode === 'graph' && !$('graph-view').querySelector('.proof-graph-notes')) {
@@ -536,9 +536,14 @@
     }
     if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
       const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);
-      (controls.find(el => el.dataset.act === goalFocus)
+      const target = controls.find(el => el.dataset.act === goalFocus)
         || (goalFocus && controls.find(el => el.dataset.act === (goalFocus === 'goal-cancel' ? 'goal' : 'goal-cancel')))
-        || controls.find(el => el.dataset.act === 'goal-picker') || controls[0])?.focus({preventScroll: true});
+        || controls.find(el => el.dataset.act === 'goal-picker') || controls[0];
+      if (target) target.focus({preventScroll: true});
+      else {
+        $('insp-title').tabIndex = -1;
+        $('insp-title').focus({preventScroll: true});
+      }
     }
     restoreDiagramUI(diagramUI);
     if (helpFocus) {
@@ -615,22 +620,19 @@
   // The one list of shortcuts: the help dialog is drawn from it, and the
   // user guide's table (docs/guide.md) must match it (a test compares them).
   // `editor` keys exist only in the VS Code preview, whose review layer
-  // (review.js) handles n/p, c/t and e; `editorText` is their wording there.
+  // (review.js) handles n/p and e.
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
   const SHORTCUTS = [
     {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
     {group: 'Navigate', keys: ['n', 'p'], editor: true,
-      text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / expand selected claim’s proof steps'},
+      text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped'},
     {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
     {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
     {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
-    {group: 'Check and edit', keys: ['r'], text: 'Check the saved file through the selected claim',
-      editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
-    {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim or proof step in VS Code'},
+    {group: 'Check and edit', keys: ['r'], text: 'Check the saved file through the selected claim'},
+    {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim in VS Code'},
     {group: 'General', keys: ['?'], text: 'Show these shortcuts'},
-    {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel',
-      editorText: 'Close the dialog; in Proof steps, return to the claim'},
+    {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel'},
     {group: 'General', keys: MAC ? ['⌘K', 'G'] : ['Ctrl+K', 'G'], chord: true, editor: true,
       text: 'In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G'},
   ].filter(s => HOST || !s.editor);
@@ -639,7 +641,7 @@
     $('keys-intro').textContent = 'Single keys work while the notebook has focus, outside text fields. Moving never starts a check.';
     const groups = [...new Set(SHORTCUTS.map(s => s.group))];
     $('keys-groups').innerHTML = groups.map(group => `<section class="keys-group"><h4 class="label">${esc(group)}</h4><dl>${SHORTCUTS.filter(s => s.group === group)
-      .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc((HOST && s.editorText) || s.text)}</dd>`).join('')}</dl></section>`).join('');
+      .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc(s.text)}</dd>`).join('')}</dl></section>`).join('');
   }
   renderShortcuts();
 
@@ -840,6 +842,7 @@
       case 'notebook-at': showNotebookAt(Number(b.dataset.at)); break;
       case 'goal': UI.selected = id; inspectGoals(b.dataset.refresh === 'true'); break;
       case 'goal-cancel': cancelGoals(); break;
+      case 'goal-edit': editGoalSource(b); break;
       case 'goal-prev':
       case 'goal-next': if (!b.disabled) selectGoalStep(b); break;
       // Stale buttons of an earlier saved file never check other lines.

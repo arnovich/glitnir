@@ -1,4 +1,4 @@
-// Navigation and display of historical Lean observations. Checking stays explicit.
+// Review navigation and keyboard controls for the VS Code preview.
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -6,10 +6,7 @@
   if (!app || !window.glitnirHost) return;
   app.tabIndex = -1;
   const host = window.glitnirHost;
-  let snapshot, sha, selected = null, dirty = false, mode = 'claims', trace, step = -1;
-  let generation = 0, polling, helpFocus, sourceLine, sourceCharacter, pendingRefresh = false, pendingReveal;
-  const positions = new Map();
-  let returnPosition, inspection, proofStarted, proofRefreshing = false;
+  let snapshot, sha, selected = null, dirty = false, helpFocus, pendingReveal;
   const nav = document.createElement('nav');
   nav.className = 'review-nav'; nav.setAttribute('aria-label', 'Review navigation');
   nav.innerHTML = `<label id="review-filter-label">Show <select id="review-filter" aria-label="Claims to review"><option value="attention">Needs attention</option><option value="all">All claims</option></select></label>
@@ -33,34 +30,6 @@
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => {
     document.documentElement.style.setProperty('--review-offset', `${activity.getBoundingClientRect().height + 12}px`);
   }).observe(activity);
-  const proof = document.createElement('section');
-  proof.id = 'proof-review'; proof.hidden = true;
-  proof.setAttribute('aria-labelledby', 'proof-heading-title');
-  proof.innerHTML = `<div class="proof-heading"><div><h2 id="proof-heading-title">Proof steps</h2><p id="proof-title"></p><p id="proof-status" class="small" hidden></p></div><div class="review-controls"><button id="proof-refresh" class="secondary">Refresh steps</button><button id="proof-back" class="secondary">Back to claim <kbd>Esc</kbd></button></div></div>
-    <section id="proof-progress" class="proof-progress" hidden><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong id="proof-progress-title" class="proof-progress-title">Recording proof goals</strong><div id="proof-progress-stage" class="proof-progress-stage"></div></div><div id="proof-progress-time" class="small muted"></div><div class="small muted">Counts update after each command.</div></div></div><button id="proof-cancel" class="secondary">Cancel</button></section>
-    <p id="proof-message" role="status" hidden></p>
-    <div class="proof-grid">
-      <div class="proof-steps">
-        <section id="proof-step-list" aria-labelledby="proof-step-list-title" hidden>
-          <h3 id="proof-step-list-title">Select a step</h3>
-          <p id="proof-step-intro" class="small muted">The goals show what Lean still needs to prove.</p>
-          <div id="proof-step-nav"></div>
-          <button id="proof-start" type="button" class="proof-tactic secondary" aria-controls="proof-goals"><span>Starting goals</span><span aria-hidden="true">›</span></button>
-          <div id="proof-tactics" role="group" aria-label="Proof steps"></div>
-        </section>
-        <details id="proof-source" hidden><summary>Lean source</summary><pre id="proof-statement"></pre></details>
-      </div>
-      <section class="proof-goals" id="proof-goals" aria-labelledby="proof-goal-title" hidden>
-        <h3 id="proof-goal-title" tabindex="-1"></h3>
-        <pre id="proof-after"></pre><p id="proof-complete" hidden>No goals remain in this part of the proof.</p>
-        <details id="proof-tactic-code" hidden><summary>Tactic code</summary><pre tabindex="0" role="region" aria-label="Tactic code"></pre></details>
-        <details id="proof-before"><summary>Goals before this step</summary><pre id="proof-before-text"></pre></details>
-      </section>
-    </div>
-    <details id="proof-diagnostics" hidden><summary>Lean messages</summary><pre></pre></details>
-    <details id="proof-recording" hidden><summary>Recording details</summary><p id="proof-provenance" class="small muted"></p></details>`;
-  activity.after(proof);
-  $('proof-start').onclick = () => selectStep(-1, true);
   // The renderer draws the shortcut list (one source for every listing); this
   // layer adds only its own setting.
   const help = $('keys');
@@ -70,14 +39,7 @@
   help.querySelector('.dialog').setAttribute('aria-labelledby', 'keys-title');
   const labels = {checked: 'Checked', refuted: 'Refuted', conditional: 'Conditional', stale: 'Out of date', unknown: 'Unknown', failed: 'Failed', open: 'Open goal'};
   function currentCell() { return snapshot?.cells?.find(c => c.index === selected); }
-  function currentClaim() { return snapshot?.claims?.find(c => c.name === currentCell()?.id); }
   function project() { return snapshot?.preview?.mode === 'project'; }
-  function proofUnavailable() {
-    if (snapshot?.preview?.lean?.supported === false) return snapshot.preview.lean.message || 'Proof steps are unavailable for this Lean toolchain.';
-    const workbench = window.glitnirWorkbench;
-    if (snapshot?.walkthrough && workbench?.walkthroughUnchecked(snapshot)) return workbench.walkthroughMessage(snapshot) || 'Proof steps are unavailable for this walkthrough.';
-    return '';
-  }
   // A saved project result needs attention unless it is kernel checked and
   // current: out of date, not compared, not rechecked, containing sorry or
   // resting on additional assumptions.
@@ -114,8 +76,8 @@
     if (saved.status !== 'checked') reasons.push(({admitted: 'Contains sorry', assumptions: 'Additional assumptions'})[saved.status] || labels[saved.status] || 'Not checked');
     return reasons.join(' · ');
   }
-  function updateQueue(queue, inProof) {
-    queueMenu.hidden = inProof || !queue.length;
+  function updateQueue(queue) {
+    queueMenu.hidden = !queue.length;
     if (queueMenu.hidden) queueMenu.open = false;
     queueSummary.textContent = `${project() || $('review-filter').value !== 'all' ? 'Needs review' : 'All claims'} · ${queue.length} ${queue.length === 1 ? 'item' : 'items'}`;
     // Keep focused list buttons intact during polling and selection updates.
@@ -142,162 +104,28 @@
       else button.removeAttribute('aria-current');
     }
   }
-  function nodes() {
-    if (!trace || !['ready', 'partial'].includes(trace.status) || trace.source_sha256 !== sha || (!project() && trace.claim !== currentClaim()?.name)) return [];
-    const scope = inspection?.sha === sha ? inspection : null;
-    return (trace.nodes || []).filter(n => scope && n.range.start.line >= scope.start && n.range.start.line <= scope.end);
-  }
-  const positionKey = () => `${trace?.id}:${inspection?.sha}:${inspection?.name}:${inspection?.start}:${inspection?.end}`;
-  function remember() { if (trace?.id) positions.set(positionKey(), step); }
-  function focusAfterRender(previous, followStep = false) {
-    const list = $('proof-tactics');
-    const selectedStep = () => step < 0 ? $('proof-start') : list.querySelector('[aria-current="true"]');
-    if (previous?.dataset.proofNode) {
-      const focusedStep = [...list.children].find(b => b.dataset.proofNode === previous.dataset.proofNode);
-      const target = followStep ? selectedStep() : focusedStep || selectedStep();
-      (target && !target.disabled && !target.closest('[hidden]') ? target : $('proof-back')).focus({preventScroll: true});
-    } else if (previous && (previous.hidden || previous.disabled || previous.closest('[hidden]') || (mode === 'proof' && previous.closest('.workspace')))) {
-      if (mode === 'proof') {
-        const target = followStep && previous.closest('#proof-step-nav') ? selectedStep() : null;
-        (target && !target.disabled ? target : $('proof-back')).focus({preventScroll: true});
-      }
-    }
-  }
-  function selectStep(index, revealGoals = false) {
-    if (dirty || !nodes().length) return;
-    step = index;
-    remember();
-    update({followStep: true});
-    const list = $('proof-tactics');
-    const active = list.querySelector('[aria-current="true"]');
-    if (active) {
-      const box = list.getBoundingClientRect(), row = active.getBoundingClientRect();
-      if (row.top < box.top) list.scrollTop += row.top - box.top;
-      else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom;
-    }
-    const heading = $('proof-goal-title');
-    if (revealGoals && window.matchMedia('(max-width:800px)').matches && heading.getBoundingClientRect().bottom > window.innerHeight) {
-      heading.focus({preventScroll: true});
-      heading.scrollIntoView?.({block: 'start'});
-    }
-  }
-  function competingRun() {
-    const ui = window.glitnirWorkbench?.UI;
-    return ui?.checkRequested || ui?.data?.preview?.check?.status === 'running' || ui?.inspecting || ui?.data?.preview?.inspection?.status === 'running';
-  }
-  function cancelProof() { pendingRefresh = false; void host.fetch('/api/proof/cancel', {method: 'POST', body: '{}'}).catch(() => {}); }
-  function update({followStep = false} = {}) {
+  function update() {
     const focused = document.activeElement;
-    const inProof = mode === 'proof', queue = cells(), nodeList = nodes(), claim = currentClaim();
-    const destination = inProof ? $('proof-step-nav') : nav;
-    if (navigation.parentElement !== destination) destination.append(navigation);
-    nav.hidden = inProof || !snapshot || !!snapshot.error || (!queue.length && (project() || $('review-filter').value !== 'all'));
+    const queue = cells();
+    nav.hidden = !snapshot || !!snapshot.error || (!queue.length && (project() || $('review-filter').value !== 'all'));
     activity.hidden = nav.hidden;
     if (nav.hidden && nav.contains(focused)) document.querySelector('[data-mode="doc"]').focus({preventScroll: true});
-    updateQueue(queue, inProof);
-    proof.hidden = !inProof;
-    document.body.classList.toggle('glitnir-proof-mode', inProof);
-    const unavailable = proofUnavailable();
-    const workbench = window.glitnirWorkbench;
-    if (workbench) {
-      const busy = trace?.status === 'running';
-      const changed = workbench.UI.proofBusy !== busy;
-      workbench.UI.proofBusy = busy;
-      workbench.UI.proofActivity = busy ? {trace, started: proofStarted, refreshing: proofRefreshing, expanded: true} : null;
-      if (changed || (busy && !inProof)) workbench.render();
-    }
-    for (const button of document.querySelectorAll('[data-act="inspect-proof"],#insp [data-act="goal"]')) {
-      const reason = dirty ? 'Save or revert edits before viewing proof steps.' : unavailable || (competingRun() ? 'Wait for the current check to finish.' : button.dataset.act === 'goal' && workbench?.UI.proofBusy ? 'Proof goals are already being recorded.' : '');
-      button.disabled = !!reason;
-      button.title = reason || 'Inspect this claim’s saved tactic goals (t)';
-      if (reason) button.setAttribute('aria-description', reason);
-      else button.removeAttribute('aria-description');
-    }
-    $('review-filter-label').hidden = inProof || project();
+    updateQueue(queue);
+    $('review-filter-label').hidden = project();
     const previous = $('review-previous');
-    previous.disabled = dirty || (inProof ? step < 0 : !queue.some(c => selected === null || c.index < selected));
-    next.disabled = dirty || (inProof ? !nodeList.length || step >= nodeList.length - 1 : !queue.some(c => selected === null || c.index > selected));
+    previous.disabled = dirty || !queue.some(c => selected === null || c.index < selected);
+    next.disabled = dirty || !queue.some(c => selected === null || c.index > selected);
     const index = queue.findIndex(c => c.index === selected);
-    if (inProof) {
-      previous.title = 'Previous recorded proof state (p)'; next.title = 'Next recorded proof state (n)';
-      $('review-position').textContent = nodeList.length ? step < 0 ? 'Starting goals' : `Step ${step + 1} of ${nodeList.length}` : 'No recorded steps';
-    } else if (project()) {
+    if (project()) {
       previous.title = 'Previous claim that needs attention (p)';
       next.title = queue.length ? `${queue.length} need attention; next in source order (n)` : 'No claims queued for review';
       $('review-position').textContent = index >= 0 ? `Item ${index + 1} of ${queue.length}` : '';
     } else {
       previous.title = 'Previous matching claim (p)';
-      next.title = queue.length ? `${queue.length} matching claims; next in source order (n)` : 'No matching claims';
+      next.title = queue.length ? `${queue.length} matching claims` : 'No matching claims';
       $('review-position').textContent = index >= 0 ? `Claim ${index + 1} of ${queue.length}` : queue.length ? `${queue.length} matching claims` : '';
     }
     $('review-position').hidden = !$('review-position').textContent;
-    if (!inProof) { focusAfterRender(focused, followStep); return; }
-    $('proof-title').textContent = !snapshot ? 'Saved source unavailable' : inspection?.name || 'Selected claim';
-    $('proof-status').hidden = !claim;
-    $('proof-status').textContent = claim ? `${labels[claim.status] || claim.status}${claim.reason ? ' · ' + claim.reason : ''}` : '';
-    const cell = currentCell();
-    $('proof-statement').textContent = cell?.text.split('\n').slice(Math.max(0, (inspection?.start || cell.start) - cell.start), (inspection?.end || cell.end) - cell.start + 1).join('\n') || '';
-    $('proof-source').hidden = trace?.status === 'running' || !$('proof-statement').textContent;
-    $('proof-refresh').disabled = dirty || !!unavailable || !snapshot || !!snapshot.error || trace?.status === 'running' || !!competingRun();
-    const recording = trace?.status === 'running';
-    $('proof-progress').hidden = !recording;
-    $('proof-cancel').hidden = !recording;
-    $('proof-progress-title').textContent = proofRefreshing ? 'Refreshing proof goals' : 'Recording proof goals';
-    $('proof-progress-stage').textContent = trace?.message || 'Preparing the saved proof';
-    $('proof-progress-time').textContent = `${Math.max(0, Math.floor((Date.now() - (proofStarted ?? Date.now())) / 1000))}s waiting here`;
-    let message = '';
-    if (dirty) message = 'Save or revert your edits, then refresh proof steps.';
-    else if (pendingRefresh) message = 'Finishing the previous recording before loading these steps…';
-    else if (trace?.status === 'ready') {
-      if (!nodeList.length) message = 'No proof steps were recorded for this claim.';
-    } else if (trace?.status === 'partial') message = 'Some proof steps may be missing.';
-    else message = trace?.message || 'Load the saved proof to see its steps.';
-    $('proof-message').hidden = recording || !message;
-    $('proof-message').textContent = message;
-    $('proof-step-list').hidden = !nodeList.length;
-    $('proof-start').disabled = dirty;
-    $('proof-start').setAttribute('aria-current', String(step < 0));
-    const buttons = nodeList.map((n, i) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'proof-tactic secondary'; b.dataset.proofNode = String(n.id);
-      b.disabled = dirty;
-      b.setAttribute('aria-current', String(i === step));
-      b.setAttribute('aria-controls', 'proof-goals');
-      b.setAttribute('aria-label', `Step ${i + 1}: ${n.text}`);
-      let depth = 0, parent = n.parent;
-      while (parent !== null && depth < 12) { depth++; parent = trace.nodes[parent]?.parent ?? null; }
-      b.style.paddingInlineStart = `${10 + Math.min(depth, 6) * 8}px`;
-      const number = document.createElement('span'); number.textContent = `Step ${i + 1}`;
-      const tactic = document.createElement('code'); tactic.textContent = n.text;
-      tactic.title = n.text;
-      const arrow = document.createElement('span'); arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
-      b.append(number, tactic, arrow);
-      b.onclick = () => selectStep(i, true);
-      return b;
-    });
-    $('proof-tactics').replaceChildren(...buttons);
-    const node = nodeList[step < 0 ? 0 : step];
-    const goals = node ? (step < 0 ? node.before : node.after).join('\n\n') : '';
-    $('proof-goal-title').textContent = step < 0 ? 'Starting goals' : `Goals after step ${step + 1}`;
-    $('proof-tactic-code').hidden = step < 0 || !node;
-    $('proof-tactic-code').querySelector('pre').textContent = step < 0 ? '' : node?.text || '';
-    $('proof-before').hidden = step < 0 || !node;
-    $('proof-before-text').textContent = node?.before?.join('\n\n') || 'No goals before this step.';
-    $('proof-goals').hidden = !node;
-    document.querySelector('.proof-grid').classList.toggle('proof-loading', !node);
-    $('proof-after').hidden = !goals;
-    $('proof-after').textContent = goals;
-    $('proof-complete').hidden = !node || !!goals;
-    $('proof-complete').textContent = step < 0 ? 'No starting goals were recorded.'
-      : trace?.status === 'partial' ? 'No goals were recorded after this step.' : 'No goals remain in this part of the proof.';
-    const matching = trace?.source_sha256 === sha && (project() || trace?.claim === claim?.name);
-    const messages = matching ? [...(trace?.errors || []), ...(trace?.warnings || [])] : [];
-    $('proof-diagnostics').hidden = !messages.length;
-    $('proof-diagnostics').querySelector('pre').textContent = messages.join('\n\n');
-    const environment = matching && trace?.environment;
-    $('proof-recording').hidden = !environment;
-    $('proof-provenance').textContent = environment ? `Saved source ${trace.source_sha256.slice(0, 8)} · ${environment.toolchain}. Dependencies were read from the project when these steps were recorded. Refresh steps after dependency changes. Use Check saved file to verify the proof.` : '';
-    focusAfterRender(focused, followStep);
   }
   function reveal(cell) {
     selected = cell.index;
@@ -306,207 +134,57 @@
   }
   function move(direction) {
     if (dirty || linkedView()) return;
-    if (mode === 'proof') { selectStep(Math.max(-1, Math.min(nodes().length - 1, step + direction))); return; }
     const queue = cells();
     const cell = direction > 0 ? queue.find(c => selected === null || c.index > selected) : queue.findLast(c => selected === null || c.index < selected);
     if (cell) reveal(cell);
   }
-  function claimsMode() { pendingRefresh = false; remember(); mode = 'claims'; update(); }
-  function invalidate(message) {
-    generation++; pendingRefresh = false; clearTimeout(polling);
-    if (trace?.status === 'running') void host.fetch('/api/proof/cancel', {method: 'POST', body: '{}'}).catch(() => {});
-    trace = {status: 'stale', nodes: [], message}; positions.clear(); step = -1; update();
-  }
-  async function poll(id, epoch) {
-    try {
-      const response = await host.fetch('/api/proof/trace');
-      const answer = await response.json();
-      if (epoch !== generation) return;
-      if (!response.ok) throw new Error(answer.error || 'Proof observation unavailable.');
-      if (answer.id !== id || answer.source_sha256 !== sha) throw new Error('Proof observation changed. Refresh the steps.');
-      trace = answer;
-      alignSource();
-      if (answer.status !== 'running' && pendingRefresh && mode === 'proof') { pendingRefresh = false; void refresh(); return; }
-      update();
-      if (answer.status === 'running') polling = setTimeout(() => void poll(id, epoch), 750);
-    } catch (error) { if (epoch === generation) { trace = {status: 'unavailable', message: String(error), nodes: []}; update(); } }
-  }
-  async function refresh() {
-    if (dirty || competingRun() || !snapshot || proofUnavailable() || !inspection || inspection.sha !== sha) return;
-    if (trace?.status === 'running') {
-      if (!project() && trace.claim !== currentClaim()?.name) {
-        pendingRefresh = true;
-        void host.fetch('/api/proof/cancel', {method: 'POST', body: '{}'}).catch(() => {});
-        update();
-      }
-      return;
-    }
-    const claim = currentClaim(); if (!project() && !claim) return;
-    pendingRefresh = false;
-    proofRefreshing = !!trace && ['ready', 'partial'].includes(trace.status);
-    proofStarted = Date.now();
-    const epoch = ++generation; clearTimeout(polling); step = -1;
-    trace = {status: 'running', claim: claim?.name, message: 'Preparing proof steps', nodes: []}; update();
-    try {
-      if (project()) {
-        // Join an observation of this saved file that is already running,
-        // such as one the inspector's proof goals started.
-        const current = await host.fetch('/api/proof/trace');
-        const running = await current.json().catch(() => ({}));
-        if (epoch !== generation) return;
-        if (current.ok && running.status === 'running' && running.source_sha256 === sha && running.id) {
-          trace = running;
-          const inline = window.glitnirWorkbench?.UI.goals;
-          if (inline?.trace?.id === running.id) { proofStarted = inline.started ?? proofStarted; proofRefreshing = !!inline.refreshing; }
-          update(); await poll(running.id, epoch); return;
-        }
-      }
-      const response = await host.fetch('/api/proof/start', {method: 'POST', body: JSON.stringify({sha256: sha, ...(claim ? {claim: claim.name} : {})})});
-      const answer = await response.json();
-      if (epoch !== generation) return;
-      if (!response.ok) throw new Error(answer.error || 'Could not start proof observation.');
-      trace = answer; update(); await poll(answer.id, epoch);
-    } catch (error) { if (epoch === generation) { trace = {status: 'unavailable', message: String(error), nodes: []}; update(); } }
-  }
-  // Another notebook of the project read in this panel: review, proof steps
-  // and editing belong to the previewed notebook, so they stay off.
   const linkedView = () => document.body.classList.contains('glitnir-linked-view');
-  function proofMode(action) {
-    if (dirty || competingRun() || proofUnavailable() || linkedView() || !snapshot) return;
-    const workbench = window.glitnirWorkbench;
-    const buttons = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].filter(b => b.dataset.sha === sha);
-    let cell = currentCell();
-    if (!action && mode === 'proof' && !sourceLine && inspection) action = buttons.find(b => b.dataset.proofClaim === inspection.name && Number(b.dataset.start) === inspection.start);
-    if (!action && mode !== 'proof' && !sourceLine && workbench?.UI.mode === 'doc') action = buttons.find(b => b.dataset.proofClaim === workbench.UI.selected);
-    if (!action) {
-      action = buttons.find(b => Number(b.dataset.index) === selected && (!sourceLine || Number(b.dataset.start) <= sourceLine && sourceLine <= Number(b.dataset.end)));
-      if (action && !cell?.claim && cell?.kind !== 'claim' && buttons.filter(b => Number(b.dataset.index) === selected).length > 1 && !sourceLine) action = null;
-      action ||= buttons.find(b => b.dataset.proofClaim === workbench?.UI.selected);
-    }
-    if (action) cell = snapshot.cells?.find(c => c.index === Number(action.dataset.index));
-    const name = action?.dataset.proofClaim || cell?.claim || (cell?.kind === 'claim' ? cell.id : null);
-    if (!cell || !name) return;
-    selected = cell.index;
-    inspection = {name, index: selected, start: action ? Number(action.dataset.start) : cell.start, end: action ? Number(action.dataset.end) : cell.end, sha};
-    if (mode !== 'proof') returnPosition = {claim: name, sha, scroll: workbench?.UI.mode === 'doc' ? [window.scrollX, window.scrollY] : null};
-    else if (returnPosition?.claim !== name) returnPosition = {claim: name, sha, scroll: null};
-    if (workbench) { workbench.UI.selected = name; workbench.UI.mode = 'doc'; workbench.UI.panel = true; workbench.render(); }
-    const inlineTrace = workbench?.currentGoalTrace?.();
-    if (project() && inlineTrace) trace = inlineTrace;
-    else if (project() && workbench?.UI.goals?.trace?.status === 'running') trace = {status: 'stale', nodes: []};
-    const inlineStep = mode !== 'proof' ? workbench?.inlineGoalStep?.(name, inlineTrace) : undefined;
-    mode = 'proof'; step = Math.min(inlineStep ?? positions.get(positionKey()) ?? -1, nodes().length - 1); update();
-    $('proof-back').focus({preventScroll: true});
-    if (!trace || trace.status === 'stale' || (!project() && trace.claim !== currentClaim()?.name)) void refresh();
-  }
-  function backToClaim(focus = true) {
-    if (mode !== 'proof') return;
-    const origin = returnPosition;
-    returnPosition = null;
-    const workbench = window.glitnirWorkbench;
-    if (inspection && nodes().length) workbench?.rememberInlineGoalStep?.(inspection.name, trace, step);
-    claimsMode();
-    if (workbench) { workbench.UI.mode = 'doc'; workbench.render(); }
-    const action = [...document.querySelectorAll('#insp [data-act="inspect-proof"], #insp [data-act="goal"]')].find(b => !b.disabled && (b.dataset.proofClaim || b.dataset.id) === origin?.claim);
-    const picker = action?.closest('.goal-section')?.querySelector('[data-act="goal-picker"]');
-    const scope = [...document.querySelectorAll('#doc .source-controls[data-proof-claim]')].find(el => el.dataset.proofClaim === origin?.claim);
-    const target = scope?.closest('.cell');
-    if (origin?.sha === sha && origin.scroll) window.scrollTo(...origin.scroll);
-    else if (target) { workbench?.revealSection?.(target); target.scrollIntoView?.({block: 'center'}); }
-    if (focus) {
-      if (action) (picker || action).focus();
-      else if (target) { target.tabIndex = -1; target.classList.add('document-target'); if (workbench) workbench.UI.documentLine = {line: inspection?.start, sha}; target.focus({preventScroll: true}); }
-      else document.querySelector('[data-mode="doc"]')?.focus({preventScroll: true});
-    }
-  }
-  function edit() {
-    const node = nodes()[step];
-    const cell = node ? snapshot?.cells?.find(c => c.start <= node.range.start.line && node.range.end.line <= c.end) : currentCell();
-    if (mode === 'proof' && node && cell && !dirty) {
-      // The host fetches this observation by id again before trusting its range.
-      host.openSource({index: cell.index, sha256: sha, trace: {id: trace.id, node: node.id}});
-    } else host.openSelectedSource();
-  }
-  $('proof-back').onclick = () => backToClaim();
+  const edit = () => host.openSelectedSource();
   $('review-filter').onchange = update;
   $('review-previous').onclick = () => move(-1); next.onclick = () => move(1);
-  $('proof-refresh').onclick = () => void refresh();
-  $('proof-cancel').onclick = cancelProof;
-  $('open-source').onclick = edit; $('open-source').title = 'Edit the selected claim or tactic in VS Code (e)';
+  $('open-source').onclick = edit; $('open-source').title = 'Edit the selected claim in VS Code (e)';
   document.addEventListener('glitnir-snapshot', event => {
     const nextSnapshot = event.detail;
-    const inspectedName = mode === 'proof' ? inspection?.name : null;
-    if (sha && nextSnapshot?.sha256 !== sha) { selected = null; invalidate('Saved source changed. Refresh proof steps.'); }
+    if (sha && nextSnapshot?.sha256 !== sha) selected = null;
     snapshot = nextSnapshot; sha = snapshot?.sha256;
-    if (mode === 'proof' && inspectedName && inspection.sha !== sha && snapshot) {
-      const cell = snapshot.cells?.find(c => c.claim === inspectedName || c.kind === 'claim' && c.id === inspectedName);
-      if (cell) { selected = cell.index; inspection = {name: inspectedName, index: selected, start: cell.start, end: cell.end, sha}; }
-      else backToClaim(proof.contains(document.activeElement));
-    }
-    if (mode === 'proof' && proofUnavailable()) {
-      const focused = proof.contains(document.activeElement);
-      invalidate(proofUnavailable());
-      backToClaim(focused);
-    }
     if (selected !== null && !currentCell()) selected = null;
     if (selected === null) selected = snapshot?.cells?.find(c => c.kind === (project() ? 'source' : 'claim'))?.index ?? null;
     if (pendingReveal && pendingReveal.sha256 === sha) { const reveal = pendingReveal; pendingReveal = undefined; applySourceReveal(reveal); }
     update();
   });
   function applySourceReveal(message) {
-    selected = message.index; sourceLine = message.line; sourceCharacter = message.character;
-    if (mode === 'proof') { alignSource(); proofMode(); }
+    selected = message.index;
     update();
   }
   window.addEventListener('message', event => {
     const message = event.data;
-    if (message.type === 'editorState') { const changed = message.dirty && !dirty; dirty = message.dirty; if (changed) invalidate('Source has unsaved edits.'); update(); }
-    if (message.type === 'environmentChanged') invalidate('Source or dependencies changed. Refresh proof steps.');
+    if (message.type === 'editorState') {
+      dirty = message.dirty;
+      window.glitnirWorkbench?.render({inspectorOnly: true});
+      update();
+    }
     if (message.type === 'revealCell') {
       if (message.sha256 !== sha) {
         pendingReveal = message;
-        invalidate('Saved source changed. Refreshing the notebook…');
       } else applySourceReveal(message);
     }
-    if (message.type === 'reviewCommand' && (!linkedView() || message.action === 'help')) ({next: () => move(1), previous: () => move(-1), claims: () => backToClaim(), proof: proofMode, help: helpOpen})[message.action]?.();
+    if (message.type === 'reviewCommand' && (!linkedView() || message.action === 'help')) ({next: () => move(1), previous: () => move(-1), help: helpOpen})[message.action]?.();
   });
   document.addEventListener('click', event => {
-    if (event.target.closest('[data-mode]')) claimsMode();
     if (event.target.closest('#keys-open')) helpFocus = document.activeElement;
     if (event.target.closest('#keys-close') || event.target === help) queueMicrotask(restoreHelpFocus);
   }, true);
   document.addEventListener('click', event => {
     if (linkedView()) return;
-    if (event.target.closest('[data-act="proof-cancel"]')) { cancelProof(); return; }
-    const inspect = event.target.closest('[data-act="inspect-proof"]');
-    if (inspect) {
-      if (inspect.disabled || inspect.dataset.sha !== sha) return;
-      selected = Number(inspect.dataset.index);
-      proofMode(inspect);
-      return;
-    }
     const link = event.target.closest('[data-act="goto"]'), wrap = event.target.closest('.cellwrap'), row = event.target.closest('#source tr[data-claim]');
     if (link) selected = snapshot?.cells?.find(c => c.id === link.dataset.id)?.index ?? null;
     else if (wrap) selected = Number(wrap.dataset.index);
     else if (row) selected = snapshot?.cells?.find(c => c.id === row.dataset.claim)?.index ?? null;
-    if (link || wrap || row) {
-      sourceLine = sourceCharacter = undefined;
-      claimsMode();
-    }
+    if (link || wrap || row) update();
   });
   function helpOpen() { helpFocus = document.activeElement; $('keys-open').click(); }
   function restoreHelpFocus() { (helpFocus?.isConnected && !helpFocus.closest('[hidden]') ? helpFocus : $('keys-open')).focus(); }
   function helpClose() { $('keys-close').click(); restoreHelpFocus(); }
-  function alignSource() {
-    if (!sourceLine || !['ready', 'partial'].includes(trace?.status)) return;
-    const matching = nodes().map((n, i) => ({n, i})).filter(({n}) => n.range.start.line <= sourceLine && sourceLine <= n.range.end.line
-      && (sourceLine !== n.range.start.line || (sourceCharacter ?? 0) >= n.range.start.character)
-      && (sourceLine !== n.range.end.line || (sourceCharacter ?? 0) < n.range.end.character));
-    if (matching.length) {
-      matching.sort((a, b) => (a.n.end - a.n.start) - (b.n.end - b.n.start) || b.i - a.i);
-      step = matching[0].i; remember(); sourceLine = undefined;
-    }
-  }
   document.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.isComposing) return;
     if (!help.hidden) {
@@ -528,11 +206,10 @@
       if (event.key !== 'Escape') event.stopImmediatePropagation();
       return;
     }
-    if (!app.contains(event.target) || event.target.isContentEditable || event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) { if ('npctejksir?'.includes(event.key) && event.key.length === 1) event.stopImmediatePropagation(); return; }
+    if (!app.contains(event.target) || event.target.isContentEditable || event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) { if ('npejksirg?'.includes(event.key) && event.key.length === 1) event.stopImmediatePropagation(); return; }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const overlay = [...document.querySelectorAll('.overlay')].some(e => e !== help && !e.hidden);
     if (overlay || $('history')?.open) { if (event.key !== 'Escape') event.stopImmediatePropagation(); return; }
-    if (event.key === 'Escape' && mode === 'proof') { event.preventDefault(); event.stopImmediatePropagation(); backToClaim(); return; }
     if (!$('review-letter-keys').checked) { if (event.key.length === 1) event.stopImmediatePropagation(); return; }
     if (linkedView()) {
       // Only help and the renderer's own keys (j/k claims, s source, i inspector)
@@ -541,10 +218,9 @@
       else if (event.key.length === 1 && !'jksi'.includes(event.key)) event.stopImmediatePropagation();
       return;
     }
-    const actions = {n: () => move(1), p: () => move(-1), c: () => backToClaim(), t: proofMode, e: edit, '?': helpOpen};
+    const actions = {n: () => move(1), p: () => move(-1), e: edit, '?': helpOpen};
     if (actions[event.key]) { event.preventDefault(); event.stopImmediatePropagation(); actions[event.key](); return; }
     if (['j', 'k', 's', 'i'].includes(event.key)) {
-      claimsMode();
       queueMicrotask(() => {
         const sourceMode = document.querySelector('[data-mode="source"]')?.getAttribute('aria-pressed') === 'true';
         const chosen = document.querySelector(sourceMode ? '#source tr[data-selected="true"]' : '.claim[data-selected="true"]');
@@ -553,19 +229,6 @@
         update();
       });
     }
-    if (event.key === 'r' && mode === 'proof') {
-      event.preventDefault(); event.stopImmediatePropagation();
-      if (dirty) return;
-      $('check-project').click();
-    }
   }, true);
-  // Opening or leaving a linked notebook always leaves proof mode, which
-  // would otherwise hide the notebook now shown behind the previewed one's steps.
-  let wasLinked = linkedView();
-  new MutationObserver(() => {
-    if (linkedView() === wasLinked) return;
-    wasLinked = linkedView();
-    if (mode === 'proof') claimsMode();
-  }).observe(document.body, {attributes: true, attributeFilter: ['class']});
   update();
 })();

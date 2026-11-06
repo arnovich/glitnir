@@ -186,13 +186,13 @@ picker. For each step, the Inspector shows the tactic, its source lines, and
 the goals and context before and after it. While refreshing, any still current
 results stay visible under **Previous recording** until the new goals arrive.
 
-The separate walkthrough is also available via `t` or **Glitnir: Expand Selected
-Claim’s Proof Steps**. **Back to claim** or `Esc` returns to the Notebook.
+Use the pencil beside a recorded tactic to open that tactic in VS Code.
 
 Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. It
 shows what Lean reported for the saved file without updating the claim’s check
-status. To check the file, use **Check saved file** or `r`. Activity and
-cancellation stay available in Notebook, Source and Explore. Competing check and
+status. **Check saved file** checks the whole file. **Check up to this claim**
+and `r` check through the selected claim. Activity and cancellation stay
+available in Notebook, Source and Explore. Competing check and
 refresh actions are disabled during recording. When Lean reports source progress,
 the counts show lines reached, lines left, and recorded tactics. They do not
 estimate time remaining.
@@ -443,20 +443,18 @@ the preview for this list. Moving never starts a check.
 | Keys | Action |
 |---|---|
 | `j` `k` | Next / previous claim |
-| `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
-| `c` `t` | Return to claim / expand selected claim’s proof steps |
+| `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped |
 | `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
 | `i` | Show or hide the claim inspector in Notebook |
-| `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
-| `e` | Edit the selected claim or proof step in VS Code |
+| `r` | Check the saved file through the selected claim |
+| `e` | Edit the selected claim in VS Code |
 | `?` | Show these shortcuts |
-| `Esc` | Close the dialog; in Proof steps, return to the claim |
+| `Esc` | Close this dialog or the History panel |
 | `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
 <!-- shortcuts:end -->
 
-The Command Palette also has **Glitnir: Review Claims**, **Glitnir: Explore Proof
-Steps**, **Glitnir: Next Review Item**, **Glitnir: Previous Review Item** and
+The Command Palette also has **Glitnir: Next Review Item**, **Glitnir: Previous Review Item** and
 **Glitnir: Keyboard Shortcuts**.
 
 ## Extension packages
@@ -698,9 +696,8 @@ links stay unchanged; saved-result and selected-range markers remain separate.
 Keyboard shortcuts are listed in the **?** help dialog. The Notebook contents
 sidebar stays focused on navigating the notebook.
 
-Proof steps is disabled when the project or walkthrough requires an incompatible
-Lean toolchain. Its tooltip explains why; the shortcut and editor command also
-leave the reading view in place without requesting a tactic observation.
+When the project or walkthrough requires an incompatible Lean toolchain, the
+Inspector explains why proof steps are unavailable.
 
 Proof inspection is a claim action rather than a notebook-wide mode. The title
 stays in the same position in Notebook, Source and Explore; Notebook-only

@@ -350,7 +350,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   context.subscriptions.push(dependencyChanges, dependencyChanges.onDidChange(invalidateObservations),
     dependencyChanges.onDidCreate(invalidateObservations), dependencyChanges.onDidDelete(invalidateObservations));
-  for (const [command, action] of Object.entries({reviewNext: 'next', reviewPrevious: 'previous', reviewClaims: 'claims', reviewProof: 'proof', reviewHelp: 'help'})) {
+  for (const [command, action] of Object.entries({reviewNext: 'next', reviewPrevious: 'previous', reviewHelp: 'help'})) {
     context.subscriptions.push(vscode.commands.registerCommand(`glitnir.${command}`, () => {
       const preview = [...previews.values()].find(p => p.panel.active);
       if (preview) void preview.panel.webview.postMessage({type: 'reviewCommand', action});

@@ -554,8 +554,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
 /* Non-notebook views use their own content rather than notebook sidebars. */
 .workspace.focused-view{grid-template-columns:minmax(0,1fr)}
-body[data-view="source"]:not(.glitnir-proof-mode) .review-nav,body[data-view="graph"]:not(.glitnir-proof-mode) .review-nav{display:none}
-body[data-view="graph"]:not(.glitnir-proof-mode) .live-bar,body[data-view="source"]:not(.glitnir-proof-mode) .live-bar{display:none}
+body[data-view="source"] .review-nav,body[data-view="graph"] .review-nav{display:none}
+body[data-view="graph"] .live-bar,body[data-view="source"] .live-bar{display:none}
 .proof-atlas .atlas-explanation{display:block}
 .proof-atlas .atlas-explanation h3{margin:20px 0 8px}
 .proof-atlas .atlas-explanation p{margin:0 0 16px}
@@ -603,7 +603,7 @@ body[data-view="source"] .doc-inner{max-width:none}
 .live-bar>.review-nav{flex:1;min-width:0;padding:0;border:0}
 .live-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto;font-size:11px}
 .live-controls .live-follow-control{margin-left:0;font-size:12px;white-space:nowrap}
-body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-follow-control,.glitnir-proof-mode .live-follow-control{display:none}
+body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-follow-control{display:none}
 @media(max-width:760px){.bar>.view-switcher{width:100%}.bar>.view-switcher button{flex:1}.live-bar>.review-nav{flex-basis:100%}.live-controls{width:100%;justify-content:space-between}}
 
 /* Connection, proof observations and refresh activity share one header home. */
@@ -680,7 +680,7 @@ body:has(.live-bar:not([hidden])) .cell{scroll-margin-top:var(--review-offset,10
 .view-options-panel{position:absolute;right:0;top:100%;z-index:30;width:min(340px,calc(100vw - 64px));padding:6px;max-height:75vh;overflow:auto;background:var(--paper);border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px var(--shadow)}
 .view-options-panel label{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .view-options-panel p{margin:8px 0 0;color:var(--muted)}
-body[data-view="source"] .notebook-preferences,body[data-view="graph"] .notebook-preferences,.glitnir-proof-mode .notebook-preferences{display:none}
+body[data-view="source"] .notebook-preferences,body[data-view="graph"] .notebook-preferences{display:none}
 @media(max-width:760px){.live-bar>.review-nav{flex-basis:100%}}
 
 body:has(.live-bar:not([hidden])) :is(.rail,.inspector,#outline-resize){top:var(--review-offset,100px);max-height:calc(100vh - var(--review-offset,100px))}
@@ -753,9 +753,7 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .proof-progress-stage{margin-top:4px;color:var(--muted)}
 .proof-progress-time{margin-top:6px}
 .proof-progress>button{flex-shrink:0}
-.proof-grid.proof-loading{grid-template-columns:minmax(0,1fr)}
 #run-activity{padding:0 16px}
-.glitnir-proof-mode #run-activity{display:none}
 .goal-context{margin-top:8px;color:var(--muted)}
 .goal-detail-label{margin:0 0 4px;color:var(--muted);font:500 12px var(--sans)}
 .goal-target{color:var(--ink);margin-top:8px}
