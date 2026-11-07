@@ -42,6 +42,8 @@ private partial def visit (tree : InfoTree) (ctx? : Option ContextInfo)
               let node := Json.mkObj [
                 ("start", toJson span.1), ("end", toJson span.2),
                 ("parent", toJson parent), ("before", toJson before), ("after", toJson after),
+                ("before_ids", toJson (tactic.goalsBefore.map (·.name.toString))),
+                ("after_ids", toJson (tactic.goalsAfter.map (·.name.toString))),
                 ("kind", toJson tactic.stx.getKind.toString),
                 ("declaration", toJson (ctx.parentDecl?.map Name.toString |>.getD ""))]
               parent := some nodes.size

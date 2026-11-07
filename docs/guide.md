@@ -183,7 +183,9 @@ Select a theorem to open its Inspector. **Inspect proof** records the saved proo
 with Lean. The Inspector shows **Starting goals** first, then what Lean still
 needs to prove after the step you choose. Use **Previous**, **Next**, or the step
 picker. For each step, the Inspector shows the tactic, its source lines, and
-the goals and context before and after it. While refreshing, any still current
+the goals and context before and after it. When Lean records a goal splitting
+into subgoals, **Goal split** shows them above an inference bar. Select a goal
+to jump to its recorded tactic. While refreshing, any still current
 results stay visible under **Previous recording** until the new goals arrive.
 
 Use the pencil beside a recorded tactic to open that tactic in VS Code.

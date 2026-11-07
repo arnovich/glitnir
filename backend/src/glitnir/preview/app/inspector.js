@@ -183,12 +183,22 @@
   }
   function selectGoalStep(control) {
     const key = control.closest('.goal-results')?.dataset.goalKey;
-    const picker = control.closest('.goal-navigation')?.querySelector('select');
+    const picker = control.closest('.goal-results')?.querySelector('[data-act="goal-picker"]');
     const index = Number(control.value);
     if (!key || !picker || !Number.isInteger(index) || index < 0 || index >= picker.options.length) return;
-    goalPosition = {key, index};
+    goalPosition = {key, index, split: Number(control.dataset.split)};
     render();
-    $('insp').querySelector('.goal-results').scrollTop = 0;
+    const results = $('insp').querySelector('.goal-results');
+    if (control.dataset.act !== 'goal-branch') {
+      results.scrollTop = 0;
+      return;
+    }
+    const tactic = results.querySelector('.goal-full-tactic');
+    const bottom = Math.min(results.getBoundingClientRect().bottom, $('insp').getBoundingClientRect().bottom, window.innerHeight);
+    if (tactic && bottom > 0 && tactic.getBoundingClientRect().top >= bottom) {
+      tactic.focus({preventScroll: true});
+      tactic.scrollIntoView?.({block: 'nearest'});
+    }
   }
   function editGoalSource(button) {
     const trace = UI.goals?.trace;
@@ -207,6 +217,61 @@
     const edit = cell ? `<button type="button" class="source-edit" data-act="goal-edit" data-index="${cell.index}" data-trace="${esc(trace.id)}" data-node="${node.id}" aria-label="Edit tactic in VS Code" title="Edit tactic in VS Code"${document.body.classList.contains('unsaved-lean') ? ' disabled' : ''}>${icon('edit')}</button>` : '';
     return `<span class="source-controls">${lineLinkHTML(start.line, end.line, false)}${edit}</span>`;
   }
+  function goalInferences(nodes) {
+    const splits = new Map(), branches = new Map(), related = new Map();
+    nodes.forEach((node, offset) => {
+      if (!node.before_ids?.length || !Array.isArray(node.after_ids)) return;
+      const [goal, ...others] = node.before_ids;
+      const remaining = new Set(node.after_ids);
+      const before = new Set(node.before_ids);
+      if (before.size !== node.before_ids.length || remaining.size !== node.after_ids.length) return;
+      // A split or branch step must replace the focused goal and leave the
+      // other goals in this tactic's scope present.
+      if (remaining.has(goal) || others.some(id => !remaining.has(id))) return;
+      const step = offset + 1;
+      const branch = branches.get(goal);
+      if (branch) {
+        const earlier = nodes[branch.step - 1];
+        const nested = earlier && node.start >= earlier.start && node.end <= earlier.end
+          && (node.start > earlier.start || node.end < earlier.end);
+        if (!earlier || nested) {
+          branch.step = step;
+          related.set(step, branch.split);
+        }
+      }
+      const added = node.after_ids.flatMap((id, i) => before.has(id) ? [] : [{id, text: node.after[i], split: step, step: 0}]);
+      if (added.length < 2) return;
+      splits.set(step, added);
+      for (const child of added) branches.set(child.id, child);
+    });
+    return {splits, related};
+  }
+
+  function goalInferenceHTML(nodes, index, pinned) {
+    const {splits, related} = goalInferences(nodes);
+    const split = splits.has(pinned) ? pinned : splits.has(index) ? index : related.get(index) ?? splits.keys().next().value;
+    const children = splits.get(split);
+    if (!children) return '';
+    const target = text => {
+      const marker = text.indexOf('\n⊢ ');
+      const label = marker < 0 ? text : text.slice(marker + 1);
+      return esc(label.length > 120 ? label.slice(0, 120) + '…' : label);
+    };
+    const caption = step => {
+      const text = nodes[step - 1].text.trim().split('\n', 1)[0];
+      return esc(text.length > 32 ? text.slice(0, 32) + '…' : text);
+    };
+    const button = (step, text, label) => `<button type="button" class="secondary goal-branch-button" data-act="goal-branch" data-split="${split}" value="${step}" aria-label="${label} ${target(text)}, step ${step}" aria-pressed="${step === index}" aria-controls="goal-result"><code>${target(text)}</code></button>`;
+    const visible = children.slice(0, 6);
+    const premises = visible.map((child, i) => {
+      if (!child.step) return `<div class="goal-inference-branch"><span class="small muted">No linked step</span><code class="goal-inference-unlinked">${target(child.text)}</code></div>`;
+      const closed = nodes[child.step - 1].after_ids.length === 0;
+      const tactic = `<code class="goal-inference-tactic">${caption(child.step)}</code>`;
+      return `<div class="goal-inference-branch">${closed ? `<div class="goal-inference-rule goal-inference-leaf">${tactic}</div>` : tactic}${button(child.step, child.text, `Subgoal ${i + 1}`)}</div>`;
+    }).join('');
+    return `<section class="goal-inference" aria-labelledby="goal-inference-title"><h6 id="goal-inference-title" class="goal-result-title">Goal split at step ${split}</h6><div class="goal-inference-premises" role="group" aria-label="Subgoals">${premises}</div>${children.length > visible.length ? `<p class="small muted">${children.length - visible.length} more goals in step ${split}</p>` : ''}<div class="goal-inference-rule"><code>${caption(split)}</code></div><div class="goal-inference-root">${button(split, nodes[split - 1].before[0], 'Original goal')}</div></section>`;
+  }
+
   function goalStepsHTML(c, trace, key, range) {
     const {start_line: start, end_line: end} = range;
     const nodes = trace.nodes.filter(n => n.range.start.line >= start && n.range.start.line <= end);
@@ -217,7 +282,8 @@
     if (!nodes.length) {
       return `<div class="note-line goal-note" data-tone="muted">${icon('branch')}<span>No tactic steps were recorded for this claim. It may be a term proof${trace.status === 'partial' ? ', or Lean stopped before it' : ''}.</span></div>${messagesHTML}${provenance}`;
     }
-    const index = goalPosition?.key === key ? Math.min(goalPosition.index, nodes.length) : 0;
+    const position = goalPosition?.key === key ? goalPosition : null;
+    const index = Math.min(position?.index ?? 0, nodes.length);
     const selected = nodes[index - 1];
     const option = (value, label) => `<option value="${value}"${index === value ? ' selected' : ''}>${esc(label)}</option>`;
     const options = option(0, 'Starting goals') + nodes.map((node, i) => {
@@ -234,7 +300,7 @@
     const result = `<section id="goal-result" class="goal-result${selected ? '' : ' goal-initial'}" aria-labelledby="goal-result-title"><h6 id="goal-result-title" class="goal-result-title">${selected ? `Goals after step ${index}` : 'Starting goals'}</h6>${goalBlocksHTML(selected ? selected.after : nodes[0].before, empty)}</section>`;
     const before = selected ? `<section class="goal-result goal-before" aria-labelledby="goal-before-title"><h6 id="goal-before-title" class="goal-result-title">Goals before step ${index}</h6>${goalBlocksHTML(selected.before, '<p class="small muted">No goals were recorded before this step.</p>')}</section>` : '';
     return (trace.status === 'partial' ? `<div class="note-line goal-note" data-tone="amber">${icon('branch')}<span>Lean reported errors in the file; some steps may be missing.</span></div>` : '')
-      + nav + tactic + result + before
+      + nav + goalInferenceHTML(nodes, index, position?.split) + tactic + result + before
       + messagesHTML + provenance;
   }
 

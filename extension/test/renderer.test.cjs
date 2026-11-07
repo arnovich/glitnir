@@ -6202,6 +6202,7 @@ test('goal results show the target and context before and after a step', async (
     const d=w.document;
     d.querySelector('#insp [data-act="goal"]').click(); await new Promise(r=>setTimeout(r,30));
     const first=d.querySelector('#insp .goal-initial');
+    assert.equal(d.querySelector('#insp .goal-inference'), null, 'older traces cannot identify branches');
     assert.equal(first.querySelector('.goal-target').textContent,'⊢ eta + 1 > 1');
     assert.equal(first.querySelector('.goal-context').closest('details'),null);
     assert.equal(first.querySelector('.goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
@@ -6246,6 +6247,38 @@ test('inline proof progress remains visible after switching to Source and Explor
       assert.ok(d.querySelector('#proof-run-activity [data-act="goal-cancel"]'));
     }
   } finally {w.close();}
+});
+
+test('inference bars follow distinct goal identities and select the recorded branch tactic', async () => {
+  const snapshot = projectNotebook();
+  const trace = goalTrace(snapshot.sha256);
+  const [split, left, right] = trace.nodes;
+  Object.assign(split, {text: 'constructor', before: ['⊢ P ∧ P'], after: ['⊢ P', '⊢ P'], before_ids: ['root'], after_ids: ['left', 'right']});
+  Object.assign(left, {text: 'exact rightProof', before: ['⊢ P', '⊢ P'], after: ['⊢ P'], before_ids: ['right', 'left'], after_ids: ['left']});
+  Object.assign(right, {text: 'exact leftProof', before: ['⊢ P'], after: [], before_ids: ['left'], after_ids: [], parent: null});
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  const d = w.document;
+  const branch = step => d.querySelector(`#insp [data-act="goal-branch"][value="${step}"]`);
+  try {
+    d.querySelector('#insp [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(d.querySelector('#insp .goal-inference [role="group"]').getAttribute('aria-label'), 'Subgoals');
+    assert.equal(branch(3).textContent.trim(), '⊢ P');
+    assert.match(branch(3).getAttribute('aria-label'), /Subgoal 1 ⊢ P/);
+    d.querySelector('#insp .goal-results').scrollTop = 30;
+    branch(3).focus();
+    branch(3).click();
+    assert.equal(d.querySelector('.goal-full-tactic').textContent, 'exact leftProof');
+    assert.equal(branch(3).getAttribute('aria-pressed'), 'true');
+    assert.equal(d.activeElement, branch(3));
+    assert.equal(d.querySelector('#insp .goal-results').scrollTop, 30);
+    await w.glitnirPoll();
+    assert.equal(d.activeElement, branch(3));
+    branch(2).click();
+    assert.equal(d.querySelector('.goal-full-tactic').textContent, 'exact rightProof');
+    branch(1).click();
+    assert.equal(d.querySelector('.goal-full-tactic').textContent, 'constructor');
+  } finally { w.close(); }
 });
 
 test('proof steps show the full tactic and compact recording details without folds', async () => {

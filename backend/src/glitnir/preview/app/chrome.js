@@ -538,7 +538,7 @@
     }
     if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
       const controls = [...$('insp').querySelectorAll(goalControls)].filter(el => !el.disabled);
-      const target = controls.find(el => el.dataset.act === goalFocus)
+      const target = controls.find(el => el.dataset.act === goalFocus && (goalFocus !== 'goal-branch' || el.value === active.value))
         || (goalFocus === 'goal' && controls.find(el => el.dataset.act === 'goal-cancel'))
         || controls.find(el => el.dataset.act === 'goal-picker') || controls[0];
       if (target) target.focus({preventScroll: true});
@@ -845,6 +845,7 @@
       case 'goal': UI.selected = id; inspectGoals(b.dataset.refresh === 'true'); break;
       case 'goal-cancel': cancelGoals(); break;
       case 'goal-edit': editGoalSource(b); break;
+      case 'goal-branch':
       case 'goal-prev':
       case 'goal-next': if (!b.disabled) selectGoalStep(b); break;
       // Stale buttons of an earlier saved file never check other lines.

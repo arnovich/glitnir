@@ -731,6 +731,17 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .goal-navigation{position:sticky;top:0;z-index:1;background:var(--chrome);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:stretch;gap:5px}
 .goal-navigation button,.goal-navigation select{min-height:30px;padding:3px 6px;font-size:12px}
 .goal-navigation select{width:100%;min-width:0}
+.goal-inference{margin-top:8px;padding:9px;border:1px solid var(--border);border-radius:6px;background:var(--paper)}
+.goal-inference-premises{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr));gap:8px;margin-top:7px}
+.goal-inference-branch{display:grid;justify-items:center;align-content:start;gap:4px;min-width:0;text-align:center}
+.goal-inference-tactic,.goal-inference-rule code{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.goal-inference-rule{display:flex;align-items:center;gap:6px;margin:5px 0}
+.goal-inference-leaf{justify-self:stretch;margin:0}
+.goal-inference-rule::before{content:"";flex:1;border-top:1px solid var(--muted)}
+.goal-inference-root{display:flex;justify-content:center}
+.goal-branch-button,.goal-inference-unlinked{min-width:0;max-width:100%;padding:4px 7px;overflow-wrap:anywhere}
+.goal-branch-button[aria-pressed="true"]{color:var(--blue);border-color:var(--blue);background:var(--blue-soft)}
+.goal-branch-button code,.goal-inference-unlinked{white-space:pre-wrap;overflow-wrap:anywhere}
 .goal-result{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:6px}
 .goal-result-title{font-size:12px;margin:0 0 4px}
 .goal-previous-recording{margin:4px 0}
