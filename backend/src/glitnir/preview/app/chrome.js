@@ -469,7 +469,7 @@
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const activityFocus = document.activeElement?.closest('#run-activity')?.querySelector(':focus')?.dataset.act;
     const scroll = $('insp').scrollTop;
-    const goalControls = '.goal-section [data-act], .insp-actions [data-act="goal"]';
+    const goalControls = '.goal-section [data-act]';
     const active = document.activeElement;
     const goalFocus = $('insp').contains(active) && active.matches(goalControls) ? active.dataset.act : null;
     const tacticStates = new Map([...$('insp').querySelectorAll('.goal-full-tactic')].map(el => [el.dataset.tacticKey, {left: el.scrollLeft, top: el.scrollTop, focused: document.activeElement === el}]));
@@ -662,6 +662,7 @@
     const active = document.activeElement;
     UI.mode = 'graph';
     UI.graphFocused = false;
+    UI.graphFit = true;
     render({openExplore: true});
     if (active && (!active.isConnected || active.closest('[hidden]'))) {
       ($('atlas-selected') || document.querySelector('[data-mode="graph"]')).focus({preventScroll: true});
@@ -670,9 +671,9 @@
   function zoomGraph(factor) {
     const canvas = $('graph-view').querySelector('.proof-graph-canvas');
     const svg = canvas?.querySelector('.proof-map');
-    const width = Number(svg?.getAttribute('viewBox').split(' ')[2]);
-    const fitScale = canvas?.clientWidth / width;
-    const scale = UI.graphFit && width > 0
+    const [, , width, height] = svg?.getAttribute('viewBox').split(' ').map(Number) || [];
+    const fitScale = Math.min(canvas?.clientWidth / width, canvas?.clientHeight / height);
+    const scale = UI.graphFit && Number.isFinite(fitScale) && fitScale > 0
       ? UI.graphFocused ? Math.min(1, fitScale) : fitScale
       : UI.graphZoom || 1;
     UI.graphZoom = Math.max(.0001, Math.min(8, scale * factor));
@@ -793,6 +794,7 @@
         hideHelp();
         UI.mode = 'graph';
         UI.graphFocused = true;
+        UI.graphFit = true;
         render({openClaimGraph: true});
         const heading = $('graph-detail')?.querySelector('h3') || $('graph-view').querySelector('h2');
         if (heading) {

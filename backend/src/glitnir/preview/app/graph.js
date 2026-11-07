@@ -378,7 +378,7 @@
     if (!node) return '<h3>Pick a statement</h3><p class="muted">Use Statement details to read its saved relationships.</p>';
     if (node.kind === 'walkthrough') {
       const action = node.name
-        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="primary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
+        ? staticPage ? node.hasRecord ? `<a class="primary walkthrough-claim-link" href="#cell-${esc(node.name)}">Show in walkthrough</a>` : '' : `<button type="button" class="secondary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
         : node.claimRequested ? `<p class="small muted">No saved walkthrough result matches ${esc(node.claimRequested)}.</p>` : '<p class="small muted">No saved Lean result is linked to this statement.</p>';
       const where = [node.statementKind, node.section, node.pages ? `pp. ${node.pages}` : ''].filter(Boolean).join(' · ');
       return `<h3${staticPage ? '' : ' tabindex="-1"'}>${esc(node.fullLabel)}</h3>${staticPage ? '' : action}${graphStatusHTML(node, staticPage)}
@@ -387,9 +387,9 @@
     }
     const action = !staticPage && node.kind === 'local'
       ? node.hasSource
-        ? `<button type="button" class="primary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
+        ? `<button type="button" class="secondary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Show in Notebook</button>`
         : '<p class="small muted">No matching declaration in this file.</p>'
-      : !staticPage && node.path ? `<button type="button" class="primary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Open notebook</button>` : '';
+      : !staticPage && node.path ? `<button type="button" class="secondary graph-open" data-act="graph-node" data-graph-id="${esc(node.id)}">Open notebook</button>` : '';
     let uses = nodeList(node.uses, model, staticPage);
     if (!staticPage && !node.uses.length) {
       if (!node.relationsKnown) uses = node.kind === 'imported' ? 'Dependencies aren’t available here' : 'Dependencies haven’t been recorded';
@@ -454,7 +454,7 @@
     const compatibility = model.walkthrough && !model.compatibility.supported ? `<p class="banner quiet walkthrough-compatibility" role="status">${esc(model.compatibility.message)}</p>` : '';
     const statementKinds = model.walkthrough ? [...new Set(model.nodes.map(node => node.statementKind))] : [];
     const legend = statementKinds.length ? `<div class="walkthrough-legend" aria-label="Statement kinds">${statementKinds.map(kind => `<span><i class="statement-swatch statement-${kind}" aria-hidden="true"></i>${esc(kind)}</span>`).join('')}</div>` : '';
-    const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" role="group" aria-label="Graph zoom"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button><button type="button" class="secondary" data-act="graph-fit" aria-pressed="${fit}">Fit width</button><button type="button" class="secondary" data-act="graph-reset">Reset zoom</button></div>`;
+    const toolbar = staticPage ? '' : `<div class="proof-graph-toolbar" role="group" aria-label="Graph zoom"><button type="button" class="secondary" data-act="graph-zoom-out" aria-label="Zoom out">−</button><button type="button" class="secondary" data-act="graph-zoom-in" aria-label="Zoom in">+</button><button type="button" class="secondary" data-act="graph-fit" aria-pressed="${fit}">Fit graph</button><button type="button" class="secondary" data-act="graph-reset">Reset zoom</button></div>`;
     const detailOptions = model.nodes.map(node => `<option value="${esc(node.id)}"${node.id === selected ? ' selected' : ''}>${esc(node.fullLabel || node.name)}</option>`).join('');
     const picker = '<se' + `lect data-act="graph-detail-picker">${detailOptions}</se` + 'lect>';
     const pickerLabel = model.walkthrough ? 'Choose a statement' : 'Choose a claim';

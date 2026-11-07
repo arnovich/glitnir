@@ -3,7 +3,7 @@
   'use strict';
   const workbench = window.glitnirWorkbench;
   const {$, API, HOST, UI, cellEntries, checkBusy, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
-    currencyNoted, currencyPillHTML, currencyText, docHTML, environmentEpoch, esc, fetch, helpHTML, icon, inlineHTML,
+    currencyNoted, currencyText, docHTML, environmentEpoch, esc, fetch, helpHTML, icon, inlineHTML,
     leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
     researchHTML, useChipsHTML, walkthroughMessage, walkthroughUnchecked} = workbench;
   // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
@@ -20,7 +20,6 @@
   }
   function projectInspectorHTML(c) {
     const saved = c.project;
-    const st = statusOf(c);
     const cell = UI.data.cells.find(cell => cell.claim === c.name);
     const reading = cell ? claimReading(trimmed(cellEntries(cell))) : null;
     const modules = new Map();
@@ -28,16 +27,15 @@
     const statement = saved.example === true ? checkedStatementHTML(saved, true) : '';
     const checked = statement ? `<div class="insp-section">${statement}</div>` : '';
     const compatibility = walkthroughUnchecked() ? `<div class="note-line walkthrough-compatibility" data-tone="muted">${icon('branch')}<span>${esc(walkthroughMessage())}</span></div>` : '';
-    const proof = proofGoalsHTML(c);
     const check = checkThroughHTML(saved, 'Check up to this claim', `r: compiles and kernel-replays lines 1–${saved.end_line} of the saved file; later claims are not rechecked. Check saved file checks all of it.`, 'inspector');
     return `
-      <div class="focus"><div class="row"><span class="pill" data-tone="${st.tone}">${esc(st.label)}</span>${currencyPillHTML(saved)}</div>${reading?.doc ? `<div class="eq">${docHTML(reading.doc)}</div>` : ''}
+      <div class="focus">${reading?.doc ? `<div class="eq">${docHTML(reading.doc)}</div>` : ''}
         <dl><dt>name</dt><dd>${esc(saved.example === true ? c.label : c.name)}</dd><dt>lines</dt><dd>${cell ? lineLinkHTML(saved.start_line, saved.end_line) : '—'}</dd><dt>result</dt><dd>${currencyText(saved)}</dd><dt>uses</dt><dd class="insp-uses">${!Array.isArray(saved.uses) ? '<span class="muted">not recorded by this check</span>' : saved.uses.length ? `<span class="uses">${useChipsHTML(saved)}</span>` : '—'}</dd></dl></div>
       ${compatibility}${checked}
       ${researchHTML(c)}
-      ${proof.section}
+      ${proofGoalsHTML(c)}
       <div class="insp-section"><h5>Assumptions from the last check</h5>${modules.size ? [...modules].map(([module, names]) => `<p class="small muted axiom-module">${esc(module)}</p><div class="axioms">${names.map(name => `<code>${esc(name)}</code>`).join('')}</div>`).join('') : '<p class="small muted">None.</p>'}</div>
-      ${inspectorActionsHTML(proof.action, check)}
+      ${check ? `<div class="insp-actions"><div class="insp-check">${check}</div></div>` : ''}
       `;
   }
 
@@ -141,41 +139,35 @@
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
   }
-  function inspectorActionsHTML(proof, check = '') {
-    const checkAction = check ? `<div class="insp-check">${check}</div>` : '';
-    return checkAction || proof ? `<div class="insp-actions">${checkAction}${proof}</div>` : '';
-  }
-
   function proofGoalsHTML(c, range = c.project) {
     const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
-    if (linkedPath()) return {section: `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`, action: ''};
-    if (leanOff() || walkthroughUnchecked()) return {section: `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p></div>`, action: ''};
+    if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
+    if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
     const dirty = document.body.classList.contains('unsaved-lean');
-    const button = label => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${label.startsWith('Refresh') ? ' data-refresh="true"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${label}</button>`;
+    const button = refresh => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${refresh ? ' data-refresh="true" aria-label="Refresh proof goals"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${refresh ? icon('replay') + 'Refresh' : 'Inspect proof'}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
     let message = '', display = null;
-    let action = button('Inspect proof');
+    let refresh = false;
     if (traceRunning(trace)) {
       message = '<div class="goal-run-progress"></div>';
-      action = '';
     } else if (trace) {
-      if (trace.source_sha256 !== UI.data.sha256) { message = note('amber', 'The saved source changed since these goals were recorded.'); action = button('Refresh proof goals'); }
-      else if (goals.environment !== environmentEpoch()) { message = note('amber', 'The source or its dependencies changed since these goals were recorded.'); action = button('Refresh proof goals'); }
+      if (trace.source_sha256 !== UI.data.sha256) { message = note('amber', 'The saved source changed since these goals were recorded.'); refresh = true; }
+      else if (goals.environment !== environmentEpoch()) { message = note('amber', 'The source or its dependencies changed since these goals were recorded.'); refresh = true; }
       else if (trace.status === 'detached') message = note('muted', 'Stopped following the recording. Lean is still running.');
       else if (trace.status === 'cancelled') message = note('muted', 'Recording cancelled. No goals were recorded in this run.');
       else if (!traceFinished(trace)) message = note('red', `No proof goals: ${esc(trace.message || trace.status)}`);
-      else { display = trace; action = button('Refresh proof goals'); }
+      else { display = trace; refresh = true; }
     }
     const previous = !display && previousGoalTrace();
     if (previous) {
       display = previous;
-      if (!traceRunning(trace)) action = button('Refresh proof goals');
+      refresh = true;
     }
     const key = display ? goalKey(c.name, display) : '';
     const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${goalStepsHTML(c, display, key, range)}</div>` : '';
-    const section = `<div class="insp-section goal-section">${head}${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}</div>`;
-    return {section, action};
+    const action = traceRunning(trace) ? '' : button(refresh);
+    return `<div class="insp-section goal-section"><div class="goal-heading">${head}${refresh ? action : ''}</div>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}${refresh ? '' : action}</div>`;
   }
 
   function goalKey(name, trace) {
@@ -322,8 +314,7 @@
     if (!c && scope && projectMode()) {
       $('insp-title').textContent = UI.selected;
       $('insp-sub').textContent = 'No saved check result';
-      const proof = proofGoalsHTML({name: UI.selected}, {start_line: Number(scope.dataset.start), end_line: Number(scope.dataset.end)});
-      updateInspector(proof.section + inspectorActionsHTML(proof.action));
+      updateInspector(proofGoalsHTML({name: UI.selected}, {start_line: Number(scope.dataset.start), end_line: Number(scope.dataset.end)}));
       return;
     }
     if (!c) {
@@ -335,25 +326,24 @@
         : '<p class="small muted">This notebook has no theorems yet.</p>');
       return;
     }
+    const st = statusOf(c);
+    const currency = c.project && currencyNoted(c.project) ? currencyText(c.project) : '';
+    const tone = currency ? (c.project.current === false ? 'amber' : 'muted') : st.tone;
+    const label = currency ? `${st.label.toLowerCase()} · ${currency}` : st.label.toLowerCase();
+    $('insp-title').textContent = c.project ? c.label : c.name;
+    $('insp-sub').innerHTML = `${esc(c.keyword || 'claim')} · <span class="pill" data-tone="${esc(tone)}">${esc(label)}</span>`;
     if (c.project) {
-      $('insp-title').textContent = c.label;
-      $('insp-sub').textContent = `${c.keyword || 'claim'} · ${statusOf(c).label.toLowerCase()}${currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}`;
       updateInspector(projectInspectorHTML(c));
       return;
     }
-    const st = statusOf(c);
     const r = c.record;
-    $('insp-title').textContent = c.name;
-    $('insp-sub').textContent = `${c.keyword} · ${st.label.toLowerCase()}`;
-    const proof = HOST && scope ? proofGoalsHTML(c, {start_line: Number(scope.dataset.start), end_line: Number(scope.dataset.end)}) : null;
     updateInspector(`
-      <div class="focus"><div class="row"><span class="pill" data-tone="${st.tone}">${st.label}</span></div>${c.doc ? `<div class="eq">${inlineHTML(c.doc)}</div>` : ''}
+      <div class="focus">${c.doc ? `<div class="eq">${inlineHTML(c.doc)}</div>` : ''}
         <dl><dt>context</dt><dd>${c.context.slice(0, 12)}</dd><dt>last check</dt><dd>${r ? `${esc(r.verdict)}${r.context === c.context ? '' : ' · old context'}` : 'none'}</dd><dt>uses</dt><dd>${esc(c.uses.join(', ') || '—')}</dd></dl></div>
       ${c.reason ? `<div class="insp-section"><h5>Why</h5><p class="small">${esc(c.reason)}</p></div>` : ''}
       ${refutationHTML(c)}
-      ${proof?.section || ''}
+      ${HOST && scope ? proofGoalsHTML(c, {start_line: Number(scope.dataset.start), end_line: Number(scope.dataset.end)}) : ''}
       ${r && r.axioms.length ? `<div class="insp-section"><h5>Axioms from the last check</h5><div class="axioms">${r.axioms.map(a => `<code>${esc(a)}</code>`).join('')}</div></div>` : ''}
-      ${proof ? inspectorActionsHTML(proof.action) : ''}
 `);
   }
 

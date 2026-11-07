@@ -244,6 +244,21 @@ test('header views and Explore controls reflow in narrow panels', {skip: !chrome
       };
     })()`);
     assert.deepEqual(narrow, {mobile: 'block', rail: 'none', pickerFirst: true});
+    for (const [width, height] of [[360, 800], [1440, 800], [1100, 240]]) {
+      await client.send('Emulation.setDeviceMetricsOverride', {width, height, deviceScaleFactor: 1, mobile: false});
+      for (const [mapWidth, mapHeight] of [[2400, 260], [260, 1800]]) {
+        const fitted = await evaluate(`(() => {
+          const graph = document.getElementById('graph-view');
+          graph.innerHTML = '<section class="proof-graph-view"><div class="proof-graph-layout"><div class="proof-graph-stage"><div class="proof-graph-canvas" data-fit="true" data-scope="full"><svg class="proof-map" width="100%" viewBox="0 0 ${mapWidth} ${mapHeight}"><rect width="${mapWidth}" height="${mapHeight}"/></svg></div></div></div></section>';
+          const canvas = graph.querySelector('.proof-graph-canvas').getBoundingClientRect();
+          const map = graph.querySelector('rect').getBoundingClientRect();
+          return canvas.height <= innerHeight && map.left >= canvas.left - 1 && map.right <= canvas.right + 1
+            && map.top >= canvas.top - 1 && map.bottom <= canvas.bottom + 1
+            && Math.min(Math.abs(canvas.width - map.width), Math.abs(canvas.height - map.height)) < 1;
+        })()`);
+        assert.equal(fitted, true, `${width}: ${mapWidth}×${mapHeight} graph fits both dimensions`);
+      }
+    }
   } finally {
     await stopBrowser(child, closed, client);
     await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});

@@ -56,7 +56,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
     await window.glitnirHost.copyText('python -m replay --goal goal.json');
     assert.equal(requests.at(-1).type, 'clipboard');
     assert.equal(requests.at(-1).body, 'python -m replay --goal goal.json');
-    assert.equal(window.document.querySelector('#insp .pill').textContent, 'Checked');
+    assert.equal(window.document.querySelector('#insp-sub .pill').textContent, 'checked');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
     assert.match(window.document.getElementById('editor-state').textContent, /Unsaved Lean/);
     assert.equal(window.document.getElementById('editor-state').hidden, false);
@@ -70,7 +70,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
     claim.status = 'stale';
     claim.reason = 'context changed';
     await poll();
-    assert.equal(window.document.querySelector('#insp .pill').textContent, 'Out of date');
+    assert.equal(window.document.querySelector('#insp-sub .pill').textContent, 'out of date');
     assert.match(window.document.getElementById('banner-text').textContent, /no longer match/);
     assert.equal((await window.glitnirHost.fetch('/api/project/check', {method: 'POST', body: '{}'})).status, 200);
     assert.equal(window.document.querySelectorAll('[data-act="replay"], [data-act="goal"], #replay-all, #replay-stale').length, 0, 'no pinned replay or goal actions');
@@ -155,7 +155,7 @@ test('a linked project claim shows round decisions and exact evidence without ch
     assert.match(inspector.textContent, /Exploration allocation: 25%/);
     assert.match(inspector.textContent, /never change this claim’s proof status/);
     assert.equal(inspector.querySelectorAll('.research-round').length, 2);
-    assert.equal(inspector.querySelector('.focus .pill').textContent, 'Kernel checked');
+    assert.equal(window.document.querySelector('#insp-sub .pill').textContent, 'kernel checked');
     let scrolled;
     window.HTMLElement.prototype.scrollIntoView = function() { scrolled = this; };
     inspector.querySelector('.research-evidence-row').click();
@@ -3146,8 +3146,8 @@ test('routine explainers live behind focusable help icons', async () => {
     assert.ok(d.querySelector('#insp .focus').compareDocumentPosition(proof) & window.Node.DOCUMENT_POSITION_FOLLOWING);
     assert.equal(proof.nextElementSibling.querySelector('h5').textContent, 'Assumptions from the last check');
     const actions = d.getElementById('insp').lastElementChild;
-    assert.deepEqual([...actions.querySelectorAll('[data-act]')].map(button => button.dataset.act), ['check-through', 'goal']);
-    assert.equal(actions.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
+    assert.deepEqual([...actions.querySelectorAll('[data-act]')].map(button => button.dataset.act), ['check-through']);
+    assert.equal(proof.querySelector(':scope > [data-act="goal"]').textContent, 'Inspect proof');
     assert.match(proof.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
     assert.equal(d.querySelector('#insp .goal-section > p'), null, 'proof help stays in the tooltip');
     assert.ok(d.querySelector('#insp [data-act="check-through"]'));
@@ -3161,6 +3161,8 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     window.HTMLElement.prototype.scrollIntoView = () => {};
     assert.equal(d.getElementById('insp-title').textContent, 'k_pos');
     assert.match(d.getElementById('insp-sub').textContent, /theorem · kernel checked/);
+    assert.equal(d.querySelector('#insp-sub .pill').dataset.tone, 'green');
+    assert.equal(d.querySelector('#insp .focus .pill'), null, 'status appears only in the header');
     assert.deepEqual([...d.querySelectorAll('#insp .axiom-module')].map(m => m.textContent), ['Init.Core', 'Init.Prelude']);
     assert.match(d.getElementById('insp').textContent, /The rate is/);
     assert.deepEqual([...d.querySelectorAll('#subline .stat')].map(s => s.textContent), ['1 kernel checked', '1 contains sorry', '1 out of date']);
@@ -3173,6 +3175,8 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
     assert.equal(d.getElementById('insp-title').textContent, 'floor');
+    assert.equal(d.querySelector('#insp-sub .pill').dataset.tone, 'amber');
+    assert.match(d.querySelector('#insp-sub .pill').textContent, /out of date/);
     assert.equal(d.querySelector('[data-claim="Demo.floor"] .claim').dataset.selected, 'true');
     d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
     assert.equal(d.getElementById('insp-title').textContent, 'k_pos', 'clicking a card selects it');
@@ -3247,7 +3251,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
-    const button = insp.querySelector('.insp-actions [data-act="goal"]');
+    const button = insp.querySelector('.goal-section > [data-act="goal"]');
     assert.equal(button.textContent, 'Inspect proof');
     assert.match(insp.querySelector('.goal-section').textContent, /Use Check saved file to update the check status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
@@ -3279,8 +3283,10 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
     assert.match(insp.querySelector('.goal-recording').textContent, /Recorded with Lean 4\.35\.0/);
     assert.equal(insp.querySelector('.goal-results details'), null, 'proof details are visible without opening folds');
-    assert.equal(insp.querySelector('.insp-actions [data-act="goal"]').textContent, 'Refresh proof goals');
-    assert.equal(insp.querySelector('.focus .pill').textContent, 'Kernel checked', 'the status is the saved record’s');
+    const refresh = insp.querySelector('.goal-heading [data-act="goal"]');
+    assert.equal(refresh.textContent, 'Refresh');
+    assert.equal(refresh.getAttribute('aria-label'), 'Refresh proof goals');
+    assert.equal(d.querySelector('#insp-sub .pill').textContent, 'kernel checked', 'the status is the saved record’s');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1, 'one observation at a time');
     // The same observation serves the next claim: here a term proof records no steps.
     d.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
@@ -3375,7 +3381,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, sent);
     assert.equal(insp.querySelector('[data-act="goal"]').disabled, true, 'unsaved files disable inline inspection');
-    assert.equal($('insp').querySelector('.focus .pill').textContent, 'Kernel checked');
+    assert.equal($('insp-sub').querySelector('.pill').textContent, 'kernel checked');
   } finally { window.close(); }
 });
 
@@ -3645,7 +3651,7 @@ test('Explore distinguishes empty dependency records from missing observations',
     shortcut.click();
     assert.equal(d.querySelector('[data-act="graph-focus"]').textContent, 'Selected claim');
     assert.equal(d.querySelector('.proof-graph-detail-picker').firstChild.textContent, 'Choose a claim');
-    assert.deepEqual([...d.querySelectorAll('.proof-graph-toolbar button')].map(button => button.textContent), ['−', '+', 'Fit width', 'Reset zoom']);
+    assert.deepEqual([...d.querySelectorAll('.proof-graph-toolbar button')].map(button => button.textContent), ['−', '+', 'Fit graph', 'Reset zoom']);
     assert.equal(d.querySelector('#graph-detail dd').textContent, 'No recorded dependencies');
     d.querySelector('[data-act="graph-full"]').click();
     const notes = d.querySelector('.proof-graph-notes');
@@ -3761,6 +3767,9 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.ok(graphToolbar.closest('.proof-graph-stage'));
     assert.ok(graphToolbar.nextElementSibling.classList.contains('proof-graph-canvas'));
     assert.equal(d.querySelector('.proof-graph-view > header .proof-graph-toolbar'), null);
+    assert.equal(d.querySelector('.proof-graph-canvas').dataset.fit, 'true', 'Explore fits the graph on entry');
+    assert.ok(d.querySelector('#graph-detail .graph-open').classList.contains('secondary'));
+    d.querySelector('[data-act="graph-reset"]').click();
     const zoom = d.querySelector('[data-act="graph-zoom-in"]');
     zoom.focus(); zoom.click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '950');
@@ -3770,9 +3779,15 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '608', 'zoom out scales intrinsic node size');
     d.querySelector('[data-act="graph-fit"]').click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '100%');
-    Object.defineProperty(d.querySelector('.proof-graph-canvas'), 'clientWidth', {value: 600});
+    const canvas = d.querySelector('.proof-graph-canvas');
+    Object.defineProperties(canvas, {clientWidth: {value: 600}, clientHeight: {value: 160}});
     d.querySelector('[data-act="graph-zoom-out"]').click();
-    assert.ok(Number(d.querySelector('#graph-view .proof-map').getAttribute('width')) < 600, 'zooming out from fit really shrinks the graph');
+    const svg = d.querySelector('#graph-view .proof-map');
+    const [, , width, height] = svg.getAttribute('viewBox').split(' ').map(Number);
+    assert.equal(Number(svg.getAttribute('width')), Math.round(Math.min(600, 160 * width / height) * .8), 'manual zoom starts at the fitted size');
+    d.querySelector('[data-mode="doc"]').click();
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('.proof-graph-canvas').dataset.fit, 'true', 'returning to Explore fits again');
   } finally { window.close(); }
 });
 

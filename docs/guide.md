@@ -387,8 +387,8 @@ and results not compared with this project's environment labelled
 **Freshness unknown**. The details distinguish **No saved result** from an
 existing saved result whose freshness is unknown. **Dependencies haven’t been
 recorded** means the saved result has no dependency list. **No recorded
-dependencies** means the list is present and empty. Maps start at readable node size; **Fit width** shows the overview and
-**Reset zoom** restores actual size. Zoomed maps retain their scroll
+dependencies** means the list is present and empty. Maps open fitted to the canvas.
+**Fit graph** restores the overview, and **Reset zoom** restores actual size. Zoomed maps retain their scroll
 position through refreshes. The graph can be zoomed and scrolled,
 and the static HTML export includes an inert copy.
 
