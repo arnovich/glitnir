@@ -2349,6 +2349,18 @@ test('project inspection is reported from snapshots for the saved source it read
     assert.equal($('inspect-project').disabled, false);
     assert.match($('project-inspection').textContent, /^Last inspection: Module setup resolved for <A>\./);
     assert.match($('project-inspection').innerHTML, /&lt;A&gt;/, 'the message is escaped');
+    $('project-inspection').querySelector('[data-act="inspect-dismiss"]').click();
+    assert.equal($('project-inspection').hidden, true);
+    assert.equal(window.document.activeElement, $('inspect-project'));
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, true, 'the same result stays dismissed on poll');
+    snapshot.preview.inspection.status = 'running';
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, false);
+    assert.ok($('project-inspection').querySelector('[data-act="inspect-cancel"]'));
+    snapshot.preview.inspection.status = 'resolved';
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, false, 'a new result appears even for the same source');
     snapshot.preview.inspection.source_sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     assert.equal($('project-inspection').hidden, true, 'an inspection of another saved source is not shown');

@@ -353,9 +353,17 @@
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
     activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
-    $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
-    $('project-inspection').hidden = !project || linked || (!inspected && !inspecting());
-    $('project-inspection').innerHTML = inspecting() ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>` : inspected ? `Last inspection: ${esc(inspected.message)}` + projectResolutionHTML(inspected.resolution) : '';
+    const inspectingNow = inspecting();
+    if (inspectingNow && !linked) UI.dismissedInspectionSha = null;
+    const showInspection = inspected && inspected.source_sha256 !== UI.dismissedInspectionSha;
+    $('inspect-project').textContent = inspectingNow ? 'Inspecting…' : 'Inspect project environment';
+    const inspectionBanner = $('project-inspection');
+    inspectionBanner.hidden = !project || linked || (!showInspection && !inspectingNow);
+    const restoreDismissFocus = document.activeElement?.dataset.act === 'inspect-dismiss';
+    inspectionBanner.innerHTML = inspectionBanner.hidden ? '' : inspectingNow
+      ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>`
+      : `<span>Last inspection: ${esc(inspected.message)}</span><button type="button" class="secondary" data-act="inspect-dismiss">Dismiss</button>` + projectResolutionHTML(inspected.resolution);
+    if (restoreDismissFocus) inspectionBanner.querySelector('[data-act="inspect-dismiss"]')?.focus({preventScroll: true});
     if (project) {
       // The check actions live in the banner, so it stays; it is amber only
       // when a result needs attention: out of date, withheld or unavailable.
@@ -795,6 +803,13 @@
       case 'evidence-run': if (leanOff()) break; runEvidence(Number(b.dataset.line), b.dataset.sha); break;
       case 'view-cancel': cancelView(b); break;
       case 'inspect-cancel': cancelInspection(); break;
+      case 'inspect-dismiss':
+        if (inspection() && !inspecting()) {
+          UI.dismissedInspectionSha = UI.data.sha256;
+          renderChrome();
+          $('inspect-project').focus({preventScroll: true});
+        }
+        break;
       case 'check-cancel': cancelCheck(); break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
       case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
