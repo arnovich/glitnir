@@ -188,7 +188,7 @@ test('offline export switches views and follows source and sibling fragments in 
   if (cleanupError) throw cleanupError;
 });
 
-test('header views stay centred with long filenames and move below identity in narrow panels', {skip: !chrome}, async () => {
+test('header views and Explore controls reflow in narrow panels', {skip: !chrome}, async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'glitnir-header-browser-'));
   const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--remote-debugging-port=0', `--user-data-dir=${path.join(directory, 'profile')}`, 'about:blank'], {
@@ -229,6 +229,78 @@ test('header views stay centred with long filenames and move below identity in n
         assert.ok(box.status.top >= box.views.bottom, `${width}: status stays below primary navigation`);
       }
     }
+    const narrow = await evaluate(`(() => {
+      const mobile = document.getElementById('claim-graph-mobile');
+      mobile.hidden = false;
+      const graph = document.getElementById('graph-view');
+      graph.hidden = false;
+      graph.innerHTML = '<div class="proof-graph-layout"><aside class="proof-graph-detail"><label class="proof-graph-detail-picker">Choose a claim<select><option>Demo.first</option></select></label></aside><div class="proof-graph-stage">Graph</div></div>';
+      const detail = graph.querySelector('.proof-graph-detail').getBoundingClientRect();
+      const stage = graph.querySelector('.proof-graph-stage').getBoundingClientRect();
+      return {
+        mobile: getComputedStyle(mobile).display,
+        rail: getComputedStyle(document.querySelector('.rail')).display,
+        pickerFirst: detail.bottom <= stage.top,
+      };
+    })()`);
+    assert.deepEqual(narrow, {mobile: 'block', rail: 'none', pickerFirst: true});
+    for (const [width, height] of [[360, 800], [1440, 800], [1100, 240]]) {
+      await client.send('Emulation.setDeviceMetricsOverride', {width, height, deviceScaleFactor: 1, mobile: false});
+      for (const [mapWidth, mapHeight] of [[2400, 260], [260, 1800]]) {
+        const fitted = await evaluate(`(() => {
+          const graph = document.getElementById('graph-view');
+          graph.innerHTML = '<section class="proof-graph-view"><div class="proof-graph-layout"><div class="proof-graph-stage"><div class="proof-graph-canvas" data-fit="true" data-scope="full"><svg class="proof-map" width="100%" viewBox="0 0 ${mapWidth} ${mapHeight}"><rect width="${mapWidth}" height="${mapHeight}"/></svg></div></div></div></section>';
+          const canvas = graph.querySelector('.proof-graph-canvas').getBoundingClientRect();
+          const map = graph.querySelector('rect').getBoundingClientRect();
+          return canvas.height <= innerHeight && map.left >= canvas.left - 1 && map.right <= canvas.right + 1
+            && map.top >= canvas.top - 1 && map.bottom <= canvas.bottom + 1
+            && Math.min(Math.abs(canvas.width - map.width), Math.abs(canvas.height - map.height)) < 1;
+        })()`);
+        assert.equal(fitted, true, `${width}: ${mapWidth}×${mapHeight} graph fits both dimensions`);
+      }
+    }
+  } finally {
+    await stopBrowser(child, closed, client);
+    await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});
+  }
+});
+
+test('claim graph help appears above the adjacent theorem card', {skip: !chrome}, async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'glitnir-help-browser-'));
+  const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
+    `--user-data-dir=${directory}`, '--remote-debugging-port=0', 'about:blank'], {
+    stdio: ['ignore', 'ignore', 'pipe'], detached: useProcessGroup,
+  });
+  const closed = new Promise(resolve => child.once('close', resolve));
+  let client;
+  try {
+    const css = readFileSync(path.resolve(__dirname, '../../dist/media/app.css'), 'utf8');
+    const file = path.join(directory, 'help.html');
+    writeFileSync(file, `<!doctype html><style>${css}</style><div class="workspace no-panel">
+      <nav class="rail"><h4 class="label">Claim graph <span class="context-help">
+        <button class="help-icon" aria-describedby="claim-graph-help">?</button>
+        <span class="help-tooltip" id="claim-graph-help" role="tooltip" style="left:100px;top:60px" hidden>Recorded claim dependencies.</span>
+      </span></h4></nav>
+      <main class="document"><section class="cell"><div class="claim-head" style="height:160px">Theorem</div></section></main>
+    </div>`);
+    client = await pageClient(await devtools(child));
+    await client.send('Page.enable');
+    await client.send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 800, deviceScaleFactor: 1, mobile: false});
+    const loaded = client.event('Page.loadEventFired');
+    await client.send('Page.navigate', {url: pathToFileURL(file).href});
+    await loaded;
+    const {result} = await client.send('Runtime.evaluate', {returnByValue: true, expression: `(() => {
+      const tip = document.getElementById('claim-graph-help');
+      const theorem = document.querySelector('.claim-head');
+      const x = theorem.getBoundingClientRect().left + 12, y = 70;
+      const hit = () => document.elementFromPoint(x, y);
+      const before = theorem.contains(hit());
+      tip.hidden = false;
+      const during = tip.contains(hit());
+      tip.hidden = true;
+      return {before, during, after: theorem.contains(hit())};
+    })()`});
+    assert.deepEqual(result.value, {before: true, during: true, after: true});
   } finally {
     await stopBrowser(child, closed, client);
     await rm(directory, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});

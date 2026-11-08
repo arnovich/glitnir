@@ -8,7 +8,8 @@ import pytest
 from glitnir.lean.proof_trace import _validate_trace
 
 
-def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges():
+@pytest.mark.parametrize("after_ids", [["a", "b"], ["a", "a"]])
+def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges(after_ids):
     """A closed branch never replaces another node's before state."""
     source = (
         "-- λ\ntheorem t : True ∧ True := by\n  constructor\n  · trivial\n  · trivial\n"
@@ -24,6 +25,8 @@ def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges():
                     "parent": None,
                     "before": ["⊢ True ∧ True"],
                     "after": ["left", "right"],
+                    "before_ids": ["root"],
+                    "after_ids": after_ids,
                     "declaration": "t",
                     "kind": "constructor",
                 }
@@ -36,6 +39,26 @@ def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges():
     assert answer["nodes"][0]["text"] == "constructor"
     assert answer["nodes"][0]["range"]["start"] == {"line": 3, "character": 2}
     assert answer["nodes"][0]["after"] == ["left", "right"]
+    assert answer["nodes"][0]["before_ids"] == ["root"]
+    assert answer["nodes"][0]["after_ids"] == after_ids
+
+
+@pytest.mark.parametrize("ids", [["short"], [3, 4], ["a", ""]])
+def test_trace_rejects_invalid_goal_id_lists(ids):
+    """Goal identities must match the number of recorded goals."""
+    node = {
+        "start": 0,
+        "end": 1,
+        "parent": None,
+        "before": [],
+        "after": ["⊢ True", "⊢ True"],
+        "before_ids": [],
+        "after_ids": ids,
+        "declaration": "t",
+        "kind": "constructor",
+    }
+    with pytest.raises(ValueError, match="goal identit"):
+        _validate_trace({"nodes": [node], "errors": [], "warnings": []}, "x")
 
 
 @pytest.mark.parametrize("start,end,parent", [(1, 2, None), (0, 999, None), (0, 2, 0)])
@@ -179,11 +202,15 @@ def test_live_scoped_tactics_errors_and_admissions(tmp_path):
     )
     result = _validate_trace(json.loads(report.read_text()), text)
     pair = [n for n in result["nodes"] if n["declaration"] == "pair"]
-    assert any(n["text"] == "constructor" and len(n["after"]) == 2 for n in pair)
-    assert any(
-        n["text"] == "trivial" and len(n["before"]) == 1 and not n["after"]
+    split = next(n for n in pair if n["text"] == "constructor")
+    assert len(split["after"]) == 2
+    closers = [
+        n["before_ids"][0]
         for n in pair
-    )
+        if n["text"] == "trivial" and len(n["before"]) == 1 and not n["after"]
+    ]
+    assert closers == split["after_ids"]
+    assert len(set(closers)) == 2
     assert any(n["parent"] is not None for n in pair)
     assert any(n["declaration"] == "same" for n in result["nodes"])
     assert not any(n["declaration"] == "term" for n in result["nodes"])

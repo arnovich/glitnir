@@ -56,7 +56,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
     await window.glitnirHost.copyText('python -m replay --goal goal.json');
     assert.equal(requests.at(-1).type, 'clipboard');
     assert.equal(requests.at(-1).body, 'python -m replay --goal goal.json');
-    assert.equal(window.document.querySelector('#insp .pill').textContent, 'Checked');
+    assert.equal(window.document.querySelector('#insp-sub .pill').textContent, 'checked');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
     assert.match(window.document.getElementById('editor-state').textContent, /Unsaved Lean/);
     assert.equal(window.document.getElementById('editor-state').hidden, false);
@@ -70,7 +70,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
     claim.status = 'stale';
     claim.reason = 'context changed';
     await poll();
-    assert.equal(window.document.querySelector('#insp .pill').textContent, 'Out of date');
+    assert.equal(window.document.querySelector('#insp-sub .pill').textContent, 'out of date');
     assert.match(window.document.getElementById('banner-text').textContent, /no longer match/);
     assert.equal((await window.glitnirHost.fetch('/api/project/check', {method: 'POST', body: '{}'})).status, 200);
     assert.equal(window.document.querySelectorAll('[data-act="replay"], [data-act="goal"], #replay-all, #replay-stale').length, 0, 'no pinned replay or goal actions');
@@ -155,7 +155,7 @@ test('a linked project claim shows round decisions and exact evidence without ch
     assert.match(inspector.textContent, /Exploration allocation: 25%/);
     assert.match(inspector.textContent, /never change this claim’s proof status/);
     assert.equal(inspector.querySelectorAll('.research-round').length, 2);
-    assert.equal(inspector.querySelector('.focus .pill').textContent, 'Kernel checked');
+    assert.equal(window.document.querySelector('#insp-sub .pill').textContent, 'kernel checked');
     let scrolled;
     window.HTMLElement.prototype.scrollIntoView = function() { scrolled = this; };
     inspector.querySelector('.research-evidence-row').click();
@@ -2520,145 +2520,6 @@ test('review navigation visits unresolved claims without checking and resets aft
   } finally { window.close(); }
 });
 
-test('proof review uses scoped observations, stays read-only while stepping, and scopes keyboard help', async () => {
-  const claims = [{name: 'pair', keyword: 'theorem', statement: ': True ∧ True', proof: 'constructor\n· trivial\n· trivial', proof_block: '  constructor\n  · trivial\n  · trivial', status: 'stale', reason: 'changed', uses: [], context: 'c'.repeat(64), record: null}];
-  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), claims, checking: [], check_errors: {}, links: [], revisions: [], assets: [], cells: [{id: 'pair', index: 0, kind: 'claim', start: 1, end: 4, text: 'theorem pair : True ∧ True := by\n  constructor\n  · trivial\n  · trivial'}]};
-  const nodes = [
-    {id: 0, parent: null, text: 'constructor', range: {start: {line: 2, character: 2}, end: {line: 2, character: 13}}, before: ['⊢ True ∧ True'], after: ['left ⊢ True', 'right ⊢ True']},
-    {id: 1, parent: null, text: '· trivial', range: {start: {line: 3, character: 2}, end: {line: 3, character: 11}}, before: ['left ⊢ True'], after: []},
-  ];
-  const trace = {id: 'record', status: 'ready', source_sha256: snapshot.sha256, environment: {kind: 'read_only_live_dependencies', toolchain: 'Lean 4.35.0'}, claim: 'pair', nodes, warnings: ['illustrative warning'], errors: [], message: 'Recorded goals'};
-  const messages = [];
-  const window = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: () => trace});
-  const $ = id => window.document.getElementById(id);
-  const app = window.document.querySelector('.app');
-  const key = (key, target = app) => target.dispatchEvent(new window.KeyboardEvent('keydown', {key, bubbles: true}));
-  try {
-    key('t', window.document.body);
-    assert.equal($('proof-review').hidden, true);
-    key('t');
-    await new Promise(resolve => setTimeout(resolve, 30));
-    assert.equal($('proof-review').hidden, false);
-    assert.equal($('review-position').textContent, 'Initial goals');
-    $('header-status').open = true;
-    $('status-summary').focus();
-    key('n', $('status-summary'));
-    assert.equal($('review-position').textContent, 'Initial goals', 'status focus does not navigate proof steps');
-    key('Escape', $('status-summary'));
-    assert.equal($('header-status').open, false);
-    assert.equal($('proof-review').hidden, false, 'Escape closes status without leaving proof steps');
-    assert.equal(window.document.activeElement, $('status-summary'));
-    const requested = messages.filter(m => m.path === '/api/proof/start');
-    assert.equal(requested.length, 1);
-    assert.deepEqual(JSON.parse(requested[0].body), {sha256: snapshot.sha256, claim: 'pair'});
-    key('n'); assert.match($('proof-after').textContent, /right/);
-    key('n'); assert.match($('proof-after').textContent, /No goals in this tactic scope/);
-    assert.match($('proof-before-text').textContent, /left/);
-    assert.match($('proof-status').textContent, /Out of date/);
-    assert.equal($('next-unresolved').disabled, true);
-    key('n'); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    key('e'); assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1).trace)), {id: 'record', node: 1});
-    key('Escape'); key('t'); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1);
-    key('?'); key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    assert.match($('keys').textContent, /Ctrl\+K then G/, 'the reveal chord, outside macOS');
-    assert.match($('keys').textContent, /Switch between notebook and Lean source/);
-    key('Escape', $('keys-close'));
-    $('review-letter-keys').checked = false; key('p'); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    $('review-letter-keys').checked = true;
-    const edit = window.document.createElement('div'); edit.contentEditable = 'true'; edit.setAttribute('contenteditable', 'true'); app.append(edit);
-    key('p', edit); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'environmentChanged'}}));
-    assert.equal($('proof-tactics').children.length, 0);
-    assert.match($('proof-message').textContent, /changed/);
-    assert.equal(messages.filter(m => m.method === 'POST' && m.path !== '/api/proof/start').length, 0);
-  } finally { window.close(); }
-});
-
-test('review follows source selection, exact editor returns and every help close path', async () => {
-  const claims = ['one', 'two'].map(name => ({name, keyword: 'theorem', statement: ': True', proof: 'trivial', proof_block: '  trivial', status: 'stale', uses: [], context: 'c'.repeat(64)}));
-  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), claims, checking: [], check_errors: {}, links: [], revisions: [], assets: [], cells: claims.map((c, index) => ({index, id: c.name, kind: 'claim', start: index * 2 + 1, end: index * 2 + 2, text: `theorem ${c.name} : True := by\n  trivial`}))};
-  const messages = [];
-  let trace;
-  const window = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: message => {
-    if (message.path === '/api/proof/start') {
-      const claim = JSON.parse(message.body).claim;
-      const line = claim === 'one' ? 2 : 4;
-      trace = {id: claim, claim, status: 'ready', source_sha256: snapshot.sha256, nodes: [
-        {id: 0, parent: null, start: 10, end: 30, text: 'parent', range: {start: {line, character: 0}, end: {line, character: 20}}, before: ['parent goal'], after: []},
-        {id: 1, parent: 0, start: 15, end: 20, text: 'child', range: {start: {line, character: 5}, end: {line, character: 10}}, before: ['child goal'], after: []},
-      ]};
-    }
-    return trace;
-  }});
-  window.HTMLElement.prototype.scrollIntoView = function () {};
-  const $ = id => window.document.getElementById(id), app = window.document.querySelector('.app');
-  const key = k => app.dispatchEvent(new window.KeyboardEvent('keydown', {key: k, bubbles: true}));
-  const settle = () => new Promise(resolve => setTimeout(resolve, 30));
-  try {
-    key('s'); key('j'); await settle();
-    const sourceRow = window.document.querySelector('#source tr[data-selected="true"]');
-    assert.equal(sourceRow.dataset.claim, 'two');
-    sourceRow.focus(); key('t'); await settle();
-    assert.equal($('proof-title').textContent, 'two');
-    assert.equal(window.document.activeElement.id, 'proof-back');
-    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 1, sha256: snapshot.sha256, line: 4, character: 7}}));
-    assert.equal($('review-position').textContent, 'Step 2 of 2');
-    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 0, sha256: snapshot.sha256, line: 2, character: 7}}));
-    await settle();
-    assert.equal($('proof-title').textContent, 'one');
-    assert.equal($('review-position').textContent, 'Step 2 of 2');
-    const startsBeforeChangedSource = messages.filter(m => m.path === '/api/proof/start').length;
-    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 2, sha256: 'b'.repeat(64), line: 4, character: 7}}));
-    await settle();
-    assert.equal(messages.filter(m => m.path === '/api/proof/start').length, startsBeforeChangedSource, 'wait for the matching snapshot before resolving changed indices');
-    snapshot.sha256 = 'b'.repeat(64); snapshot.cells[1].index = 2;
-    await window.glitnirPoll(); await settle();
-    assert.equal($('proof-title').textContent, 'two');
-    $('proof-back').focus(); key('?'); $('keys-close').click(); await settle();
-    assert.equal(window.document.activeElement.id, 'proof-back');
-    $('keys-open').focus(); $('keys-open').click(); $('keys').click(); await settle();
-    assert.equal(window.document.activeElement.id, 'keys-open');
-    window.document.querySelector('[data-mode="source"]').click();
-    assert.equal($('proof-review').hidden, true);
-  } finally { window.close(); }
-});
-
-test('project proof steps edit the exact recorded tactic without claim metadata', async () => {
-  const snapshot = {file: 'Loose.lean', sha256: 'a'.repeat(64), preview: {mode: 'project', project: {kind: 'loose'}}, claims: [], checking: [], check_errors: {}, links: [], revisions: [], assets: [], cells: [{index: 0, kind: 'source', start: 1, end: 2, text: 'theorem t : True := by\n  trivial'}]};
-  const trace = {id: 'project-record', status: 'ready', source_sha256: snapshot.sha256, nodes: [{id: 0, parent: null, text: 'trivial', range: {start: {line: 2, character: 2}, end: {line: 2, character: 9}}, before: ['⊢ True'], after: []}]};
-  const messages = [];
-  const window = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: () => trace});
-  const key = key => window.document.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key, bubbles: true}));
-  try {
-    key('t'); await new Promise(resolve => setTimeout(resolve, 30)); key('n'); key('e');
-    assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {type: 'source', index: 0, sha256: snapshot.sha256, trace: {id: 'project-record', node: 0}});
-  } finally { window.close(); }
-});
-
-test('switching a running proof queues once and explicit cancel cancels that intent', async () => {
-  const claims = ['one', 'two'].map(name => ({name, keyword: 'theorem', statement: ': True', proof: 'trivial', status: 'stale', uses: [], context: 'c'.repeat(64)}));
-  const snapshot = {file: 'A.lean', sha256: 'a'.repeat(64), claims, checking: [], check_errors: {}, links: [], revisions: [], assets: [], cells: claims.map((c, index) => ({index, id: c.name, kind: 'claim', start: index + 1, end: index + 1, text: `theorem ${c.name} : True := by trivial`}))};
-  let trace, starts = 0;
-  const window = await renderSnapshot(snapshot, {onProof: message => {
-    if (message.path === '/api/proof/start') trace = {id: String(++starts), claim: JSON.parse(message.body).claim, status: 'running', source_sha256: snapshot.sha256, nodes: []};
-    if (message.path === '/api/proof/cancel') trace.status = 'cancelled';
-    return trace;
-  }});
-  window.HTMLElement.prototype.scrollIntoView = function () {};
-  const $ = id => window.document.getElementById(id);
-  const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
-  try {
-    window.document.querySelector('[data-act="inspect-proof"]').click(); await settle(30);
-    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 1, sha256: snapshot.sha256, line: 2, character: 0}}));
-    $('proof-cancel').click(); await settle(850);
-    assert.equal(starts, 1, 'cancel also cancels the queued replacement');
-    $('proof-refresh').click(); await settle(30);
-    trace.status = 'ready'; await settle(850);
-    assert.equal(starts, 2, 'a completed replacement does not restart itself');
-  } finally { window.close(); }
-});
-
 function liveSnapshot(text = 'First text', sha = 'a') {
   return {file: 'Live.lean', sha256: sha.repeat(64), checking: [], check_errors: {}, claims: [], links: [], revisions: [], assets: [], cells: [
     {index: 0, kind: 'prose', start: 1, end: 3, text: `/-! ${text} -/`, markdown: text},
@@ -2793,21 +2654,6 @@ test('reverse reveal waits for a fresh live snapshot after an obsolete poll', as
     await new Promise(resolve => setTimeout(resolve, 100));
     assert.ok(scrolled.some(el => el.dataset.index === '1'));
     assert.equal(window.document.querySelector('.source-selected')?.dataset.index, '1');
-  } finally { window.close(); }
-});
-
-test('proof review becomes unavailable cleanly if its saved file cannot be read', async () => {
-  let reply = {json: projectNotebook()};
-  const window = await renderSnapshot(reply.json, {onNotebook: () => reply, onProof: () => ({status: 'ready', id: 'trace', source_sha256: 'a'.repeat(64), nodes: [], environment: {toolchain: 'Lean'}})});
-  const $ = id => window.document.getElementById(id);
-  try {
-    window.document.querySelector('[data-act="inspect-proof"]').click();
-    await new Promise(resolve => setTimeout(resolve, 30));
-    reply = {status: 409, json: {error: 'File temporarily missing'}};
-    await window.glitnirPoll();
-    assert.equal($('proof-title').textContent, 'Saved source unavailable');
-    assert.equal($('proof-refresh').disabled, true);
-    assert.equal($('proof-tactics').children.length, 0);
   } finally { window.close(); }
 });
 
@@ -3272,14 +3118,14 @@ test('routine explainers live behind focusable help icons', async () => {
   const window = await renderSnapshot(snapshot);
   try {
     const d = window.document;
-    const hovered = d.querySelector('#graph-note .help-icon');
+    const hovered = d.querySelector('#claim-graph-shortcut .help-icon');
     const tooltipId = hovered.getAttribute('aria-describedby');
     hovered.dispatchEvent(new window.MouseEvent('mouseover', {bubbles: true}));
     assert.equal(d.getElementById(tooltipId).hidden, false);
     await window.glitnirPoll();
     assert.equal(d.getElementById(tooltipId).hidden, false, 'hovered help survives polling');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-    for (const selector of ['#graph-note', '#insp .goal-section', '#insp .insp-check']) {
+    for (const selector of ['#claim-graph-shortcut', '#insp .goal-section', '#insp .insp-check']) {
       const root = d.querySelector(selector), help = root.querySelector('.help-icon');
       assert.equal(help?.textContent, '?');
       const tip = d.getElementById(help.getAttribute('aria-describedby'));
@@ -3296,7 +3142,14 @@ test('routine explainers live behind focusable help icons', async () => {
     }
     assert.equal(d.querySelector('#insp .goal-caption'), null);
     assert.equal(d.querySelector('#insp .insp-check > .small'), null);
-    assert.ok(d.querySelector('#insp [data-act="goal"]'));
+    const proof = d.querySelector('#insp .goal-section');
+    assert.ok(d.querySelector('#insp .focus').compareDocumentPosition(proof) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(proof.nextElementSibling.querySelector('h5').textContent, 'Assumptions from the last check');
+    const actions = d.getElementById('insp').lastElementChild;
+    assert.deepEqual([...actions.querySelectorAll('[data-act]')].map(button => button.dataset.act), ['check-through']);
+    assert.equal(proof.querySelector(':scope > [data-act="goal"]').textContent, 'Inspect proof');
+    assert.match(proof.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
+    assert.equal(d.querySelector('#insp .goal-section > p'), null, 'proof help stays in the tooltip');
     assert.ok(d.querySelector('#insp [data-act="check-through"]'));
   } finally { window.close(); }
 });
@@ -3308,18 +3161,22 @@ test('project claims drive the inspector, summary, contents, chips, keys, sectio
     window.HTMLElement.prototype.scrollIntoView = () => {};
     assert.equal(d.getElementById('insp-title').textContent, 'k_pos');
     assert.match(d.getElementById('insp-sub').textContent, /theorem · kernel checked/);
+    assert.equal(d.querySelector('#insp-sub .pill').dataset.tone, 'green');
+    assert.equal(d.querySelector('#insp .focus .pill'), null, 'status appears only in the header');
     assert.deepEqual([...d.querySelectorAll('#insp .axiom-module')].map(m => m.textContent), ['Init.Core', 'Init.Prelude']);
     assert.match(d.getElementById('insp').textContent, /The rate is/);
     assert.deepEqual([...d.querySelectorAll('#subline .stat')].map(s => s.textContent), ['1 kernel checked', '1 contains sorry', '1 out of date']);
     assert.deepEqual([...d.querySelectorAll('#outline .o-claim')].map(o => o.textContent), ['k_pos', 'floor']);
     assert.deepEqual([...d.querySelectorAll('#outline .o-claim + .dot')].map(o => o.dataset.tone), ['green', 'amber']);
     assert.deepEqual([...d.querySelectorAll('#chips-row button')].map(b => b.textContent.trim()), ['k_pos', 'floor']);
-    for (const id of ['graph', 'graph-label', 'graph-note']) assert.equal(d.getElementById(id).hidden, true, 'no uses: no claim graph');
+    assert.equal(d.querySelector('.rail svg.graph'), null, 'the graph belongs in Explore');
     assert.equal(d.getElementById('key-hints'), null, 'shortcuts live in Help rather than the contents sidebar');
     assert.deepEqual([...d.querySelectorAll('.proof-section .section-statuses .pill')].map(p => p.textContent), ['1 Kernel checked', '1 Contains sorry', '1 Out of date']);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .claim').dataset.selected, 'true');
     d.body.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
     assert.equal(d.getElementById('insp-title').textContent, 'floor');
+    assert.equal(d.querySelector('#insp-sub .pill').dataset.tone, 'amber');
+    assert.match(d.querySelector('#insp-sub .pill').textContent, /out of date/);
     assert.equal(d.querySelector('[data-claim="Demo.floor"] .claim').dataset.selected, 'true');
     d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
     assert.equal(d.getElementById('insp-title').textContent, 'k_pos', 'clicking a card selects it');
@@ -3394,9 +3251,9 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
-    const button = insp.querySelector('.goal-section [data-act="goal"]');
+    const button = insp.querySelector('.goal-section > [data-act="goal"]');
     assert.equal(button.textContent, 'Inspect proof');
-    assert.match(insp.querySelector('.goal-section').textContent, /historical observation: it never changes a status/);
+    assert.match(insp.querySelector('.goal-section').textContent, /Use Check saved file to update the check status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
     button.focus();
     button.click(); await settle(20);
@@ -3407,31 +3264,82 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     insp.querySelector('[data-act="goal"]')?.click();
     trace = goalTrace(snapshot.sha256);
     await settle(820);
-    const steps = [...insp.querySelectorAll('.goal-step')];
-    assert.deepEqual(steps.map(step => step.querySelector('.goal-full-tactic code').textContent), ['unfold k', 'norm_num', 'positivity']);
-    assert.deepEqual(steps.map(step => step.dataset.depth), ['0', '0', '1'], 'nested tactics are indented under their parent');
+    const picker = () => insp.querySelector('[data-act="goal-picker"]');
+    assert.deepEqual([...picker().options].map(option => option.textContent),
+      ['Starting goals', 'Step 1 of 3 · unfold', 'Step 2 of 3 · norm_num', 'Step 3 of 3 · positivity']);
     assert.equal(insp.querySelector('.goal-initial pre.goal').textContent, '⊢ 0 < k');
-    assert.equal(steps[0].querySelector('pre.goal-block').textContent, '⊢ 0 < 1 / 2');
-    assert.equal(steps[1].querySelector('.goal-complete').dataset.tone, 'green');
-    assert.match(steps[1].textContent, /No goals remain/);
+    assert.equal(insp.querySelector('[data-act="goal-prev"]').disabled, true);
+    insp.querySelector('.goal-results').scrollTop = 120;
+    insp.querySelector('[data-act="goal-next"]').click();
+    assert.equal(insp.querySelector('.goal-results').scrollTop, 0, 'a different step starts at the top');
+    assert.equal(insp.querySelector('.goal-result-title').textContent, 'Goals after step 1');
+    assert.equal(insp.querySelector('pre.goal-block').textContent, '⊢ 0 < 1 / 2');
+    assert.equal(insp.querySelector('.goal-full-tactic code').textContent, 'unfold k');
+    picker().value = '2';
+    picker().dispatchEvent(new window.Event('change', {bubbles: true}));
+    assert.equal(insp.querySelector('.goal-result-title').textContent, 'Goals after step 2');
+    assert.equal(insp.querySelector('.goal-complete').dataset.tone, 'green');
+    assert.equal(insp.querySelector('.goal-full-tactic code').textContent, 'norm_num');
     assert.match(insp.querySelector('.goal-messages').textContent, /unused variable/);
-    assert.match(insp.querySelector('.goal-section').textContent, /Recorded from source aaaaaaaa with leanprover\/lean4:v4\.35\.0.*never changes a status/s);
-    assert.equal(insp.querySelector('.goal-section [data-act="goal"]').textContent, 'Refresh proof goals');
-    assert.equal(insp.querySelector('.focus .pill').textContent, 'Kernel checked', 'the status is the saved record’s');
+    assert.match(insp.querySelector('.goal-recording').textContent, /Recorded with Lean 4\.35\.0/);
+    assert.equal(insp.querySelector('.goal-results details'), null, 'proof details are visible without opening folds');
+    const refresh = insp.querySelector('.goal-heading [data-act="goal"]');
+    assert.equal(refresh.textContent, 'Refresh');
+    assert.equal(refresh.getAttribute('aria-label'), 'Refresh proof goals');
+    assert.equal(d.querySelector('#insp-sub .pill').textContent, 'kernel checked', 'the status is the saved record’s');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1, 'one observation at a time');
     // The same observation serves the next claim: here a term proof records no steps.
     d.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key: 'j', bubbles: true}));
     assert.equal(d.getElementById('insp-title').textContent, 'floor');
-    assert.equal(insp.querySelectorAll('.goal-step').length, 0);
+    assert.equal(insp.querySelectorAll('.goal-navigation').length, 0);
     assert.match(insp.querySelector('.goal-section').textContent, /No tactic steps were recorded for this claim\. It may be a term proof/);
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1);
     // A saved edit or a dependency change makes the goals stale.
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'environmentChanged'}}));
     assert.match(insp.querySelector('.goal-section').textContent, /dependencies changed since these goals were recorded/);
-    assert.equal(insp.querySelectorAll('.goal-step').length, 0);
+    assert.equal(insp.querySelectorAll('.goal-navigation').length, 0);
     snapshot.sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     assert.match(insp.querySelector('.goal-section').textContent, /saved source changed since these goals were recorded/);
+  } finally { window.close(); }
+});
+
+test('refreshing Inspector goals keeps the previous step visible until new goals arrive', async () => {
+  const snapshot = projectNotebook();
+  let trace = goalTrace(snapshot.sha256);
+  const requests = [];
+  const window = await renderSnapshot(snapshot, {onProof: message => {
+    requests.push(message.path);
+    if (message.path === '/api/proof/start') trace = goalTrace(snapshot.sha256, {id: 'refresh', status: 'running', nodes: []});
+    if (message.path === '/api/proof/cancel') trace = {...trace, status: 'cancelled'};
+    return trace;
+  }});
+  const insp = window.document.getElementById('insp');
+  const click = act => insp.querySelector(`[data-act="${act}"]`).click();
+  const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const heading = () => insp.querySelector('.goal-result-title')?.textContent;
+  try {
+    click('goal'); await settle(20);
+    click('goal-next');
+    click('goal'); await settle(20);
+    assert.match(insp.querySelector('.goal-previous-recording').textContent, /Previous recording/);
+    assert.equal(heading(), 'Goals after step 1');
+    const picker = insp.querySelector('[data-act="goal-picker"]');
+    await window.glitnirPoll();
+    assert.equal(insp.querySelector('[data-act="goal-picker"]'), picker);
+    click('goal-cancel'); await settle(820);
+    assert.equal(heading(), 'Goals after step 1');
+    assert.match(insp.querySelector('.goal-note').textContent, /cancelled/);
+    const doc = window.document;
+    assert.equal(requests.filter(path => path === '/api/proof/start').length, 1);
+    assert.equal(insp.querySelector('[data-act="goal-edit"]'), null, 'the server no longer has the previous recording for exact editing');
+    click('goal'); await settle(20);
+    insp.querySelector('.goal-results').focus();
+    trace = goalTrace(snapshot.sha256, {id: 'refresh'});
+    await settle(820);
+    assert.equal(insp.querySelector('.goal-previous-recording'), null);
+    assert.equal(heading(), 'Starting goals');
+    assert.equal(doc.activeElement, insp.querySelector('[data-act="goal-picker"]'));
   } finally { window.close(); }
 });
 
@@ -3451,7 +3359,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
     assert.ok(messages.some(m => m.path === '/api/proof/cancel'));
-    assert.match(section(), /cancelled\. No goals were recorded/);
+    assert.match(section(), /cancelled\. No goals were recorded in this run/);
     assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
     // A failed observation says why.
     start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
@@ -3465,7 +3373,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     assert.match(section(), /Resolving project environment/);
     trace = goalTrace(snapshot.sha256, {id: 'steps'});
     await settle(820);
-    assert.equal(insp.querySelectorAll('.goal-step').length, 3);
+    assert.equal(insp.querySelector('[data-act="goal-picker"]').options.length, 4);
     // Unsaved Lean files hold the start back in the bridge.
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true}}));
     trace = {status: 'idle', nodes: []};
@@ -3473,28 +3381,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, sent);
     assert.equal(insp.querySelector('[data-act="goal"]').disabled, true, 'unsaved files disable inline inspection');
-    assert.equal($('insp').querySelector('.focus .pill').textContent, 'Kernel checked');
-  } finally { window.close(); }
-});
-
-test('Explore Proof Steps joins the observation the inspector started', async () => {
-  const snapshot = projectNotebook();
-  let trace = {status: 'idle', nodes: []}, starts = 0;
-  const window = await renderSnapshot(snapshot, {onProof: message => {
-    if (message.path === '/api/proof/start') trace = {id: String(++starts), status: 'running', source_sha256: snapshot.sha256, message: 'Recording saved tactic goals', nodes: []};
-    return trace;
-  }});
-  const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
-  try {
-    window.document.querySelector('#insp [data-act="goal"]').click(); await settle(20);
-    window.document.querySelector('#doc .cellwrap[data-index="3"]').click();
-    window.document.querySelector('[data-act="inspect-proof"]').click(); await settle(20);
-    assert.equal(starts, 1, 'the running observation is joined');
-    assert.match(window.document.getElementById('proof-message').textContent, /Recording saved tactic goals/);
-    trace = goalTrace(snapshot.sha256, {id: '1'});
-    await settle(820);
-    assert.equal(window.document.getElementById('review-position').textContent, 'Initial goals');
-    assert.ok(window.document.querySelectorAll('#proof-tactics button').length > 0);
+    assert.equal($('insp-sub').querySelector('.pill').textContent, 'kernel checked');
   } finally { window.close(); }
 });
 
@@ -3542,7 +3429,7 @@ function notebooksWithUses() {
   return {main, linked};
 }
 
-test('claim cards, the inspector and the claim graph show the claims each claim uses', async () => {
+test('claim cards and the inspector show the claims each claim uses', async () => {
   const {main, linked} = notebooksWithUses();
   const messages = [];
   const window = await renderSnapshot(main, {katex: true, onMessage: m => messages.push(m), onLinked: path => (path === '/api/linked?path=ThreeState.lean' ? {json: linked} : undefined)});
@@ -3563,11 +3450,6 @@ test('claim cards, the inspector and the claim graph show the claims each claim 
     assert.equal(chips[1].dataset.claim, 'settled');
     assert.match(chips[3].title, /cannot be read here/);
     assert.equal(d.querySelector('[data-claim="Demo.k_pos"] .uses'), null, 'a claim using nothing shows no chips');
-    // The graph is back: one node per claim, an arc for each use in this notebook.
-    for (const id of ['graph', 'graph-label', 'graph-note']) assert.equal($(id).hidden, false, id);
-    assert.deepEqual([...d.querySelectorAll('#graph .node text')].map(t => t.textContent), ['k_pos', 'floor']);
-    assert.equal(d.querySelectorAll('#graph path[marker-end]').length, 1);
-    assert.match($('graph-note').textContent, /names directly/);
     // The inspector lists the same uses.
     assert.match($('insp').textContent, /uses\s*—/, 'k_pos uses nothing');
     floor.querySelector('.doc-line').click();
@@ -3582,7 +3464,6 @@ test('claim cards, the inspector and the claim graph show the claims each claim 
     assert.ok(d.body.classList.contains('glitnir-linked-view'));
     assert.equal($('insp-title').textContent, 'settled', 'the used claim is selected, not the first');
     assert.equal(d.querySelector('[data-claim="settled"] .claim').dataset.selected, 'true');
-    assert.deepEqual([...d.querySelectorAll('#graph .node text')].map(t => t.textContent), ['first', 'settled']);
     d.querySelector('[data-act="notebook-back"]').click(); await settle(30);
     // A claim the other notebook has no saved result for: it opens, and says so.
     d.querySelector('[data-claim="Demo.floor"] .uses a[data-claim="missing"]').click(); await settle(30);
@@ -3617,8 +3498,8 @@ test('the Graph view layers recorded direct uses, includes linked claims, and na
     graphButton.click();
     assert.equal($('graph-view').hidden, false);
     assert.equal($('doc').hidden, true);
-    assert.match($('graph-view').textContent, /Recorded proof graph/);
-    assert.match($('graph-view').textContent, /does not check or update/);
+    assert.match($('graph-view').textContent, /Claim graph/);
+    assert.match($('graph-view').textContent, /Arrows point from a supporting statement/);
 
     const nodes = [...d.querySelectorAll('#graph-view .proof-node')];
     assert.deepEqual(nodes.map(node => node.dataset.graphName), [
@@ -3672,6 +3553,8 @@ test('graph inspection preserves recorded uses and qualifies un-compared results
     const node = model.byId.get('local:Demo.k_pos');
     assert.equal(node.tone, 'muted');
     assert.match(node.status, /Not compared/);
+    window.document.querySelector('[data-mode="graph"]').click();
+    assert.match(window.document.getElementById('graph-detail').textContent, /Freshness unknown/);
     const claims = ['base', 'middle', 'result'].map((name, i) => ({name, status: 'checked', record: {verdict: 'holds'}, uses: i === 2 ? ['base', 'middle'] : i === 1 ? ['base'] : []}));
     const reduced = window.glitnirWorkbench.claimGraphModel({claims});
     assert.deepEqual([...reduced.byId.get('local:result').uses], ['local:base', 'local:middle']);
@@ -3682,6 +3565,141 @@ test('graph inspection preserves recorded uses and qualifies un-compared results
     const page = new JSDOM(window.glitnirWorkbench.proofGraphHTML(wide));
     assert.equal(Number(page.window.document.querySelector('.proof-map').getAttribute('width')), 52800, 'wide live maps retain readable intrinsic node sizes');
     page.window.close();
+  } finally { window.close(); }
+});
+
+test('Contents opens the selected claim in Explore and returns to it in Notebook', async () => {
+  const {main} = notebooksWithUses();
+  main.project_claims.push({...main.project_claims[0], name: 'Demo.unrelated'});
+  let reconnecting = false;
+  const window = await renderSnapshot(main, {browser: () => ({
+    ok: !reconnecting, status: reconnecting ? 503 : 200, json: async () => main,
+  })});
+  try {
+    const d = window.document;
+    window.HTMLElement.prototype.scrollIntoView = () => {};
+    assert.equal(d.querySelector('.rail svg.graph'), null);
+    d.querySelector('[data-claim="Demo.floor"] .doc-line').click();
+    const shortcut = d.querySelector('#claim-graph-shortcut button[data-act="open-claim-graph"]');
+    assert.equal(shortcut.textContent, 'View claim graph');
+    reconnecting = true;
+    await window.glitnirPoll();
+    assert.equal(shortcut.disabled, true, 'the shortcut waits for a readable snapshot');
+    shortcut.click();
+    assert.equal(d.getElementById('doc').hidden, false);
+    reconnecting = false;
+    await window.glitnirPoll();
+    assert.equal(shortcut.disabled, false);
+    shortcut.click();
+    assert.equal(d.querySelector('[data-mode="graph"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphName, 'Demo.floor');
+    assert.equal(d.querySelector('[data-act="graph-focus"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(d.querySelector('[data-graph-name="Demo.unrelated"]'), null);
+    assert.ok(d.querySelector('[data-from="local:Demo.k_pos"][data-to="local:Demo.floor"]'));
+    const heading = d.querySelector('#graph-detail h3');
+    assert.equal(d.activeElement, heading);
+    assert.ok(d.querySelector('#graph-detail dd [data-graph-id="local:Demo.k_pos"]'));
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphName, 'Demo.floor');
+    const full = d.querySelector('[data-act="graph-full"]');
+    full.focus();
+    full.click();
+    assert.ok(d.querySelector('[data-graph-name="Demo.unrelated"]'));
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphName, 'Demo.floor');
+    assert.equal(d.activeElement.dataset.act, 'graph-full');
+    d.querySelector('[data-act="graph-focus"]').click();
+    assert.equal(d.querySelector('[data-graph-name="Demo.unrelated"]'), null);
+    d.querySelector('#graph-detail [data-act="graph-node"]').click();
+    assert.equal(d.activeElement.closest('.cell')?.id, 'cell-Demo.floor');
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('[data-act="graph-full"]').getAttribute('aria-pressed'), 'true');
+  } finally { window.close(); }
+});
+
+test('the Contents shortcut opens Statement graph within a proof atlas', async () => {
+  const snapshot = atlasExplorationSnapshot();
+  snapshot.walkthrough.nodes[2].claim = 'Demo.floor';
+  snapshot.project_claims[1].current = false;
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    window.HTMLElement.prototype.scrollIntoView = () => {};
+    d.querySelector('[data-claim="Demo.floor"] .doc-line').click();
+    d.querySelector('[data-act="open-claim-graph"]').click();
+    assert.equal(d.querySelector('[data-atlas="layout"][data-value="graph"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-node.chosen').dataset.graphId, 'walkthrough:n2');
+    assert.equal(d.querySelector('[data-act="graph-focus"]').getAttribute('aria-pressed'), 'true');
+    const scope = d.querySelector('[data-act="graph-focus"]');
+    scope.focus();
+    scope.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'g', bubbles: true}));
+    assert.equal(d.activeElement, d.querySelector('#atlas-selected'), 'the Explore shortcut opens guided reading and moves focus');
+    d.querySelector('.atlas-flow [data-value="n2"]').click();
+    assert.match(d.querySelector('.atlas-details').textContent, /Saved result is out of date/);
+  } finally { window.close(); }
+});
+
+test('Explore distinguishes empty dependency records from missing observations', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims[0].uses = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    const shortcut = d.querySelector('#claim-graph-mobile button');
+    assert.equal(shortcut.textContent, 'View claim graph');
+    shortcut.click();
+    assert.equal(d.querySelector('[data-act="graph-focus"]').textContent, 'Selected claim');
+    assert.equal(d.querySelector('.proof-graph-detail-picker').firstChild.textContent, 'Choose a claim');
+    assert.deepEqual([...d.querySelectorAll('.proof-graph-toolbar button')].map(button => button.textContent), ['−', '+', 'Fit graph', 'Reset zoom']);
+    assert.equal(d.querySelector('#graph-detail dd').textContent, 'No recorded dependencies');
+    d.querySelector('[data-act="graph-full"]').click();
+    const notes = d.querySelector('.proof-graph-notes');
+    assert.equal(notes.open, false);
+    notes.open = true;
+    notes.querySelector('summary').focus();
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-graph-notes').open, true);
+    assert.equal(d.activeElement, d.querySelector('.proof-graph-notes summary'));
+    d.querySelector('[data-graph-name="Demo.floor"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.equal(d.querySelector('#graph-detail dd').textContent, 'Dependencies haven’t been recorded');
+    d.querySelector('.proof-graph-notes summary').focus();
+    snapshot.project_claims[1].uses = [];
+    await window.glitnirPoll();
+    assert.equal(d.querySelector('.proof-graph-notes'), null);
+    assert.equal(d.activeElement, d.querySelector('[data-act="graph-detail-picker"]'));
+  } finally { window.close(); }
+});
+
+test('Explore gives an empty notebook a message instead of graph controls', async () => {
+  const snapshot = projectNotebook();
+  snapshot.cells = [];
+  snapshot.project_claims = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const explore = d.getElementById('graph-view');
+    assert.match(explore.textContent, /This notebook has no claims/);
+    assert.equal(explore.querySelector('.proof-map,select,button'), null);
+  } finally { window.close(); }
+});
+
+test('Explore explains a saved result whose declaration is gone', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims[0].current = false;
+  snapshot.project_claims.push({...snapshot.project_claims[0], name: 'Demo.removed'});
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-mode="graph"]').click();
+    const detail = () => d.getElementById('graph-detail');
+    assert.equal(detail().querySelector('h3').textContent, 'k_pos');
+    assert.match(detail().textContent, /Previously kernel checked/);
+    assert.match(detail().textContent, /Saved result is out of date/);
+    d.querySelector('[data-graph-name="Demo.removed"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    assert.match(detail().textContent, /No matching declaration in this file/);
+    assert.equal(detail().querySelector('[data-act="graph-node"]'), null);
   } finally { window.close(); }
 });
 
@@ -3744,11 +3762,14 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.equal(d.querySelector('[data-graph-name="result"]').dataset.tone, 'amber');
     assert.match(d.querySelector('[data-graph-name="result"] title').textContent, /result — Out of date/);
     assert.equal(d.querySelector('[data-graph-name="unchecked"]').dataset.tone, 'muted');
-    assert.match(d.getElementById('graph-view').textContent, /Dependency observations are unknown for unchecked/);
+    assert.match(d.getElementById('graph-view').textContent, /Dependency records are unavailable for unchecked/);
     const graphToolbar = d.querySelector('.proof-graph-toolbar');
     assert.ok(graphToolbar.closest('.proof-graph-stage'));
     assert.ok(graphToolbar.nextElementSibling.classList.contains('proof-graph-canvas'));
     assert.equal(d.querySelector('.proof-graph-view > header .proof-graph-toolbar'), null);
+    assert.equal(d.querySelector('.proof-graph-canvas').dataset.fit, 'true', 'Explore fits the graph on entry');
+    assert.ok(d.querySelector('#graph-detail .graph-open').classList.contains('secondary'));
+    d.querySelector('[data-act="graph-reset"]').click();
     const zoom = d.querySelector('[data-act="graph-zoom-in"]');
     zoom.focus(); zoom.click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '950');
@@ -3758,9 +3779,15 @@ test('the Graph view reduces transitive edges, shows unchecked claims, and toler
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '608', 'zoom out scales intrinsic node size');
     d.querySelector('[data-act="graph-fit"]').click();
     assert.equal(d.querySelector('#graph-view .proof-map').getAttribute('width'), '100%');
-    Object.defineProperty(d.querySelector('.proof-graph-canvas'), 'clientWidth', {value: 600});
+    const canvas = d.querySelector('.proof-graph-canvas');
+    Object.defineProperties(canvas, {clientWidth: {value: 600}, clientHeight: {value: 160}});
     d.querySelector('[data-act="graph-zoom-out"]').click();
-    assert.ok(Number(d.querySelector('#graph-view .proof-map').getAttribute('width')) < 600, 'zooming out from fit really shrinks the graph');
+    const svg = d.querySelector('#graph-view .proof-map');
+    const [, , width, height] = svg.getAttribute('viewBox').split(' ').map(Number);
+    assert.equal(Number(svg.getAttribute('width')), Math.round(Math.min(600, 160 * width / height) * .8), 'manual zoom starts at the fitted size');
+    d.querySelector('[data-mode="doc"]').click();
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('.proof-graph-canvas').dataset.fit, 'true', 'returning to Explore fits again');
   } finally { window.close(); }
 });
 
@@ -3778,6 +3805,23 @@ test('the Graph view bounds dense input and preserves cyclic saved relationships
     const denseHTML = window.glitnirWorkbench.proofGraphHTML(dense);
     assert.match(denseHTML, /Graph limit reached/);
     assert.doesNotMatch(denseHTML, /style=/, 'the graph does not require CSP-blocked inline styles');
+
+    const lateClaims = Array.from({length: 241}, (_, index) => claim(`late${index}`, index === 240 ? ['late239', 'Other:support'] : []));
+    const late = {...dense, claims: lateClaims};
+    const focused = new JSDOM(window.glitnirWorkbench.proofGraphHTML(late, {selected: 'local:late240', focused: true, fit: true}));
+    try {
+      const d = focused.window.document;
+      assert.deepEqual([...d.querySelectorAll('.proof-node')].map(node => node.dataset.graphName), ['late240', 'late239', 'Other:support']);
+      assert.ok(d.querySelector('[data-from="local:late239"][data-to="local:late240"]'));
+      assert.equal(d.querySelector('.proof-map').getAttribute('width'), '440', 'focused fit keeps a compact graph at actual size');
+      assert.equal(d.querySelector('.proof-map').hasAttribute('style'), false, 'fit works under the webview content security policy');
+    } finally { focused.window.close(); }
+    const imported = new JSDOM(window.glitnirWorkbench.proofGraphHTML(late, {selected: 'import:Other:support', focused: true}));
+    try {
+      assert.equal(imported.window.document.querySelector('.proof-node.chosen').dataset.graphId, 'import:Other:support');
+      assert.ok(imported.window.document.querySelector('[data-from="import:Other:support"][data-to="local:late240"]'));
+    } finally { imported.window.close(); }
+
 
     const cyclic = {claims: [
       claim('Alpha.same', ['Beta.same', 'Cycle.other']),
@@ -3797,7 +3841,7 @@ test('the Graph view bounds dense input and preserves cyclic saved relationships
     const recordlessModel = window.glitnirWorkbench.claimGraphModel(recordless);
     assert.deepEqual([...recordlessModel.nodes].map(node => [node.status, node.tone]), [['Unknown', 'muted'], ['Unknown', 'muted']]);
     assert.deepEqual([...recordlessModel.nodes].map(node => node.relationsKnown), [false, false]);
-    assert.match(window.glitnirWorkbench.proofGraphHTML(recordless), /Dependency observations are unknown for one, two/);
+    assert.match(window.glitnirWorkbench.proofGraphHTML(recordless), /Dependency records are unavailable for one, two/);
 
     const wide = {claims: Array.from({length: 20}, (_, index) => claim(`Wide.claim${index}`)), cells: [], links: [], checking: [], project_claims: []};
     const widePage = new JSDOM(window.glitnirWorkbench.proofGraphHTML(wide, {staticPage: true})).window.document;
@@ -3849,6 +3893,7 @@ test('the Graph view shows a walkthrough statement map with statuses, direct use
     assert.equal(window.glitnirWorkbench.walkthroughCompatibility(snapshot).supported, true);
     d.querySelector('[data-mode="graph"]').click();
     assert.match(d.getElementById('graph-view').textContent, /Paper map/);
+    assert.match(d.getElementById('graph-view').textContent, /The whole proof/);
     assert.equal(d.querySelector('#graph-view .walkthrough-map').getAttribute('aria-label'), 'Paper map statement map');
     assert.equal(d.querySelectorAll('#graph-view .proof-node').length, 21, 'the eth-sized map remains readable');
     assert.equal(d.querySelector('[data-graph-name="Theorem 20"]').dataset.tone, 'amber', 'a stale saved claim marks its paper statement');
@@ -3861,7 +3906,7 @@ test('the Graph view shows a walkthrough statement map with statuses, direct use
     assert.match(d.getElementById('graph-view').textContent, /unknown statement absent/);
 
     const picker = d.querySelector('[data-act="graph-detail-picker"]');
-    assert.match([...picker.options].find(option => option.value === 'walkthrough:step20').textContent, /^theorem — Theorem 20/);
+    assert.equal([...picker.options].find(option => option.value === 'walkthrough:step20').textContent, 'Theorem 20');
     picker.value = 'walkthrough:step20';
     picker.dispatchEvent(new window.Event('change', {bubbles: true}));
     const detail = d.getElementById('graph-detail');
@@ -4292,9 +4337,7 @@ test('a reveal from the editor returns from a linked notebook to the previewed o
   try {
     d.querySelector('#doc a.notebook-reference').click(); await settle(20);
     assert.equal(d.getElementById('title').textContent, 'Three states');
-    // Proof steps belong to the previewed notebook.
-    d.querySelector('.app').dispatchEvent(new window.KeyboardEvent('keydown', {key: 't', bubbles: true}));
-    assert.equal(d.getElementById('proof-review').hidden, true);
+    assert.equal(d.querySelector('#insp [data-act="goal"]'), null, 'linked notebooks cannot start proof inspection');
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'revealCell', index: 3, sha256: main.sha256, line: 12, character: 0}}));
     await settle(30);
     assert.equal(d.getElementById('title').textContent, 'Demo notebook');
@@ -4303,7 +4346,7 @@ test('a reveal from the editor returns from a linked notebook to the previewed o
   } finally { window.close(); }
 });
 
-test('proof mode never carries into a linked notebook, and review keys stay off there', async () => {
+test('proof results stay with their notebook, and review keys stay off for linked notebooks', async () => {
   const {main, linked} = linkedNotebooks();
   const messages = [];
   let trace = {status: 'idle', nodes: []};
@@ -4321,20 +4364,16 @@ test('proof mode never carries into a linked notebook, and review keys stay off 
     d.querySelector('#doc a.notebook-reference').click(); await settle(20);
     $('notebook-trail').querySelector('[data-act="notebook-back"]').click(); await settle(20);
     d.querySelector('#doc .cellwrap[data-index="3"]').click();
-    key('t'); await settle(30);
-    assert.equal($('proof-review').hidden, false, 'proof mode on the previewed notebook');
-    assert.ok(d.body.classList.contains('glitnir-proof-mode'));
+    d.querySelector('#insp [data-act="goal"]').click(); await settle(30);
+    assert.ok(d.querySelector('#insp .goal-results'));
     $('notebook-trail').querySelector('[data-act="notebook-forward"]').click(); await settle(30);
     assert.equal($('title').textContent, 'Three states');
-    assert.equal($('proof-review').hidden, true, 'the switch left proof mode');
-    assert.ok(!d.body.classList.contains('glitnir-proof-mode'));
+    assert.equal(d.querySelector('#insp .goal-results'), null);
     const sent = messages.length;
     for (const k of ['t', 'e', 'n', 'p', 'c', 'r']) key(k);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'reviewCommand', action: 'next'}}));
-    window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'reviewCommand', action: 'proof'}}));
     await settle(30);
     assert.equal($('title').textContent, 'Three states', 'n and p do not reveal the previewed notebook');
-    assert.equal($('proof-review').hidden, true);
     assert.deepEqual(messages.slice(sent).filter(m => m.type !== 'request' || !m.path.startsWith('/api/linked')), [], 'no edit, source, check or proof request');
     key('j');
     assert.equal($('insp-title').textContent, 'settled', 'the renderer’s own keys still work');
@@ -4378,7 +4417,7 @@ test('proof goals reuse a finished observation of the saved file and only cancel
   try {
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(starts(), 0, 'a finished observation of this saved file is reused');
-    assert.equal(insp.querySelectorAll('.goal-step').length, 3);
+    assert.equal(insp.querySelector('[data-act="goal-picker"]').options.length, 4);
     // Refresh asks for a new recording.
     insp.querySelector('[data-act="goal"][data-refresh="true"]').click(); await settle(20);
     assert.equal(starts(), 1);
@@ -4390,7 +4429,7 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'environmentChanged'}}));
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(starts(), 2);
-    // A run Proof steps started is joined, and Cancel only stops following it.
+    // An existing run is joined, and Cancel only stops following it.
     trace = {id: 'steps', status: 'running', source_sha256: snapshot.sha256, message: 'Resolving project environment', nodes: []};
     await settle(820);
     assert.match(insp.textContent, /Another proof observation replaced this one/);
@@ -4398,7 +4437,7 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     assert.match(insp.textContent, /Resolving project environment/, 'joined');
     insp.querySelector('[data-act="goal-cancel"]').click(); await settle(20);
     assert.equal(messages.filter(m => m.path === '/api/proof/cancel').length, 1, 'a joined run is not cancelled');
-    assert.match(insp.querySelector('.goal-section').textContent, /Stopped following the proof observation Proof steps started/);
+    assert.match(insp.querySelector('.goal-section').textContent, /Stopped following the recording/);
     assert.equal(trace.status, 'running');
   } finally { window.close(); }
 });
@@ -4421,6 +4460,8 @@ test('every shortcut listing comes from one list that matches the keys that work
   const media = path.resolve(__dirname, '../../dist/media');
   assert.doesNotMatch(readFileSync(path.join(media, 'index.html'), 'utf8'), /<kbd>[a-z]<\/kbd>/, 'no hand-written key list in the page');
   assert.doesNotMatch(readFileSync(path.join(media, 'review.js'), 'utf8'), /shortcuts\s*=\s*\[/, 'the review layer keeps no list of its own');
+  const {commands} = require('../../package.json').contributes;
+  assert.ok(commands.every(({command}) => !['glitnir.reviewProof', 'glitnir.reviewClaims'].includes(command)));
   const guide = readFileSync(path.resolve(__dirname, '../../docs/guide.md'), 'utf8');
   const table = guide.slice(guide.indexOf('<!-- shortcuts:start'), guide.indexOf('<!-- shortcuts:end -->'));
   const documented = table.split('\n').filter(line => line.startsWith('| `')).map(line => {
@@ -4436,7 +4477,7 @@ test('every shortcut listing comes from one list that matches the keys that work
     assert.deepEqual(rows.map(r => r.text), documented.map(r => r.text), 'the guide table says what the preview says');
     rows.forEach((row, i) => assert.ok(documented[i].keys.join(' ').includes(row.keys.join(' ')), `guide keys for ${row.keys}`));
     const listed = rows.flatMap(r => r.keys).filter(k => /^[a-z?]$/.test(k)).sort();
-    assert.deepEqual(listed, ['?', 'c', 'e', 'g', 'i', 'j', 'k', 'n', 'p', 'r', 's', 't']);
+    assert.deepEqual(listed, ['?', 'e', 'g', 'i', 'j', 'k', 'n', 'p', 'r', 's']);
     assert.deepEqual(handledKeys(host).sort(), listed, 'the editor preview acts on exactly the listed keys');
     assert.equal(d.querySelector('.rail [aria-label="Keyboard shortcuts"]'), null);
     assert.equal(d.getElementById('key-hints'), null);
@@ -4525,7 +4566,6 @@ test('n and p step through the project claims that need attention, and steps in 
     const jump = $('review-items').querySelectorAll('button')[1];
     jump.focus();
     for (const key of ['n','p','t','j']) jump.dispatchEvent(new window.KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
-    assert.equal($('proof-review').hidden, true, 'jump-list keys do not open proof mode');
     assert.equal(revealed(), undefined, 'jump-list keys do not navigate');
     jump.click(); await settle();
     assert.equal(revealed(), '3', 'jump directly to the named review item');
@@ -4544,17 +4584,9 @@ test('n and p step through the project claims that need attention, and steps in 
     assert.equal(revealed(), '4', 'the Previous Review Item command steps too');
     $('review-previous').click(); await settle();
     assert.equal(revealed(), '3');
-    // Proof steps: n and p walk the recorded steps of the selected claim's cell.
-    key('t'); await settle();
-    assert.equal($('proof-review').hidden, false);
-    assert.equal($('review-position').textContent, 'Initial goals');
-    key('n'); assert.equal($('review-position').textContent, 'Step 1 of 2');
-    key('n'); assert.equal($('review-position').textContent, 'Step 2 of 2');
-    key('p'); assert.equal($('review-position').textContent, 'Step 1 of 2');
-    key('c'); await settle();
     key('n'); await settle();
-    assert.equal(revealed(), '4', 'back in Claims, n continues from the claim');
-    assert.equal(messages.filter(m => m.method === 'POST' && m.path !== '/api/proof/start').length, 0, 'stepping never starts a check');
+    assert.equal(revealed(), '4', 'n continues from the claim');
+    assert.equal(messages.filter(m => m.method === 'POST').length, 0, 'stepping never starts a check');
     // A check stopped on request, or an older file's stop, is not a failure to review.
     snapshot.project_withheld = {from_line: 20, through_line: 19, message: 'Checked through line 19 on request'};
     await window.glitnirPoll(); await settle();
@@ -5049,7 +5081,7 @@ test('atlas overview exposes shared steps with bounded paging and sidebar naviga
     assert.equal(d.querySelectorAll('.atlas-overview [data-atlas="node"]').length, 8);
     d.querySelector('.atlas-overview [data-value="n31"]').dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
     assert.equal(d.querySelector('.atlas-backlinks'), null);
-    assert.match(d.querySelector('.atlas-flow').textContent, /Shared support/);
+    assert.match(d.querySelector('.atlas-flow').textContent, /Shared by several arguments/);
     d.querySelector('.atlas-flow [data-value="n2"]').click();
     assert.equal(d.querySelector('#atlas-selected').textContent, 'Argument 2');
   } finally { window.close(); }
@@ -5085,7 +5117,7 @@ test('atlas missing notebook observations name the binding without a null status
   const window = await renderSnapshot(snapshot);
   try {
     window.document.querySelector('[data-mode="graph"]').click();
-    assert.match(window.document.querySelector('.proof-atlas').textContent, /missingClaim: no matching notebook result/);
+    assert.match(window.document.querySelector('.proof-atlas').textContent, /No saved result for missingClaim/);
   } finally {window.close();}
 });
 
@@ -5283,7 +5315,7 @@ test('the full graph is a visible exploration view and keeps Read and Map availa
     assert.equal(d.querySelector('[data-atlas="layout"][data-value="graph"]').getAttribute('aria-pressed'), 'true');
     d.querySelector('[data-atlas="layout"][data-value="map"]').click();
     assert.ok(d.querySelector('.atlas-map-first'));
-    assert.match(d.querySelector('.atlas-view-help').textContent, /curated support links/);
+    assert.match(d.querySelector('.atlas-view-help').textContent, /arguments in this reading route connect/);
     d.querySelector('[data-atlas="layout"][data-value="reading"]').click();
     assert.match(d.querySelector('.atlas-view-help').textContent, /Read/);
     assert.equal(d.querySelector('.atlas-overview'), null);
@@ -5439,8 +5471,6 @@ for (const browser of [false, true]) {
       assert.equal(d.querySelector('.heading #subline, .heading #lean-unsupported'), null);
       if (!browser) {
         assert.ok(row.querySelector('.review-nav'));
-        assert.equal(row.querySelector('#proof-review'), null);
-        assert.ok(d.querySelector('#proof-review').parentElement.classList.contains('app'));
       }
     } finally {w.close();}
   });
@@ -5638,84 +5668,13 @@ for (const walkthrough of [false,true]) {
   else snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:reason};
   const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m)});
   try {
-   const d=w.document, button=d.querySelector('[data-act="inspect-proof"]');
-   assert.equal(button.disabled,true);
-   assert.match(button.title,/4\.33\.1/);
-   assert.equal(button.getAttribute('aria-description'),reason);
-   button.click();
-   d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'t',bubbles:true}));
-   w.dispatchEvent(new w.MessageEvent('message',{data:{type:'reviewCommand',action:'proof'}}));
-   await new Promise(resolve=>setTimeout(resolve,20));
-   assert.equal(d.getElementById('proof-review').hidden,true);
-   assert.equal(d.body.classList.contains('glitnir-proof-mode'),false);
+   const d=w.document;
+   assert.match(d.querySelector('#insp .goal-section').textContent,/4\.33\.1/);
+   assert.equal(d.querySelector('#insp [data-act="goal"]'),null);
    assert.equal(messages.filter(m=>m.path?.startsWith('/api/proof')).length,0);
   }finally{w.close();}
  });
 }
-
-test('a compatibility change leaves active Proof steps without another observation',async()=>{
- const snapshot=projectNotebook(), messages=[];
- const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m),onProof:()=>goalTrace(snapshot.sha256)});
- w.HTMLElement.prototype.scrollIntoView=()=>{};
- try{
-  const d=w.document;
-  w.dispatchEvent(new w.MessageEvent('message',{data:{type:'revealCell',index:3,sha256:snapshot.sha256}}));
-  d.querySelector('[data-act="inspect-proof"]').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(d.getElementById('proof-review').hidden,false);
-  d.querySelector('#proof-tactics button').focus();
-  snapshot.preview.lean={supported:false,declared:'v4.33.1',toolchain:'v4.35.0',message:'Use a compatible Lean toolchain.'};
-  await w.glitnirPoll();
-  assert.equal(d.querySelector('[data-act="inspect-proof"]').disabled,true);
-  assert.equal(d.getElementById('proof-review').hidden,true);
-  assert.equal(d.activeElement.dataset.claim,'Demo.k_pos');
-  const starts=messages.filter(m=>m.path==='/api/proof/start').length;
-  d.getElementById('proof-refresh').click();
-  assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,starts);
-  snapshot.preview.lean.supported=true;
-  await w.glitnirPoll();
-  d.querySelector('[data-act="inspect-proof"]').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  d.getElementById('status-summary').focus();
-  snapshot.preview.lean.supported=false;
-  await w.glitnirPoll();
-  assert.equal(d.activeElement,d.getElementById('status-summary'),'compatibility updates do not steal focus outside the proof inspector');
- }finally{w.close();}
-});
-
-test('proof inspection belongs to each claim and returns to its reading position',async()=>{
- const snapshot=projectNotebook(), messages=[];
- const w=await renderSnapshot(snapshot,{onMessage:m=>messages.push(m),onProof:()=>goalTrace(snapshot.sha256)});
- let top=240, returned;
- Object.defineProperty(w,'scrollY',{get:()=>top});
- w.scrollTo=(x,y)=>{returned=[x,y];};
- w.HTMLElement.prototype.scrollIntoView=()=>{};
- try{
-  const d=w.document;
-  assert.equal(d.querySelector('#review-proof,#review-claims'),null);
-  const actions=[...d.querySelectorAll('#doc .source-controls[data-proof-claim]')];
-  assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.k_pos','Demo.floor']);
-  assert.equal(d.querySelector('.import-header [data-act="inspect-proof"]'),null);
-  assert.ok(d.querySelector('.heading').compareDocumentPosition(d.querySelector('.live-bar')) & w.Node.DOCUMENT_POSITION_FOLLOWING);
-  actions[1].closest('.cell').click();
-  d.querySelector('#insp [data-act="inspect-proof"]').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
-  assert.match(d.getElementById('proof-back').textContent,/Back to claim/);
-  assert.equal(d.activeElement,d.getElementById('proof-back'));
-  d.getElementById('proof-back').click();
-  assert.equal(d.getElementById('proof-review').hidden,true);
-  assert.equal(d.activeElement.dataset.proofClaim,'Demo.floor');
-  assert.deepEqual(returned,[0,240]);
-  returned=null;
-  d.querySelector('[data-act="inspect-proof"]').focus();
-  const focused=d.activeElement;
-  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'c',bubbles:true}));
-  assert.equal(returned,null,'c outside inspection does not reuse an old return position');
-  assert.equal(d.activeElement,focused);
-  assert.equal(messages.filter(m=>m.path==='/api/proof/start').length,1);
- }finally{w.close();}
-});
 
 test('fresh project theorems have declaration-scoped proof actions before checking',async()=>{
  const snapshot=projectNotebook();
@@ -5723,58 +5682,27 @@ test('fresh project theorems have declaration-scoped proof actions before checki
  snapshot.cells=[{index:0,kind:'source',start:1,end:7,text:'import Mathlib\nnamespace Demo\ntheorem first : True := by\n  trivial\ntheorem second : True := by\n  trivial\nend Demo'}];
  const trace={status:'ready',id:'fresh',source_sha256:snapshot.sha256,nodes:[{id:0,parent:null,text:'first tactic',range:{start:{line:4,character:2},end:{line:4,character:9}},before:['first'],after:[]},{id:1,parent:null,text:'second tactic',range:{start:{line:6,character:2},end:{line:6,character:9}},before:['second'],after:[]}]};
  const w=await renderSnapshot(snapshot,{onProof:()=>trace});
+ w.HTMLElement.prototype.scrollIntoView=()=>{};
  try{
   const d=w.document, actions=[...d.querySelectorAll('#doc .source-controls[data-proof-claim]')];
   assert.deepEqual(actions.map(b=>b.dataset.proofClaim),['Demo.first','Demo.second']);
   const entry=[...d.querySelectorAll('#outline button')].find(b=>b.textContent.includes('first'));
   entry.focus(); entry.click();
   assert.equal(d.getElementById('insp-title').textContent,'Demo.first');
-  d.querySelector('#insp [data-act="inspect-proof"]').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'n',bubbles:true}));
-  assert.equal(d.getElementById('review-position').textContent,'Step 1 of 1');
-  d.getElementById('proof-back').click();
+  d.querySelector('#insp [data-act="goal"]').click();
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(d.querySelector('#insp .goal-target').textContent,'first');
+  assert.equal(d.querySelector('#insp [data-act="goal-picker"]').options.length,2);
   d.querySelector('#doc [data-proof-claim="Demo.second"]').closest('.cell').click();
-  d.querySelector('#insp [data-act="inspect-proof"]').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(d.getElementById('proof-title').textContent,'Demo.second');
-  assert.equal(d.getElementById('review-position').textContent,'Initial goals');
-  assert.match(d.getElementById('proof-tactics').textContent,/second tactic/);
-  assert.doesNotMatch(d.getElementById('proof-tactics').textContent,/first tactic/);
-  assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib|theorem first/);
+  assert.equal(d.getElementById('insp-title').textContent,'Demo.second');
+  await w.glitnirPoll();
+  assert.equal(d.getElementById('insp-title').textContent,'Demo.second','polling keeps a declaration without a saved result selected');
+  assert.equal(d.querySelector('#insp .goal-target').textContent,'second');
+  assert.equal(d.querySelector('#insp [data-act="goal-picker"]').options.length,2);
  }finally{w.close();}
 });
 
-test('Source shortcut enters a named claim and saved edits retain its identity',async()=>{
- const snapshot=projectNotebook(),w=await renderSnapshot(snapshot,{onProof:()=>goalTrace(snapshot.sha256)});
- try{
-  const d=w.document;
-  d.querySelector('[data-mode="source"]').click();
-  d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown',{key:'t',bubbles:true}));
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(d.body.dataset.view,'doc');
-  assert.equal(d.querySelector('[data-mode="doc"]').getAttribute('aria-pressed'),'true');
-  d.getElementById('proof-back').click();
-  d.querySelector('#doc [data-proof-claim="Demo.floor"]').closest('.cell').click();
-  d.querySelector('#insp [data-act="inspect-proof"]').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  snapshot.sha256='b'.repeat(64);
-  await w.glitnirPoll();
-  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
-  assert.match(d.getElementById('proof-statement').textContent,/theorem floor/);
-  assert.doesNotMatch(d.getElementById('proof-statement').textContent,/import Mathlib/);
-  d.getElementById('proof-refresh').click();
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(d.getElementById('proof-title').textContent,'Demo.floor');
-  snapshot.sha256='c'.repeat(64);
-  snapshot.cells=snapshot.cells.filter(c=>c.claim!=='Demo.floor');
-  snapshot.project_claims=snapshot.project_claims.filter(c=>c.name!=='Demo.floor');
-  await w.glitnirPoll();
-  assert.equal(d.getElementById('proof-review').hidden,true,'a removed claim leaves inspection');
- }finally{w.close();}
-});
-
-test('anonymous examples have distinct proof actions and return to the matching example',async()=>{
+test('anonymous examples keep their distinct proof actions in the Inspector',async()=>{
  const snapshot=projectNotebook();snapshot.project_claims=[];
  snapshot.cells=[{index:0,kind:'source',start:1,end:6,text:'namespace Demo\nexample : True := by\n  trivial\nexample : True := by\n  trivial\nend Demo'}];
  const w=await renderSnapshot(snapshot,{onProof:()=>({id:'examples',status:'ready',source_sha256:snapshot.sha256,nodes:[]})});
@@ -5785,10 +5713,8 @@ test('anonymous examples have distinct proof actions and return to the matching 
   assert.match(name,/Example at line 4/);
   const entry=[...d.querySelectorAll('#outline button')].filter(b=>b.textContent.includes('Example'))[1];
   entry.focus(); entry.click();
-  d.querySelector('#insp [data-act="inspect-proof"]').click();await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(d.getElementById('proof-title').textContent,name);
-  d.getElementById('proof-back').click();
-  assert.equal(d.activeElement.dataset.proofClaim,name);
+  assert.equal(d.getElementById('insp-title').textContent,name);
+  assert.equal(d.querySelector('#insp [data-act="goal"]').dataset.id,name);
  }finally{w.close();}
 });
 
@@ -5881,7 +5807,7 @@ test('Explore keeps navigation in the sidebar and consolidates argument details'
     assert.equal(d.querySelector('.atlas-actions,.atlas-qualification,.atlas-supports,.atlas-backlinks,[data-atlas="pane"]'), null);
     const details = d.querySelector('.atlas-details');
     assert.equal(details.querySelector('summary').textContent, 'Sources and details');
-    assert.match(details.textContent, /navigation grants no proof status/);
+    assert.match(details.textContent, /No saved Lean result is linked to this argument/);
     assert.ok(d.querySelector('article.atlas-explanation'));
     details.open = true;
     details.dispatchEvent(new w.Event('toggle'));
@@ -6112,40 +6038,62 @@ for (const browser of [false, true]) {
   });
 }
 
-test('claim actions live in the Inspector and inline proof inspection expands without checking', async () => {
+test('legacy notebook claims use the Inspector to read their saved tactic goals', async () => {
+  const name = 'pair', sha256 = 'a'.repeat(64);
+  const snapshot = {file: 'A.lean', sha256, checking: [], check_errors: {}, links: [], revisions: [], assets: [],
+    claims: [{name, keyword: 'theorem', statement: ': True', proof: 'trivial', status: 'stale', uses: [], context: 'c'.repeat(64)}],
+    cells: [{id: name, index: 0, kind: 'claim', start: 1, end: 2, text: 'theorem pair : True := by\n  trivial'}]};
+  const node = {id: 0, text: 'trivial', range: {start: {line: 2, character: 2}, end: {line: 2, character: 9}}, before: ['⊢ True'], after: []};
+  const trace = {id: 'saved', status: 'ready', source_sha256: sha256, nodes: [node]};
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  try {
+    const d = w.document;
+    d.querySelector('#insp [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(d.querySelector('#insp .goal-target').textContent, '⊢ True');
+    d.querySelector('#insp [data-act="goal-next"]').click();
+    assert.equal(d.querySelector('#insp .goal-full-tactic').textContent, 'trivial');
+  } finally { w.close(); }
+});
+
+test('proof inspection and exact tactic editing stay in the Inspector', async () => {
   const snapshot = projectNotebook(), messages = [];
   const trace = goalTrace(snapshot.sha256);
   const w = await renderSnapshot(snapshot, {onMessage: m => messages.push(m), onProof: () => trace});
-  w.HTMLElement.prototype.scrollIntoView = () => {};
-  const d = w.document, settle = () => new Promise(r => setTimeout(r, 30));
+  const d = w.document;
+  const key = key => d.querySelector('.app').dispatchEvent(new w.KeyboardEvent('keydown', {key, bubbles: true, cancelable: true}));
   try {
-    assert.equal(d.querySelector('#doc [data-act="check-through"],#doc [data-act="inspect-proof"],#doc [data-act="goal"]'), null);
-    const check = d.querySelector('#insp [data-act="check-through"]');
-    assert.equal(check.textContent.trim(), 'Check up to this claim');
-    const inspect = d.querySelector('#insp [data-act="goal"]');
-    assert.equal(inspect.textContent, 'Inspect proof');
-    inspect.click(); await settle();
-    assert.equal(d.getElementById('proof-review').hidden, true);
-    assert.ok(d.querySelector('#insp .goal-steps'));
-    const results=d.querySelector('#insp .goal-results'); results.focus(); results.scrollTop=120;
+    assert.equal(d.querySelector('#proof-review, [data-act="inspect-proof"], #doc [data-act="goal"]'), null);
+    assert.equal(key('t'), true);
+    assert.equal(key('c'), true);
+    assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0);
+    assert.equal(d.querySelector('#insp [data-act="check-through"]').textContent.trim(), 'Check up to this claim');
+    const editorState = dirty => w.dispatchEvent(new w.MessageEvent('message', {data: {type: 'editorState', dirty}}));
+    d.querySelector('#insp [data-act="goal"]').focus();
+    editorState(true);
+    assert.equal(d.activeElement.id, 'insp-title');
+    editorState(false);
+    d.querySelector('#insp [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(d.body.dataset.view, 'doc');
+    const results = d.querySelector('#insp .goal-results');
+    results.focus();
+    results.scrollTop = 120;
     await w.glitnirPoll();
-    assert.equal(d.querySelector('#insp .goal-results').scrollTop,120);
-    assert.equal(d.activeElement,d.querySelector('#insp .goal-results'));
-    const starts = messages.filter(m => m.path === '/api/proof/start').length;
-    const expand = d.querySelector('#insp [data-act="inspect-proof"]');
-    assert.equal(expand.textContent, 'Expand proof steps');
-    expand.click(); await settle();
-    assert.equal(d.getElementById('proof-review').hidden, false);
-    assert.equal(messages.filter(m => m.path === '/api/proof/start').length, starts, 'expanding reuses the current recording');
-    d.getElementById('proof-back').click();
-    assert.equal(d.getElementById('proof-review').hidden, true);
-    assert.ok(d.querySelector('#insp .goal-steps'));
-    assert.equal(d.activeElement.dataset.act, 'inspect-proof');
+    assert.equal(d.querySelector('#insp .goal-results').scrollTop, 120);
+    assert.equal(d.activeElement, d.querySelector('#insp .goal-results'));
+    d.querySelector('#insp [data-act="goal-next"]').click();
+    d.querySelector('#insp [data-act="goal-edit"]').click();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {
+      type: 'source', index: 3, sha256: snapshot.sha256, trace: {id: trace.id, node: 0},
+    });
+    editorState(true);
+    assert.equal(d.querySelector('#insp [data-act="goal-edit"]').disabled, true);
     assert.equal(messages.filter(m => m.path === '/api/project/check').length, 0);
   } finally { w.close(); }
 });
 
-test('expansion cannot reuse inline goals recorded while dependencies changed', async () => {
+test('the Inspector refreshes goals recorded while dependencies changed', async () => {
   const snapshot = projectNotebook();
   let view, changed = false, starts = 0, trace = {status:'idle',nodes:[]};
   const w = await renderSnapshot(snapshot, {onWindow: w => {view=w;}, onProof: message => {
@@ -6159,10 +6107,10 @@ test('expansion cannot reuse inline goals recorded while dependencies changed', 
   const settle = () => new Promise(r => setTimeout(r,30));
   try {
     w.document.querySelector('#insp [data-act="goal"]').click(); await settle();
-    assert.equal(w.glitnirWorkbench.currentGoalTrace(), null);
+    assert.equal(w.document.querySelector('#insp .goal-results'), null);
     assert.match(w.document.querySelector('#insp .goal-section').textContent, /dependencies changed/);
-    w.document.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
-    assert.equal(starts,2,'expansion refreshes the observation made under earlier dependencies');
+    w.document.querySelector('#insp [data-act="goal"]').click(); await settle();
+    assert.equal(starts,2,'refresh starts a recording with the current dependencies');
   } finally {w.close();}
 });
 
@@ -6176,9 +6124,8 @@ test('check progress separates target, stage and elapsed time without inventing 
     w.glitnirWorkbench.UI.checkTiming={sha:snapshot.sha256,through:14,started:74000};
     await w.glitnirPoll();
     assert.equal(d.querySelector('.check-progress-title').textContent,'Checking up to Demo.k_pos');
-    const expand = () => d.querySelector('#insp [data-act="inspect-proof"]');
-    assert.equal(expand().disabled,true,'expansion is disabled while a check is running');
-    assert.match(expand().getAttribute('aria-description'),/current check/);
+    const inspect = () => d.querySelector('#insp [data-act="goal"]');
+    assert.equal(inspect().disabled,true,'inspection is disabled while a check is running');
     assert.equal(d.querySelector('.check-progress-stage').textContent,'Inspecting project dependencies…');
     assert.match(d.querySelector('.check-progress-meta').textContent,/Lines 1–14 · 26s elapsed/);
     assert.equal(d.querySelectorAll('.check-progress [role="progressbar"]').length,0);
@@ -6191,7 +6138,7 @@ test('check progress separates target, stage and elapsed time without inventing 
     snapshot.preview.check={status:'unavailable',source_sha256:snapshot.sha256,message:'Stopped',theorems:[]};
     await w.glitnirPoll();
     assert.equal(w.glitnirWorkbench.UI.checkTiming,null);
-    assert.equal(expand().disabled,false,'expansion returns after the check stops');
+    assert.equal(inspect().disabled,false,'inspection returns after the check stops');
   } finally {w.close();}
 });
 
@@ -6240,7 +6187,7 @@ test('check timing survives an old poll resolving after the start request succee
   }
 });
 
-test('refreshing proof goals shows activity and disables competing checks while Expand can join', async () => {
+test('refreshing proof goals shows activity and disables competing checks', async () => {
   const snapshot=projectNotebook();
   let trace=goalTrace(snapshot.sha256);
   const w=await renderSnapshot(snapshot,{onProof:message=>{
@@ -6250,41 +6197,36 @@ test('refreshing proof goals shows activity and disables competing checks while 
   const d=w.document, settle=()=>new Promise(r=>setTimeout(r,30));
   try {
     d.querySelector('#insp [data-act="goal"]').click(); await settle();
-    d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
-    d.getElementById('proof-back').click();
     d.querySelector('#insp [data-act="goal"]').click(); await settle();
     assert.match(d.querySelector('#insp .proof-progress-title').textContent,/Refreshing proof goals/);
     assert.match(d.querySelector('#insp .proof-progress-stage').textContent,/Recording saved tactic goals/);
     assert.equal(d.querySelector('#insp [data-act="check-through"]').disabled,true);
     assert.equal(d.getElementById('check-project').disabled,true);
-    assert.equal(d.querySelector('#insp [data-act="inspect-proof"]').disabled,false);
+    assert.equal(d.querySelector('#insp [data-act="goal"]'),null);
     assert.ok(d.querySelector('#insp .proof-progress [data-act="goal-cancel"]'));
-    d.querySelector('#insp [data-act="inspect-proof"]').click(); await settle();
-    assert.equal(d.getElementById('proof-progress').hidden,false);
-    assert.match(d.getElementById('proof-progress-stage').textContent,/Recording saved tactic goals/);
-    assert.equal(d.getElementById('proof-cancel').closest('#proof-progress').id,'proof-progress');
-    assert.equal(d.getElementById('proof-message').hidden,true);
-    assert.equal(d.getElementById('proof-refresh').disabled,true);
   } finally {w.close();}
 });
 
-test('goal results foreground the target and fold repeated context and tactic results', async () => {
+test('goal results show the target and context before and after a step', async () => {
   const snapshot=projectNotebook();
   const text='eta : ℝ\nheta : eta > 0\n⊢ eta + 1 > 1';
   const trace=goalTrace(snapshot.sha256);
-  trace.nodes[0].before=[text]; trace.nodes[0].after=[text];
+  trace.nodes[0].before=[text]; trace.nodes[0].after=[text.replace('eta + 1 > 1', 'eta > 0')];
   const w=await renderSnapshot(snapshot,{onProof:()=>trace});
   try {
     const d=w.document;
     d.querySelector('#insp [data-act="goal"]').click(); await new Promise(r=>setTimeout(r,30));
     const first=d.querySelector('#insp .goal-initial');
+    assert.equal(d.querySelector('#insp .goal-inference'), null, 'older traces cannot identify branches');
     assert.equal(first.querySelector('.goal-target').textContent,'⊢ eta + 1 > 1');
-    assert.equal(first.querySelector('.goal-context').open,false);
+    assert.equal(first.querySelector('.goal-context').closest('details'),null);
     assert.equal(first.querySelector('.goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
-    const step=d.querySelector('#insp .goal-step details');
-    step.open=true;
+    d.querySelector('#insp [data-act="goal-next"]').click();
     await w.glitnirPoll();
-    assert.equal(d.querySelector('#insp .goal-step details').open,true);
+    assert.equal(d.querySelector('#insp [data-act="goal-picker"]').value,'1');
+    assert.equal(d.querySelector('.goal-before .goal-target').textContent,'⊢ eta + 1 > 1');
+    assert.equal(d.querySelector('.goal-result .goal-target').textContent,'⊢ eta > 0');
+    assert.equal(d.querySelector('.goal-before .goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
   } finally {w.close();}
 });
 
@@ -6322,7 +6264,39 @@ test('inline proof progress remains visible after switching to Source and Explor
   } finally {w.close();}
 });
 
-test('proof steps use compact headers, retain full tactics and fold recording details', async () => {
+test('inference bars follow distinct goal identities and select the recorded branch tactic', async () => {
+  const snapshot = projectNotebook();
+  const trace = goalTrace(snapshot.sha256);
+  const [split, left, right] = trace.nodes;
+  Object.assign(split, {text: 'constructor', before: ['⊢ P ∧ P'], after: ['⊢ P', '⊢ P'], before_ids: ['root'], after_ids: ['left', 'right']});
+  Object.assign(left, {text: 'exact rightProof', before: ['⊢ P', '⊢ P'], after: ['⊢ P'], before_ids: ['right', 'left'], after_ids: ['left']});
+  Object.assign(right, {text: 'exact leftProof', before: ['⊢ P'], after: [], before_ids: ['left'], after_ids: [], parent: null});
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  const d = w.document;
+  const branch = step => d.querySelector(`#insp [data-act="goal-branch"][value="${step}"]`);
+  try {
+    d.querySelector('#insp [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(d.querySelector('#insp .goal-inference [role="group"]').getAttribute('aria-label'), 'Subgoals');
+    assert.equal(branch(3).textContent.trim(), '⊢ P');
+    assert.match(branch(3).getAttribute('aria-label'), /Subgoal 1 ⊢ P/);
+    d.querySelector('#insp .goal-results').scrollTop = 30;
+    branch(3).focus();
+    branch(3).click();
+    assert.equal(d.querySelector('.goal-full-tactic').textContent, 'exact leftProof');
+    assert.equal(branch(3).getAttribute('aria-pressed'), 'true');
+    assert.equal(d.activeElement, branch(3));
+    assert.equal(d.querySelector('#insp .goal-results').scrollTop, 30);
+    await w.glitnirPoll();
+    assert.equal(d.activeElement, branch(3));
+    branch(2).click();
+    assert.equal(d.querySelector('.goal-full-tactic').textContent, 'exact rightProof');
+    branch(1).click();
+    assert.equal(d.querySelector('.goal-full-tactic').textContent, 'constructor');
+  } finally { w.close(); }
+});
+
+test('proof steps show the full tactic and compact recording details without folds', async () => {
   const snapshot=projectNotebook();
   const trace=goalTrace(snapshot.sha256);
   trace.nodes[0].text='exact AIFSafety.Cells.Bin3.Slab100.drift_in_mesh';
@@ -6330,20 +6304,17 @@ test('proof steps use compact headers, retain full tactics and fold recording de
   try {
     const d=w.document;
     d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
-    const step=d.querySelector('.goal-step details');step.open=true;
-    assert.equal(step.querySelector('.goal-number').textContent,'Step 1');
-    assert.equal(step.querySelector('.goal-tactic code').textContent,'exact');
+    d.querySelector('#insp [data-act="goal-next"]').click();
+    const step=d.querySelector('.goal-tactic-details');
+    assert.equal(step.closest('details'),null);
+    assert.equal(step.querySelector('h6').textContent,'Tactic');
+    assert.equal(step.querySelector('.source-link').getAttribute('href'),'#source-L13');
+    assert.equal(d.querySelector('[data-act="goal-picker"] option:checked').textContent,'Step 1 of 3 · exact');
     assert.equal(step.querySelector('.goal-full-tactic code').textContent,trace.nodes[0].text);
-    const details=d.querySelector('.goal-recording-details');
-    assert.equal(details.open,false);
-    assert.equal(details.querySelector('summary').textContent,'Recording details');
-    assert.ok(details.querySelector('.goal-caption'));
-    details.open=true;
-    const tactic=step.querySelector('.goal-full-tactic');tactic.focus();tactic.scrollLeft=120;
+    assert.equal(d.querySelector('.goal-recording').textContent,'Recorded with Lean 4.35.0');
+    const tactic=step.querySelector('.goal-full-tactic');tactic.focus();
     await w.glitnirPoll();
-    assert.equal(d.querySelector('.goal-recording-details').open,true);
     const refreshed=d.querySelector('.goal-full-tactic');
-    assert.equal(refreshed.scrollLeft,120);
     assert.equal(d.activeElement,refreshed);
   } finally {w.close();}
 });

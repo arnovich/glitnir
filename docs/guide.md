@@ -179,25 +179,25 @@ closed. Background refreshes leave a closed Inspector closed.
 
 ### Proof goals and steps
 
-Select a theorem to open its Inspector. **Inspect proof** records its saved proof
-with Lean and displays the goals after each tactic step in place. The check and
-inspection actions live in the Inspector, rather than on every theorem card.
+Select a theorem to open its Inspector. **Inspect proof** records the saved proof
+with Lean. The Inspector shows **Starting goals** first, then what Lean still
+needs to prove after the step you choose. Use **Previous**, **Next**, or the step
+picker. For each step, the Inspector shows the tactic, its source lines, and
+the goals and context before and after it. When Lean records a goal splitting
+into subgoals, **Goal split** shows them above an inference bar. Select a goal
+to jump to its recorded tactic. While refreshing, any still current
+results stay visible under **Previous recording** until the new goals arrive.
 
-**Expand proof steps** (or `t`, or **Glitnir: Expand Selected Claim’s Proof Steps**)
-opens the larger tactic-tree view, reusing a current inline recording. `n` and `p`
-move between steps; `r` checks the whole saved file. **Back to claim** or `Esc`
-returns to the Inspector and the claim’s reading position.
+Use the pencil beside a recorded tactic to open that tactic in VS Code.
 
-Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. Both
-views show historical observations of the saved file and never change a status. While a run is active,
-its activity and cancellation remain available in Notebook, Source and Explore.
-Competing check/refresh actions are disabled; expanding can follow the same run.
-As commands finish, proof recording reports the source line reached, lines left
-and tactic steps recorded. These are source-progress counts, not a time estimate.
-In the Inspector, each tactic’s results and the goal’s Context can be expanded
-separately; your open sections and reading position survive refreshes. Full tactic
-text is available inside each step. Source/toolchain provenance lives under
-**Recording details**.
+Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. It
+shows what Lean reported for the saved file without updating the claim’s check
+status. **Check saved file** checks the whole file. **Check up to this claim**
+and `r` check through the selected claim. Activity and cancellation stay
+available in Notebook, Source and Explore. Competing check and
+refresh actions are disabled during recording. When Lean reports source progress,
+the counts show lines reached, lines left, and recorded tactics. They do not
+estimate time remaining.
 
 ### Linked notebooks
 
@@ -370,19 +370,25 @@ environment is identified shows saved results as out of date once, too.
 
 Each result also records the claims it uses: the theorems its statement and proof
 name directly, from this notebook or from another notebook of the project (a
-module the project builds itself, not a dependency). Cards show them as chips,
-the sidebar draws a compact claim graph, and the **Explore** view lays the same
-recorded relationships out from foundations at the bottom to results at the
-top. It drops an edge when the same dependency is already visible through
+module the project builds itself, not a dependency). Cards show them as chips.
+**View claim graph**, beside **Contents**, opens a focused graph of the
+selected claim, its recorded dependencies and the claims that use it. Switch
+to **Full graph** to see the notebook overview with the same selection. The
+top **Explore** tab opens the overview or the guided view for a proof atlas.
+In narrow panels, the Notebook body shows the shortcut above its claims.
+In Explore, **Choose a claim** changes the selection and **Show in Notebook**
+returns to its declaration.
+The full graph lays relationships out from foundations at the bottom to results
+at the top. It drops an edge when the same dependency is already visible through
 another direct dependency. Imported claims are separate nodes; opening one
 reads its notebook in the same panel when that notebook is available. Node
 colours are recorded claim statuses, with out-of-date results shown in amber
-and results not compared with this project's environment muted and labelled
-**Not compared**.
-Claims without a saved result remain visible as unknown, and a missing `uses`
-observation is labelled unknown rather than treated as an empty dependency
-list. Maps start at readable node size; **Fit width** shows the overview and
-**Actual size** restores readable labels. Zoomed maps retain their scroll
+and results not compared with this project's environment labelled
+**Freshness unknown**. The details distinguish **No saved result** from an
+existing saved result whose freshness is unknown. **Dependencies haven’t been
+recorded** means the saved result has no dependency list. **No recorded
+dependencies** means the list is present and empty. Maps open fitted to the canvas.
+**Fit graph** restores the overview, and **Reset zoom** restores actual size. Zoomed maps retain their scroll
 position through refreshes. The graph can be zoomed and scrolled,
 and the static HTML export includes an inert copy.
 
@@ -439,20 +445,18 @@ the preview for this list. Moving never starts a check.
 | Keys | Action |
 |---|---|
 | `j` `k` | Next / previous claim |
-| `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step |
-| `c` `t` | Return to claim / expand selected claim’s proof steps |
+| `n` `p` | Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped |
 | `s` | Switch between notebook and Lean source |
 | `g` | Show the recorded proof graph |
 | `i` | Show or hide the claim inspector in Notebook |
-| `r` | Check the saved file through the selected claim (in Proof steps: all of it) |
-| `e` | Edit the selected claim or proof step in VS Code |
+| `r` | Check the saved file through the selected claim |
+| `e` | Edit the selected claim in VS Code |
 | `?` | Show these shortcuts |
-| `Esc` | Close the dialog; in Proof steps, return to the claim |
+| `Esc` | Close this dialog or the History panel |
 | `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
 <!-- shortcuts:end -->
 
-The Command Palette also has **Glitnir: Review Claims**, **Glitnir: Explore Proof
-Steps**, **Glitnir: Next Review Item**, **Glitnir: Previous Review Item** and
+The Command Palette also has **Glitnir: Next Review Item**, **Glitnir: Previous Review Item** and
 **Glitnir: Keyboard Shortcuts**.
 
 ## Extension packages
@@ -694,9 +698,8 @@ links stay unchanged; saved-result and selected-range markers remain separate.
 Keyboard shortcuts are listed in the **?** help dialog. The Notebook contents
 sidebar stays focused on navigating the notebook.
 
-Proof steps is disabled when the project or walkthrough requires an incompatible
-Lean toolchain. Its tooltip explains why; the shortcut and editor command also
-leave the reading view in place without requesting a tactic observation.
+When the project or walkthrough requires an incompatible Lean toolchain, the
+Inspector explains why proof steps are unavailable.
 
 Proof inspection is a claim action rather than a notebook-wide mode. The title
 stays in the same position in Notebook, Source and Explore; Notebook-only

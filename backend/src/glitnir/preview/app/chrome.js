@@ -4,12 +4,12 @@
   const workbench = window.glitnirWorkbench;
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
-    currencyNoted, currencyText, decisionAction, diagramAction, esc, fetch, heldRendering, helpHTML, icon, images,
+    currencyNoted, currencyText, decisionAction, diagramAction, editGoalSource, esc, fetch, heldRendering, helpHTML, icon, images,
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
-    showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
+    selectGoalStep, showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
   let helpTimer;
@@ -44,8 +44,14 @@
   });
   document.addEventListener('scroll', hideHelp, true);
   window.addEventListener('resize', hideHelp);
+  $('claim-graph-shortcut').innerHTML = '<button type="button" class="ghost" data-act="open-claim-graph">View claim graph</button>'
+    + helpHTML('claim-graph', 'About the claim graph', 'Open the graph in Explore. Select a statement to see its dependencies.');
   // ----- chrome -----------------------------------------------------------------------
   function renderConnection() {
+    for (const shortcut of document.querySelectorAll('[data-act="open-claim-graph"]')) {
+      shortcut.disabled = heldRendering();
+      shortcut.title = shortcut.disabled ? 'Available when the notebook reconnects.' : '';
+    }
     $('conn').dataset.state = UI.connected ? 'up' : 'down';
     $('conn-text').textContent = UI.connected ? 'Connected' : 'Reconnecting…';
     $('connection-detail').textContent = UI.connected ? 'Connected to the local notebook server' : 'Server not reachable · retrying';
@@ -56,24 +62,6 @@
       $('lean-unsupported').hidden ? $('subline').textContent : $('lean-unsupported-text').textContent,
       $('live-status').textContent,
     ].filter(Boolean).join('\n');
-  }
-
-  function drawGraph() {
-    const svg = $('graph'), cs = claims(), rowH = 30, x = 34, W = 172, pos = new Map();
-    cs.forEach((c, i) => { pos.set(c.name, 14 + i * rowH); });
-    const H = Math.max(28, 14 + (cs.length - 1) * rowH + 14);
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    svg.setAttribute('height', H);
-    const color = t => ({green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', muted: 'var(--faint)'})[t] || 'var(--blue)';
-    const arcs = cs.flatMap(c => (Array.isArray(c.uses) ? c.uses : []).filter(u => pos.has(u) && u !== c.name).map(u => {
-      const y1 = pos.get(u), y2 = pos.get(c.name), bend = x - 10 - (y2 - y1) / 5;
-      return `<path d="M${x - 7} ${y1}C${bend} ${y1} ${bend} ${y2} ${x - 9} ${y2}" fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#g-arr)"/>`;
-    })).join('');
-    svg.innerHTML = `<defs><marker id="g-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8" fill="var(--faint)"/></marker></defs>${arcs}` +
-      cs.map(c => {
-        const tone = toneOf(c), y = pos.get(c.name), sel = UI.selected === c.name;
-        return `<g class="node" data-act="goto" data-id="${esc(c.name)}"><title>${esc(claimLabel(c))}: ${esc(statusOf(c).label)}${c.project && currencyNoted(c.project) ? ` · ${currencyText(c.project)}` : ''}</title><rect x="0" y="${y - 12}" width="${W}" height="24" fill="transparent"/><circle cx="${x}" cy="${y}" r="${sel ? 6.5 : 5.5}" fill="${tone === 'blue' ? 'var(--paper)' : color(tone)}" stroke="${color(tone)}" stroke-width="${sel ? 3 : 1.8}"/><text x="${x + 13}" y="${y + 3.5}" font-size="10.5" font-family="var(--mono)" fill="${sel ? 'var(--ink)' : 'var(--muted)'}">${esc(claimLabel(c))}</text></g>`;
-      }).join('');
   }
 
   // Git is an on-demand host observation, independent of notebook check records.
@@ -360,8 +348,8 @@
     const checkingNow = !linked && project && d.preview.check?.status === 'running';
     if (checkingNow) activity.append($('project-check'));
     else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
-    const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : UI.proofActivity;
-    const showProof = !linked && proofRun && (proofRun.expanded || UI.mode !== 'doc' || !UI.panel);
+    const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
+    const showProof = !linked && proofRun && (UI.mode !== 'doc' || !UI.panel || !$('insp').querySelector('.goal-run-progress'));
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
     activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
@@ -418,14 +406,9 @@
     document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
     $('panel-show').hidden = !notebookView || UI.panel;
-    // Project records hold uses only from checks that recorded them: without
-    // any, show no graph rather than a graph without its arcs.
-    const graph = !project || cs.some(c => Array.isArray(c.project?.uses));
-    for (const id of ['graph-label', 'graph', 'graph-note']) $(id).hidden = !graph;
-    $('graph-note').innerHTML = helpHTML('claim-graph', 'About the claim graph', project
-      ? 'Arcs come from Lean: the claims each claim’s statement or proof names directly, as its last check recorded them.'
-      : 'Arcs come from Lean: the earlier claims a proof\'s axioms name.');
-    if (graph) drawGraph();
+    const graphAvailable = Boolean(cs.length || d.cells.some(cell => cell.claim));
+    $('claim-graph-shortcut').hidden = !graphAvailable;
+    $('claim-graph-mobile').hidden = !notebookView || !graphAvailable;
     renderConnection();
   }
 
@@ -433,7 +416,7 @@
   // identical declarations in different scopes. No source is interpreted here.
   function readingDetails() {
     const counts = new Map();
-    return [$('doc'), $('insp'), $('diagram-dialog')].filter(Boolean).flatMap(root => [...root.querySelectorAll('details[data-fold-key]')].map(fold => {
+    return [$('doc'), $('insp'), $('diagram-dialog'), $('graph-view')].filter(Boolean).flatMap(root => [...root.querySelectorAll('details[data-fold-key]')].map(fold => {
       const identity = JSON.stringify([root.id, fold.dataset.foldKey]);
       const occurrence = counts.get(identity) || 0;
       counts.set(identity, occurrence + 1);
@@ -457,7 +440,7 @@
     }
   }
 
-  function render() {
+  function render({openClaimGraph = false, openExplore = false, inspectorOnly = false} = {}) {
     if (!UI.data) return;
     workbench.syncAtlasLocation?.(UI.data);
     const diagramUI = saveDiagramUI();
@@ -466,6 +449,7 @@
     const openHelpKey = document.querySelector('.help-tooltip:not([hidden])')?.id;
     const outlineDocumentFocus = UI.mode === 'doc' && /^notebook-(entry|heading)-/.test(document.activeElement?.id || '') ? document.activeElement.id : null;
     const documentFocus = UI.mode === 'doc' && document.activeElement?.classList.contains('document-target');
+    const graphNotesFocus = document.activeElement?.matches('.proof-graph-notes > summary');
     const foldFocus = saveReadingFolds();
     const linkSelector = '.source-link,.source-edit,.source-inspect,.notebook-reference,.atlas-link,.external-link,img[data-act="image-expand"]';
     const linkFocus = $('doc').contains(document.activeElement) && document.activeElement.matches(linkSelector) ? {index: [...$('doc').querySelectorAll(linkSelector)].indexOf(document.activeElement), sha: document.activeElement.dataset.sha, href: document.activeElement.getAttribute('href')} : null;
@@ -476,7 +460,7 @@
     const graphHeading = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail h3');
     const graphLink = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail a[href]') ? document.activeElement.getAttribute('href') : null;
     const graphCanvas = $('graph-view').querySelector('.proof-graph-canvas');
-    const graphScroll = graphCanvas ? {left: graphCanvas.scrollLeft, top: graphCanvas.scrollTop, sha: UI.data.sha256, selected: graphCanvas.querySelector('.chosen')?.dataset.graphId} : null;
+    const graphScroll = graphCanvas ? {left: graphCanvas.scrollLeft, top: graphCanvas.scrollTop, sha: UI.data.sha256, scope: graphCanvas.dataset.scope, selected: graphCanvas.querySelector('.chosen')?.dataset.graphId} : null;
     const graphDetail = $('graph-detail');
     const detailScroll = graphDetail ? {left: graphDetail.scrollLeft, top: graphDetail.scrollTop} : null;
     const atlasActive = UI.mode === 'graph' && $('graph-view').contains(document.activeElement) ? document.activeElement : null;
@@ -485,19 +469,25 @@
       region: atlasActive.closest('.atlas-compare') ? '.atlas-compare' : atlasActive.closest('.atlas-matches') ? '.atlas-matches' : null, href: atlasActive.getAttribute('href'), heading: atlasActive.id === 'atlas-selected', action: atlasActive.dataset.atlas, value: atlasActive.dataset.value, route: atlasActive.hasAttribute('data-atlas-route'), source: atlasActive.dataset.atlasSource} : null;
     const activityFocus = document.activeElement?.closest('#run-activity')?.querySelector(':focus')?.dataset.act;
     const scroll = $('insp').scrollTop;
-    const goalFocus = document.activeElement?.matches('#insp .goal-section [data-act]') ? document.activeElement.dataset.act : null;
+    const goalControls = '.goal-section [data-act]';
+    const active = document.activeElement;
+    const goalFocus = $('insp').contains(active) && active.matches(goalControls) ? active.dataset.act : null;
     const tacticStates = new Map([...$('insp').querySelectorAll('.goal-full-tactic')].map(el => [el.dataset.tacticKey, {left: el.scrollLeft, top: el.scrollTop, focused: document.activeElement === el}]));
     const results = $('insp').querySelector('.goal-results');
+    const resultFocus = results?.contains(document.activeElement);
     const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
-    if (!heldRendering()) {
+    if (!inspectorOnly && !heldRendering()) {
       if (UI.mode === 'doc') renderDoc();
       else if (UI.mode === 'source') renderSource();
-      else renderProofGraph();
+      else renderProofGraph({openClaimGraph, openExplore});
     }
     renderInspector();
-    renderChrome();
+    if (!inspectorOnly) renderChrome();
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
+    if (graphNotesFocus && UI.mode === 'graph' && !$('graph-view').querySelector('.proof-graph-notes')) {
+      ($('graph-view').querySelector('[data-act="graph-detail-picker"]') || document.querySelector('[data-mode="graph"]')).focus({preventScroll: true});
+    }
     if (UI.mode === 'doc' && UI.documentLine?.sha === UI.data.sha256) {
       const target = documentTarget(UI.documentLine.line);
       if (target) { target.classList.add('document-target'); target.tabIndex = -1; if (documentFocus) target.focus({preventScroll: true}); }
@@ -524,7 +514,7 @@
       if (graphHeading) $('graph-detail')?.querySelector('h3')?.focus({preventScroll: true});
       if (graphLink) [...$('graph-view').querySelectorAll('#graph-detail a[href]')].find(link => link.getAttribute('href') === graphLink)?.focus({preventScroll: true});
       const canvas = $('graph-view').querySelector('.proof-graph-canvas');
-      if (canvas && graphScroll?.sha === UI.data.sha256 && graphScroll.selected === canvas.querySelector('.chosen')?.dataset.graphId) {
+      if (canvas && graphScroll?.sha === UI.data.sha256 && graphScroll.scope === canvas.dataset.scope && graphScroll.selected === canvas.querySelector('.chosen')?.dataset.graphId) {
         canvas.scrollLeft = graphScroll.left; canvas.scrollTop = graphScroll.top;
         const detail = $('graph-detail');
         if (detail && detailScroll) { detail.scrollLeft = detailScroll.left; detail.scrollTop = detailScroll.top; }
@@ -546,9 +536,16 @@
       const state = tacticStates.get(el.dataset.tacticKey);
       if (state) { el.scrollLeft = state.left; el.scrollTop = state.top; if (state.focused) el.focus({preventScroll: true}); }
     }
-    if (goalFocus) {
-      const controls = [...$('insp').querySelectorAll('.goal-section [data-act]')].filter(el => !el.disabled);
-      (controls.find(el => el.dataset.act === goalFocus) || controls.find(el => el.dataset.act === 'goal-cancel') || controls[0])?.focus({preventScroll: true});
+    if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
+      const controls = [...$('insp').querySelectorAll(goalControls)].filter(el => !el.disabled);
+      const target = controls.find(el => el.dataset.act === goalFocus && (goalFocus !== 'goal-branch' || el.value === active.value))
+        || (goalFocus === 'goal' && controls.find(el => el.dataset.act === 'goal-cancel'))
+        || controls.find(el => el.dataset.act === 'goal-picker') || controls[0];
+      if (target) target.focus({preventScroll: true});
+      else {
+        $('insp-title').tabIndex = -1;
+        $('insp-title').focus({preventScroll: true});
+      }
     }
     restoreDiagramUI(diagramUI);
     if (helpFocus) {
@@ -625,22 +622,19 @@
   // The one list of shortcuts: the help dialog is drawn from it, and the
   // user guide's table (docs/guide.md) must match it (a test compares them).
   // `editor` keys exist only in the VS Code preview, whose review layer
-  // (review.js) handles n/p, c/t and e; `editorText` is their wording there.
+  // (review.js) handles n/p and e.
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
   const SHORTCUTS = [
     {group: 'Navigate', keys: ['j', 'k'], text: 'Next / previous claim'},
     {group: 'Navigate', keys: ['n', 'p'], editor: true,
-      text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped. In Proof steps: next / previous step'},
-    {group: 'Navigate', keys: ['c', 't'], editor: true, text: 'Return to claim / expand selected claim’s proof steps'},
+      text: 'Next / previous claim that needs attention: out of date, not rechecked, contains sorry, additional assumptions, or where checking stopped'},
     {group: 'View', keys: ['s'], text: 'Switch between notebook and Lean source'},
     {group: 'View', keys: ['g'], text: 'Show the recorded proof graph'},
     {group: 'View', keys: ['i'], text: 'Show or hide the claim inspector in Notebook'},
-    {group: 'Check and edit', keys: ['r'], text: 'Check the saved file through the selected claim',
-      editorText: 'Check the saved file through the selected claim (in Proof steps: all of it)'},
-    {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim or proof step in VS Code'},
+    {group: 'Check and edit', keys: ['r'], text: 'Check the saved file through the selected claim'},
+    {group: 'Check and edit', keys: ['e'], editor: true, text: 'Edit the selected claim in VS Code'},
     {group: 'General', keys: ['?'], text: 'Show these shortcuts'},
-    {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel',
-      editorText: 'Close the dialog; in Proof steps, return to the claim'},
+    {group: 'General', keys: ['Esc'], text: 'Close this dialog or the History panel'},
     {group: 'General', keys: MAC ? ['⌘K', 'G'] : ['Ctrl+K', 'G'], chord: true, editor: true,
       text: 'In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G'},
   ].filter(s => HOST || !s.editor);
@@ -649,7 +643,7 @@
     $('keys-intro').textContent = 'Single keys work while the notebook has focus, outside text fields. Moving never starts a check.';
     const groups = [...new Set(SHORTCUTS.map(s => s.group))];
     $('keys-groups').innerHTML = groups.map(group => `<section class="keys-group"><h4 class="label">${esc(group)}</h4><dl>${SHORTCUTS.filter(s => s.group === group)
-      .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc((HOST && s.editorText) || s.text)}</dd>`).join('')}</dl></section>`).join('');
+      .map(s => `<dt>${chipsHTML(s)}</dt><dd>${esc(s.text)}</dd>`).join('')}</dl></section>`).join('');
   }
   renderShortcuts();
 
@@ -662,11 +656,26 @@
     canvas.scrollLeft += node.left - box.left - (canvas.clientWidth - node.width) / 2;
     canvas.scrollTop += node.top - box.top - (canvas.clientHeight - node.height) / 2;
   }
+  function openExplore() {
+    if (heldRendering()) return;
+    hideHelp();
+    const active = document.activeElement;
+    UI.mode = 'graph';
+    UI.graphFocused = false;
+    UI.graphFit = true;
+    render({openExplore: true});
+    if (active && (!active.isConnected || active.closest('[hidden]'))) {
+      ($('atlas-selected') || document.querySelector('[data-mode="graph"]')).focus({preventScroll: true});
+    }
+  }
   function zoomGraph(factor) {
     const canvas = $('graph-view').querySelector('.proof-graph-canvas');
     const svg = canvas?.querySelector('.proof-map');
-    const width = Number(svg?.getAttribute('viewBox').split(' ')[2]);
-    const scale = UI.graphFit && width > 0 ? canvas.clientWidth / width : UI.graphZoom || 1;
+    const [, , width, height] = svg?.getAttribute('viewBox').split(' ').map(Number) || [];
+    const fitScale = Math.min(canvas?.clientWidth / width, canvas?.clientHeight / height);
+    const scale = UI.graphFit && Number.isFinite(fitScale) && fitScale > 0
+      ? UI.graphFocused ? Math.min(1, fitScale) : fitScale
+      : UI.graphZoom || 1;
     UI.graphZoom = Math.max(.0001, Math.min(8, scale * factor));
     UI.graphFit = false;
     render();
@@ -740,6 +749,7 @@
   }
 
   document.addEventListener('change', e => {
+    if (e.target.matches('#insp [data-act="goal-picker"]')) { selectGoalStep(e.target); return; }
     if (e.target.matches('#source-hide-comments')) { UI.hideSourceComments = e.target.checked; render(); return; }
     if (!e.target.matches('[data-diagram-contract]')) return;
     const key = e.target.dataset.diagramContract;
@@ -779,6 +789,22 @@
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
       case 'decision-discard': decisionAction('/api/decide/discard', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'goto': closeDiagram(); select(id, true, true); break;
+      case 'open-claim-graph': {
+        if (heldRendering()) break;
+        hideHelp();
+        UI.mode = 'graph';
+        UI.graphFocused = true;
+        UI.graphFit = true;
+        render({openClaimGraph: true});
+        const heading = $('graph-detail')?.querySelector('h3') || $('graph-view').querySelector('h2');
+        if (heading) {
+          heading.tabIndex = -1;
+          heading.focus({preventScroll: true});
+        }
+        $('graph-view').scrollIntoView?.({block: 'start'});
+        revealGraphSelection();
+        break;
+      }
       case 'graph-select': {
         const node = graphNode(b.dataset.graphId);
         if (!node) break;
@@ -805,6 +831,11 @@
         } else render();
         break;
       }
+      case 'graph-focus':
+      case 'graph-full':
+        UI.graphFocused = b.dataset.act === 'graph-focus';
+        render();
+        break;
       case 'graph-reset': UI.graphZoom = 1; UI.graphFit = false; render(); break;
       case 'graph-zoom-in': zoomGraph(1.25); break;
       case 'graph-zoom-out': zoomGraph(.8); break;
@@ -815,6 +846,10 @@
       case 'notebook-at': showNotebookAt(Number(b.dataset.at)); break;
       case 'goal': UI.selected = id; inspectGoals(b.dataset.refresh === 'true'); break;
       case 'goal-cancel': cancelGoals(); break;
+      case 'goal-edit': editGoalSource(b); break;
+      case 'goal-branch':
+      case 'goal-prev':
+      case 'goal-next': if (!b.disabled) selectGoalStep(b); break;
       // Stale buttons of an earlier saved file never check other lines.
       case 'check-through': if (b.dataset.sha === UI.data.sha256 && claim(id)) { UI.selected = id; checkProject(Number(b.dataset.line)); } break;
       case 'scroll': {
@@ -847,7 +882,7 @@
     UI.graphSelected = picker.value;
     render();
   });
-  document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });
+  document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'graph') openExplore(); else if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });
   $('inspect-project').onclick = inspectProject;
   $('check-project').onclick = () => checkProject();
   $('panel-hide').onclick = () => { UI.panel = false; render(); };
@@ -897,7 +932,7 @@
     const map = {
       j: () => move(1), k: () => move(-1), '?': () => keys(true),
       s: () => { if (UI.mode === 'source') showDocument(); else { UI.mode = 'source'; render(); } },
-      g: () => { UI.mode = 'graph'; render(); },
+      g: openExplore,
       i: () => { if (UI.mode === 'doc') { UI.panel = !UI.panel; render(); } },
       // Check through the selected claim; Check saved file checks all of it.
       r: () => { const c = claim(UI.selected); if (c?.project && !linkedPath()) checkProject(c.project.end_line); },

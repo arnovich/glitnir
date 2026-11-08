@@ -43,8 +43,8 @@ buttons in the preview.
   axioms). Results are saved beside the notebook in `<Notebook>.glitnir.json`,
   and stay current in another clone or on another machine with byte-identical
   builds.
-- **Proof steps:** **Explore Proof Steps** records a proof's tactic tree once,
-  then lets you walk it with the goals before and after each step.
+- **Proof steps:** **Inspect proof** in the Notebook Inspector shows the tactic
+  and goals before and after each step of the saved proof.
 - **Evidence and decisions:** `-- @evidence` directives show simulations as cards
   that run on click; `-- @decide` directives ask a provider for a Lean block,
   which Glitnir kernel-checks before **Accept** inserts it into the notebook.
@@ -185,13 +185,11 @@ describes sections, images, links and each directive in detail.
 - **Contents** lists the sections; `s` switches between the rendered document
   and the Lean source.
 - **Follow edits** scrolls to the sections each save changed.
-- **Claims** (`c`) steps through the claims with `j` and `k`; `i` opens the
-  claim inspector; `n` and `p` go to the next and previous claim that needs
-  attention.
-- **Check through here** (`r`) checks only through the selected claim. A result
+- `j` and `k` step through the claims. `i` opens the claim Inspector. `n` and
+  `p` go to the next and previous claim that needs attention.
+- **Check up to this claim** (`r`) checks only through the selected claim. A result
   goes out of date when anything above its claim changes. **Glitnir: Copy
   Validation Command** gives the same check for a terminal or a coding agent.
-- **Explore Proof Steps** (`t`) walks the selected proof's goals.
 - **Run** on an evidence or decision card runs it, one at a time. **Accept** on
   a checked decision inserts its block after the directive and saves the file.
 - `⌘K G` on macOS and `Ctrl+K G` on Linux run **Glitnir: Reveal in Glitnir**

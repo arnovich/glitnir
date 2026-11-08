@@ -78,6 +78,17 @@ def _texts(value: Any) -> list[str]:
     return value
 
 
+def _goal_ids(value: Any, count: int) -> list[str]:
+    """Match each printed goal to its metavariable in the recorded state."""
+    if (
+        not isinstance(value, list)
+        or len(value) != count
+        or not all(isinstance(item, str) and item for item in value)
+    ):
+        raise ValueError("Malformed proof trace goal identities.")
+    return value
+
+
 def _validate_trace(value: Any, source: str) -> dict[str, Any]:
     """Validate byte ranges and retain each tactic's own before/after context."""
     if not isinstance(value, dict) or not isinstance(value.get("nodes"), list):
@@ -126,6 +137,12 @@ def _validate_trace(value: Any, source: str) -> dict[str, Any]:
             + len(node["declaration"].encode())
             + len(node["kind"].encode())
         )
+        identities: dict[str, list[str]] = {}
+        if "before_ids" in node or "after_ids" in node:
+            before_ids = _goal_ids(node.get("before_ids"), len(before))
+            after_ids = _goal_ids(node.get("after_ids"), len(after))
+            reserve(sum(len(identity.encode()) for identity in before_ids + after_ids))
+            identities = {"before_ids": before_ids, "after_ids": after_ids}
         nodes.append(
             {
                 "id": index,
@@ -137,6 +154,7 @@ def _validate_trace(value: Any, source: str) -> dict[str, Any]:
                 "after": after,
                 "declaration": node["declaration"],
                 "kind": node["kind"],
+                **identities,
             }
         )
     # Scan source once, even when thousands of nodes occur near its end.

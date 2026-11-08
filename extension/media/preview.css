@@ -48,25 +48,6 @@
 #review-items button[aria-current] { background: var(--blue-soft); border-color: var(--blue); }
 .review-item-reason { color: var(--muted); font-size: 12px; font-weight: 400; }
 #review-position { color: var(--muted); font-variant-numeric: tabular-nums; }
-#proof-review { padding: 22px 26px; }
-.proof-heading { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 12px; }
-.proof-heading h2 { margin: 0; font-size: 20px; }
-#proof-status { color: var(--muted); }
-.proof-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; }
-.proof-grid pre { padding: 12px; background: var(--chrome); border: 1px solid var(--border); border-radius: 5px; }
-.proof-goals { border-left: 1px solid var(--border); padding-left: 24px; min-width: 0; }
-.proof-goals h3 { margin-top: 0; }
-.proof-goals details { margin-bottom: 12px; }
-#proof-tactics { margin-top: 14px; }
-.proof-tactic { display: block; width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; font-weight: 400; margin-bottom: 4px; }
-.proof-tactic[aria-current=true] { border-color: var(--blue); background: var(--blue-soft); }
-.glitnir-proof-mode .workspace, .glitnir-proof-mode .heading { display: none; }
-@media(max-width: 800px) {
-  .proof-grid { grid-template-columns: minmax(0, 1fr); }
-  .proof-goals { border-left: 0; border-top: 1px solid var(--border); padding: 18px 0 0; }
-}
-
 /* A linked notebook is read-only: its review, proof steps and editing stay with its own preview. */
 .glitnir-linked-view .review-nav,
-.glitnir-linked-view #proof-review,
 .glitnir-linked-view #open-source { display: none; }

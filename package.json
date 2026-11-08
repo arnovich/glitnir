@@ -2,7 +2,7 @@
   "name": "glitnir",
   "displayName": "Glitnir \u2014 Lean Notebooks",
   "description": "Read, explore and check Lean notebooks beside their source.",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "publisher": "gimle",
   "license": "MIT",
   "icon": "extension/icon/glitnir-128.png",
@@ -97,16 +97,6 @@
       {
         "command": "glitnir.reviewPrevious",
         "title": "Previous Review Item",
-        "category": "Glitnir"
-      },
-      {
-        "command": "glitnir.reviewClaims",
-        "title": "Return to Claim",
-        "category": "Glitnir"
-      },
-      {
-        "command": "glitnir.reviewProof",
-        "title": "Expand Selected Claim’s Proof Steps",
         "category": "Glitnir"
       },
       {

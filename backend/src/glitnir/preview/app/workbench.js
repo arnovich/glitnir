@@ -39,7 +39,7 @@
   const TONE = {checked: 'green', refuted: 'red', conditional: 'amber', stale: 'amber', unknown: 'amber', failed: 'red', open: 'blue'};
   const LABEL = {checked: 'Checked', refuted: 'Refuted', conditional: 'Conditional', stale: 'Out of date', unknown: 'Unknown', failed: 'Failed', open: 'Open goal'};
 
-  const UI = {drawings: {}, diagrams: {}, expandedDiagram: null, data: null, selected: null, mode: 'doc', panel: true, connected: true, notice: '', sourceCell: null, sourceRange: null, documentLine: null,
+  const UI = {drawings: {}, diagrams: {}, expandedDiagram: null, data: null, selected: null, mode: 'doc', graphFocused: false, panel: true, connected: true, notice: '', sourceCell: null, sourceRange: null, documentLine: null,
     // Notebooks read in this panel: null is the previewed notebook, a string
     // the link to another notebook of its project. `at` is the one shown.
     trail: [null], at: 0, main: null, goals: null, research: {}, researchLoading: {}, researchEvidence: {}};
@@ -190,7 +190,7 @@
     }
   }
   function canFollow() {
-    return $('live-follow').checked && UI.mode === 'doc' && !document.body.classList.contains('glitnir-proof-mode')
+    return $('live-follow').checked && UI.mode === 'doc'
       && !document.querySelector('.overlay:not([hidden]), #history[open]');
   }
   function holdRendering(message) {
@@ -243,7 +243,8 @@
     for (const id of ['doc', 'source', 'insp']) { $(id).inert = false; $(id).classList.remove('live-held'); }
     readableSnapshot = data;
     snapshots.set(linkedPath() ?? '', data);
-    if (!UI.selected || !claim(UI.selected)) UI.selected = claims().length ? claims()[0].name : null;
+    // Fresh declarations can have a scope before they have a saved result.
+    if (!claim(UI.selected) && !workbench.proofScope(UI.selected)) UI.selected = claims()[0]?.name ?? null;
     const pending = takePendingClaim();
     render();
     void workbench.loadResearch?.(UI.selected);
@@ -340,7 +341,7 @@
     catch (error) { UI.checkTiming = null; throw error; }
     finally { UI.checkRequested = false; render(); }
   }
-  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.goals?.starting || UI.goals?.trace?.status === 'running' || UI.proofBusy);
+  const checkBusy = () => Boolean(inspecting() || UI.checkRequested || UI.data?.preview?.check?.status === 'running' || UI.goals?.starting || UI.goals?.trace?.status === 'running');
   // A check through a claim compiles and kernel-replays the saved file's lines
   // 1 through the claim's last line; later claims are not checked by it.
   function checkThroughHTML(saved, label, note, scope = 'card') {
@@ -567,7 +568,7 @@
     if (!linkedPath()) mainChanged = false;
     clearTimeout(highlightTimer);
     highlighted = new Set();
-    Object.assign(UI, {selected: null, outlineTarget: null, mode: 'doc', sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
+    Object.assign(UI, {selected: null, outlineTarget: null, mode: 'doc', graphFocused: false, sourceCell: null, sourceRange: null, documentLine: null, notice: ''});
     closeDiagram();
     document.body.classList.toggle('glitnir-linked-view', Boolean(linkedPath()));
     const cached = snapshots.get(linkedPath() ?? '');

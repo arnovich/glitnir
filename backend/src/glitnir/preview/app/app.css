@@ -78,7 +78,14 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 
 /* rail */
 .rail{position:sticky;top:0;padding:18px 14px 18px 14px;border-right:1px solid var(--border);align-self:start;max-height:100vh;overflow:auto}
+/* Raise the sticky rail's stacking layer while its help overlaps the document. */
+.rail:has(.help-tooltip:not([hidden])){z-index:4}
 .label{margin:0 0 8px;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.contents-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 6px;margin-bottom:8px}
+.contents-heading .label{margin:0}
+#claim-graph-mobile{display:none}
+#claim-graph-shortcut{display:inline-flex;align-items:center;white-space:nowrap}
+#claim-graph-shortcut>[data-act=open-claim-graph]{padding:3px 0;color:var(--blue);font-size:11px}
 .rail ol{list-style:none;margin:0 0 18px;padding:0;display:grid;gap:1px}
 /* Names wrap at their parts; status dots keep one column inside the rail. */
 .rail li button{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 8px;align-items:start;justify-items:start;text-align:left;font-weight:400;padding:4px 8px;font-size:12px;column-gap:10px}
@@ -92,12 +99,13 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .dot[data-tone=amber]{background:var(--amber);border-color:var(--amber)}
 .dot[data-tone=red]{background:var(--red);border-color:var(--red)}
 .dot[data-tone=muted]{border-color:var(--faint);border-style:dashed}
-svg.graph{width:100%;display:block;margin-bottom:6px}
-svg.graph .node{cursor:pointer}
-.proof-graph-view{max-width:1180px;margin:0 auto}
+.proof-graph-view{margin:0 auto}
+.proof-graph-export,.walkthrough-map{max-width:1180px}
 .proof-graph-view>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:12px}
 .proof-graph-view>header h2{font-size:18px;margin:0 0 4px}
 .proof-graph-view>header p{font-size:12px;color:var(--muted);margin:0;max-width:720px}
+.proof-graph-scope{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:4px}
+.proof-graph-scope button[aria-pressed=true],.proof-graph-toolbar button[aria-pressed=true]{background:var(--blue-soft);color:var(--blue);border-color:var(--blue)}
 .proof-graph-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px;align-items:start}
 .proof-graph-canvas{border:1px solid var(--border);border-radius:8px;background:var(--paper);overflow:auto;min-height:220px}
 .proof-graph-layout>.proof-graph-canvas{grid-column:1;grid-row:1;max-height:72vh}
@@ -105,6 +113,8 @@ svg.graph .node{cursor:pointer}
 .proof-edge.related{stroke:var(--blue);stroke-width:2.5}
 .proof-graph-detail button.graph-relation{display:inline;padding:0;margin:0;color:var(--blue);text-decoration:underline;font:inherit;text-align:left}
 .proof-map{height:auto;display:block;transition:width .12s ease}
+.proof-graph-canvas[data-scope=focused]>.proof-map{margin-inline:auto}
+.proof-graph-canvas[data-fit=true]>.proof-map{height:100%;max-width:100%}
 .proof-edge{fill:none;stroke:var(--faint);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .proof-edge.appendix-edge{stroke-dasharray:5 4}
 .proof-map marker path{fill:var(--faint)}
@@ -130,7 +140,12 @@ svg.graph .node{cursor:pointer}
 .proof-graph-toolbar{display:flex;gap:4px;white-space:nowrap}
 .proof-graph-toolbar button{font-size:11px;padding:3px 8px}
 .proof-graph-detail{border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--chrome);font-size:12px;overflow-wrap:anywhere}
-.proof-graph-detail h3{font:600 15px var(--mono);margin:0 0 10px}
+.proof-graph-detail h3{font:600 15px var(--mono);margin:0 0 8px}
+.proof-graph-detail .graph-open{margin:0 0 10px}
+.proof-graph-detail .graph-freshness{margin:6px 0 0}
+.proof-graph-notes{margin:0 0 12px;color:var(--muted);font-size:12px}
+.proof-graph-notes summary{cursor:pointer}
+.proof-graph-notes p{margin:5px 0 0}
 .proof-graph-detail dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 9px;margin:12px 0}
 .proof-graph-detail dt{font-weight:600}.proof-graph-detail dd{margin:0;color:var(--muted)}
 .proof-graph-detail button{margin-top:8px}
@@ -143,7 +158,7 @@ svg.graph .node{cursor:pointer}
 .walkthrough-static-details h3{margin:0 0 8px}.walkthrough-static-details h4{margin:12px 0 4px}
 .walkthrough-claim-link{display:inline-block;padding:6px 10px;border:1px solid var(--blue);border-radius:5px;text-decoration:none}
 .proof-graph-detail-picker{display:grid;gap:5px;margin-bottom:14px;color:var(--muted);font-weight:600}
-.proof-graph-detail-picker select{min-height:30px;max-width:100%;font-weight:400}
+.proof-graph-detail-picker select{min-height:30px;width:100%;min-width:0;font-weight:400}
 .proof-graph-export{margin:0 0 28px;padding-bottom:20px;border-bottom:1px solid var(--border)}
 .proof-graph-export .proof-graph-layout{display:block}
 .proof-graph-export .proof-graph-canvas{min-height:0}
@@ -176,7 +191,7 @@ svg.graph .node{cursor:pointer}
    \kern cannot paint over a claim's status, and the status paints on top. */
 .math.typeset{display:inline-block;max-width:100%;overflow:clip;overflow-clip-margin:2px;vertical-align:baseline}
 .math-display.typeset{display:block;overflow-x:auto;overflow-y:clip}
-.claim-head,.focus .row{position:relative;z-index:1}
+.claim-head{position:relative;z-index:1}
 
 .box{border:1px solid var(--border);border-radius:7px;overflow:hidden;background:var(--paper)}
 .box-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border-bottom:1px solid var(--border)}
@@ -256,9 +271,9 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .avatar{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;background:var(--blue-soft);color:var(--blue);font:19px var(--serif);flex-shrink:0}
 .insp-head .who{flex:1;min-width:0}
 .insp-head .who b{font-weight:600;display:block}
+.insp-head .pill{display:inline-block;max-width:100%;white-space:normal}
 .insp-head button{padding:4px}
-.focus{margin:0 16px 10px;padding:10px 11px;border:1px solid var(--border);border-radius:7px;background:var(--paper);display:grid;gap:6px}
-.focus .row{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.focus{margin:12px 0;display:grid;gap:6px}
 .focus .eq{font:400 16px/1.65 var(--sans)}
 .focus dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0;font-size:11px}
 .focus dt{color:var(--muted)}.focus dd{margin:0;font-family:var(--mono);font-size:11px}
@@ -317,6 +332,7 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   .workspace{grid-template-columns:minmax(0,1fr) 310px}
   .workspace.no-panel{grid-template-columns:minmax(0,1fr) 0}
   .rail{display:none}
+  #claim-graph-mobile{display:block;margin-bottom:10px}
   .chips-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
   .chips-row button{border:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:400;padding:3px 8px}
 }
@@ -330,11 +346,11 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   h1{font-size:27px}
   .cell-tools{opacity:1;position:static;justify-content:flex-end;margin-bottom:4px}
   #panel-hide{display:none}
-  .proof-graph-view>header{display:block}
+  .proof-graph-view>header{flex-direction:column;gap:8px}
   .proof-graph-toolbar{margin-top:10px}
   .proof-graph-layout{grid-template-columns:1fr}
-  .proof-graph-layout>.proof-graph-canvas{grid-column:1;grid-row:1}
-  .proof-graph-layout>.proof-graph-detail{grid-column:1;grid-row:2;position:static;max-height:none}
+  .proof-graph-layout>:is(.proof-graph-stage,.proof-graph-canvas){grid-column:1;grid-row:2}
+  .proof-graph-layout>.proof-graph-detail{grid-column:1;grid-row:1;position:static;max-height:none}
 }
 
 /* app additions */
@@ -497,19 +513,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .goal-block+.goal-block{margin-top:10px}
 .goal-section pre.goal{padding:6px 9px;background:var(--sunk);border-radius:5px;font-size:11.5px}
 .goal-section .goal-note{margin:4px 0 8px;border-radius:5px}
-.goal-section>button{margin-top:4px}
-.goal-caption{margin:6px 0 0}
 .goal-state{margin:0 0 6px}
-.goal-initial{margin:4px 0 10px}
-.goal-steps{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:9px}
-.goal-step[data-depth="1"]{padding-left:12px}.goal-step[data-depth="2"]{padding-left:24px}.goal-step[data-depth="3"]{padding-left:36px}
-.goal-step:is([data-depth="4"],[data-depth="5"],[data-depth="6"]){padding-left:48px}
-.goal-step:not([data-depth="0"]){border-left:2px solid var(--rule)}
-.goal-tactic{display:flex;align-items:baseline;gap:7px;margin-bottom:4px;min-width:0}
-.goal-tactic code{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--ink)}
-.goal-number{font:500 10.5px var(--mono);color:var(--muted);min-width:1.6em;text-align:right}
 .goal-messages{margin:8px 0}
-.goal-messages summary{cursor:pointer}
 .goal-messages pre{margin-top:4px;padding:6px 9px;background:var(--sunk);border-radius:5px;font-size:11px}
 /* Another notebook of the project read in this panel, with a way back. */
 .notebook-trail{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 26px;border-bottom:1px solid var(--border);background:var(--violet-soft);font-size:12px}
@@ -549,8 +554,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 
 /* Non-notebook views use their own content rather than notebook sidebars. */
 .workspace.focused-view{grid-template-columns:minmax(0,1fr)}
-body[data-view="source"]:not(.glitnir-proof-mode) .review-nav,body[data-view="graph"]:not(.glitnir-proof-mode) .review-nav{display:none}
-body[data-view="graph"]:not(.glitnir-proof-mode) .live-bar,body[data-view="source"]:not(.glitnir-proof-mode) .live-bar{display:none}
+body[data-view="source"] .review-nav,body[data-view="graph"] .review-nav{display:none}
+body[data-view="graph"] .live-bar,body[data-view="source"] .live-bar{display:none}
 .proof-atlas .atlas-explanation{display:block}
 .proof-atlas .atlas-explanation h3{margin:20px 0 8px}
 .proof-atlas .atlas-explanation p{margin:0 0 16px}
@@ -588,8 +593,7 @@ body[data-view="source"] .doc-inner{max-width:none}
 /* Zoom controls belong to the diagram, outside its scrolling canvas. */
 .proof-graph-stage{grid-column:1;grid-row:1;min-width:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--paper)}
 .proof-graph-stage>.proof-graph-toolbar{justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:8px;margin:0;border-bottom:1px solid var(--border);background:var(--chrome)}
-.proof-graph-stage>.proof-graph-toolbar>span{margin-right:auto}
-.proof-graph-stage>.proof-graph-canvas{border:0;border-radius:0;max-height:72vh}
+.proof-graph-stage>.proof-graph-canvas{border:0;border-radius:0;height:min(60vh,820px);min-height:0}
 
 /* Primary views lead the header. Saved-update controls share the review row. */
 .bar>.view-switcher{flex-shrink:0;border-color:var(--border)}
@@ -599,7 +603,7 @@ body[data-view="source"] .doc-inner{max-width:none}
 .live-bar>.review-nav{flex:1;min-width:0;padding:0;border:0}
 .live-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-left:auto;font-size:11px}
 .live-controls .live-follow-control{margin-left:0;font-size:12px;white-space:nowrap}
-body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-follow-control,.glitnir-proof-mode .live-follow-control{display:none}
+body[data-view="source"] .live-follow-control,body[data-view="graph"] .live-follow-control{display:none}
 @media(max-width:760px){.bar>.view-switcher{width:100%}.bar>.view-switcher button{flex:1}.live-bar>.review-nav{flex-basis:100%}.live-controls{width:100%;justify-content:space-between}}
 
 /* Connection, proof observations and refresh activity share one header home. */
@@ -676,7 +680,7 @@ body:has(.live-bar:not([hidden])) .cell{scroll-margin-top:var(--review-offset,10
 .view-options-panel{position:absolute;right:0;top:100%;z-index:30;width:min(340px,calc(100vw - 64px));padding:6px;max-height:75vh;overflow:auto;background:var(--paper);border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px var(--shadow)}
 .view-options-panel label{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .view-options-panel p{margin:8px 0 0;color:var(--muted)}
-body[data-view="source"] .notebook-preferences,body[data-view="graph"] .notebook-preferences,.glitnir-proof-mode .notebook-preferences{display:none}
+body[data-view="source"] .notebook-preferences,body[data-view="graph"] .notebook-preferences{display:none}
 @media(max-width:760px){.live-bar>.review-nav{flex-basis:100%}}
 
 body:has(.live-bar:not([hidden])) :is(.rail,.inspector,#outline-resize){top:var(--review-offset,100px);max-height:calc(100vh - var(--review-offset,100px))}
@@ -722,7 +726,31 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
   .bar>.bar-right{max-width:100%;min-width:0}
 }
 
-.goal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.goal-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.goal-heading h5{margin:0}
+.goal-heading [data-refresh]{padding:3px 7px;font-size:12px}
+.goal-section,.insp-actions{border-top:1px solid var(--border);padding-top:12px}
+.insp-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+.insp-actions .insp-check{display:inline-flex;align-items:center}
+.goal-navigation{position:sticky;top:0;z-index:1;background:var(--chrome);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:stretch;gap:5px}
+.goal-navigation button,.goal-navigation select{min-height:30px;padding:3px 6px;font-size:12px}
+.goal-navigation select{width:100%;min-width:0}
+.goal-inference{margin-top:8px;padding:9px;border:1px solid var(--border);border-radius:6px;background:var(--paper)}
+.goal-inference-premises{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr));gap:8px;margin-top:7px}
+.goal-inference-branch{display:grid;justify-items:center;align-content:start;gap:4px;min-width:0;text-align:center}
+.goal-inference-tactic,.goal-inference-rule code{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.goal-inference-rule{display:flex;align-items:center;gap:6px;margin:5px 0}
+.goal-inference-leaf{justify-self:stretch;margin:0}
+.goal-inference-rule::before{content:"";flex:1;border-top:1px solid var(--muted)}
+.goal-inference-root{display:flex;justify-content:center}
+.goal-branch-button,.goal-inference-unlinked{min-width:0;max-width:100%;padding:4px 7px;overflow-wrap:anywhere}
+.goal-branch-button[aria-pressed="true"]{color:var(--blue);border-color:var(--blue);background:var(--blue-soft)}
+.goal-branch-button code,.goal-inference-unlinked{white-space:pre-wrap;overflow-wrap:anywhere}
+.goal-result{margin-top:8px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:6px}
+.goal-result-title{font-size:12px;margin:0 0 4px}
+.goal-previous-recording{margin:4px 0}
+.goal-tactic-details{margin-top:8px;color:var(--muted)}
+.goal-tactic-heading{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .goal-results{max-height:min(55vh,560px);overflow:auto;padding:2px}
 
 .check-progress{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;margin:12px 0;background:var(--chrome);border:1px solid var(--border);border-radius:6px}
@@ -740,25 +768,11 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .proof-progress-stage{margin-top:4px;color:var(--muted)}
 .proof-progress-time{margin-top:6px}
 .proof-progress>button{flex-shrink:0}
-.proof-grid.proof-loading{grid-template-columns:minmax(0,1fr)}
 #run-activity{padding:0 16px}
-.glitnir-proof-mode #run-activity{display:none}
 .goal-context{margin-top:8px;color:var(--muted)}
-.goal-context>summary{cursor:pointer;font:12px var(--sans)}
+.goal-detail-label{margin:0 0 4px;color:var(--muted);font:500 12px var(--sans)}
 .goal-target{color:var(--ink);margin-top:8px}
-.goal-tactic{cursor:pointer;padding:8px 0}
-.goal-tactic code{background:none;padding:0;border-radius:0;font-size:11.5px}
-.goal-after-label{margin:4px 0}
-.goal-step>details{border-bottom:1px solid var(--rule);padding-bottom:6px}
-
-.goal-tactic::before{content:"▸";flex-shrink:0;color:var(--muted)}
-.goal-step>details[open]>.goal-tactic::before{content:"▾"}
-
-.goal-number{font:500 12px var(--sans);min-width:0;text-align:left;white-space:nowrap;color:var(--ink)}
-.goal-tactic>.small{flex-shrink:0;margin-left:auto}
-.goal-full-tactic{max-width:100%;overflow-x:auto;white-space:pre;overflow-wrap:normal;margin:4px 0 10px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:5px}
-.goal-full-tactic code{font:inherit;color:var(--ink);background:none;padding:0;white-space:inherit;overflow-wrap:normal}
+.goal-full-tactic{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 10px;padding:9px;background:var(--paper);border:1px solid var(--border);border-radius:5px}
+.goal-full-tactic code{font:inherit;color:var(--ink);background:none;padding:0;white-space:inherit;overflow-wrap:inherit}
 .goal-complete{color:var(--green);font-size:12px;margin:6px 0 10px}
-.goal-recording-details{margin-top:12px;font-size:11px;color:var(--muted)}
-.goal-recording-details>summary{cursor:pointer}
-.goal-recording-details>.goal-caption{line-height:1.5;overflow-wrap:anywhere}
+.goal-recording{margin:8px 0 0}
