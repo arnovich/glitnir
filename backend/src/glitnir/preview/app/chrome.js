@@ -343,14 +343,17 @@
     if (unsupported) $('check-project').hidden = true;
     if (leanOff()) $('inspect-project').hidden = true;
     $('check-project').disabled = checkBusy();
-    $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
-    const checkHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
+    const check = d.preview?.check;
+    const checkingNow = !linked && project && check?.status === 'running';
+    if (!linked && (UI.checkRequested || checkingNow)) UI.dismissedCheckSha = null;
+    const checkDismissed = check?.status === 'checked_snapshot' && check.source_sha256 === UI.dismissedCheckSha;
+    $('project-check').hidden = !project || linked || walkthroughUnchecked() || !check || checkDismissed;
+    const checkHTML = project ? projectCheckHTML(check, d.sha256, true) : '';
     if (checkHTML !== renderedCheckHTML) {
       $('project-check').innerHTML = checkHTML;
       renderedCheckHTML = checkHTML;
     }
     const activity = $('run-activity');
-    const checkingNow = !linked && project && d.preview.check?.status === 'running';
     if (checkingNow) activity.append($('project-check'));
     else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
     const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
@@ -365,10 +368,16 @@
     const inspectionBanner = $('project-inspection');
     inspectionBanner.hidden = !project || linked || (!showInspection && !inspectingNow);
     const dependencies = projectResolutionHTML(inspected?.resolution);
+    const toolchain = d.preview?.project?.toolchain;
+    const setupSummary = inspected?.status === 'resolved'
+      ? `<div class="inspection-summary"><strong>Project setup ready</strong>${toolchain ? `<span>Toolchain <code>${esc(toolchain)}</code></span>` : ''}
+        ${inspected.resolution?.kind === 'prepared_local' && !dependencies ? '<span>No local dependencies listed</span>' : ''}
+        <p>To verify the proofs, run <strong>Check saved file</strong>.</p></div>`
+      : `<span>Last inspection: ${esc(inspected?.message || '')}</span>`;
     const restoreDismissFocus = document.activeElement?.dataset.act === 'inspect-dismiss';
     inspectionBanner.innerHTML = inspectionBanner.hidden ? '' : inspectingNow
       ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>`
-      : `<span>Last inspection: ${esc(inspected.message)}</span><button type="button" data-act="inspect-dismiss" aria-label="Dismiss project inspection result" title="Dismiss">${icon('x')}</button>` + dependencies;
+      : `${setupSummary}<button type="button" class="result-dismiss" data-act="inspect-dismiss" aria-label="Dismiss project inspection result" title="Dismiss">${icon('x')}</button>` + dependencies;
     if (restoreDismissFocus) inspectionBanner.querySelector('[data-act="inspect-dismiss"]')?.focus({preventScroll: true});
     if (project) {
       // The check actions live in the banner, so it stays; it is amber only
@@ -817,6 +826,13 @@
         }
         break;
       case 'check-cancel': cancelCheck(); break;
+      case 'check-dismiss':
+        if (UI.data.preview?.check?.status === 'checked_snapshot') {
+          UI.dismissedCheckSha = UI.data.preview.check.source_sha256;
+          renderChrome();
+          $('check-project').focus({preventScroll: true});
+        }
+        break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
       case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;

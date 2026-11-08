@@ -2347,8 +2347,9 @@ test('project inspection is reported from snapshots for the saved source it read
     snapshot.preview.inspection = {status: 'resolved', source_sha256: 'a'.repeat(64), message: 'Module setup resolved for <A>.', resolution: {kind: 'prepared_local', packages: [{name: 'dep', path: 'p', entry: {}}]}};
     await window.glitnirPoll();
     assert.equal($('inspect-project').disabled, false);
-    assert.match($('project-inspection').textContent, /^Last inspection: Module setup resolved for <A>\./);
-    assert.match($('project-inspection').innerHTML, /&lt;A&gt;/, 'the message is escaped');
+    assert.match($('project-inspection').textContent, /Project setup ready/);
+    assert.match($('project-inspection').textContent, /Toolchain t/);
+    assert.match($('project-inspection').textContent, /To verify the proofs, run Check saved file/);
     assert.equal($('project-inspection').querySelector('details summary').textContent, 'Local dependencies');
     assert.match($('project-inspection').querySelector('details').textContent, /Git revision/);
     const dismiss = $('project-inspection').querySelector('[data-act="inspect-dismiss"]');
@@ -2369,6 +2370,7 @@ test('project inspection is reported from snapshots for the saved source it read
     snapshot.preview.inspection.resolution.packages = [];
     await window.glitnirPoll();
     assert.equal($('project-inspection').querySelector('details'), null, 'no disclosure for an empty list');
+    assert.match($('project-inspection').textContent, /No local dependencies listed/);
     snapshot.preview.inspection.source_sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     assert.equal($('project-inspection').hidden, true, 'an inspection of another saved source is not shown');
@@ -2479,6 +2481,14 @@ test('project checks show historical compiled propositions separately from sourc
     assert.match(exported.body, /declared revision abc \(not verified\)/);
     assert.match(exported.body, /Additional assumptions/);
     assert.match(exported.body, /saved source has changed/);
+    assert.doesNotMatch(exported.body, /data-act="check-dismiss"/);
+    const close = panel.querySelector('[data-act="check-dismiss"]');
+    assert.equal(close.getAttribute('aria-label'), 'Dismiss check result');
+    close.click();
+    assert.equal(panel.hidden, true);
+    assert.equal(window.document.activeElement.id, 'check-project');
+    await window.glitnirPoll();
+    assert.equal(panel.hidden, true, 'polling keeps the check result dismissed');
     assert.equal(window.document.querySelectorAll('.claim').length, 0);
     assert.equal(requests.filter(r => r.path === '/api/project/check').length, 0);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true, mode: 'project'}}));
@@ -2491,6 +2501,7 @@ test('project checks show historical compiled propositions separately from sourc
     const sent = requests.filter(r => r.path === '/api/project/check');
     assert.equal(sent.length, 1);
     assert.deepEqual(JSON.parse(sent[0].body), {sha256: snapshot.sha256});
+    assert.equal(panel.hidden, false, 'a new check restores the result card');
   } finally { window.close(); }
 });
 

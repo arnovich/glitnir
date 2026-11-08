@@ -497,7 +497,7 @@
     return (UI.data.project_non_claims || []).filter(n => n.start_line >= cell.start && n.start_line <= cell.end)
       .map(n => `<p class="small muted project-non-claim">Line ${esc(n.start_line)}: example without a proposition; not a claim.</p>`).join('');
   }
-  function projectCheckHTML(result, sourceSha) {
+  function projectCheckHTML(result, sourceSha, dismissible = false) {
     if (walkthroughUnchecked()) return `<p class="banner quiet walkthrough-compatibility" role="status">${esc(walkthroughMessage())}</p>`;
     if (!result) { if (!UI.checkRequested) UI.checkTiming = null; return ''; }
     const through = Number.isSafeInteger(result.through_line) ? result.through_line : null;
@@ -519,7 +519,8 @@
       : `<p role="status">${withheldText(result.withheld, 'Checking stopped')}</p>`;
     const changed = result.source_sha256 !== sourceSha ? '<p class="small muted">The saved source has changed since this check.</p>' : '';
     const statements = (result.theorems || []).map(t => `<article><h4>${esc(projectClaimLabel(t))} · ${esc(labels[t.status] || t.status)}</h4>${statementFormsHTML({printed: t.statement, kernel: t.type, key: `panel:${t.name}`}, 'panel')}<p>Assumptions: ${t.axioms.length ? t.axioms.map(a => esc(a.name)).join(', ') : 'none'}</p></article>`).join('');
-    return `<div class="check-result"><h3>Last checked snapshot${through ? ` · lines 1–${esc(through)}` : ''}</h3>${stopped}${changed}${statements}
+    const close = dismissible ? `<button type="button" class="result-dismiss" data-act="check-dismiss" aria-label="Dismiss check result" title="Dismiss">${icon('x')}</button>` : '';
+    return `<div class="check-result">${close}<h3>Last checked snapshot${through ? ` · lines 1–${esc(through)}` : ''}</h3>${stopped}${changed}${statements}
       <details class="check-result-details"><summary>Check details</summary>
       <p>${esc(result.message)}</p>
       <p>Results describe the environment used for this check. Run a new check after changing dependencies.</p>
