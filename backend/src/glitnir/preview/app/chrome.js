@@ -361,7 +361,7 @@
     const inspectingNow = inspecting();
     if (inspectingNow && !linked) UI.dismissedInspectionSha = null;
     const showInspection = inspected && inspected.source_sha256 !== UI.dismissedInspectionSha;
-    $('inspect-project').textContent = inspectingNow ? 'Inspecting…' : 'Inspect project environment';
+    $('inspect-project').textContent = inspectingNow ? 'Reading project setup…' : 'Show project setup';
     const inspectionBanner = $('project-inspection');
     inspectionBanner.hidden = !project || linked || (!showInspection && !inspectingNow);
     const dependencies = projectResolutionHTML(inspected?.resolution);

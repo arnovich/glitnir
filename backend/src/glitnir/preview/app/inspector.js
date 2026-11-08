@@ -27,7 +27,7 @@
     const statement = saved.example === true ? checkedStatementHTML(saved, true) : '';
     const checked = statement ? `<div class="insp-section">${statement}</div>` : '';
     const compatibility = walkthroughUnchecked() ? `<div class="note-line walkthrough-compatibility" data-tone="muted">${icon('branch')}<span>${esc(walkthroughMessage())}</span></div>` : '';
-    const check = checkThroughHTML(saved, 'Check up to this claim', `r: compiles and kernel-replays lines 1–${saved.end_line} of the saved file; later claims are not rechecked. Check saved file checks all of it.`, 'inspector');
+    const check = checkThroughHTML(saved, `Check lines 1–${saved.end_line}`, `Checks the saved file from the start through this declaration. Later claims keep their previous results. Shortcut: r.`, 'inspector');
     return `
       <div class="focus">${reading?.doc ? `<div class="eq">${docHTML(reading.doc)}</div>` : ''}
         <dl><dt>name</dt><dd>${esc(saved.example === true ? c.label : c.name)}</dd><dt>lines</dt><dd>${cell ? lineLinkHTML(saved.start_line, saved.end_line) : '—'}</dd><dt>result</dt><dd>${currencyText(saved)}</dd><dt>uses</dt><dd class="insp-uses">${!Array.isArray(saved.uses) ? '<span class="muted">not recorded by this check</span>' : saved.uses.length ? `<span class="uses">${useChipsHTML(saved)}</span>` : '—'}</dd></dl></div>
@@ -139,7 +139,7 @@
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s elapsed</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
   }
   function proofGoalsHTML(c, range = c.project, renderSteps = goalStepsHTML, renderHeader) {
-    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
+    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic. Run Check saved file to update the proof status.')}</h5>`;
     const section = (content, action = '', refresh = false) => renderHeader
       ? renderHeader(action) + content
       : `<div class="insp-section goal-section"><div class="goal-heading">${head}${refresh ? action : ''}</div>${content}${refresh ? '' : action}</div>`;
@@ -148,7 +148,7 @@
     if (leanOff() || walkthroughUnchecked()) return unavailable(`<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p>`);
     const goals = UI.goals, trace = goals?.trace;
     const dirty = document.body.classList.contains('unsaved-lean');
-    const button = refresh => `<button type="button" class="${renderHeader && !refresh ? 'primary' : 'secondary'}" data-act="goal" data-id="${esc(c.name)}"${refresh ? ' data-refresh="true" aria-label="Refresh proof goals"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${refresh ? icon('replay') + 'Refresh' : 'Inspect proof'}</button>`;
+    const button = refresh => `<button type="button" class="${renderHeader && !refresh ? 'primary' : 'secondary'}" data-act="goal" data-id="${esc(c.name)}"${refresh ? ' data-refresh="true" aria-label="Refresh proof steps"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${refresh ? icon('replay') + 'Refresh' : 'Show proof steps'}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
     let message = '', display = null;
     let refresh = false;

@@ -2338,7 +2338,7 @@ test('project inspection is reported from snapshots for the saved source it read
   const $ = id => window.document.getElementById(id);
   try {
     assert.equal($('inspect-project').disabled, true, 'one inspection or check at a time');
-    assert.equal($('inspect-project').textContent, 'Inspecting…');
+    assert.equal($('inspect-project').textContent, 'Reading project setup…');
     assert.equal($('check-project').disabled, true);
     assert.match($('project-inspection').textContent, /Inspecting the saved project setup…/);
     $('project-inspection').querySelector('[data-act="inspect-cancel"]').click();
@@ -3175,7 +3175,7 @@ test('routine explainers live behind focusable help icons', async () => {
     assert.equal(proof.nextElementSibling.querySelector('h5').textContent, 'Assumptions from the last check');
     const actions = d.getElementById('insp').lastElementChild;
     assert.deepEqual([...actions.querySelectorAll('[data-act]')].map(button => button.dataset.act), ['check-through']);
-    assert.equal(proof.querySelector(':scope > [data-act="goal"]').textContent, 'Inspect proof');
+    assert.equal(proof.querySelector(':scope > [data-act="goal"]').textContent, 'Show proof steps');
     assert.match(proof.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
     assert.equal(d.querySelector('#insp .goal-section > p'), null, 'proof help stays in the tooltip');
     assert.ok(d.querySelector('#insp [data-act="check-through"]'));
@@ -3280,8 +3280,8 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     const button = insp.querySelector('.goal-section > [data-act="goal"]');
-    assert.equal(button.textContent, 'Inspect proof');
-    assert.match(insp.querySelector('.goal-section').textContent, /Use Check saved file to update the check status/);
+    assert.equal(button.textContent, 'Show proof steps');
+    assert.match(insp.querySelector('.goal-section').textContent, /Run Check saved file to update the proof status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
     button.focus();
     button.click(); await settle(20);
@@ -3313,7 +3313,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     assert.equal(insp.querySelector('.goal-results details'), null, 'proof details are visible without opening folds');
     const refresh = insp.querySelector('.goal-heading [data-act="goal"]');
     assert.equal(refresh.textContent, 'Refresh');
-    assert.equal(refresh.getAttribute('aria-label'), 'Refresh proof goals');
+    assert.equal(refresh.getAttribute('aria-label'), 'Refresh proof steps');
     assert.equal(d.querySelector('#insp-sub .pill').textContent, 'kernel checked', 'the status is the saved record’s');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1, 'one observation at a time');
     // The same observation serves the next claim: here a term proof records no steps.
@@ -3388,7 +3388,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(820);
     assert.ok(messages.some(m => m.path === '/api/proof/cancel'));
     assert.match(section(), /cancelled\. No goals were recorded in this run/);
-    assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
+    assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Show proof steps');
     // A failed observation says why.
     start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
@@ -4136,14 +4136,14 @@ test('a claim card, the inspector and r check the saved file through that claim'
     d.querySelector('[data-claim="Demo.floor"] article').click();
     assert.equal(d.querySelector('#doc [data-act="check-through"]'), null);
     const button = d.querySelector('#insp [data-act="check-through"]');
-    assert.equal(button.textContent.trim(), 'Check up to this claim');
+    assert.equal(button.textContent.trim(), 'Check lines 1–17');
     assert.equal(button.dataset.line, '17');
-    assert.match(d.querySelector('#insp .insp-check').textContent, /later claims are not rechecked/);
+    assert.match(d.querySelector('#insp .insp-check').textContent, /Later claims keep their previous results/);
     button.click(); await settle(30);
     assert.deepEqual(checks(), [{sha256, through_line: 17}]);
     assert.equal($('insp-title').textContent, 'floor', 'the claim checked through is selected');
     const inspector = d.querySelector('#insp .insp-check [data-act="check-through"]');
-    assert.equal(inspector.textContent.trim(), 'Check up to this claim');
+    assert.equal(inspector.textContent.trim(), 'Check lines 1–17');
     inspector.click(); await settle(30);
     assert.deepEqual(checks().at(-1), {sha256, through_line: 17});
     d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
@@ -6095,7 +6095,7 @@ test('proof inspection and exact tactic editing stay in the Inspector', async ()
     assert.equal(key('t'), true);
     assert.equal(key('c'), true);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0);
-    assert.equal(d.querySelector('#insp [data-act="check-through"]').textContent.trim(), 'Check up to this claim');
+    assert.equal(d.querySelector('#insp [data-act="check-through"]').textContent.trim(), 'Check lines 1–14');
     const editorState = dirty => w.dispatchEvent(new w.MessageEvent('message', {data: {type: 'editorState', dirty}}));
     d.querySelector('#insp [data-act="goal"]').focus();
     editorState(true);
