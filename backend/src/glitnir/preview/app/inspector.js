@@ -71,8 +71,6 @@
     const previous = currentGoalTrace();
     UI.goals = {previous, starting: true, started, refreshing: refresh, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
     render();
-    const view = UI.mode === 'graph' ? $('proof-run-activity') : $('insp');
-    view.querySelector('.proof-progress')?.scrollIntoView?.({block: 'nearest'});
     try {
       // Reuse a matching recording or follow a run already in progress.
       // Only a run started by this preview is cancelled from here.
@@ -138,7 +136,7 @@
     : empty;
   function proofProgressHTML(run) {
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
-    return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
+    return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s elapsed</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
   }
   function proofGoalsHTML(c, range = c.project, renderSteps = goalStepsHTML, renderHeader) {
     const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
@@ -154,9 +152,7 @@
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
     let message = '', display = null;
     let refresh = false;
-    if (traceRunning(trace)) {
-      message = '<div class="goal-run-progress"></div>';
-    } else if (trace) {
+    if (trace && !traceRunning(trace)) {
       if (trace.source_sha256 !== UI.data.sha256) { message = note('amber', 'The saved source changed since these goals were recorded.'); refresh = true; }
       else if (goals.environment !== environmentEpoch()) { message = note('amber', 'The source or its dependencies changed since these goals were recorded.'); refresh = true; }
       else if (trace.status === 'detached') message = note('muted', 'Stopped following the recording. Lean is still running.');
@@ -303,14 +299,11 @@
 
   function updateInspector(html) {
     const root = $('insp');
-    // Keep the native step picker open during passive polls. Progress has
-    // its own slot so elapsed time and stage changes can update separately.
+    // Keep the native step picker open during passive polls.
     if (inspectorHTML !== html) {
       root.innerHTML = html;
       inspectorHTML = html;
     }
-    const progress = root.querySelector('.goal-run-progress');
-    if (progress) progress.innerHTML = proofProgressHTML(UI.goals);
   }
 
   function renderInspector() {

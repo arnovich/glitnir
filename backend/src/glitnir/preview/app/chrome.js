@@ -349,7 +349,7 @@
     if (checkingNow) activity.append($('project-check'));
     else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
     const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
-    const showProof = !linked && proofRun && (UI.mode !== 'doc' || !UI.panel || !$('insp').querySelector('.goal-run-progress'));
+    const showProof = !linked && proofRun;
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
     activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
@@ -533,7 +533,9 @@
     }
     if (activityFocus) {
       const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)
-        || (UI.mode === 'graph' && UI.exploreDerivation && activityFocus === 'goal-cancel' ? $('graph-view').querySelector('[data-act="goal"]') : null);
+        || (activityFocus === 'goal-cancel' && UI.mode === 'graph' && UI.exploreDerivation ? $('graph-view').querySelector('[data-act="goal"]') : null)
+        || (activityFocus === 'goal-cancel' && UI.mode === 'doc' && UI.panel ? $('insp').querySelector('[data-act="goal"]') : null)
+        || $('status-summary');
       control?.focus({preventScroll: true});
     }
     $('insp').scrollTop = scroll;
@@ -549,7 +551,7 @@
     if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
       const controls = [...$('insp').querySelectorAll(goalControls)].filter(el => !el.disabled);
       const target = controls.find(el => el.dataset.act === goalFocus && (goalFocus !== 'goal-branch' || el.value === active.value))
-        || (goalFocus === 'goal' && controls.find(el => el.dataset.act === 'goal-cancel'))
+        || (goalFocus === 'goal' && $('proof-run-activity').querySelector('[data-act="goal-cancel"]'))
         || controls.find(el => el.dataset.act === 'goal-picker') || controls[0];
       if (target) target.focus({preventScroll: true});
       else {

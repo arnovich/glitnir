@@ -3259,8 +3259,8 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     button.click(); await settle(20);
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/proof/')).map(m => [m.method, m.path]), [['GET', '/api/proof/trace'], ['POST', '/api/proof/start']]);
     assert.deepEqual(JSON.parse(messages.find(m => m.path === '/api/proof/start').body), {sha256: snapshot.sha256});
-    assert.match(insp.querySelector('.goal-state').textContent, /Recording saved tactic goals/);
-    assert.equal(d.activeElement.dataset.act, 'goal-cancel', 'focus stays in the goal controls');
+    assert.match(d.querySelector('#run-activity .goal-state').textContent, /Recording saved tactic goals/);
+    assert.equal(d.activeElement.dataset.act, 'goal-cancel', 'focus follows the cancel action into the header');
     insp.querySelector('[data-act="goal"]')?.click();
     trace = goalTrace(snapshot.sha256);
     await settle(820);
@@ -3315,7 +3315,7 @@ test('refreshing Inspector goals keeps the previous step visible until new goals
     return trace;
   }});
   const insp = window.document.getElementById('insp');
-  const click = act => insp.querySelector(`[data-act="${act}"]`).click();
+  const click = act => (act === 'goal-cancel' ? window.document.getElementById('run-activity') : insp).querySelector(`[data-act="${act}"]`).click();
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   const heading = () => insp.querySelector('.goal-result-title')?.textContent;
   try {
@@ -3357,7 +3357,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
   const section = () => insp.querySelector('.goal-section').textContent;
   try {
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
-    insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
+    window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(820);
     assert.ok(messages.some(m => m.path === '/api/proof/cancel'));
     assert.match(section(), /cancelled\. No goals were recorded in this run/);
     assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
@@ -3370,7 +3370,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     const before = starts;
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(starts, before);
-    assert.match(section(), /Resolving project environment/);
+    assert.match(d.getElementById('run-activity').textContent, /Resolving project environment/);
     trace = goalTrace(snapshot.sha256, {id: 'steps'});
     await settle(820);
     assert.equal(insp.querySelector('[data-act="goal-picker"]').options.length, 4);
@@ -4421,7 +4421,7 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     // Refresh asks for a new recording.
     insp.querySelector('[data-act="goal"][data-refresh="true"]').click(); await settle(20);
     assert.equal(starts(), 1);
-    insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
+    window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(820);
     assert.equal(messages.filter(m => m.path === '/api/proof/cancel').length, 1, 'the inspector cancels its own run');
     assert.match(insp.textContent, /cancelled/);
     // After a dependency change an older finished observation is not reused.
@@ -4434,8 +4434,8 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     await settle(820);
     assert.match(insp.textContent, /Another proof observation replaced this one/);
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
-    assert.match(insp.textContent, /Resolving project environment/, 'joined');
-    insp.querySelector('[data-act="goal-cancel"]').click(); await settle(20);
+    assert.match(window.document.getElementById('run-activity').textContent, /Resolving project environment/, 'joined');
+    window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(20);
     assert.equal(messages.filter(m => m.path === '/api/proof/cancel').length, 1, 'a joined run is not cancelled');
     assert.match(insp.querySelector('.goal-section').textContent, /Stopped following the recording/);
     assert.equal(trace.status, 'running');
@@ -5439,7 +5439,7 @@ for (const browser of [false, true]) {
       assert.ok(header.firstElementChild.classList.contains('brand'));
       assert.equal(d.getElementById('location').hidden, true);
       assert.equal(d.getElementById('location').textContent, '');
-      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'bar-right', 'header-status']);
+      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'bar-right', 'header-status-row']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Source', 'Explore']);
       const row = d.querySelector('.live-bar');
       assert.equal(row.querySelector('.live-follow-control'), null);
@@ -6198,12 +6198,12 @@ test('refreshing proof goals shows activity and disables competing checks', asyn
   try {
     d.querySelector('#insp [data-act="goal"]').click(); await settle();
     d.querySelector('#insp [data-act="goal"]').click(); await settle();
-    assert.match(d.querySelector('#insp .proof-progress-title').textContent,/Refreshing proof goals/);
-    assert.match(d.querySelector('#insp .proof-progress-stage').textContent,/Recording saved tactic goals/);
+    assert.match(d.querySelector('#run-activity .proof-progress-title').textContent,/Refreshing proof goals/);
+    assert.match(d.querySelector('#run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
     assert.equal(d.querySelector('#insp [data-act="check-through"]').disabled,true);
     assert.equal(d.getElementById('check-project').disabled,true);
     assert.equal(d.querySelector('#insp [data-act="goal"]'),null);
-    assert.ok(d.querySelector('#insp .proof-progress [data-act="goal-cancel"]'));
+    assert.ok(d.querySelector('#run-activity .proof-progress [data-act="goal-cancel"]'));
   } finally {w.close();}
 });
 
@@ -6239,6 +6239,7 @@ test('active checks stay visible and cancellable in Notebook, Source and Explore
     for(const mode of ['doc','source','graph']) {
       d.querySelector(`[data-mode="${mode}"]`).click();
       assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.equal(d.getElementById('run-activity').parentElement, d.getElementById('header-status').parentElement);
       assert.ok(d.getElementById('project-check').closest('#run-activity'));
       assert.ok(d.querySelector('#run-activity [data-act="check-cancel"]'));
     }
@@ -6248,18 +6249,21 @@ test('active checks stay visible and cancellable in Notebook, Source and Explore
   } finally {w.close();}
 });
 
-test('inline proof progress remains visible after switching to Source and Explore', async () => {
+test('proof progress stays in the header across Notebook, Source and Explore', async () => {
   const snapshot=projectNotebook();
   const trace={status:'running',id:'shared',source_sha256:snapshot.sha256,nodes:[],message:'Recording saved tactic goals'};
   const w=await renderSnapshot(snapshot,{onProof:()=>trace});
   try {
     const d=w.document;
     d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
-    for(const mode of ['source','graph']) {
+    for(const mode of ['doc','source','graph']) {
       d.querySelector(`[data-mode="${mode}"]`).click();
       assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.equal(d.getElementById('run-activity').parentElement, d.getElementById('header-status').parentElement);
       assert.match(d.querySelector('#proof-run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
       assert.ok(d.querySelector('#proof-run-activity [data-act="goal-cancel"]'));
+      assert.match(d.querySelector('#proof-run-activity .proof-progress-time').textContent, /elapsed/);
+      assert.equal(d.querySelectorAll('.proof-progress').length, 1);
     }
   } finally {w.close();}
 });

@@ -32,26 +32,29 @@
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)
 1 kernel checked1 contains sorry1 out of date">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -68,8 +71,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
@@ -216,26 +217,29 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry1 out of date. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)
 1 kernel checked1 contains sorry1 out of date">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span><span class="stat"><span class="dot" data-tone="amber"></span>1 out of date</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -252,8 +256,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace focused-view" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline" hidden="">
@@ -400,26 +402,29 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked1 contains sorry. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)
 1 kernel checked1 contains sorry">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span><span class="stat"><span class="dot" data-tone="amber"></span>1 contains sorry</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -436,8 +441,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
@@ -584,26 +587,29 @@ theorem floor (x : ℝ) : 0 ≤ x ^ 2 := by
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)
 No check results">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat">No check results</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat">No check results</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -620,8 +626,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
@@ -725,26 +729,29 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)
 No check results">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat">No check results</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat">No check results</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -761,8 +768,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
@@ -868,25 +873,28 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context"></p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
-      </div>
-    </details>
+          <p id="project-context"></p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -903,8 +911,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
@@ -1000,26 +1006,29 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · 1 kernel checked. Show details" title="Connected to the local notebook server
 Source hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 SHA-256 of the displayed saved source (not a Git commit)
 1 kernel checked">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat"><span class="dot" data-tone="green"></span>1 kernel checked</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -1036,8 +1045,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">
@@ -1156,26 +1163,29 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: bbbbbbbb<
       <button type="button" class="secondary" id="panel-show" hidden=""><svg class="ic"><use href="#i-panel"></use></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status: Connected · No check results. Show details" title="Connected to the local notebook server
 Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)
 No check results">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
-        <span id="proof-availability" hidden="">Checking unavailable</span>
-        <span class="subline" id="subline"><span class="stat">No check results</span></span>
-        <span id="live-status" role="status" hidden=""></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connected to the local notebook server</p>
-        <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true" data-state="up"></span><span id="conn-text" role="status">Connected</span></span>
+          <span id="proof-availability" hidden="">Checking unavailable</span>
+          <span class="subline" id="subline"><span class="stat">No check results</span></span>
+          <span id="live-status" role="status" hidden=""></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connected to the local notebook server</p>
+          <p id="file-state" title="Source hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa</p>
-        <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
-        <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
-      </div>
-    </details>
+          <p id="project-context">Saved-source preview. Project: /p. Declared toolchain: t</p>
+          <div id="lean-unsupported" data-tone="amber" hidden=""><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Checks are explicit and describe a captured saved file and its dependencies. Results are shown separately from source.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden=""></nav>
@@ -1192,8 +1202,6 @@ SHA-256 of the displayed saved source (not a Git commit)">Source hash: aaaaaaaa<
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden=""></div>
-
-  <div id="run-activity" hidden=""><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace" style="--outline-width: 260px;">
     <nav class="rail" aria-label="Notebook outline">

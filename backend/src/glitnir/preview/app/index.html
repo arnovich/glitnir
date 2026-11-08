@@ -44,22 +44,25 @@
       <button type="button" class="secondary" id="panel-show" hidden><svg class="ic"><use href="#i-panel"/></svg>Inspector</button>
       <button type="button" class="secondary" id="keys-open" aria-label="Keyboard shortcuts"><kbd>?</kbd></button>
     </div>
-    <details class="header-status" id="header-status">
-      <summary id="status-summary" aria-label="Notebook status and details">
-        <span class="connection-status"><span class="conn" id="conn" aria-hidden="true"></span><span id="conn-text" role="status">Connecting…</span></span>
-        <span id="proof-availability" hidden></span>
-        <span class="subline" id="subline"></span>
-        <span id="live-status" role="status" hidden></span>
-        <span class="status-info" aria-hidden="true">ⓘ</span>
-      </summary>
-      <div class="status-details">
-        <p id="connection-detail">Connecting to the local notebook server…</p>
-        <p id="file-state"></p>
-        <p id="project-context"></p>
-        <div id="lean-unsupported" data-tone="amber" hidden><p id="lean-unsupported-text"></p></div>
-        <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
-      </div>
-    </details>
+    <div class="header-status-row">
+      <details class="header-status" id="header-status">
+        <summary id="status-summary" aria-label="Notebook status and details">
+          <span class="connection-status"><span class="conn" id="conn" aria-hidden="true"></span><span id="conn-text" role="status">Connecting…</span></span>
+          <span id="proof-availability" hidden></span>
+          <span class="subline" id="subline"></span>
+          <span id="live-status" role="status" hidden></span>
+          <span class="status-info" aria-hidden="true">ⓘ</span>
+        </summary>
+        <div class="status-details">
+          <p id="connection-detail">Connecting to the local notebook server…</p>
+          <p id="file-state"></p>
+          <p id="project-context"></p>
+          <div id="lean-unsupported" data-tone="amber" hidden><p id="lean-unsupported-text"></p></div>
+          <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
+        </div>
+      </details>
+      <div id="run-activity" hidden><div id="proof-run-activity"></div></div>
+    </div>
   </header>
 
   <nav class="notebook-trail" id="notebook-trail" aria-label="Notebooks read in this panel" hidden></nav>
@@ -76,8 +79,6 @@
   </div>
 
   <div class="live-bar" aria-label="Review navigation" hidden></div>
-
-  <div id="run-activity" hidden><div id="proof-run-activity"></div></div>
 
   <div class="workspace" id="workspace">
     <nav class="rail" aria-label="Notebook outline">

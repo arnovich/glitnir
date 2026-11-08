@@ -705,7 +705,7 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .bar>.brand{grid-column:1;grid-row:1}
 .bar>.view-switcher{grid-column:2;grid-row:1;justify-self:center;width:max-content}
 .bar>.bar-right{grid-column:3;grid-row:1;justify-self:end;margin-left:0;flex-wrap:nowrap}
-.bar>.header-status{grid-column:1/-1;grid-row:2}
+.bar>.header-status-row{grid-column:1/-1;grid-row:2}
 .brand .crumbs{min-width:0}
 .brand .crumbs>span:not(.file-context){flex-shrink:0}
 .brand button.file.help-icon{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -713,7 +713,7 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
   .bar{grid-template-columns:minmax(0,1fr) auto}
   .bar>.bar-right{grid-column:2;flex-wrap:wrap;justify-content:flex-end}
   .bar>.view-switcher{grid-column:1/-1;grid-row:2;width:max-content;max-width:100%}
-  .bar>.header-status{grid-row:3}
+  .bar>.header-status-row{grid-row:3}
 }
 @media(max-width:420px){
   .bar{column-gap:8px;padding-inline:10px}
@@ -768,7 +768,17 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .proof-progress-stage{margin-top:4px;color:var(--muted)}
 .proof-progress-time{margin-top:6px}
 .proof-progress>button{flex-shrink:0}
-#run-activity{padding:0 16px}
+.header-status-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 16px;min-width:0}
+.header-status-row>.header-status{flex:1 1 22rem}
+#run-activity{max-width:100%;min-width:0;margin-inline-start:auto}
+#run-activity :is(.check-progress,.proof-progress){margin:0;padding:0;gap:8px;border:0;background:none;font-size:11px}
+#run-activity .check-progress-copy{align-items:center;gap:6px}
+#run-activity .check-progress-copy>div,#run-activity [role=status]{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 6px}
+#run-activity :is(.check-progress-title,.proof-progress-title){font-size:inherit}
+#run-activity :is(.check-progress-stage,.proof-progress-stage,.check-progress-meta,.proof-progress-time,.check-progress-indicator){margin:0}
+#run-activity .check-progress-indicator{width:11px;height:11px}
+#run-activity button{font-size:11px;padding:3px 7px}
+#run-activity button .ic{width:12px;height:12px}
 .goal-context{margin-top:8px;color:var(--muted)}
 .goal-detail-label{margin:0 0 4px;color:var(--muted);font:500 12px var(--sans)}
 .goal-target{color:var(--ink);margin-top:8px}
