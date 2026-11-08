@@ -6,13 +6,7 @@
   const SCOPED_WRAPPERS = new Set(['Lean.Parser.Tactic.case', 'Lean.Parser.Tactic.allGoals']);
   let position, renderedHTML;
 
-  function exploreTabsHTML() {
-    if (!projectMode() || UI.data.walkthrough || !sourceClaimRanges(UI.data.cells).size) return '';
-    return `<nav class="seg explore-tabs" aria-label="Explore views">
-      <button type="button" data-act="explore-graph" aria-pressed="${!UI.exploreDerivation}">Claim graph</button>
-      <button type="button" data-act="explore-derivation" aria-pressed="${Boolean(UI.exploreDerivation)}">Derivation</button>
-    </nav>`;
-  }
+  const hasExploreDerivation = () => projectMode() && !UI.data.walkthrough && sourceClaimRanges(UI.data.cells).size > 0;
 
   function transition(node) {
     const before = node.before_ids, after = node.after_ids;
@@ -174,7 +168,7 @@
       </section>${extra}</div>`;
   }
 
-  function renderDerivation(root, tabs) {
+  function renderDerivation(root) {
     const cells = sourceClaimRanges(UI.data.cells);
     const name = UI.graphSelected?.startsWith('local:') ? UI.graphSelected.slice(6) : null;
     const cell = cells.get(name);
@@ -183,7 +177,7 @@
     const picker = cells.size ? `<label>Claim <${pickerTag} data-act="derivation-claim">${cell ? '' : '<option value="" selected disabled>Choose a claim</option>'}${options}</${pickerTag}></label>` : '';
     const body = cell ? proofGoalsHTML(claim(name) || {name}, {start_line: cell.start, end_line: cell.end}, stepsHTML)
       : '<p class="muted">Choose a claim with source in this notebook to see its derivation.</p>';
-    const html = `${tabs}<section class="proof-graph-view derivation-view" aria-label="Derivation"><header>
+    const html = `<section class="proof-graph-view derivation-view" aria-label="Derivation"><header>
       <div><h2>Derivation</h2><p>Read from the original goal at the bottom to its subgoals above. Select a tactic to see its source and goals.</p></div>${picker}
       </header>${body}</section>`;
     if (renderedHTML === html && root.querySelector('.derivation-view')) return;
@@ -209,5 +203,5 @@
     workbench.render();
   }
 
-  Object.assign(workbench, {exploreTabsHTML, renderDerivation, selectDerivationStep});
+  Object.assign(workbench, {hasExploreDerivation, renderDerivation, selectDerivationStep});
 })();

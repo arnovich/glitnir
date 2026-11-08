@@ -5,7 +5,7 @@
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
     currencyNoted, currencyText, decisionAction, diagramAction, editGoalSource, esc, fetch, heldRendering, helpHTML, icon, images,
-    graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
+    graphNode, hasExploreDerivation, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML, sourceClaimRanges,
@@ -399,6 +399,11 @@
     $('source').hidden = UI.mode !== 'source';
     $('reading-view').hidden = UI.mode === 'graph';
     $('graph-view').hidden = UI.mode !== 'graph';
+    const exploreTabs = $('explore-tabs');
+    exploreTabs.hidden = UI.mode !== 'graph' || !hasExploreDerivation();
+    for (const button of exploreTabs.querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String((button.dataset.act === 'explore-derivation') === Boolean(UI.exploreDerivation)));
+    }
     const notebookView = UI.mode === 'doc';
     document.body.dataset.view = UI.mode;
     $('workspace').classList.toggle('focused-view', !notebookView);

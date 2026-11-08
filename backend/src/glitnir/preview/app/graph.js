@@ -484,9 +484,9 @@
     const root = document.getElementById('graph-view');
     if (!root || !UI.data) return;
     if (workbench.renderAtlas?.(UI.data, {openClaimGraph, openExplore})) return;
-    const tabs = workbench.exploreTabsHTML();
-    if (tabs && UI.exploreDerivation && UI.graphSelected) {
-      workbench.renderDerivation(root, tabs);
+    const derivationAvailable = workbench.hasExploreDerivation();
+    if (derivationAvailable && UI.exploreDerivation && UI.graphSelected) {
+      workbench.renderDerivation(root);
       return;
     }
     const model = graphModel(UI.data, UI.graphSelected || localId(UI.selected), openClaimGraph ? UI.selected : null, UI.graphFocused);
@@ -494,13 +494,13 @@
       const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
     }
-    if (tabs && UI.exploreDerivation) {
-      workbench.renderDerivation(root, tabs);
+    if (derivationAvailable && UI.exploreDerivation) {
+      workbench.renderDerivation(root);
       return;
     }
     const readingSidebarScroll = root.querySelector('.atlas-sidebar')?.scrollTop || 0;
     const graphContent = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true, focused: UI.graphFocused});
-    root.innerHTML = UI.data.walkthrough?.atlas ? workbench.atlasShell(UI.data, graphContent) : tabs + graphContent;
+    root.innerHTML = UI.data.walkthrough?.atlas ? workbench.atlasShell(UI.data, graphContent) : graphContent;
     const readingSidebar = root.querySelector('.atlas-sidebar');
     if (readingSidebar) readingSidebar.scrollTop = readingSidebarScroll;
   }

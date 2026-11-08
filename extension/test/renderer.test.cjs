@@ -6329,8 +6329,16 @@ test('Explore derivation links branches by goal identity and exposes their tacti
   const w = await renderSnapshot(snapshot, {onProof: () => trace});
   const d = w.document;
   try {
+    const switcher = d.getElementById('explore-tabs');
+    assert.equal(switcher.hidden, true);
+    assert.equal(switcher.parentElement, d.getElementById('title').parentElement);
     d.querySelector('[data-mode="graph"]').click();
-    d.querySelector('[data-act="explore-derivation"]').click();
+    assert.equal(switcher.hidden, false);
+    const derivationTab = switcher.querySelector('[data-act="explore-derivation"]');
+    derivationTab.focus();
+    derivationTab.click();
+    assert.equal(d.activeElement, derivationTab);
+    assert.equal(derivationTab.getAttribute('aria-pressed'), 'true');
     d.querySelector('#graph-view [data-act="goal"]').click();
     await new Promise(r => setTimeout(r, 30));
     const tree = d.querySelector('.derivation-tree');
@@ -6480,6 +6488,7 @@ test('Explore does not infer a claim from a command quotation', async () => {
     const d = w.document;
     d.querySelector('[data-mode="graph"]').click();
     assert.match(d.getElementById('graph-view').textContent, /No theorems or lemmas identified/);
-    assert.equal(d.querySelector('.proof-node, [data-act="explore-derivation"]'), null);
+    assert.equal(d.querySelector('.proof-node'), null);
+    assert.equal(d.getElementById('explore-tabs').hidden, true);
   } finally { w.close(); }
 });

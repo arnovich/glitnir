@@ -777,7 +777,9 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .goal-complete{color:var(--green);font-size:12px;margin:6px 0 10px}
 .goal-recording{margin:8px 0 0}
 
-.explore-tabs { width: fit-content; max-width: 100%; margin: 0 auto 1rem; }
+.heading-row { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; }
+.heading-row h1 { flex: 1 1 24rem; min-width: 0; overflow-wrap: anywhere; }
+.explore-tabs { max-width: 100%; margin-inline-start: auto; }
 .explore-tabs button { padding: 6px 12px; font-weight: 600; }
 .explore-tabs button[aria-pressed="true"] { box-shadow: inset 0 -2px var(--blue); }
 .explore-tabs button:focus-visible { outline-offset: -3px; }
