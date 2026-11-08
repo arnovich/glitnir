@@ -2456,6 +2456,14 @@ test('project checks show historical compiled propositions separately from sourc
     assert.doesNotMatch(panel.textContent, /_glitnir_example/);
     assert.equal(panel.hidden, false);
     assert.match(panel.textContent, /Last checked snapshot/);
+    const details = panel.querySelector('.check-result-details');
+    assert.equal(details.open, false);
+    assert.equal(details.querySelector('summary').textContent, 'Check details');
+    assert.match(details.textContent, /Source SHA-256/);
+    assert.equal(panel.querySelector('article').closest('details'), null);
+    details.open = true;
+    await window.glitnirPoll();
+    assert.equal(panel.querySelector('.check-result-details'), details, 'polling keeps the open disclosure');
     assert.match(panel.textContent, /Git revision and worktree cleanliness were not verified/);
     assert.match(panel.textContent, /<dep>: vendor\/dep/);
     assert.match(panel.textContent, /saved source has changed/);

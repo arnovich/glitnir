@@ -833,3 +833,13 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 @media (max-width: 850px) {
   .derivation-selection button { display: inline-flex; }
 }
+
+.check-result { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 6px; }
+.check-result h3 { margin: 0 0 .5rem; }
+.check-result h4 { margin: 0 0 .35rem; }
+.check-result article p { margin: .25rem 0; }
+.check-result article + article { margin-top: .75rem; }
+.check-result-details { margin-top: .75rem; color: var(--muted); font-size: 12px; }
+.check-result-details summary { cursor: pointer; width: fit-content; }
+.check-result-details dl { margin: .5rem 0; }
+.check-result-details dd { margin: 0 0 .35rem; overflow-wrap: anywhere; }

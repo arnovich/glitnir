@@ -355,9 +355,9 @@
   // Where a check stopped because it was asked to, not at a failing command.
   const requestedCut = w => Number.isSafeInteger(w?.through_line) && w.from_line === w.through_line + 1;
   const coveredText = (w, stale) => `${stale ? 'The last check, of an earlier version of this file, covered' : 'The last check covered'} lines 1–${esc(w.through_line)} only, on request. Claims after line ${esc(w.through_line)} were not rechecked: each keeps its earlier saved result, if it has one, marked Not rechecked.`;
-  function projectResolutionHTML(resolution, label = 'Prepared local dependencies') {
-    if (!resolution || resolution.kind !== 'prepared_local') return '';
-    return `<details><summary>${esc(label)}</summary>`
+  function projectResolutionHTML(resolution) {
+    if (resolution?.kind !== 'prepared_local' || !resolution.packages?.length) return '';
+    return '<details><summary>Local dependencies</summary>'
       + '<p>These are the local contents used for this observation. Git revision and worktree cleanliness were not verified.</p><ul>'
       + resolution.packages.map(p => `<li><code>${esc(p.name)}</code>: ${esc(p.path)}${p.entry?.rev ? ` · declared revision ${esc(p.entry.rev)} (not verified)` : ''}</li>`).join('') + '</ul></details>';
   }
@@ -517,11 +517,14 @@
     const stopped = !result.withheld ? '' : requestedCut(result.withheld)
       ? `<p role="status">Checked lines 1–${esc(result.withheld.through_line)} on request; nothing after line ${esc(result.withheld.through_line)} was checked.</p>`
       : `<p role="status">${withheldText(result.withheld, 'Checking stopped')}</p>`;
-    return `<h3>Last checked snapshot${through ? ` · lines 1–${esc(through)}` : ''}</h3>${stopped}<p>${esc(result.message)}</p>`
-      + `<p>${result.source_sha256 !== sourceSha ? 'The saved source has changed since this check. ' : ''}Results describe the captured environment; dependencies may have changed. Run a new check to update them.</p>`
-      + `<p class="small muted">Source ${esc(result.source_sha256)} · Environment ${esc(result.environment_sha256)}</p>`
-      + projectResolutionHTML(result.resolution)
-      + (result.theorems || []).map(t => `<article><h4>${esc(projectClaimLabel(t))} ·${esc(labels[t.status] || t.status)}</h4>${statementFormsHTML({printed: t.statement, kernel: t.type, key: `panel:${t.name}`}, 'panel')}<p>Assumptions: ${t.axioms.length ? t.axioms.map(a => esc(a.name)).join(', ') : 'none'}</p></article>`).join('');
+    const changed = result.source_sha256 !== sourceSha ? '<p class="small muted">The saved source has changed since this check.</p>' : '';
+    const statements = (result.theorems || []).map(t => `<article><h4>${esc(projectClaimLabel(t))} · ${esc(labels[t.status] || t.status)}</h4>${statementFormsHTML({printed: t.statement, kernel: t.type, key: `panel:${t.name}`}, 'panel')}<p>Assumptions: ${t.axioms.length ? t.axioms.map(a => esc(a.name)).join(', ') : 'none'}</p></article>`).join('');
+    return `<div class="check-result"><h3>Last checked snapshot${through ? ` · lines 1–${esc(through)}` : ''}</h3>${stopped}${changed}${statements}
+      <details class="check-result-details"><summary>Check details</summary>
+      <p>${esc(result.message)}</p>
+      <p>Results describe the environment used for this check. Run a new check after changing dependencies.</p>
+      <dl><dt>Source SHA-256</dt><dd><code>${esc(result.source_sha256)}</code></dd><dt>Environment SHA-256</dt><dd><code>${esc(result.environment_sha256)}</code></dd></dl>
+      ${projectResolutionHTML(result.resolution)}</details></div>`;
   }
   const refresh = async () => {
     // Explicit actions need a read started after the action, not an older poll.

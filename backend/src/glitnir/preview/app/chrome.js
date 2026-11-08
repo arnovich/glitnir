@@ -293,6 +293,7 @@
     }
   }
 
+  let renderedCheckHTML;
   function renderChrome() {
     const d = UI.data, cs = claims();
     document.title = `${title()} · Glitnir`;
@@ -343,7 +344,11 @@
     if (leanOff()) $('inspect-project').hidden = true;
     $('check-project').disabled = checkBusy();
     $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
-    $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
+    const checkHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
+    if (checkHTML !== renderedCheckHTML) {
+      $('project-check').innerHTML = checkHTML;
+      renderedCheckHTML = checkHTML;
+    }
     const activity = $('run-activity');
     const checkingNow = !linked && project && d.preview.check?.status === 'running';
     if (checkingNow) activity.append($('project-check'));
@@ -359,8 +364,7 @@
     $('inspect-project').textContent = inspectingNow ? 'Inspecting…' : 'Inspect project environment';
     const inspectionBanner = $('project-inspection');
     inspectionBanner.hidden = !project || linked || (!showInspection && !inspectingNow);
-    const dependencies = inspected?.resolution?.packages?.length
-      ? projectResolutionHTML(inspected.resolution, 'Local dependencies') : '';
+    const dependencies = projectResolutionHTML(inspected?.resolution);
     const restoreDismissFocus = document.activeElement?.dataset.act === 'inspect-dismiss';
     inspectionBanner.innerHTML = inspectionBanner.hidden ? '' : inspectingNow
       ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>`
