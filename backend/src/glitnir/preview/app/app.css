@@ -777,8 +777,11 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .goal-complete{color:var(--green);font-size:12px;margin:6px 0 10px}
 .goal-recording{margin:8px 0 0}
 
-.explore-tabs { display: flex; gap: .4rem; padding: .75rem clamp(1rem, 3vw, 2.5rem) 0; }
-.explore-tabs [aria-pressed="true"], .derivation-view [aria-pressed="true"] {
+.explore-tabs { width: fit-content; max-width: 100%; margin: 0 auto 1rem; }
+.explore-tabs button { padding: 6px 12px; font-weight: 600; }
+.explore-tabs button[aria-pressed="true"] { box-shadow: inset 0 -2px var(--blue); }
+.explore-tabs button:focus-visible { outline-offset: -3px; }
+.derivation-view [aria-pressed="true"] {
   border-color: var(--blue); background: var(--blue-soft);
 }
 .derivation-view header label { display: grid; gap: .3rem; min-width: 0; max-width: 100%; }
@@ -806,4 +809,7 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 
 .derivation-unlinked { grid-column: 1 / -1; }
 .derivation-selection { margin: 0 0 .35rem; }
-.derivation-selection button { color: var(--blue); text-decoration: underline; }
+.derivation-selection button { display: none; color: var(--blue); text-decoration: underline; }
+@media (max-width: 850px) {
+  .derivation-selection button { display: inline-flex; }
+}

@@ -8,9 +8,9 @@
 
   function exploreTabsHTML() {
     if (!projectMode() || UI.data.walkthrough || !sourceClaimRanges(UI.data.cells).size) return '';
-    return `<nav class="explore-tabs" aria-label="Explore views">
-      <button type="button" class="secondary" data-act="explore-graph" aria-pressed="${!UI.exploreDerivation}">Claim graph</button>
-      <button type="button" class="secondary" data-act="explore-derivation" aria-pressed="${Boolean(UI.exploreDerivation)}">Derivation</button>
+    return `<nav class="seg explore-tabs" aria-label="Explore views">
+      <button type="button" data-act="explore-graph" aria-pressed="${!UI.exploreDerivation}">Claim graph</button>
+      <button type="button" data-act="explore-derivation" aria-pressed="${Boolean(UI.exploreDerivation)}">Derivation</button>
     </nav>`;
   }
 
@@ -164,7 +164,7 @@
     const partial = trace.status === 'partial' ? '<p class="note-line" data-tone="amber">Lean reported errors. This recording may be incomplete.</p>' : '';
     const empty = '<p class="small muted">No goals captured.</p>';
     return `${partial}<div class="derivation-layout"><div class="derivation-diagram">
-      <p class="small muted derivation-selection"><span role="status">Selected step ${step} · line ${node.range.start.line}</span> <button type="button" class="ghost" data-act="derivation-details">Go to details</button></p>
+      <p class="small muted derivation-selection"><span role="status">Selected step ${step} · line ${node.range.start.line}</span> <button type="button" class="ghost" data-act="derivation-details">Jump to step details</button></p>
       <div class="derivation-tree" tabindex="0" role="region" aria-label="Tactic derivation">${treeHTML(roots, button) || '<p class="muted">No starting goals were captured.</p>'}</div></div>
       <section class="derivation-details" id="derivation-details" aria-label="Selected tactic">
         <div class="goal-tactic-heading"><h4 tabindex="-1">Step ${step}</h4>${goalSourceHTML(trace, node)}</div>
