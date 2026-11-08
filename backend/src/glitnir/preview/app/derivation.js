@@ -174,12 +174,14 @@
     const cell = cells.get(name);
     const options = [...cells.keys()].map(value => `<option value="${esc(value)}"${name === value ? ' selected' : ''}>${esc(value)}</option>`).join('');
     const pickerTag = 'select';
-    const picker = cells.size ? `<label>Claim <${pickerTag} data-act="derivation-claim">${cell ? '' : '<option value="" selected disabled>Choose a claim</option>'}${options}</${pickerTag}></label>` : '';
-    const body = cell ? proofGoalsHTML(claim(name) || {name}, {start_line: cell.start, end_line: cell.end}, stepsHTML)
-      : '<p class="muted">Choose a claim with source in this notebook to see its derivation.</p>';
-    const html = `<section class="proof-graph-view derivation-view" aria-label="Derivation"><header>
-      <div><h2>Derivation</h2><p>Read from the original goal at the bottom to its subgoals above. Select a tactic to see its source and goals.</p></div>${picker}
-      </header>${body}</section>`;
+    const picker = cells.size === 1 && cell ? `<div class="derivation-target"><span>Proof of</span><code>${esc(name)}</code></div>`
+      : `<label>Choose a theorem or lemma <${pickerTag} data-act="derivation-claim">${cell ? '' : '<option value="" selected disabled>Choose a declaration</option>'}${options}</${pickerTag}></label>`;
+    const header = action => `<header><div><h2>Derivation</h2>
+      <p>Read from the original goal at the bottom to its subgoals above. Select a tactic to see its source and goals.</p></div>
+      <div class="derivation-controls">${picker}${action}</div></header>`;
+    const body = cell ? proofGoalsHTML(claim(name) || {name}, {start_line: cell.start, end_line: cell.end}, stepsHTML, header)
+      : header('') + '<p class="muted">Choose a theorem or lemma in this notebook to see its derivation.</p>';
+    const html = `<section class="proof-graph-view derivation-view" aria-label="Derivation">${body}</section>`;
     if (renderedHTML === html && root.querySelector('.derivation-view')) return;
     const tree = root.querySelector('.derivation-tree');
     const key = tree?.closest('.goal-results')?.dataset.goalKey;

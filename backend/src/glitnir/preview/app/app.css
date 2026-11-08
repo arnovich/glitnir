@@ -786,6 +786,9 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .derivation-view [aria-pressed="true"] {
   border-color: var(--blue); background: var(--blue-soft);
 }
+.derivation-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem .75rem; min-width: 0; max-width: 100%; }
+.derivation-target { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem; padding-block: .35rem; }
+.derivation-target code { overflow-wrap: anywhere; }
 .derivation-view header label { display: grid; gap: .3rem; min-width: 0; max-width: 100%; }
 .derivation-view header select { max-width: 100%; }
 .derivation-view .goal-results { max-height: none; overflow: visible; }

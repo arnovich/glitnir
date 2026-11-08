@@ -6465,7 +6465,10 @@ test('Explore discovers a named theorem and inspects its derivation before any c
     assert.equal(d.getElementById('insp-title').textContent, 'Demo.k_pos');
     d.querySelector('[data-mode="graph"]').click();
     d.querySelector('[data-act="explore-derivation"]').click();
-    d.querySelector('#graph-view [data-act="goal"]').click();
+    const controls = d.querySelector('.derivation-controls');
+    assert.match(controls.textContent, /Proof ofDemo\.k_pos/);
+    assert.equal(controls.querySelector('select'), null);
+    controls.querySelector('.primary[data-act="goal"]').click();
     await new Promise(r => setTimeout(r, 30));
     assert.match(d.querySelector('.derivation-details').textContent, /exact True.intro/);
     d.querySelector('[data-act="explore-graph"]').click();

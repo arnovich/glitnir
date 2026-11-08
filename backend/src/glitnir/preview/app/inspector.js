@@ -140,13 +140,17 @@
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
   }
-  function proofGoalsHTML(c, range = c.project, renderSteps = goalStepsHTML) {
-    const head = renderSteps !== goalStepsHTML ? '<h3>Recorded tactic derivation</h3>' : `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
-    if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
-    if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p></div>`;
+  function proofGoalsHTML(c, range = c.project, renderSteps = goalStepsHTML, renderHeader) {
+    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
+    const section = (content, action = '', refresh = false) => renderHeader
+      ? renderHeader(action) + content
+      : `<div class="insp-section goal-section"><div class="goal-heading">${head}${refresh ? action : ''}</div>${content}${refresh ? '' : action}</div>`;
+    const unavailable = content => renderHeader ? renderHeader('') + content : `<div class="insp-section goal-section">${head}${content}</div>`;
+    if (linkedPath()) return unavailable('<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p>');
+    if (leanOff() || walkthroughUnchecked()) return unavailable(`<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p>`);
     const goals = UI.goals, trace = goals?.trace;
     const dirty = document.body.classList.contains('unsaved-lean');
-    const button = refresh => `<button type="button" class="secondary" data-act="goal" data-id="${esc(c.name)}"${refresh ? ' data-refresh="true" aria-label="Refresh proof goals"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${refresh ? icon('replay') + 'Refresh' : 'Inspect proof'}</button>`;
+    const button = refresh => `<button type="button" class="${renderHeader && !refresh ? 'primary' : 'secondary'}" data-act="goal" data-id="${esc(c.name)}"${refresh ? ' data-refresh="true" aria-label="Refresh proof goals"' : ''}${dirty || checkBusy() ? ' disabled title="Wait for the current run to finish, or save any edits, before starting another run."' : ''}>${refresh ? icon('replay') + 'Refresh' : 'Inspect proof'}</button>`;
     const note = (tone, text) => `<div class="note-line goal-note" data-tone="${tone}">${icon(tone === 'red' ? 'x' : 'branch')}<span>${text}</span></div>`;
     let message = '', display = null;
     let refresh = false;
@@ -168,7 +172,7 @@
     const key = display ? goalKey(c.name, display) : '';
     const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${renderSteps(c, display, key, range)}</div>` : '';
     const action = traceRunning(trace) ? '' : button(refresh);
-    return `<div class="insp-section goal-section"><div class="goal-heading">${head}${refresh ? action : ''}</div>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}${refresh ? '' : action}</div>`;
+    return section(message + (previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : '') + results, action, refresh);
   }
 
   function goalKey(name, trace) {
