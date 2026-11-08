@@ -456,7 +456,7 @@
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
     const activeGraphControl = UI.mode === 'graph' ? document.activeElement?.closest?.('#graph-view [data-act]') : null;
-    const graphFocus = activeGraphControl ? {...activeGraphControl.dataset} : null;
+    const graphFocus = activeGraphControl ? {...activeGraphControl.dataset, value: activeGraphControl.value} : null;
     const graphHeading = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail h3');
     const graphLink = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail a[href]') ? document.activeElement.getAttribute('href') : null;
     const graphCanvas = $('graph-view').querySelector('.proof-graph-canvas');
@@ -507,8 +507,9 @@
       if (atlasFocus.search && control) control.setSelectionRange(...atlasFocus.selection);
     }
     if (graphFocus && UI.mode === 'graph') {
-      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail);
-      control?.focus({preventScroll: true});
+      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail && (graphFocus.act !== 'derivation-step' || el.value === graphFocus.value));
+      const cancel = UI.exploreDerivation && graphFocus.act === 'goal' ? $('proof-run-activity').querySelector('[data-act="goal-cancel"]') : null;
+      (control || cancel)?.focus({preventScroll: true});
     }
     if (UI.mode === 'graph') {
       if (graphHeading) $('graph-detail')?.querySelector('h3')?.focus({preventScroll: true});
@@ -525,7 +526,11 @@
       const link = $('doc').querySelectorAll(linkSelector)[linkFocus.index];
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
-    if (activityFocus) [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)?.focus({preventScroll: true});
+    if (activityFocus) {
+      const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)
+        || (UI.mode === 'graph' && UI.exploreDerivation && activityFocus === 'goal-cancel' ? $('graph-view').querySelector('[data-act="goal"]') : null);
+      control?.focus({preventScroll: true});
+    }
     $('insp').scrollTop = scroll;
     const nextResults = $('insp').querySelector('.goal-results');
     if (nextResults && resultsState?.key === nextResults.dataset.goalKey) {
@@ -793,6 +798,7 @@
         if (heldRendering()) break;
         hideHelp();
         UI.mode = 'graph';
+        UI.exploreDerivation = false;
         UI.graphFocused = true;
         UI.graphFit = true;
         render({openClaimGraph: true});
@@ -803,6 +809,18 @@
         }
         $('graph-view').scrollIntoView?.({block: 'start'});
         revealGraphSelection();
+        break;
+      }
+      case 'explore-graph':
+      case 'explore-derivation':
+        UI.exploreDerivation = b.dataset.act === 'explore-derivation';
+        render();
+        break;
+      case 'derivation-step': workbench.selectDerivationStep(b); break;
+      case 'derivation-details': {
+        const heading = $('derivation-details')?.querySelector('h4');
+        heading?.focus({preventScroll: true});
+        heading?.scrollIntoView?.({block: 'nearest'});
         break;
       }
       case 'graph-select': {
@@ -844,7 +862,10 @@
       case 'notebook-back': showNotebookAt(UI.at - 1); break;
       case 'notebook-forward': showNotebookAt(UI.at + 1); break;
       case 'notebook-at': showNotebookAt(Number(b.dataset.at)); break;
-      case 'goal': UI.selected = id; inspectGoals(b.dataset.refresh === 'true'); break;
+      case 'goal':
+        if (UI.mode === 'doc') UI.selected = id;
+        inspectGoals(b.dataset.refresh === 'true');
+        break;
       case 'goal-cancel': cancelGoals(); break;
       case 'goal-edit': editGoalSource(b); break;
       case 'goal-branch':
@@ -877,9 +898,9 @@
   });
   $('source').addEventListener('click', e => { const tr = e.target.closest('tr[data-claim]'); if (tr && !e.target.closest('[data-act]')) select(tr.dataset.claim, false); });
   $('graph-view').addEventListener('change', e => {
-    const picker = e.target.closest('[data-act="graph-detail-picker"]');
+    const picker = e.target.closest('[data-act="graph-detail-picker"], [data-act="derivation-claim"]');
     if (!picker) return;
-    UI.graphSelected = picker.value;
+    UI.graphSelected = picker.dataset.act === 'derivation-claim' ? `local:${picker.value}` : picker.value;
     render();
   });
   document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'graph') openExplore(); else if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });

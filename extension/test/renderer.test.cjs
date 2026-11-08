@@ -6318,3 +6318,117 @@ test('proof steps show the full tactic and compact recording details without fol
     assert.equal(d.activeElement,refreshed);
   } finally {w.close();}
 });
+
+test('Explore derivation links branches by goal identity and exposes their tactic and context', async () => {
+  const snapshot = projectNotebook();
+  const trace = goalTrace(snapshot.sha256);
+  const [split, right, left] = trace.nodes;
+  Object.assign(split, {text: 'constructor', before: ['⊢ P ∧ P'], after: ['⊢ P', '⊢ P'], before_ids: ['root'], after_ids: ['left', 'right']});
+  Object.assign(right, {text: 'exact rightProof', before: ['h : P\n⊢ P', '⊢ P'], after: ['⊢ P'], before_ids: ['right', 'left'], after_ids: ['left'], parent: null});
+  Object.assign(left, {text: 'exact leftProof', before: ['⊢ P'], after: [], before_ids: ['left'], after_ids: [], parent: null});
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  const d = w.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    d.querySelector('#graph-view [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    const tree = d.querySelector('.derivation-tree');
+    const steps = [...tree.querySelectorAll('[data-act="derivation-step"]')];
+    assert.deepEqual(steps.map(button => button.value), ['3', '2', '1']);
+    steps[1].focus();
+    steps[1].click();
+    assert.equal(d.activeElement.value, '2');
+    assert.match(d.querySelector('.derivation-details').textContent, /exact rightProof/);
+    assert.match(d.querySelector('.derivation-details').textContent, /h : P/);
+    assert.ok(d.querySelector('.derivation-details .source-link'));
+    d.querySelector('[data-act="explore-graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    assert.match(d.querySelector('.derivation-details').textContent, /exact rightProof/);
+  } finally { w.close(); }
+});
+
+test('Explore derivation handles a single tactic and records gaps in a partial trace', async () => {
+  for (const partial of [false, true]) {
+    const snapshot = projectNotebook();
+    const trace = goalTrace(snapshot.sha256);
+    const [first, second] = trace.nodes;
+    Object.assign(first, {text: 'exact proof', before: ['⊢ P'], after: partial ? ['⊢ Q'] : [], before_ids: ['root'], after_ids: partial ? ['next'] : []});
+    if (partial) {
+      trace.status = 'partial';
+      Object.assign(second, {text: 'opaque', before: ['⊢ Q'], after: [], parent: null});
+    }
+    trace.nodes = partial ? [first, second] : [first];
+    const w = await renderSnapshot(snapshot, {onProof: () => trace});
+    const d = w.document;
+    try {
+      d.querySelector('[data-mode="graph"]').click();
+      d.querySelector('[data-act="explore-derivation"]').click();
+      d.querySelector('#graph-view [data-act="goal"]').click();
+      await new Promise(r => setTimeout(r, 30));
+      assert.equal(d.querySelectorAll('.derivation-tree [data-act="derivation-step"]').length, 1);
+      assert.equal(Boolean(d.querySelector('.derivation-gap')), partial);
+      if (partial) {
+        d.querySelector('.derivation-unlinked [data-act="derivation-step"]').click();
+        assert.match(d.querySelector('.derivation-details').textContent, /opaque/);
+      }
+    } finally { w.close(); }
+  }
+
+});
+
+test('Explore derivation refines a scoped wrapper and keeps backtracking tactics opaque', async () => {
+  for (const wrapper of ['allGoals', 'first']) {
+    const snapshot = projectNotebook();
+    const trace = goalTrace(snapshot.sha256);
+    const [split, left, right] = trace.nodes;
+    Object.assign(split, {text: 'constructor', before: ['⊢ P ∧ P'], after: ['⊢ P', '⊢ P'], before_ids: ['root'], after_ids: ['left', 'right']});
+    Object.assign(left, {text: 'exact leftProof', before: ['⊢ P'], after: [], before_ids: ['left'], after_ids: [], parent: 3});
+    Object.assign(right, {text: 'exact rightProof', before: ['⊢ P'], after: [], before_ids: ['right'], after_ids: [], parent: 3});
+    const enclosing = {...left, id: 3, parent: null, text: wrapper, kind: 'Lean.Parser.Tactic.' + wrapper,
+      before: ['⊢ P', '⊢ P'], before_ids: ['left', 'right'], after: [], after_ids: []};
+    trace.nodes = [split, enclosing, left, right];
+    const w = await renderSnapshot(snapshot, {onProof: () => trace});
+    const d = w.document;
+    try {
+      d.querySelector('[data-mode="graph"]').click();
+      d.querySelector('[data-act="explore-derivation"]').click();
+      d.querySelector('#graph-view [data-act="goal"]').click();
+      await new Promise(r => setTimeout(r, 30));
+      const steps = [...d.querySelectorAll('.derivation-tree [data-act="derivation-step"]')];
+      assert.deepEqual(steps.map(button => button.value), wrapper === 'allGoals' ? ['3', '4', '1'] : ['1']);
+      assert.match(d.querySelector('.derivation-unlinked').textContent, wrapper === 'allGoals' ? /Enclosing tactic/ : /Goal link unavailable/);
+      const picker = d.querySelector('[data-act="derivation-claim"]');
+      picker.focus();
+      await w.glitnirPoll();
+      assert.equal(d.activeElement, picker);
+      picker.value = 'Demo.floor';
+      picker.dispatchEvent(new w.Event('change', {bubbles: true}));
+      assert.match(d.querySelector('.derivation-view').textContent, /No tactics were captured/);
+      d.querySelector('[data-act="explore-graph"]').click();
+      assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'local:Demo.floor');
+    } finally { w.close(); }
+  }
+});
+
+test('Explore keeps a long linear derivation in one column', async () => {
+  const snapshot = projectNotebook();
+  const trace = goalTrace(snapshot.sha256);
+  const template = trace.nodes[0];
+  trace.nodes = Array.from({length: 320}, (_, i) => ({
+    ...template, id: i, text: 'next_tactic', before: ['⊢ P'], before_ids: [`goal-${i}`],
+    after: i < 319 ? ['⊢ P'] : [], after_ids: i < 319 ? [`goal-${i + 1}`] : [],
+  }));
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  const d = w.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    d.querySelector('#graph-view [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    const tree = d.querySelector('.derivation-tree');
+    assert.equal(tree.querySelectorAll('.derivation-inference').length, 1);
+    assert.equal(tree.querySelectorAll('[data-act="derivation-step"]').length, 320);
+    assert.equal(tree.querySelector('[data-act="derivation-step"]').value, '320');
+  } finally { w.close(); }
+});

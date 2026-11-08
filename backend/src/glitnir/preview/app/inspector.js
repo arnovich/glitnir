@@ -71,10 +71,11 @@
     const previous = currentGoalTrace();
     UI.goals = {previous, starting: true, started, refreshing: refresh, environment, trace: {status: 'running', source_sha256: sha256, message: 'Preparing proof goals', nodes: []}};
     render();
-    $('insp').querySelector('.proof-progress')?.scrollIntoView?.({block: 'nearest'});
+    const view = UI.mode === 'graph' ? $('proof-run-activity') : $('insp');
+    view.querySelector('.proof-progress')?.scrollIntoView?.({block: 'nearest'});
     try {
       // Reuse a matching recording or follow a run already in progress.
-      // Only a run started by this Inspector is cancelled from here.
+      // Only a run started by this preview is cancelled from here.
       let trace = await readTrace();
       let owned = false;
       const joined = traceRunning(trace) && trace.source_sha256 === sha256 && trace.id;
@@ -139,8 +140,8 @@
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
     return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s waiting here</div><div class="small muted">Counts update after each command.</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
   }
-  function proofGoalsHTML(c, range = c.project) {
-    const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
+  function proofGoalsHTML(c, range = c.project, renderSteps = goalStepsHTML) {
+    const head = renderSteps !== goalStepsHTML ? '<h3>Recorded tactic derivation</h3>' : `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic in the saved proof. Use Check saved file to update the check status.')}</h5>`;
     if (linkedPath()) return `<div class="insp-section goal-section">${head}<p class="small muted">Open this notebook in its own preview to inspect its proof goals.</p></div>`;
     if (leanOff() || walkthroughUnchecked()) return `<div class="insp-section goal-section">${head}<p class="small muted">${esc(walkthroughUnchecked() ? walkthroughMessage() : UI.data.preview?.lean?.message || `Proof steps need Lean ${leanVersion(UI.data.preview.lean.toolchain)}.`)} The saved proof stays readable.</p></div>`;
     const goals = UI.goals, trace = goals?.trace;
@@ -165,7 +166,7 @@
       refresh = true;
     }
     const key = display ? goalKey(c.name, display) : '';
-    const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${goalStepsHTML(c, display, key, range)}</div>` : '';
+    const results = display ? `<div class="goal-results" data-goal-key="${esc(key)}" tabindex="0" role="region" aria-label="Recorded proof goals">${renderSteps(c, display, key, range)}</div>` : '';
     const action = traceRunning(trace) ? '' : button(refresh);
     return `<div class="insp-section goal-section"><div class="goal-heading">${head}${refresh ? action : ''}</div>${message}${previous ? '<p class="small muted goal-previous-recording">Previous recording</p>' : ''}${results}${refresh ? '' : action}</div>`;
   }
@@ -357,5 +358,5 @@
     const trace = UI.goals?.previous;
     return UI.goals?.environment === environmentEpoch() && reusable(trace, UI.data?.sha256) ? trace : null;
   }
-  Object.assign(workbench, {proofProgressHTML, cancelGoals, inspectGoals, selectGoalStep, editGoalSource, proofScope, refutationHTML, renderInspector});
+  Object.assign(workbench, {proofProgressHTML, cancelGoals, inspectGoals, selectGoalStep, editGoalSource, proofScope, refutationHTML, renderInspector, proofGoalsHTML, goalBlocksHTML, goalSourceHTML});
 })();
