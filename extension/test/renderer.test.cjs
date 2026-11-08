@@ -2349,7 +2349,10 @@ test('project inspection is reported from snapshots for the saved source it read
     assert.equal($('inspect-project').disabled, false);
     assert.match($('project-inspection').textContent, /^Last inspection: Module setup resolved for <A>\./);
     assert.match($('project-inspection').innerHTML, /&lt;A&gt;/, 'the message is escaped');
-    $('project-inspection').querySelector('[data-act="inspect-dismiss"]').click();
+    const dismiss = $('project-inspection').querySelector('[data-act="inspect-dismiss"]');
+    assert.equal(dismiss.getAttribute('aria-label'), 'Dismiss project inspection result');
+    assert.ok(dismiss.querySelector('svg'));
+    dismiss.click();
     assert.equal($('project-inspection').hidden, true);
     assert.equal(window.document.activeElement, $('inspect-project'));
     await window.glitnirPoll();

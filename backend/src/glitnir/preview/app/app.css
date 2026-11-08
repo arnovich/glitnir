@@ -391,6 +391,9 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .cell-tools button,.cell-tools summary{padding:2px 7px;font-size:11px;color:var(--muted);background:var(--paper);border:1px solid var(--border);border-radius:5px;font-weight:500;display:inline-flex;align-items:center;gap:4px;cursor:pointer}
 .banner.info{background:var(--green-soft);color:var(--green)}
 .banner.info button{border-color:currentColor;color:inherit;padding:3px 9px}
+#project-inspection:has([data-act="inspect-dismiss"]){position:relative;padding-inline-end:40px}
+#project-inspection [data-act="inspect-dismiss"]{position:absolute;inset-block-start:4px;inset-inline-end:4px;inline-size:26px;block-size:26px;border-color:transparent;padding:0}
+#project-inspection [data-act="inspect-dismiss"]:hover{background:var(--paper)}
 .warn-text{color:var(--amber)}
 @media (max-width:760px){.cellwrap>.cell-tools{position:static;opacity:1;justify-content:flex-end;margin-bottom:4px}}
 @media (prefers-reduced-motion:reduce){.cellwrap>.cell-tools{transition:none}}
