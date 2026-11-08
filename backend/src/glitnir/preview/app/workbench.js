@@ -355,9 +355,9 @@
   // Where a check stopped because it was asked to, not at a failing command.
   const requestedCut = w => Number.isSafeInteger(w?.through_line) && w.from_line === w.through_line + 1;
   const coveredText = (w, stale) => `${stale ? 'The last check, of an earlier version of this file, covered' : 'The last check covered'} lines 1–${esc(w.through_line)} only, on request. Claims after line ${esc(w.through_line)} were not rechecked: each keeps its earlier saved result, if it has one, marked Not rechecked.`;
-  function projectResolutionHTML(resolution) {
+  function projectResolutionHTML(resolution, label = 'Prepared local dependencies') {
     if (!resolution || resolution.kind !== 'prepared_local') return '';
-    return '<details><summary>Prepared local dependencies</summary>'
+    return `<details><summary>${esc(label)}</summary>`
       + '<p>These are the local contents used for this observation. Git revision and worktree cleanliness were not verified.</p><ul>'
       + resolution.packages.map(p => `<li><code>${esc(p.name)}</code>: ${esc(p.path)}${p.entry?.rev ? ` · declared revision ${esc(p.entry.rev)} (not verified)` : ''}</li>`).join('') + '</ul></details>';
   }

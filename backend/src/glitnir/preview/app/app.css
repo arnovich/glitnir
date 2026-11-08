@@ -394,6 +394,8 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 #project-inspection:has([data-act="inspect-dismiss"]){position:relative;padding-inline-end:40px}
 #project-inspection [data-act="inspect-dismiss"]{position:absolute;inset-block-start:4px;inset-inline-end:4px;inline-size:26px;block-size:26px;border-color:transparent;padding:0}
 #project-inspection [data-act="inspect-dismiss"]:hover{background:var(--paper)}
+#project-inspection>details{flex-basis:100%;min-width:0;overflow-wrap:anywhere}
+#project-inspection>details>summary{cursor:pointer;width:fit-content}
 .warn-text{color:var(--amber)}
 @media (max-width:760px){.cellwrap>.cell-tools{position:static;opacity:1;justify-content:flex-end;margin-bottom:4px}}
 @media (prefers-reduced-motion:reduce){.cellwrap>.cell-tools{transition:none}}

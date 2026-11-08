@@ -359,10 +359,12 @@
     $('inspect-project').textContent = inspectingNow ? 'Inspecting…' : 'Inspect project environment';
     const inspectionBanner = $('project-inspection');
     inspectionBanner.hidden = !project || linked || (!showInspection && !inspectingNow);
+    const dependencies = inspected?.resolution?.packages?.length
+      ? projectResolutionHTML(inspected.resolution, 'Local dependencies') : '';
     const restoreDismissFocus = document.activeElement?.dataset.act === 'inspect-dismiss';
     inspectionBanner.innerHTML = inspectionBanner.hidden ? '' : inspectingNow
       ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>`
-      : `<span>Last inspection: ${esc(inspected.message)}</span><button type="button" data-act="inspect-dismiss" aria-label="Dismiss project inspection result" title="Dismiss">${icon('x')}</button>` + projectResolutionHTML(inspected.resolution);
+      : `<span>Last inspection: ${esc(inspected.message)}</span><button type="button" data-act="inspect-dismiss" aria-label="Dismiss project inspection result" title="Dismiss">${icon('x')}</button>` + dependencies;
     if (restoreDismissFocus) inspectionBanner.querySelector('[data-act="inspect-dismiss"]')?.focus({preventScroll: true});
     if (project) {
       // The check actions live in the banner, so it stays; it is amber only
