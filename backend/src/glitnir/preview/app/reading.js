@@ -192,6 +192,32 @@
     return result;
   }
 
+  // Source declarations are navigation targets, independently of saved results.
+  const sourceRangesByCells = new WeakMap();
+  function sourceClaimRanges(cells) {
+    const cached = sourceRangesByCells.get(cells);
+    if (cached) return cached;
+    const ranges = new Map(cells.filter(cell => cell.claim).map(cell => [cell.claim, cell]));
+    sourceRangesByCells.set(cells, ranges);
+    // The line reader cannot distinguish declarations inside syntax quotations.
+    if (cells.some(cell => cell.kind === 'source' && /`\s*\(/.test(cell.text))) return ranges;
+    const scopes = namespaceScopes(cells);
+    for (const cell of cells) {
+      const scope = scopes.get(cell.index);
+      if (cell.kind !== 'source' || cell.claim || !scope) continue;
+      for (const {body} of commands(cellEntries(cell))) {
+        if (!body.length) continue;
+        const [start, heading] = body[0];
+        const match = DECLARATION.exec(heading);
+        if (!match || !['theorem', 'lemma'].includes(match[1]) || !match[2] || match[2].endsWith('.')) continue;
+        const name = match[2].startsWith('_root_.') ? match[2].slice(7)
+          : [scope.get(start)?.namespace, match[2]].filter(Boolean).join('.');
+        if (!ranges.has(name)) ranges.set(name, {start, end: body.at(-1)[0]});
+      }
+    }
+    return ranges;
+  }
+
   const namespaceHTML = name => name ? `<p class="def-namespace">Namespace <code>${esc(name)}</code></p>` : '';
 
   // With `quiet`, scaffolding is shown as exact quiet lines instead of being
@@ -662,5 +688,5 @@
 
   Object.assign(workbench, {cellEntries, cellView, commands, declarationParts, docHTML, fieldHTML, leanOf,
     lineLinkHTML, namespaceHTML, namespaceScopes, openSource, plainComments, proofSections, renderDoc,
-    renderSource, revealSection, sourceFoldHTML, sourceViewHTML, textbookHTML, trimmed, unevenQuotes});
+    renderSource, revealSection, sourceClaimRanges, sourceFoldHTML, sourceViewHTML, textbookHTML, trimmed, unevenQuotes});
 })();

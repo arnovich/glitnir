@@ -3680,7 +3680,7 @@ test('Explore gives an empty notebook a message instead of graph controls', asyn
     const d = window.document;
     d.querySelector('[data-mode="graph"]').click();
     const explore = d.getElementById('graph-view');
-    assert.match(explore.textContent, /This notebook has no claims/);
+    assert.match(explore.textContent, /No theorems or lemmas identified in the saved source/);
     assert.equal(explore.querySelector('.proof-map,select,button'), null);
   } finally { window.close(); }
 });
@@ -6430,5 +6430,56 @@ test('Explore keeps a long linear derivation in one column', async () => {
     assert.equal(tree.querySelectorAll('.derivation-inference').length, 1);
     assert.equal(tree.querySelectorAll('[data-act="derivation-step"]').length, 320);
     assert.equal(tree.querySelector('[data-act="derivation-step"]').value, '320');
+  } finally { w.close(); }
+});
+
+test('Explore discovers a named theorem and inspects its derivation before any check', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.cells = [
+    {index: 0, kind: 'source', start: 1, end: 7,
+      text: 'namespace Demo\n/-- A fact. -/\ntheorem k_pos : True := by\n  exact True.intro\n/- theorem ignored : True := by trivial -/\ndef x := 1\nend Demo\n'},
+  ];
+  const trace = goalTrace(snapshot.sha256);
+  trace.nodes = [{...trace.nodes[0], text: 'exact True.intro', before: ['⊢ True'], before_ids: ['root'], after: [], after_ids: [],
+    range: {start: {line: 4, character: 2}, end: {line: 4, character: 18}}}];
+  const requests = [];
+  const w = await renderSnapshot(snapshot, {onMessage: m => requests.push(m), onProof: () => trace});
+  const d = w.document;
+  w.HTMLElement.prototype.scrollIntoView = () => {};
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'local:Demo.k_pos');
+    assert.match(d.querySelector('#graph-detail').textContent, /No saved result/);
+    assert.equal(d.querySelectorAll('.proof-node').length, 1);
+    assert.doesNotMatch(w.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true}), /Demo\.k_pos/);
+    d.querySelector('#graph-detail [data-act="graph-node"]').click();
+    assert.equal(d.getElementById('insp-title').textContent, 'Demo.k_pos');
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    d.querySelector('#graph-view [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.match(d.querySelector('.derivation-details').textContent, /exact True.intro/);
+    d.querySelector('[data-act="explore-graph"]').click();
+    const saved = projectNotebook().project_claims[0];
+    snapshot.project_claims = [{...saved, start_line: 3, end_line: 4}];
+    await w.glitnirPoll();
+    assert.equal(d.querySelectorAll('.proof-node').length, 1);
+    assert.match(d.querySelector('#graph-detail').textContent, /kernel checked/i);
+    assert.equal(requests.filter(m => m.path?.startsWith('/api/project/check')).length, 0);
+  } finally { w.close(); }
+});
+
+test('Explore does not infer a claim from a command quotation', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 3,
+    text: 'macro "declareIt" : command => `(\ntheorem imagined : True := by trivial\n)\n'}];
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.match(d.getElementById('graph-view').textContent, /No theorems or lemmas identified/);
+    assert.equal(d.querySelector('.proof-node, [data-act="explore-derivation"]'), null);
   } finally { w.close(); }
 });

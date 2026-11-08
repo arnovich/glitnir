@@ -8,7 +8,7 @@
     graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
-    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
+    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML, sourceClaimRanges,
     selectGoalStep, showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
@@ -406,7 +406,7 @@
     document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
     $('panel-show').hidden = !notebookView || UI.panel;
-    const graphAvailable = Boolean(cs.length || d.cells.some(cell => cell.claim));
+    const graphAvailable = Boolean(cs.length || sourceClaimRanges(d.cells).size);
     $('claim-graph-shortcut').hidden = !graphAvailable;
     $('claim-graph-mobile').hidden = !notebookView || !graphAvailable;
     renderConnection();
@@ -836,7 +836,11 @@
         const node = graphNode(b.dataset.graphId);
         if (!node) break;
         UI.graphSelected = node.id;
-        if (node.kind === 'walkthrough' && node.sourceLine) { showDocument(node.sourceLine, UI.data.sha256); break; }
+        if (node.sourceLine) {
+          if (node.kind === 'local') { UI.selected = node.name; UI.panel = true; }
+          showDocument(node.sourceLine, UI.data.sha256);
+          break;
+        }
         if (node.kind === 'local' || node.kind === 'walkthrough' && node.name) {
           const cell = UI.data.cells.find(cell => cell.claim === node.name || cell.id === node.name);
           if (cell) showDocument(cell.start, UI.data.sha256);

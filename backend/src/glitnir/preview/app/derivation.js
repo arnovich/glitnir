@@ -2,12 +2,12 @@
 (() => {
   'use strict';
   const workbench = window.glitnirWorkbench;
-  const {$, UI, claim, esc, goalBlocksHTML, goalSourceHTML, projectMode, proofGoalsHTML} = workbench;
+  const {$, UI, claim, esc, goalBlocksHTML, goalSourceHTML, projectMode, proofGoalsHTML, sourceClaimRanges} = workbench;
   const SCOPED_WRAPPERS = new Set(['Lean.Parser.Tactic.case', 'Lean.Parser.Tactic.allGoals']);
   let position, renderedHTML;
 
   function exploreTabsHTML() {
-    if (!projectMode() || UI.data.walkthrough || !UI.data.cells.some(cell => cell.claim)) return '';
+    if (!projectMode() || UI.data.walkthrough || !sourceClaimRanges(UI.data.cells).size) return '';
     return `<nav class="explore-tabs" aria-label="Explore views">
       <button type="button" class="secondary" data-act="explore-graph" aria-pressed="${!UI.exploreDerivation}">Claim graph</button>
       <button type="button" class="secondary" data-act="explore-derivation" aria-pressed="${Boolean(UI.exploreDerivation)}">Derivation</button>
@@ -175,7 +175,7 @@
   }
 
   function renderDerivation(root, tabs) {
-    const cells = new Map(UI.data.cells.filter(cell => cell.claim).map(cell => [cell.claim, cell]));
+    const cells = sourceClaimRanges(UI.data.cells);
     const name = UI.graphSelected?.startsWith('local:') ? UI.graphSelected.slice(6) : null;
     const cell = cells.get(name);
     const options = [...cells.keys()].map(value => `<option value="${esc(value)}"${name === value ? ' selected' : ''}>${esc(value)}</option>`).join('');
