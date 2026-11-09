@@ -537,10 +537,10 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .glitnir-linked-view #history{display:none}
 @media(max-width:600px){.notebook-trail{padding:8px 16px}.notebook-own{margin-left:0}}
 
-.import-header{display:block;color:var(--muted);font-size:12px}
-.import-header>summary{cursor:pointer}
-.import-header>summary .source-controls{float:right}
-.import-header>pre{margin-top:10px}
+:is(.import-header,.print-fold){display:block;color:var(--muted);font-size:12px}
+:is(.import-header,.print-fold)>summary{cursor:pointer}
+:is(.import-header,.print-fold)>summary .source-controls{float:right}
+:is(.import-header,.print-fold)>pre{margin-top:10px}
 
 /* Shared reading-first and map-first proof atlas. */
 .proof-atlas .atlas-controls,.proof-atlas .atlas-trail{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}

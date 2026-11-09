@@ -4974,6 +4974,27 @@ for (const kind of ['definition', 'constructor', 'unavailable']) {
   });
 }
 
+test('consecutive print commands fold with a single edit range', async () => {
+  const snapshot = projectNotebook(), messages = [];
+  const text = 'namespace Demo\n#print axioms Demo.first\n#print axioms Demo.second\n\nend Demo\n';
+  snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 5, text}];
+  snapshot.project_claims = [];
+  const w = await renderSnapshot(snapshot, {onMessage: message => messages.push(message)});
+  try {
+    const fold = w.document.querySelector('#doc details.print-fold');
+    assert.ok(fold);
+    assert.equal(fold.open, false);
+    assert.match(fold.querySelector('summary').textContent, /2 #print commands/);
+    assert.equal(fold.querySelector('pre').textContent, '#print axioms Demo.first\n#print axioms Demo.second');
+    const edits = fold.querySelectorAll('.source-edit');
+    assert.equal(edits.length, 1);
+    edits[0].click();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {type: 'source', index: 0, sha256: snapshot.sha256, range: {start: 2, end: 3}});
+    assert.equal(fold.open, false);
+    assert.match(fold.parentElement.textContent, /end Demo/);
+  } finally {w.close();}
+});
+
 for (const browser of [false, true]) {
   test(`the import header is one collapsed exact-source block (${browser ? 'browser' : 'editor'})`, async () => {
     const snapshot = projectNotebook();

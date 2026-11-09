@@ -218,6 +218,14 @@
     return ranges;
   }
 
+  function setupFoldHTML(entries, kind, label) {
+    const source = leanOf(entries);
+    return `<details class="cell source-context ${kind}" data-fold-key="${kind}:${esc(source)}"><summary>${label}${lineLinkHTML(entries[0][0], entries.at(-1)[0])}</summary><pre>${leanHTML(source)}</pre></details>`;
+  }
+
+  const isPrintCommand = ({body, notes, doc}) =>
+    /^#print\b/.test(body[0]?.[1] || '') && !doc.length && !notes.some(([, line]) => line.trim());
+
   const namespaceHTML = name => name ? `<p class="def-namespace">Namespace <code>${esc(name)}</code></p>` : '';
 
   // With `quiet`, scaffolding is shown as exact quiet lines instead of being
@@ -247,11 +255,21 @@
         const end = listed[count - 1].body.at(-1)[0];
         const source = entries.filter(([n]) => n >= start && n <= end);
         const label = `${imports} import${imports === 1 ? '' : 's'}${opens ? ` · ${opens} open${opens === 1 ? '' : 's'}` : ''}`;
-        header = `<details class="cell source-context import-header" data-fold-key="import-header:${esc(leanOf(source))}"><summary>${label}${lineLinkHTML(start, end)}</summary><pre>${leanHTML(leanOf(source))}</pre></details>`;
+        header = setupFoldHTML(source, 'import-header', label);
         listed.splice(0, count);
       }
     }
-    return header + listed.map(command => {
+    let printEnd = 0;
+    return header + listed.map((command, index) => {
+      if (index < printEnd) return '';
+      if (quiet && isPrintCommand(command)) {
+        printEnd = index + 1;
+        while (printEnd < listed.length && isPrintCommand(listed[printEnd])) printEnd++;
+        const count = printEnd - index;
+        const start = command.body[0][0], end = listed[printEnd - 1].body.at(-1)[0];
+        const source = entries.filter(([line]) => line >= start && line <= end);
+        return setupFoldHTML(source, 'print-fold', `${count} #print command${count === 1 ? '' : 's'}`);
+      }
       const list = trimmed([...command.notes, ...command.doc, ...command.body].sort((a, b) => a[0] - b[0]));
       if (!list.length) return '';
       if (quiet && command.body.length && kindOf({doc: [], notes: [], body: command.body}) === 'setup') {
@@ -587,7 +605,7 @@
 
   function revealSection(target) {
     for (let node = target; node; node = node.parentElement) {
-      if (node.matches('details.proof-section,details.import-header')) node.open = true;
+      if (node.matches('details.proof-section,details.source-context')) node.open = true;
     }
   }
 
@@ -621,7 +639,15 @@
       else if (cell.claim && claim(cell.claim)) UI.selected = cell.claim;
       render();
       const target = document.querySelector(`.cellwrap[data-index="${cell.index}"]`);
-      if (target) { revealSection(target.querySelector('.import-header') || target); target.classList.add('source-selected'); target.scrollIntoView({block: 'center'}); }
+      if (target) {
+        const fold = [...target.querySelectorAll('details.source-context')].find(section => {
+          const lines = section.querySelector('.source-link')?.dataset;
+          return lines && Number(lines.start) <= event.detail.line && event.detail.line <= Number(lines.end);
+        });
+        revealSection(fold || target.querySelector('.import-header') || target);
+        target.classList.add('source-selected');
+        target.scrollIntoView({block: 'center'});
+      }
       else showSourceLines(cell.start, cell.end);
     });
     if (HOST.pendingReveal) document.dispatchEvent(new CustomEvent('glitnir-reveal-cell', {detail: HOST.pendingReveal}));
@@ -639,7 +665,7 @@
     }).join('');
     proofSections($('doc'));
     for (const wrap of $('doc').querySelectorAll('.cellwrap')) {
-      if ((HOST && wrap.querySelector('.cell .source-controls')) || wrap.querySelector('.import-header')) wrap.querySelector(':scope > .cell-tools')?.remove();
+      if ((HOST && wrap.querySelector('.cell .source-controls')) || wrap.querySelector('details.source-context')) wrap.querySelector(':scope > .cell-tools')?.remove();
     }
   }
 

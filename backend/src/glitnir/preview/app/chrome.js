@@ -229,7 +229,7 @@
       let label = c ? (c.project ? claimLabel(c) : c.name) : short;
       if (!el.matches('.definition,.cell[data-claim]')) {
         const code = el.querySelector('pre')?.textContent.trim() || '';
-        if (el.matches('.import-header')) label = el.querySelector('summary')?.firstChild?.textContent.trim();
+        if (el.matches('details.source-context')) label = el.querySelector('summary')?.firstChild?.textContent.trim();
         else if (el.matches('.source-context') && /^(namespace|section|open|variable|universe|set_option)\b/.test(code)) label = code.split('\n')[0];
         else if (el.matches('.context-card') && !['Note', 'Additional notebook content'].includes(kindLabel)) label = kindLabel;
         else continue;
