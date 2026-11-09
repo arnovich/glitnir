@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   const workbench = window.glitnirWorkbench;
-  const {$, UI, claimLabel, esc, inlineHTML, projectClaims, recorded, statusOf, title, walkthroughCompatibility} = workbench;
+  const {$, UI, claimLabel, esc, inlineHTML, projectClaims, recorded, sourceClaimRanges, statusOf, title, walkthroughCompatibility} = workbench;
 
   const shortName = name => String(name).split('.').pop();
   const importedTone = status => ({checked: 'green', refuted: 'red', conditional: 'amber', stale: 'amber', failed: 'red', open: 'blue'})[status] || 'muted';
@@ -58,12 +58,13 @@
     return {nodes, byId, edges, dependencies: direct, cyclic, ...extra};
   }
 
-  function claimGraphModel(data, selectedName = null, focusId = null) {
+  function claimGraphModel(data, selectedName = null, focusId = null, includeSource = true) {
     const project = data.preview?.mode === 'project';
     const rendered = project ? projectClaims(data) : (Array.isArray(data.claims) ? data.claims : []);
     const claimsByName = new Map(rendered.map(entry => [entry.name, entry]));
+    const sourceRanges = project && includeSource ? sourceClaimRanges(data.cells || []) : new Map();
     const sourceNames = project
-      ? (data.cells || []).filter(cell => cell.kind === 'source' && typeof cell.claim === 'string' && cell.claim).map(cell => cell.claim)
+      ? [...sourceRanges.keys(), ...(data.cells || []).flatMap(cell => cell.claim ? [cell.claim] : [])]
       : rendered.map(entry => entry.name);
     const savedByName = new Map((data.project_claims || []).filter(saved => typeof saved?.name === 'string').map(saved => [saved.name, saved]));
     const sourceTargets = new Set((data.cells || []).flatMap(cell => [cell.id, cell.claim]));
@@ -110,6 +111,7 @@
     for (const name of orderedNames) {
       const entry = claimsByName.get(name);
       const saved = savedByName.get(name);
+      const sourceRange = sourceRanges.get(name);
       // The graph and its export describe the saved snapshot. A live checking
       // badge must never replace the recorded status here.
       const hasLegacyRecord = project || entry?.status === 'stale' || Boolean(entry?.record || entry?.refutation);
@@ -117,7 +119,7 @@
       const stale = saved?.current === false || (!project && entry?.status === 'stale');
       const notCompared = saved?.current === null;
       add({id: localId(name), name, label: entry ? claimLabel(entry) : shortName(name), kind: 'local', path: null,
-        fullLabel: name, hasSource: sourceTargets.has(name), hasRecord: Boolean(saved) || !project && hasLegacyRecord,
+        fullLabel: name, hasSource: sourceTargets.has(name) || sourceRanges.has(name), sourceLine: sourceRange?.claim ? undefined : sourceRange?.start, hasRecord: Boolean(saved) || !project && hasLegacyRecord,
         freshnessUnknown: notCompared, statusTone: status.tone, tone: notCompared ? 'muted' : stale ? 'amber' : status.key === 'unknown' ? 'muted' : status.tone, status: status.label + (notCompared ? ' · Not compared' : ''), stale,
         relationsKnown: project ? Array.isArray(saved?.uses) : hasLegacyRecord && Array.isArray(entry?.uses),
         truncated: project ? saved?.uses_truncated === true : entry?.uses_truncated === true, malformed: false});
@@ -266,10 +268,10 @@
       problems, missingReferences});
   }
 
-  const graphModel = (data, selected = null, selectedClaim = null, focused = false) => data.walkthrough
+  const graphModel = (data, selected = null, selectedClaim = null, focused = false, includeSource = true) => data.walkthrough
     ? walkthroughGraphModel(data, selected, selectedClaim, focused)
     : claimGraphModel(data, selectedClaim || (selected?.startsWith('local:') ? selected.slice(6) : null),
-      focused || selected?.startsWith('import:') ? selected : null);
+      focused || selected?.startsWith('import:') ? selected : null, includeSource);
 
   function focusedGraph(model, selected) {
     const centre = model.byId.get(selected);
@@ -407,9 +409,9 @@
   }
 
   function proofGraphHTML(data, {staticPage = false, selected = null, zoom = 1, fit = false, focused = false} = {}) {
-    const model = graphModel(data, selected, null, focused && !staticPage);
+    const model = graphModel(data, selected, null, focused && !staticPage, !staticPage);
     if (!staticPage && !model.nodes.length) {
-      const message = model.walkthrough ? 'No statements to graph in this walkthrough.' : 'This notebook has no claims';
+      const message = model.walkthrough ? 'No statements to graph in this walkthrough.' : 'No theorems or lemmas identified in the saved source';
       return `<section class="proof-graph-view" aria-label="Graph"><h2 tabindex="-1">${esc(message)}</h2></section>`;
     }
     const showFocus = focused && !staticPage && model.byId.has(selected);
@@ -482,10 +484,19 @@
     const root = document.getElementById('graph-view');
     if (!root || !UI.data) return;
     if (workbench.renderAtlas?.(UI.data, {openClaimGraph, openExplore})) return;
+    const derivationAvailable = workbench.hasExploreDerivation();
+    if (derivationAvailable && UI.exploreDerivation && UI.graphSelected) {
+      workbench.renderDerivation(root);
+      return;
+    }
     const model = graphModel(UI.data, UI.graphSelected || localId(UI.selected), openClaimGraph ? UI.selected : null, UI.graphFocused);
     if (openClaimGraph || !model.byId.has(UI.graphSelected)) {
       const selected = model.walkthrough ? model.nodes.find(node => node.name === UI.selected)?.id : localId(UI.selected);
       UI.graphSelected = model.byId.has(selected) ? selected : model.nodes[0]?.id || null;
+    }
+    if (derivationAvailable && UI.exploreDerivation) {
+      workbench.renderDerivation(root);
+      return;
     }
     const readingSidebarScroll = root.querySelector('.atlas-sidebar')?.scrollTop || 0;
     const graphContent = (UI.data.walkthrough?.atlas ? workbench.atlasViewControls('graph') : '') + proofGraphHTML(UI.data, {selected: UI.graphSelected, zoom: UI.graphZoom || 1, fit: UI.graphFit === true, focused: UI.graphFocused});

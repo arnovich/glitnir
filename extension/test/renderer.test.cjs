@@ -2338,7 +2338,7 @@ test('project inspection is reported from snapshots for the saved source it read
   const $ = id => window.document.getElementById(id);
   try {
     assert.equal($('inspect-project').disabled, true, 'one inspection or check at a time');
-    assert.equal($('inspect-project').textContent, 'Inspecting…');
+    assert.equal($('inspect-project').textContent, 'Reading project setup…');
     assert.equal($('check-project').disabled, true);
     assert.match($('project-inspection').textContent, /Inspecting the saved project setup…/);
     $('project-inspection').querySelector('[data-act="inspect-cancel"]').click();
@@ -2347,8 +2347,30 @@ test('project inspection is reported from snapshots for the saved source it read
     snapshot.preview.inspection = {status: 'resolved', source_sha256: 'a'.repeat(64), message: 'Module setup resolved for <A>.', resolution: {kind: 'prepared_local', packages: [{name: 'dep', path: 'p', entry: {}}]}};
     await window.glitnirPoll();
     assert.equal($('inspect-project').disabled, false);
-    assert.match($('project-inspection').textContent, /^Last inspection: Module setup resolved for <A>\./);
-    assert.match($('project-inspection').innerHTML, /&lt;A&gt;/, 'the message is escaped');
+    assert.match($('project-inspection').textContent, /Project setup ready/);
+    assert.match($('project-inspection').textContent, /Toolchain t/);
+    assert.match($('project-inspection').textContent, /To verify the proofs, run Check saved file/);
+    assert.equal($('project-inspection').querySelector('details summary').textContent, 'Local dependencies');
+    assert.match($('project-inspection').querySelector('details').textContent, /Git revision/);
+    const dismiss = $('project-inspection').querySelector('[data-act="inspect-dismiss"]');
+    assert.equal(dismiss.getAttribute('aria-label'), 'Dismiss project inspection result');
+    assert.ok(dismiss.querySelector('svg'));
+    dismiss.click();
+    assert.equal($('project-inspection').hidden, true);
+    assert.equal(window.document.activeElement, $('inspect-project'));
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, true, 'the same result stays dismissed on poll');
+    snapshot.preview.inspection.status = 'running';
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, false);
+    assert.ok($('project-inspection').querySelector('[data-act="inspect-cancel"]'));
+    snapshot.preview.inspection.status = 'resolved';
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').hidden, false, 'a new result appears even for the same source');
+    snapshot.preview.inspection.resolution.packages = [];
+    await window.glitnirPoll();
+    assert.equal($('project-inspection').querySelector('details'), null, 'no disclosure for an empty list');
+    assert.match($('project-inspection').textContent, /No local dependencies listed/);
     snapshot.preview.inspection.source_sha256 = 'b'.repeat(64);
     await window.glitnirPoll();
     assert.equal($('project-inspection').hidden, true, 'an inspection of another saved source is not shown');
@@ -2436,6 +2458,14 @@ test('project checks show historical compiled propositions separately from sourc
     assert.doesNotMatch(panel.textContent, /_glitnir_example/);
     assert.equal(panel.hidden, false);
     assert.match(panel.textContent, /Last checked snapshot/);
+    const details = panel.querySelector('.check-result-details');
+    assert.equal(details.open, false);
+    assert.equal(details.querySelector('summary').textContent, 'Check details');
+    assert.match(details.textContent, /Source SHA-256/);
+    assert.equal(panel.querySelector('article').closest('details'), null);
+    details.open = true;
+    await window.glitnirPoll();
+    assert.equal(panel.querySelector('.check-result-details'), details, 'polling keeps the open disclosure');
     assert.match(panel.textContent, /Git revision and worktree cleanliness were not verified/);
     assert.match(panel.textContent, /<dep>: vendor\/dep/);
     assert.match(panel.textContent, /saved source has changed/);
@@ -2451,6 +2481,14 @@ test('project checks show historical compiled propositions separately from sourc
     assert.match(exported.body, /declared revision abc \(not verified\)/);
     assert.match(exported.body, /Additional assumptions/);
     assert.match(exported.body, /saved source has changed/);
+    assert.doesNotMatch(exported.body, /data-act="check-dismiss"/);
+    const close = panel.querySelector('[data-act="check-dismiss"]');
+    assert.equal(close.getAttribute('aria-label'), 'Dismiss check result');
+    close.click();
+    assert.equal(panel.hidden, true);
+    assert.equal(window.document.activeElement.id, 'check-project');
+    await window.glitnirPoll();
+    assert.equal(panel.hidden, true, 'polling keeps the check result dismissed');
     assert.equal(window.document.querySelectorAll('.claim').length, 0);
     assert.equal(requests.filter(r => r.path === '/api/project/check').length, 0);
     window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'editorState', dirty: true, mode: 'project'}}));
@@ -2463,6 +2501,7 @@ test('project checks show historical compiled propositions separately from sourc
     const sent = requests.filter(r => r.path === '/api/project/check');
     assert.equal(sent.length, 1);
     assert.deepEqual(JSON.parse(sent[0].body), {sha256: snapshot.sha256});
+    assert.equal(panel.hidden, false, 'a new check restores the result card');
   } finally { window.close(); }
 });
 
@@ -3147,7 +3186,7 @@ test('routine explainers live behind focusable help icons', async () => {
     assert.equal(proof.nextElementSibling.querySelector('h5').textContent, 'Assumptions from the last check');
     const actions = d.getElementById('insp').lastElementChild;
     assert.deepEqual([...actions.querySelectorAll('[data-act]')].map(button => button.dataset.act), ['check-through']);
-    assert.equal(proof.querySelector(':scope > [data-act="goal"]').textContent, 'Inspect proof');
+    assert.equal(proof.querySelector(':scope > [data-act="goal"]').textContent, 'Show proof steps');
     assert.match(proof.querySelector('[role="tooltip"]').textContent, /See what Lean still needs to prove/);
     assert.equal(d.querySelector('#insp .goal-section > p'), null, 'proof help stays in the tooltip');
     assert.ok(d.querySelector('#insp [data-act="check-through"]'));
@@ -3252,15 +3291,15 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
   window.HTMLElement.prototype.scrollIntoView = () => {};
   try {
     const button = insp.querySelector('.goal-section > [data-act="goal"]');
-    assert.equal(button.textContent, 'Inspect proof');
-    assert.match(insp.querySelector('.goal-section').textContent, /Use Check saved file to update the check status/);
+    assert.equal(button.textContent, 'Show proof steps');
+    assert.match(insp.querySelector('.goal-section').textContent, /Run Check saved file to update the proof status/);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0, 'nothing runs until asked');
     button.focus();
     button.click(); await settle(20);
     assert.deepEqual(messages.filter(m => m.path?.startsWith('/api/proof/')).map(m => [m.method, m.path]), [['GET', '/api/proof/trace'], ['POST', '/api/proof/start']]);
     assert.deepEqual(JSON.parse(messages.find(m => m.path === '/api/proof/start').body), {sha256: snapshot.sha256});
-    assert.match(insp.querySelector('.goal-state').textContent, /Recording saved tactic goals/);
-    assert.equal(d.activeElement.dataset.act, 'goal-cancel', 'focus stays in the goal controls');
+    assert.match(d.querySelector('#run-activity .goal-state').textContent, /Recording saved tactic goals/);
+    assert.equal(d.activeElement.dataset.act, 'goal-cancel', 'focus follows the cancel action into the header');
     insp.querySelector('[data-act="goal"]')?.click();
     trace = goalTrace(snapshot.sha256);
     await settle(820);
@@ -3285,7 +3324,7 @@ test('the inspector shows a claim’s proof goals at each tactic step as a histo
     assert.equal(insp.querySelector('.goal-results details'), null, 'proof details are visible without opening folds');
     const refresh = insp.querySelector('.goal-heading [data-act="goal"]');
     assert.equal(refresh.textContent, 'Refresh');
-    assert.equal(refresh.getAttribute('aria-label'), 'Refresh proof goals');
+    assert.equal(refresh.getAttribute('aria-label'), 'Refresh proof steps');
     assert.equal(d.querySelector('#insp-sub .pill').textContent, 'kernel checked', 'the status is the saved record’s');
     assert.equal(messages.filter(m => m.path === '/api/proof/start').length, 1, 'one observation at a time');
     // The same observation serves the next claim: here a term proof records no steps.
@@ -3315,7 +3354,7 @@ test('refreshing Inspector goals keeps the previous step visible until new goals
     return trace;
   }});
   const insp = window.document.getElementById('insp');
-  const click = act => insp.querySelector(`[data-act="${act}"]`).click();
+  const click = act => (act === 'goal-cancel' ? window.document.getElementById('run-activity') : insp).querySelector(`[data-act="${act}"]`).click();
   const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
   const heading = () => insp.querySelector('.goal-result-title')?.textContent;
   try {
@@ -3357,10 +3396,10 @@ test('proof goals say when they are cancelled or failed, join a running observat
   const section = () => insp.querySelector('.goal-section').textContent;
   try {
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
-    insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
+    window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(820);
     assert.ok(messages.some(m => m.path === '/api/proof/cancel'));
     assert.match(section(), /cancelled\. No goals were recorded in this run/);
-    assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Inspect proof');
+    assert.equal(insp.querySelector('[data-act="goal"]').textContent, 'Show proof steps');
     // A failed observation says why.
     start = () => ({id: String(++starts), status: 'unavailable', source_sha256: snapshot.sha256, message: 'This project uses Lean 4.31.0. Glitnir checks Lean 4.35.0, so checking, proof steps, views, evidence and decisions are off; reading works as usual.', nodes: []});
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
@@ -3370,7 +3409,7 @@ test('proof goals say when they are cancelled or failed, join a running observat
     const before = starts;
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
     assert.equal(starts, before);
-    assert.match(section(), /Resolving project environment/);
+    assert.match(d.getElementById('run-activity').textContent, /Resolving project environment/);
     trace = goalTrace(snapshot.sha256, {id: 'steps'});
     await settle(820);
     assert.equal(insp.querySelector('[data-act="goal-picker"]').options.length, 4);
@@ -3680,7 +3719,7 @@ test('Explore gives an empty notebook a message instead of graph controls', asyn
     const d = window.document;
     d.querySelector('[data-mode="graph"]').click();
     const explore = d.getElementById('graph-view');
-    assert.match(explore.textContent, /This notebook has no claims/);
+    assert.match(explore.textContent, /No theorems or lemmas identified in the saved source/);
     assert.equal(explore.querySelector('.proof-map,select,button'), null);
   } finally { window.close(); }
 });
@@ -4108,14 +4147,14 @@ test('a claim card, the inspector and r check the saved file through that claim'
     d.querySelector('[data-claim="Demo.floor"] article').click();
     assert.equal(d.querySelector('#doc [data-act="check-through"]'), null);
     const button = d.querySelector('#insp [data-act="check-through"]');
-    assert.equal(button.textContent.trim(), 'Check up to this claim');
+    assert.equal(button.textContent.trim(), 'Check lines 1–17');
     assert.equal(button.dataset.line, '17');
-    assert.match(d.querySelector('#insp .insp-check').textContent, /later claims are not rechecked/);
+    assert.match(d.querySelector('#insp .insp-check').textContent, /Later claims keep their previous results/);
     button.click(); await settle(30);
     assert.deepEqual(checks(), [{sha256, through_line: 17}]);
     assert.equal($('insp-title').textContent, 'floor', 'the claim checked through is selected');
     const inspector = d.querySelector('#insp .insp-check [data-act="check-through"]');
-    assert.equal(inspector.textContent.trim(), 'Check up to this claim');
+    assert.equal(inspector.textContent.trim(), 'Check lines 1–17');
     inspector.click(); await settle(30);
     assert.deepEqual(checks().at(-1), {sha256, through_line: 17});
     d.querySelector('[data-claim="Demo.k_pos"] .doc-line').click();
@@ -4421,7 +4460,7 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     // Refresh asks for a new recording.
     insp.querySelector('[data-act="goal"][data-refresh="true"]').click(); await settle(20);
     assert.equal(starts(), 1);
-    insp.querySelector('[data-act="goal-cancel"]').click(); await settle(820);
+    window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(820);
     assert.equal(messages.filter(m => m.path === '/api/proof/cancel').length, 1, 'the inspector cancels its own run');
     assert.match(insp.textContent, /cancelled/);
     // After a dependency change an older finished observation is not reused.
@@ -4434,8 +4473,8 @@ test('proof goals reuse a finished observation of the saved file and only cancel
     await settle(820);
     assert.match(insp.textContent, /Another proof observation replaced this one/);
     insp.querySelector('[data-act="goal"]').click(); await settle(20);
-    assert.match(insp.textContent, /Resolving project environment/, 'joined');
-    insp.querySelector('[data-act="goal-cancel"]').click(); await settle(20);
+    assert.match(window.document.getElementById('run-activity').textContent, /Resolving project environment/, 'joined');
+    window.document.querySelector('#run-activity [data-act="goal-cancel"]').click(); await settle(20);
     assert.equal(messages.filter(m => m.path === '/api/proof/cancel').length, 1, 'a joined run is not cancelled');
     assert.match(insp.querySelector('.goal-section').textContent, /Stopped following the recording/);
     assert.equal(trace.status, 'running');
@@ -5439,7 +5478,7 @@ for (const browser of [false, true]) {
       assert.ok(header.firstElementChild.classList.contains('brand'));
       assert.equal(d.getElementById('location').hidden, true);
       assert.equal(d.getElementById('location').textContent, '');
-      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'bar-right', 'header-status']);
+      assert.deepEqual([...header.children].map(el => el.className), ['brand', 'seg view-switcher', 'bar-right', 'header-status-row']);
       assert.deepEqual([...d.querySelector('.view-switcher').querySelectorAll('button')].map(b => b.textContent), ['Notebook', 'Source', 'Explore']);
       const row = d.querySelector('.live-bar');
       assert.equal(row.querySelector('.live-follow-control'), null);
@@ -6067,7 +6106,7 @@ test('proof inspection and exact tactic editing stay in the Inspector', async ()
     assert.equal(key('t'), true);
     assert.equal(key('c'), true);
     assert.equal(messages.filter(m => m.path?.startsWith('/api/proof/')).length, 0);
-    assert.equal(d.querySelector('#insp [data-act="check-through"]').textContent.trim(), 'Check up to this claim');
+    assert.equal(d.querySelector('#insp [data-act="check-through"]').textContent.trim(), 'Check lines 1–14');
     const editorState = dirty => w.dispatchEvent(new w.MessageEvent('message', {data: {type: 'editorState', dirty}}));
     d.querySelector('#insp [data-act="goal"]').focus();
     editorState(true);
@@ -6198,12 +6237,12 @@ test('refreshing proof goals shows activity and disables competing checks', asyn
   try {
     d.querySelector('#insp [data-act="goal"]').click(); await settle();
     d.querySelector('#insp [data-act="goal"]').click(); await settle();
-    assert.match(d.querySelector('#insp .proof-progress-title').textContent,/Refreshing proof goals/);
-    assert.match(d.querySelector('#insp .proof-progress-stage').textContent,/Recording saved tactic goals/);
+    assert.match(d.querySelector('#run-activity .proof-progress-title').textContent,/Refreshing proof goals/);
+    assert.match(d.querySelector('#run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
     assert.equal(d.querySelector('#insp [data-act="check-through"]').disabled,true);
     assert.equal(d.getElementById('check-project').disabled,true);
     assert.equal(d.querySelector('#insp [data-act="goal"]'),null);
-    assert.ok(d.querySelector('#insp .proof-progress [data-act="goal-cancel"]'));
+    assert.ok(d.querySelector('#run-activity .proof-progress [data-act="goal-cancel"]'));
   } finally {w.close();}
 });
 
@@ -6239,6 +6278,7 @@ test('active checks stay visible and cancellable in Notebook, Source and Explore
     for(const mode of ['doc','source','graph']) {
       d.querySelector(`[data-mode="${mode}"]`).click();
       assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.equal(d.getElementById('run-activity').parentElement, d.getElementById('header-status').parentElement);
       assert.ok(d.getElementById('project-check').closest('#run-activity'));
       assert.ok(d.querySelector('#run-activity [data-act="check-cancel"]'));
     }
@@ -6248,18 +6288,21 @@ test('active checks stay visible and cancellable in Notebook, Source and Explore
   } finally {w.close();}
 });
 
-test('inline proof progress remains visible after switching to Source and Explore', async () => {
+test('proof progress stays in the header across Notebook, Source and Explore', async () => {
   const snapshot=projectNotebook();
   const trace={status:'running',id:'shared',source_sha256:snapshot.sha256,nodes:[],message:'Recording saved tactic goals'};
   const w=await renderSnapshot(snapshot,{onProof:()=>trace});
   try {
     const d=w.document;
     d.querySelector('#insp [data-act="goal"]').click();await new Promise(r=>setTimeout(r,30));
-    for(const mode of ['source','graph']) {
+    for(const mode of ['doc','source','graph']) {
       d.querySelector(`[data-mode="${mode}"]`).click();
       assert.equal(d.getElementById('run-activity').hidden,false);
+      assert.equal(d.getElementById('run-activity').parentElement, d.getElementById('header-status').parentElement);
       assert.match(d.querySelector('#proof-run-activity .proof-progress-stage').textContent,/Recording saved tactic goals/);
       assert.ok(d.querySelector('#proof-run-activity [data-act="goal-cancel"]'));
+      assert.match(d.querySelector('#proof-run-activity .proof-progress-time').textContent, /elapsed/);
+      assert.equal(d.querySelectorAll('.proof-progress').length, 1);
     }
   } finally {w.close();}
 });
@@ -6317,4 +6360,181 @@ test('proof steps show the full tactic and compact recording details without fol
     const refreshed=d.querySelector('.goal-full-tactic');
     assert.equal(d.activeElement,refreshed);
   } finally {w.close();}
+});
+
+test('Explore derivation links branches by goal identity and exposes their tactic and context', async () => {
+  const snapshot = projectNotebook();
+  const trace = goalTrace(snapshot.sha256);
+  const [split, right, left] = trace.nodes;
+  Object.assign(split, {text: 'constructor', before: ['⊢ P ∧ P'], after: ['⊢ P', '⊢ P'], before_ids: ['root'], after_ids: ['left', 'right']});
+  Object.assign(right, {text: 'exact rightProof', before: ['h : P\n⊢ P', '⊢ P'], after: ['⊢ P'], before_ids: ['right', 'left'], after_ids: ['left'], parent: null});
+  Object.assign(left, {text: 'exact leftProof', before: ['⊢ P'], after: [], before_ids: ['left'], after_ids: [], parent: null});
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  const d = w.document;
+  try {
+    const switcher = d.getElementById('explore-tabs');
+    assert.equal(switcher.hidden, true);
+    assert.equal(switcher.parentElement, d.getElementById('title').parentElement);
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(switcher.hidden, false);
+    const derivationTab = switcher.querySelector('[data-act="explore-derivation"]');
+    derivationTab.focus();
+    derivationTab.click();
+    assert.equal(d.activeElement, derivationTab);
+    assert.equal(derivationTab.getAttribute('aria-pressed'), 'true');
+    d.querySelector('#graph-view [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    const tree = d.querySelector('.derivation-tree');
+    const steps = [...tree.querySelectorAll('[data-act="derivation-step"]')];
+    assert.deepEqual(steps.map(button => button.value), ['3', '2', '1']);
+    steps[1].focus();
+    steps[1].click();
+    assert.equal(d.activeElement.value, '2');
+    assert.match(d.querySelector('.derivation-details').textContent, /exact rightProof/);
+    assert.match(d.querySelector('.derivation-details').textContent, /h : P/);
+    assert.ok(d.querySelector('.derivation-details .source-link'));
+    d.querySelector('[data-act="explore-graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    assert.match(d.querySelector('.derivation-details').textContent, /exact rightProof/);
+  } finally { w.close(); }
+});
+
+test('Explore derivation handles a single tactic and records gaps in a partial trace', async () => {
+  for (const partial of [false, true]) {
+    const snapshot = projectNotebook();
+    const trace = goalTrace(snapshot.sha256);
+    const [first, second] = trace.nodes;
+    Object.assign(first, {text: 'exact proof', before: ['⊢ P'], after: partial ? ['⊢ Q'] : [], before_ids: ['root'], after_ids: partial ? ['next'] : []});
+    if (partial) {
+      trace.status = 'partial';
+      Object.assign(second, {text: 'opaque', before: ['⊢ Q'], after: [], parent: null});
+    }
+    trace.nodes = partial ? [first, second] : [first];
+    const w = await renderSnapshot(snapshot, {onProof: () => trace});
+    const d = w.document;
+    try {
+      d.querySelector('[data-mode="graph"]').click();
+      d.querySelector('[data-act="explore-derivation"]').click();
+      d.querySelector('#graph-view [data-act="goal"]').click();
+      await new Promise(r => setTimeout(r, 30));
+      assert.equal(d.querySelectorAll('.derivation-tree [data-act="derivation-step"]').length, 1);
+      assert.equal(Boolean(d.querySelector('.derivation-gap')), partial);
+      if (partial) {
+        d.querySelector('.derivation-unlinked [data-act="derivation-step"]').click();
+        assert.match(d.querySelector('.derivation-details').textContent, /opaque/);
+      }
+    } finally { w.close(); }
+  }
+
+});
+
+test('Explore derivation refines a scoped wrapper and keeps backtracking tactics opaque', async () => {
+  for (const wrapper of ['allGoals', 'first']) {
+    const snapshot = projectNotebook();
+    const trace = goalTrace(snapshot.sha256);
+    const [split, left, right] = trace.nodes;
+    Object.assign(split, {text: 'constructor', before: ['⊢ P ∧ P'], after: ['⊢ P', '⊢ P'], before_ids: ['root'], after_ids: ['left', 'right']});
+    Object.assign(left, {text: 'exact leftProof', before: ['⊢ P'], after: [], before_ids: ['left'], after_ids: [], parent: 3});
+    Object.assign(right, {text: 'exact rightProof', before: ['⊢ P'], after: [], before_ids: ['right'], after_ids: [], parent: 3});
+    const enclosing = {...left, id: 3, parent: null, text: wrapper, kind: 'Lean.Parser.Tactic.' + wrapper,
+      before: ['⊢ P', '⊢ P'], before_ids: ['left', 'right'], after: [], after_ids: []};
+    trace.nodes = [split, enclosing, left, right];
+    const w = await renderSnapshot(snapshot, {onProof: () => trace});
+    const d = w.document;
+    try {
+      d.querySelector('[data-mode="graph"]').click();
+      d.querySelector('[data-act="explore-derivation"]').click();
+      d.querySelector('#graph-view [data-act="goal"]').click();
+      await new Promise(r => setTimeout(r, 30));
+      const steps = [...d.querySelectorAll('.derivation-tree [data-act="derivation-step"]')];
+      assert.deepEqual(steps.map(button => button.value), wrapper === 'allGoals' ? ['3', '4', '1'] : ['1']);
+      assert.match(d.querySelector('.derivation-unlinked').textContent, wrapper === 'allGoals' ? /Enclosing tactic/ : /Goal link unavailable/);
+      const picker = d.querySelector('[data-act="derivation-claim"]');
+      picker.focus();
+      await w.glitnirPoll();
+      assert.equal(d.activeElement, picker);
+      picker.value = 'Demo.floor';
+      picker.dispatchEvent(new w.Event('change', {bubbles: true}));
+      assert.match(d.querySelector('.derivation-view').textContent, /No tactics were captured/);
+      d.querySelector('[data-act="explore-graph"]').click();
+      assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'local:Demo.floor');
+    } finally { w.close(); }
+  }
+});
+
+test('Explore keeps a long linear derivation in one column', async () => {
+  const snapshot = projectNotebook();
+  const trace = goalTrace(snapshot.sha256);
+  const template = trace.nodes[0];
+  trace.nodes = Array.from({length: 320}, (_, i) => ({
+    ...template, id: i, text: 'next_tactic', before: ['⊢ P'], before_ids: [`goal-${i}`],
+    after: i < 319 ? ['⊢ P'] : [], after_ids: i < 319 ? [`goal-${i + 1}`] : [],
+  }));
+  const w = await renderSnapshot(snapshot, {onProof: () => trace});
+  const d = w.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    d.querySelector('#graph-view [data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    const tree = d.querySelector('.derivation-tree');
+    assert.equal(tree.querySelectorAll('.derivation-inference').length, 1);
+    assert.equal(tree.querySelectorAll('[data-act="derivation-step"]').length, 320);
+    assert.equal(tree.querySelector('[data-act="derivation-step"]').value, '320');
+  } finally { w.close(); }
+});
+
+test('Explore discovers a named theorem and inspects its derivation before any check', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.cells = [
+    {index: 0, kind: 'source', start: 1, end: 7,
+      text: 'namespace Demo\n/-- A fact. -/\ntheorem k_pos : True := by\n  exact True.intro\n/- theorem ignored : True := by trivial -/\ndef x := 1\nend Demo\n'},
+  ];
+  const trace = goalTrace(snapshot.sha256);
+  trace.nodes = [{...trace.nodes[0], text: 'exact True.intro', before: ['⊢ True'], before_ids: ['root'], after: [], after_ids: [],
+    range: {start: {line: 4, character: 2}, end: {line: 4, character: 18}}}];
+  const requests = [];
+  const w = await renderSnapshot(snapshot, {onMessage: m => requests.push(m), onProof: () => trace});
+  const d = w.document;
+  w.HTMLElement.prototype.scrollIntoView = () => {};
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'local:Demo.k_pos');
+    assert.match(d.querySelector('#graph-detail').textContent, /No saved result/);
+    assert.equal(d.querySelectorAll('.proof-node').length, 1);
+    assert.doesNotMatch(w.glitnirWorkbench.proofGraphHTML(snapshot, {staticPage: true}), /Demo\.k_pos/);
+    d.querySelector('#graph-detail [data-act="graph-node"]').click();
+    assert.equal(d.getElementById('insp-title').textContent, 'Demo.k_pos');
+    d.querySelector('[data-mode="graph"]').click();
+    d.querySelector('[data-act="explore-derivation"]').click();
+    const controls = d.querySelector('.derivation-controls');
+    assert.match(controls.textContent, /Proof ofDemo\.k_pos/);
+    assert.equal(controls.querySelector('select'), null);
+    controls.querySelector('.primary[data-act="goal"]').click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.match(d.querySelector('.derivation-details').textContent, /exact True.intro/);
+    d.querySelector('[data-act="explore-graph"]').click();
+    const saved = projectNotebook().project_claims[0];
+    snapshot.project_claims = [{...saved, start_line: 3, end_line: 4}];
+    await w.glitnirPoll();
+    assert.equal(d.querySelectorAll('.proof-node').length, 1);
+    assert.match(d.querySelector('#graph-detail').textContent, /kernel checked/i);
+    assert.equal(requests.filter(m => m.path?.startsWith('/api/project/check')).length, 0);
+  } finally { w.close(); }
+});
+
+test('Explore does not infer a claim from a command quotation', async () => {
+  const snapshot = projectNotebook();
+  snapshot.project_claims = [];
+  snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 3,
+    text: 'macro "declareIt" : command => `(\ntheorem imagined : True := by trivial\n)\n'}];
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document;
+    d.querySelector('[data-mode="graph"]').click();
+    assert.match(d.getElementById('graph-view').textContent, /No theorems or lemmas identified/);
+    assert.equal(d.querySelector('.proof-node'), null);
+    assert.equal(d.getElementById('explore-tabs').hidden, true);
+  } finally { w.close(); }
 });

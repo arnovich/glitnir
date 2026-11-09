@@ -5,10 +5,10 @@
   const {$, API, HOST, LABEL, UI, assetPath, breakableName, cancelCheck, cancelGoals, cancelInspection,
     cancelView, cellView, checkBusy, checkProject, checking, claim, claimLabel, claims, closeDiagram,
     currencyNoted, currencyText, decisionAction, diagramAction, editGoalSource, esc, fetch, heldRendering, helpHTML, icon, images,
-    graphNode, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
+    graphNode, hasExploreDerivation, inlineHTML, inspectGoals, inspectProject, inspecting, inspection, leanOff, linkedPath, load, loadImage, loadResearch,
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
-    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML,
+    renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML, sourceClaimRanges,
     selectGoalStep, showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
@@ -293,6 +293,7 @@
     }
   }
 
+  let renderedCheckHTML;
   function renderChrome() {
     const d = UI.data, cs = claims();
     document.title = `${title()} · Glitnir`;
@@ -342,20 +343,42 @@
     if (unsupported) $('check-project').hidden = true;
     if (leanOff()) $('inspect-project').hidden = true;
     $('check-project').disabled = checkBusy();
-    $('project-check').hidden = !project || linked || walkthroughUnchecked() || !d.preview.check;
-    $('project-check').innerHTML = project ? projectCheckHTML(d.preview.check, d.sha256) : '';
+    const check = d.preview?.check;
+    const checkingNow = !linked && project && check?.status === 'running';
+    if (!linked && (UI.checkRequested || checkingNow)) UI.dismissedCheckSha = null;
+    const checkDismissed = check?.status === 'checked_snapshot' && check.source_sha256 === UI.dismissedCheckSha;
+    $('project-check').hidden = !project || linked || walkthroughUnchecked() || !check || checkDismissed;
+    const checkHTML = project ? projectCheckHTML(check, d.sha256, true) : '';
+    if (checkHTML !== renderedCheckHTML) {
+      $('project-check').innerHTML = checkHTML;
+      renderedCheckHTML = checkHTML;
+    }
     const activity = $('run-activity');
-    const checkingNow = !linked && project && d.preview.check?.status === 'running';
     if (checkingNow) activity.append($('project-check'));
     else $('load-error').parentElement.insertBefore($('project-check'), $('load-error'));
     const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
-    const showProof = !linked && proofRun && (UI.mode !== 'doc' || !UI.panel || !$('insp').querySelector('.goal-run-progress'));
+    const showProof = !linked && proofRun;
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
     activity.hidden = !checkingNow && !showProof;
     const inspected = inspection();
-    $('inspect-project').textContent = inspecting() ? 'Inspecting…' : 'Inspect project environment';
-    $('project-inspection').hidden = !project || linked || (!inspected && !inspecting());
-    $('project-inspection').innerHTML = inspecting() ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>` : inspected ? `Last inspection: ${esc(inspected.message)}` + projectResolutionHTML(inspected.resolution) : '';
+    const inspectingNow = inspecting();
+    if (inspectingNow && !linked) UI.dismissedInspectionSha = null;
+    const showInspection = inspected && inspected.source_sha256 !== UI.dismissedInspectionSha;
+    $('inspect-project').textContent = inspectingNow ? 'Reading project setup…' : 'Show project setup';
+    const inspectionBanner = $('project-inspection');
+    inspectionBanner.hidden = !project || linked || (!showInspection && !inspectingNow);
+    const dependencies = projectResolutionHTML(inspected?.resolution);
+    const toolchain = d.preview?.project?.toolchain;
+    const setupSummary = inspected?.status === 'resolved'
+      ? `<div class="inspection-summary"><strong>Project setup ready</strong>${toolchain ? `<span>Toolchain <code>${esc(toolchain)}</code></span>` : ''}
+        ${inspected.resolution?.kind === 'prepared_local' && !dependencies ? '<span>No local dependencies listed</span>' : ''}
+        <p>To verify the proofs, run <strong>Check saved file</strong>.</p></div>`
+      : `<span>Last inspection: ${esc(inspected?.message || '')}</span>`;
+    const restoreDismissFocus = document.activeElement?.dataset.act === 'inspect-dismiss';
+    inspectionBanner.innerHTML = inspectionBanner.hidden ? '' : inspectingNow
+      ? `Inspecting the saved project setup… <button type="button" class="secondary" data-act="inspect-cancel">${icon('x')}Stop</button>`
+      : `${setupSummary}<button type="button" class="result-dismiss" data-act="inspect-dismiss" aria-label="Dismiss project inspection result" title="Dismiss">${icon('x')}</button>` + dependencies;
+    if (restoreDismissFocus) inspectionBanner.querySelector('[data-act="inspect-dismiss"]')?.focus({preventScroll: true});
     if (project) {
       // The check actions live in the banner, so it stays; it is amber only
       // when a result needs attention: out of date, withheld or unavailable.
@@ -399,6 +422,11 @@
     $('source').hidden = UI.mode !== 'source';
     $('reading-view').hidden = UI.mode === 'graph';
     $('graph-view').hidden = UI.mode !== 'graph';
+    const exploreTabs = $('explore-tabs');
+    exploreTabs.hidden = UI.mode !== 'graph' || !hasExploreDerivation();
+    for (const button of exploreTabs.querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String((button.dataset.act === 'explore-derivation') === Boolean(UI.exploreDerivation)));
+    }
     const notebookView = UI.mode === 'doc';
     document.body.dataset.view = UI.mode;
     $('workspace').classList.toggle('focused-view', !notebookView);
@@ -406,7 +434,7 @@
     document.querySelector('.inspector').hidden = !notebookView || !UI.panel;
     $('workspace').classList.toggle('no-panel', !UI.panel);
     $('panel-show').hidden = !notebookView || UI.panel;
-    const graphAvailable = Boolean(cs.length || d.cells.some(cell => cell.claim));
+    const graphAvailable = Boolean(cs.length || sourceClaimRanges(d.cells).size);
     $('claim-graph-shortcut').hidden = !graphAvailable;
     $('claim-graph-mobile').hidden = !notebookView || !graphAvailable;
     renderConnection();
@@ -456,7 +484,7 @@
     const sourceControl = UI.mode === 'source' && document.activeElement?.matches('#source [data-act]') ? {...document.activeElement.dataset} : null;
     const sourceFocus = UI.mode === 'source' && document.activeElement?.hasAttribute('data-source-line') ? document.activeElement.id : null;
     const activeGraphControl = UI.mode === 'graph' ? document.activeElement?.closest?.('#graph-view [data-act]') : null;
-    const graphFocus = activeGraphControl ? {...activeGraphControl.dataset} : null;
+    const graphFocus = activeGraphControl ? {...activeGraphControl.dataset, value: activeGraphControl.value} : null;
     const graphHeading = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail h3');
     const graphLink = UI.mode === 'graph' && document.activeElement?.matches('#graph-detail a[href]') ? document.activeElement.getAttribute('href') : null;
     const graphCanvas = $('graph-view').querySelector('.proof-graph-canvas');
@@ -507,8 +535,9 @@
       if (atlasFocus.search && control) control.setSelectionRange(...atlasFocus.selection);
     }
     if (graphFocus && UI.mode === 'graph') {
-      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail);
-      control?.focus({preventScroll: true});
+      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail && (graphFocus.act !== 'derivation-step' || el.value === graphFocus.value));
+      const cancel = UI.exploreDerivation && graphFocus.act === 'goal' ? $('proof-run-activity').querySelector('[data-act="goal-cancel"]') : null;
+      (control || cancel)?.focus({preventScroll: true});
     }
     if (UI.mode === 'graph') {
       if (graphHeading) $('graph-detail')?.querySelector('h3')?.focus({preventScroll: true});
@@ -525,7 +554,13 @@
       const link = $('doc').querySelectorAll(linkSelector)[linkFocus.index];
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
-    if (activityFocus) [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)?.focus({preventScroll: true});
+    if (activityFocus) {
+      const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)
+        || (activityFocus === 'goal-cancel' && UI.mode === 'graph' && UI.exploreDerivation ? $('graph-view').querySelector('[data-act="goal"]') : null)
+        || (activityFocus === 'goal-cancel' && UI.mode === 'doc' && UI.panel ? $('insp').querySelector('[data-act="goal"]') : null)
+        || $('status-summary');
+      control?.focus({preventScroll: true});
+    }
     $('insp').scrollTop = scroll;
     const nextResults = $('insp').querySelector('.goal-results');
     if (nextResults && resultsState?.key === nextResults.dataset.goalKey) {
@@ -539,7 +574,7 @@
     if (goalFocus || (resultFocus && !$('insp').contains(document.activeElement))) {
       const controls = [...$('insp').querySelectorAll(goalControls)].filter(el => !el.disabled);
       const target = controls.find(el => el.dataset.act === goalFocus && (goalFocus !== 'goal-branch' || el.value === active.value))
-        || (goalFocus === 'goal' && controls.find(el => el.dataset.act === 'goal-cancel'))
+        || (goalFocus === 'goal' && $('proof-run-activity').querySelector('[data-act="goal-cancel"]'))
         || controls.find(el => el.dataset.act === 'goal-picker') || controls[0];
       if (target) target.focus({preventScroll: true});
       else {
@@ -783,7 +818,21 @@
       case 'evidence-run': if (leanOff()) break; runEvidence(Number(b.dataset.line), b.dataset.sha); break;
       case 'view-cancel': cancelView(b); break;
       case 'inspect-cancel': cancelInspection(); break;
+      case 'inspect-dismiss':
+        if (inspection() && !inspecting()) {
+          UI.dismissedInspectionSha = UI.data.sha256;
+          renderChrome();
+          $('inspect-project').focus({preventScroll: true});
+        }
+        break;
       case 'check-cancel': cancelCheck(); break;
+      case 'check-dismiss':
+        if (UI.data.preview?.check?.status === 'checked_snapshot') {
+          UI.dismissedCheckSha = UI.data.preview.check.source_sha256;
+          renderChrome();
+          $('check-project').focus({preventScroll: true});
+        }
+        break;
       case 'view-retry': if (UI.drawings[b.dataset.key]?.error) { delete UI.drawings[b.dataset.key]; render(); } break;
       case 'decision-run': if (leanOff()) break; decisionAction('/api/decide/run', {sha256: b.dataset.sha, line: Number(b.dataset.line)}); break;
       case 'decision-stop': decisionAction('/api/decide/stop', {}); break;
@@ -793,6 +842,7 @@
         if (heldRendering()) break;
         hideHelp();
         UI.mode = 'graph';
+        UI.exploreDerivation = false;
         UI.graphFocused = true;
         UI.graphFit = true;
         render({openClaimGraph: true});
@@ -803,6 +853,18 @@
         }
         $('graph-view').scrollIntoView?.({block: 'start'});
         revealGraphSelection();
+        break;
+      }
+      case 'explore-graph':
+      case 'explore-derivation':
+        UI.exploreDerivation = b.dataset.act === 'explore-derivation';
+        render();
+        break;
+      case 'derivation-step': workbench.selectDerivationStep(b); break;
+      case 'derivation-details': {
+        const heading = $('derivation-details')?.querySelector('h4');
+        heading?.focus({preventScroll: true});
+        heading?.scrollIntoView?.({block: 'nearest'});
         break;
       }
       case 'graph-select': {
@@ -818,7 +880,11 @@
         const node = graphNode(b.dataset.graphId);
         if (!node) break;
         UI.graphSelected = node.id;
-        if (node.kind === 'walkthrough' && node.sourceLine) { showDocument(node.sourceLine, UI.data.sha256); break; }
+        if (node.sourceLine) {
+          if (node.kind === 'local') { UI.selected = node.name; UI.panel = true; }
+          showDocument(node.sourceLine, UI.data.sha256);
+          break;
+        }
         if (node.kind === 'local' || node.kind === 'walkthrough' && node.name) {
           const cell = UI.data.cells.find(cell => cell.claim === node.name || cell.id === node.name);
           if (cell) showDocument(cell.start, UI.data.sha256);
@@ -844,7 +910,10 @@
       case 'notebook-back': showNotebookAt(UI.at - 1); break;
       case 'notebook-forward': showNotebookAt(UI.at + 1); break;
       case 'notebook-at': showNotebookAt(Number(b.dataset.at)); break;
-      case 'goal': UI.selected = id; inspectGoals(b.dataset.refresh === 'true'); break;
+      case 'goal':
+        if (UI.mode === 'doc') UI.selected = id;
+        inspectGoals(b.dataset.refresh === 'true');
+        break;
       case 'goal-cancel': cancelGoals(); break;
       case 'goal-edit': editGoalSource(b); break;
       case 'goal-branch':
@@ -877,9 +946,9 @@
   });
   $('source').addEventListener('click', e => { const tr = e.target.closest('tr[data-claim]'); if (tr && !e.target.closest('[data-act]')) select(tr.dataset.claim, false); });
   $('graph-view').addEventListener('change', e => {
-    const picker = e.target.closest('[data-act="graph-detail-picker"]');
+    const picker = e.target.closest('[data-act="graph-detail-picker"], [data-act="derivation-claim"]');
     if (!picker) return;
-    UI.graphSelected = picker.value;
+    UI.graphSelected = picker.dataset.act === 'derivation-claim' ? `local:${picker.value}` : picker.value;
     render();
   });
   document.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { if (b.dataset.mode === 'graph') openExplore(); else if (b.dataset.mode === 'doc' && UI.mode === 'source') showDocument(); else { UI.mode = b.dataset.mode; render(); } }; });
