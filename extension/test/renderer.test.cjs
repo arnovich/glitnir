@@ -80,7 +80,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
 });
 
 // Loads the packaged renderer over a fixed snapshot and waits for it to draw.
-async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onResearch, onAsset, onWindow, browser = false} = {}) {
+async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onResearch, onAsset, onLeanJobs, onWindow, browser = false} = {}) {
   const media = path.resolve(__dirname, '../../dist/media');
   const html = readFileSync(path.join(media, 'index.html'), 'utf8').replace('<body>', '<body><div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden></button>');
   const dom = new JSDOM(html, {runScripts: 'outside-only', url: 'https://preview.invalid/'});
@@ -102,6 +102,12 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
     }
     if (['gitHistory', 'gitDiff'].includes(message.type)) {
       Promise.resolve(onGit?.(message)).then(json => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
+      return;
+    }
+    if (message.type === 'listLeanJobs') {
+      queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {
+        type: 'response', id: message.id, status: 200, json: onLeanJobs?.() ?? {jobs: [], incomplete: false},
+      }})));
       return;
     }
     if (message.type !== 'request') return;
@@ -6333,8 +6339,6 @@ test('a cancellable job from another preview can be stopped from the header', as
   }});
   try {
     const d = w.document;
-    d.getElementById('lean-jobs').click();
-    assert.ok(messages.some(m => m.type === 'showLeanJobs'));
     assert.match(d.getElementById('shared-lean-activity').textContent, /Rendering Demo\.optimized · Circuit\.lean/);
     const stop = d.getElementById('stop-shared-lean-job');
     assert.equal(stop.hidden, false);
@@ -6344,6 +6348,45 @@ test('a cancellable job from another preview can be stopped from the header', as
     assert.match(d.getElementById('shared-lean-activity').textContent, /Stopping/);
     await new Promise(r => setTimeout(r, 30));
     assert.equal(d.getElementById('run-activity').hidden, true);
+  } finally {w.close();}
+});
+
+test('the inline Lean jobs drawer lists jobs and stops the selected row', async () => {
+  const id = '2'.repeat(32), messages = [];
+  let jobs = [{id, label: 'Rendering Demo.optimized', file: 'Examples/Circuit.lean', state: 'Waiting for Lean', canStop: true}];
+  const w = await renderSnapshot(projectNotebook(), {
+    onLeanJobs: () => ({jobs, incomplete: false}),
+    onMessage: message => {
+      messages.push(message);
+      if (message.type === 'stopLeanJob') {
+        jobs = [];
+        queueMicrotask(() => w.dispatchEvent(new w.MessageEvent('message', {data: {
+          type: 'response', id: message.id, status: 200, json: {cancelled: true},
+        }})));
+      }
+    },
+  });
+  try {
+    const d = w.document, trigger = d.getElementById('lean-jobs'), drawer = d.getElementById('lean-jobs-drawer');
+    assert.equal(trigger.textContent, 'Lean jobs · 1');
+    assert.equal(drawer.hidden, true);
+    trigger.click();
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(drawer.previousElementSibling.tagName, 'HEADER');
+    assert.match(drawer.textContent, /Rendering Demo\.optimized/);
+    assert.match(drawer.textContent, /Examples\/Circuit\.lean/);
+    assert.match(drawer.textContent, /Waiting for Lean/);
+    const stop = drawer.querySelector('button');
+    stop.focus();
+    stop.click();
+    assert.ok(messages.some(message => message.type === 'stopLeanJob' && message.body === id));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(trigger.textContent, 'Lean jobs');
+    assert.match(drawer.textContent, /No running or waiting Lean jobs/);
+    assert.equal(drawer.querySelector('button'), null);
+    trigger.dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    assert.equal(drawer.hidden, true);
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
   } finally {w.close();}
 });
 

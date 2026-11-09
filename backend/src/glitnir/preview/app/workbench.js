@@ -286,7 +286,8 @@
         }
       } finally {
         inFlight = null;
-        const busy = UI.data && (UI.data.lean_job || UI.data.checking.length || UI.data.preview?.check?.status === 'running' || UI.data.preview?.inspection?.status === 'running' || [...(UI.data.decisions || []), ...(UI.data.evidence || [])].some(e => e.status === 'running'));
+        void workbench.refreshLeanJobs?.();
+        const busy = UI.data && (!$('lean-jobs-drawer').hidden || UI.data.lean_job || UI.data.checking.length || UI.data.preview?.check?.status === 'running' || UI.data.preview?.inspection?.status === 'running' || [...(UI.data.decisions || []), ...(UI.data.evidence || [])].some(e => e.status === 'running'));
         scheduleLoad(reloadPending ? 250 : busy ? 1000 : 4000);
       }
     })();

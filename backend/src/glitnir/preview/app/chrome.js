@@ -313,6 +313,54 @@
     }
     void load();
   }
+  function toggleLeanJobs(open) {
+    $('lean-jobs-drawer').hidden = !open;
+    $('lean-jobs').setAttribute('aria-expanded', String(open));
+    if (open) void refreshLeanJobs();
+  }
+
+  let leanJobsRequest = false, renderedJobs;
+  async function refreshLeanJobs() {
+    if (!HOST?.listLeanJobs || leanJobsRequest) return;
+    leanJobsRequest = true;
+    try {
+      const {jobs, incomplete} = await HOST.listLeanJobs();
+      const count = jobs.length;
+      $('lean-jobs').textContent = count ? `Lean jobs · ${count}` : 'Lean jobs';
+      const status = $('lean-jobs-status');
+      const message = incomplete ? 'Some previews could not report their jobs.'
+        : count ? '' : 'No running or waiting Lean jobs in this window.';
+      if (status.textContent !== message) status.textContent = message;
+      status.hidden = !message;
+      const rows = $('lean-job-rows');
+      const html = jobs.map(job => `<li><div class="lean-job-label">${esc(job.label)}<small>${esc(job.file)}</small></div><span>${esc(job.state)}</span>
+        ${job.canStop ? `<button type="button" class="secondary" data-act="lean-row-stop" data-id="${esc(job.id)}" aria-label="Stop ${esc(job.label)} in ${esc(job.file)}">Stop</button>` : ''}</li>`).join('');
+      if (renderedJobs !== html) {
+        const focused = rows.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+        rows.innerHTML = html;
+        renderedJobs = html;
+        if (focused) ([...rows.querySelectorAll('button')].find(button => button.dataset.id === focused) || $('lean-jobs')).focus({preventScroll: true});
+      }
+      rows.hidden = !count;
+    } catch {
+      $('lean-jobs').textContent = 'Lean jobs';
+      $('lean-job-rows').hidden = true;
+      $('lean-jobs-status').hidden = false;
+      $('lean-jobs-status').textContent = 'Could not read Lean jobs.';
+    } finally {
+      leanJobsRequest = false;
+    }
+  }
+
+  async function stopListedLeanJob(button) {
+    if (button.disabled) return;
+    button.disabled = true;
+    await HOST.stopLeanJob(button.dataset.id).catch(() => false);
+    button.disabled = false;
+    void refreshLeanJobs();
+    void load();
+  }
+
   let renderedCheckHTML;
   function renderChrome() {
     const d = UI.data, cs = claims();
@@ -393,7 +441,7 @@
     stopShared.hidden = !canStop || stopping;
     stopShared.dataset.id = canStop ? holder.id : '';
     stopShared.setAttribute('aria-label', `Stop Lean job for ${holder?.file || 'this notebook'}`);
-    $('lean-jobs').hidden = !HOST?.showLeanJobs;
+    $('lean-jobs').hidden = !HOST?.listLeanJobs;
     const holderLabel = holder?.kind === 'view' && typeof holder.detail === 'string' && holder.detail
       ? `Rendering ${holder.detail}` : LEAN_JOB_LABELS.get(holder?.kind) || 'Lean is running';
     const holderText = showHolder ? [
@@ -861,7 +909,8 @@
     const id = b.dataset.id;
     if (researchAction(b)) return;
     switch (b.dataset.act) {
-      case 'lean-jobs': HOST?.showLeanJobs?.(); break;
+      case 'lean-jobs': if (HOST?.listLeanJobs) toggleLeanJobs($('lean-jobs-drawer').hidden); break;
+      case 'lean-row-stop': if (HOST?.stopLeanJob) void stopListedLeanJob(b); break;
       case 'lean-stop': if (!b.hidden && HOST?.stopLeanJob) void stopSharedLeanJob(id); break;
       case 'git-refresh': void loadGitHistory(true); break;
       case 'git-diff': void showGitDiff(b.dataset.sha); break;
@@ -1026,6 +1075,11 @@
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (e.target.closest('#lean-jobs-drawer,#lean-jobs') && !$('lean-jobs-drawer').hidden) {
+        toggleLeanJobs(false);
+        $('lean-jobs').focus({preventScroll: true});
+        return;
+      }
       if ($('notebook-view-options').open && $('history').open) {
         $('history').open = false;
         $('history').querySelector('summary').focus({preventScroll: true});
@@ -1069,7 +1123,7 @@
     if (map[e.key]) { e.preventDefault(); map[e.key](); }
   });
 
-  Object.assign(workbench, {render, renderChrome, renderConnection, select, showSourceLines});
+  Object.assign(workbench, {refreshLeanJobs, render, renderChrome, renderConnection, select, showSourceLines});
 
   load();
 })();

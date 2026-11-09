@@ -23,6 +23,7 @@ interface Preview {
   ready: boolean;
   accepting: boolean;
   leanJob?: {id: string; owner: Backend};
+  leanJobOwners?: Map<string, Backend>;
   exportTarget?: {token: string; uri: vscode.Uri};
   pendingReveal?: {type: string; index: number; sha256: string; line?: number; character?: number};
 }
@@ -108,53 +109,28 @@ export function activate(context: vscode.ExtensionContext): void {
     void promise.finally(() => stopping.delete(promise));
   }
 
-  function showLeanJobs(): void {
-    interface JobItem extends vscode.QuickPickItem { owner: Backend; id: string; }
-    const picker = vscode.window.createQuickPick<JobItem>();
-    const stop = {iconPath: new vscode.ThemeIcon('debug-stop'), tooltip: 'Stop this job'};
-    picker.title = 'Glitnir Lean jobs in this window';
-    picker.placeholder = 'Running and waiting jobs in this VS Code window';
-    let closed = false, signature = '';
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    async function refresh(): Promise<void> {
-      if (closed) return;
-      if (!vscode.workspace.isTrusted) { picker.hide(); return; }
-      const replies = await Promise.all([...previews.values()].filter(p => p.backend.running && p.backend.port).map(async ({backend, uri}) => {
-        try {
-          const reply = await backend.request('/api/lean/jobs');
-          if (reply.status === 200 && Array.isArray(reply.json?.jobs)) return {owner: backend, uri, jobs: reply.json.jobs};
-        } catch { /* A preview may have closed during the request. */ }
-        return {owner: backend, uri, jobs: null};
-      }));
-      if (closed) return;
-      const items: JobItem[] = replies.flatMap(({owner, uri, jobs}) => (jobs ?? []).flatMap((job: any) => {
-        if (typeof job?.id !== 'string' || !LEAN_JOB_ID.test(job.id) || typeof job.file !== 'string') return [];
-        const label = job.kind === 'view' && typeof job.detail === 'string' && job.detail
-          ? `Render ${job.detail}` : LEAN_JOB_LABELS.get(job.kind) || 'Lean job';
-        const state = LEAN_JOB_STATES.get(job.state);
-        if (!state) return [];
-        return [{id: job.id, owner, label: job.file, description: label,
-          detail: [state, vscode.workspace.asRelativePath(uri, true), job.can_stop || job.state === 'stopping' ? '' : 'No stop control'].filter(Boolean).join(' · '),
-          buttons: job.can_stop === true ? [stop] : []}];
-      }));
-      const next = JSON.stringify(items.map(({id, label, description, detail, buttons}) => [id, label, description, detail, buttons?.length]));
-      if (signature !== next) {
-        const activeId = picker.activeItems[0]?.id;
-        picker.items = items;
-        const active = items.find(item => item.id === activeId);
-        if (active) picker.activeItems = [active];
-        signature = next;
-      }
-      picker.placeholder = replies.some(reply => reply.jobs === null) ? 'Some previews could not report their jobs'
-        : items.length ? 'Use the stop button beside a job' : 'No Lean jobs in this window';
-      timer = setTimeout(() => void refresh(), 1000);
-    }
-    picker.onDidTriggerItemButton(({item}) => {
-      void stopLeanJob(item.owner, item.id).catch(error => vscode.window.showErrorMessage(String(error)));
-    });
-    picker.onDidHide(() => { closed = true; clearTimeout(timer); picker.dispose(); });
-    picker.show();
-    void refresh();
+  async function listLeanJobs(preview: Preview) {
+    if (!vscode.workspace.isTrusted) throw new Error('The workspace is no longer trusted.');
+    const replies = await Promise.all([...previews.values()].filter(p => p.backend.running && p.backend.port).map(async ({backend, uri}) => {
+      try {
+        const reply = await backend.request('/api/lean/jobs');
+        if (reply.status === 200 && Array.isArray(reply.json?.jobs)) return {owner: backend, uri, jobs: reply.json.jobs};
+      } catch { /* A preview may have closed during the request. */ }
+      return {owner: backend, uri, jobs: null};
+    }));
+    const owners = new Map<string, Backend>();
+    const jobs = replies.flatMap(({owner, uri, jobs}) => (jobs ?? []).flatMap((job: any) => {
+      if (typeof job?.id !== 'string' || !LEAN_JOB_ID.test(job.id) || typeof job.file !== 'string') return [];
+      const label = job.kind === 'view' && typeof job.detail === 'string' && job.detail
+        ? `Rendering ${job.detail}` : LEAN_JOB_LABELS.get(job.kind) || 'Lean job';
+      const state = LEAN_JOB_STATES.get(job.state);
+      if (!state) return [];
+      const canStop = job.can_stop === true;
+      if (canStop) owners.set(job.id, owner);
+      return [{id: job.id, label, file: vscode.workspace.asRelativePath(uri, true), state, canStop}];
+    }));
+    preview.leanJobOwners = owners;
+    return {jobs, incomplete: replies.some(reply => reply.jobs === null)};
   }
 
   async function openPreview(requested?: vscode.Uri): Promise<void> {
@@ -228,14 +204,20 @@ export function activate(context: vscode.ExtensionContext): void {
     const positionKey = 'atlas.position.' + uri.toString();
     panel.webview.onDidReceiveMessage(async message => {
       if (!message || typeof message !== 'object') return;
-      if (message.type === 'showLeanJobs') {
-        if (vscode.workspace.isTrusted) showLeanJobs();
+      if (message.type === 'listLeanJobs' && Number.isSafeInteger(message.id)) {
+        try {
+          const json = await listLeanJobs(preview);
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json});
+        } catch {
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 409, json: {}});
+        }
         return;
       }
       if (message.type === 'stopLeanJob' && Number.isSafeInteger(message.id)) {
         try {
-          const target = preview.leanJob;
-          const cancelled = target && target.id === message.body ? await stopLeanJob(target.owner, target.id) : false;
+          const id = message.body;
+          const owner = preview.leanJob?.id === id ? preview.leanJob?.owner : preview.leanJobOwners?.get(id);
+          const cancelled = owner ? await stopLeanJob(owner, id) : false;
           void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json: {cancelled}});
         } catch (error) {
           void vscode.window.showErrorMessage(String(error));
