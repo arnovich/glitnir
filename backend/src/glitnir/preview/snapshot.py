@@ -539,13 +539,7 @@ def _hoare_proofs(
             supplied = callback(sources)
             for name in sources.keys() & supplied.keys():
                 proof = supplied[name]
-                pre, command, post = proof["pre"], proof["command"], proof["post"]
                 rule, premises = proof["rule"], proof["premises"]
-                if not all(
-                    isinstance(term, str) and 0 < len(term) <= 1024
-                    for term in (pre, command, post)
-                ):
-                    continue
                 if rule is not None and (not isinstance(rule, str) or len(rule) > 120):
                     continue
                 if (
@@ -554,16 +548,27 @@ def _hoare_proofs(
                     or not all(isinstance(p, str) and p in sources for p in premises)
                 ):
                     continue
-                result.setdefault(
-                    name,
-                    {
-                        "pre": pre,
-                        "command": command,
-                        "post": post,
-                        "rule": rule,
-                        "premises": premises,
-                    },
-                )
+                display: HoareProof = {"rule": rule, "premises": premises}
+                terms: tuple[str, ...]
+                if "equivalence" in proof:
+                    pair = proof["equivalence"]
+                    if (
+                        not isinstance(pair, tuple)
+                        or len(pair) != 2
+                        or rule
+                        or premises
+                    ):
+                        continue
+                    terms = pair
+                    display["equivalence"] = pair
+                else:
+                    triple = (proof["pre"], proof["command"], proof["post"])
+                    display["pre"], display["command"], display["post"] = triple
+                    terms = triple
+                if all(
+                    isinstance(term, str) and 0 < len(term) <= 1024 for term in terms
+                ):
+                    result.setdefault(name, display)
         except Exception:  # noqa: BLE001 - a provider must not break the notebook
             continue
     return {

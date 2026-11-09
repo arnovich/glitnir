@@ -38,3 +38,26 @@ def test_unknown_or_inconsistent_rule_keeps_the_triple() -> None:
     assert "Demo.other" not in proofs
     assert proofs["Demo.whole"]["rule"] is None
     assert proofs["Demo.whole"]["premises"] == []
+
+
+def test_circuit_substitution_links_contract_and_equivalence() -> None:
+    """A replacement preserves the same precondition and postcondition."""
+    sources = {
+        "Demo.original": "theorem original : ExactHoare P circuit Q := by\n  trivial",
+        "Demo.same": (
+            "theorem same : GlobalCircuitEquivalence circuit replacement := by\n"
+            "  trivial"
+        ),
+        "Demo.transferred": (
+            "theorem transferred : ExactHoare P replacement Q := by\n"
+            "  exact exactCircuitSubstitution original same\n"
+        ),
+    }
+    proofs = hoare_proofs(sources)
+    assert proofs["Demo.transferred"]["rule"] == "Circuit substitution"
+    assert proofs["Demo.transferred"]["premises"] == ["Demo.original", "Demo.same"]
+    assert proofs["Demo.same"]["equivalence"] == ("circuit", "replacement")
+    sources["Demo.same"] = sources["Demo.same"].replace(
+        "circuit replacement", "replacement circuit"
+    )
+    assert hoare_proofs(sources)["Demo.transferred"]["premises"] == []

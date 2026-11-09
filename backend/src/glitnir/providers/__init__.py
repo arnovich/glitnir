@@ -4,7 +4,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Callable, Iterable, NamedTuple, TypedDict
+from typing import Any, Callable, Iterable, NamedTuple, NotRequired, TypedDict
 
 GROUP = "glitnir.providers"
 
@@ -12,9 +12,10 @@ GROUP = "glitnir.providers"
 class HoareProof(TypedDict):
     """A display of a saved source declaration, with optional rule information."""
 
-    pre: str
-    command: str
-    post: str
+    pre: NotRequired[str]
+    command: NotRequired[str]
+    post: NotRequired[str]
+    equivalence: NotRequired[tuple[str, str]]
     rule: str | None
     premises: list[str]
 

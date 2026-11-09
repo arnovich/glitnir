@@ -6582,3 +6582,32 @@ test('Forseti Hoare proof keeps both clickable premises above the conclusion', a
     assert.equal(d.activeElement.dataset.act, 'explore-graph');
   } finally { w.close(); }
 });
+
+test('Hoare circuit substitution renders an equivalence as a clickable premise', async () => {
+  const snapshot = projectNotebook();
+  snapshot.hoare_proofs = {
+    'Demo.k_pos': {pre: 'P', command: 'original', post: 'Q', rule: null, premises: []},
+    'Demo.floor': {equivalence: ['original', 'replacement'], rule: null, premises: []},
+    'Demo.transferred': {pre: 'P', command: 'replacement', post: 'Q', rule: 'Circuit substitution', premises: ['Demo.k_pos', 'Demo.floor']},
+  };
+  snapshot.cells.push({index: 6, kind: 'source', start: 19, end: 20, text: 'theorem transferred : ExactHoare P replacement Q := by\n  exact exactCircuitSubstitution k_pos floor', claim: 'Demo.transferred'});
+  const w = await renderSnapshot(snapshot);
+  const d = w.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    const picker = d.querySelector('[data-act="graph-detail-picker"]');
+    picker.value = 'local:Demo.transferred';
+    picker.dispatchEvent(new w.Event('change', {bubbles: true}));
+    d.querySelector('[data-act="explore-hoare"]').click();
+    assert.equal(d.querySelector('.hoare-rule').textContent, 'Circuit substitution');
+    const premise = name => d.querySelector(`.hoare-premises [data-id="${name}"]`);
+    assert.match(premise('Demo.floor').textContent, /original≡replacement/);
+    premise('Demo.floor').focus();
+    premise('Demo.floor').click();
+    assert.equal(d.activeElement, premise('Demo.floor'));
+    assert.match(d.getElementById('hoare-details').textContent, /original≡replacement/);
+    assert.ok(d.querySelector('#hoare-details .source-link'));
+    premise('Demo.k_pos').click();
+    assert.match(d.getElementById('hoare-details').textContent, /\{P\}original\{Q\}/);
+  } finally { w.close(); }
+});

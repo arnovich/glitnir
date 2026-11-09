@@ -11,17 +11,21 @@
   let hoareSelection;
   const selectedHoareClaim = () => {
     const name = UI.graphSelected?.startsWith('local:') ? UI.graphSelected.slice(6) : null;
-    return name && !UI.data.walkthrough && Object.hasOwn(UI.data.hoare_proofs || {}, name) ? name : null;
+    const proofs = UI.data.hoare_proofs || {};
+    return name && !UI.data.walkthrough && Object.hasOwn(proofs, name) && !proofs[name].equivalence ? name : null;
   };
 
   function renderHoareProof(root, name) {
     const proofs = UI.data.hoare_proofs;
     const proof = proofs[name];
     const key = JSON.stringify([UI.data.sha256, name]);
-    const selected = hoareSelection?.key === key ? hoareSelection.name : name;
+    const selected = hoareSelection?.key === key && proof.premises.includes(hoareSelection.name)
+      ? hoareSelection.name : name;
     const range = sourceClaimRanges(UI.data.cells).get(selected);
-    const triple = entry => `<span class="hoare-triple"><code>{${esc(entry.pre)}}</code><code>${esc(entry.command)}</code><code>{${esc(entry.post)}}</code></span>`;
-    const premise = premiseName => `<button type="button" class="secondary hoare-claim" data-act="hoare-premise" data-id="${esc(premiseName)}" aria-pressed="${selected === premiseName}" aria-controls="hoare-details"><strong>${esc(premiseName.split('.').at(-1))}</strong>${triple(proofs[premiseName])}</button>`;
+    const statement = entry => entry.equivalence
+      ? `<span class="hoare-triple"><code>${esc(entry.equivalence[0])}</code><span aria-label="is equivalent to">≡</span><code>${esc(entry.equivalence[1])}</code></span>`
+      : `<span class="hoare-triple"><code>{${esc(entry.pre)}}</code><code>${esc(entry.command)}</code><code>{${esc(entry.post)}}</code></span>`;
+    const premise = premiseName => `<button type="button" class="secondary hoare-claim" data-act="hoare-premise" data-id="${esc(premiseName)}" aria-pressed="${selected === premiseName}" aria-controls="hoare-details"><strong>${esc(premiseName.split('.').at(-1))}</strong>${statement(proofs[premiseName])}</button>`;
     const premises = proof.premises.map(premise).join('');
     const rule = proof.rule ? `<div class="hoare-rule">${esc(proof.rule)}</div>`
       : '<p class="small muted">No supported Hoare rule was identified for this declaration.</p>';
@@ -32,9 +36,9 @@
       ${rule}${premise(name)}
       <p class="small muted derivation-selection">Selected: ${esc(selected.split('.').at(-1))}
       <button type="button" class="ghost" data-act="derivation-details" data-id="hoare-details">Jump to declaration</button></p></div>
-      <section class="derivation-details" id="hoare-details" aria-label="Selected Hoare triple">
+      <section class="derivation-details" id="hoare-details" aria-label="Selected proof statement">
       <div class="goal-tactic-heading"><h4 tabindex="-1">${esc(selected.split('.').at(-1))}</h4>${range ? lineLinkHTML(range.start, range.end, false) : ''}</div>
-      ${triple(proofs[selected])}${range ? `<pre class="goal-full-tactic"><code>${esc(range.text)}</code></pre>` : ''}
+      ${statement(proofs[selected])}${range ? `<pre class="goal-full-tactic"><code>${esc(range.text)}</code></pre>` : ''}
       </section></div></section>`;
     if (renderedHTML === html && root.querySelector('.hoare-view')) return;
     root.innerHTML = html;
