@@ -6538,3 +6538,47 @@ test('Explore does not infer a claim from a command quotation', async () => {
     assert.equal(d.getElementById('explore-tabs').hidden, true);
   } finally { w.close(); }
 });
+
+test('Forseti Hoare proof keeps both clickable premises above the conclusion', async () => {
+  const snapshot = projectNotebook();
+  snapshot.hoare_proofs = {
+    'Demo.k_pos': {pre: 'P', command: 'double', post: 'M', rule: null, premises: []},
+    'Demo.floor': {pre: 'M', command: 'triple', post: 'Q', rule: null, premises: []},
+    'Demo.whole': {pre: 'P', command: 'pipeline', post: 'Q', rule: 'Sequential composition', premises: ['Demo.k_pos', 'Demo.floor']},
+  };
+  snapshot.cells.push({index: 6, kind: 'source', start: 19, end: 20, text: 'theorem whole : ExactHoare P pipeline Q := by\n  exact exactHoareSequential k_pos floor', claim: 'Demo.whole'});
+  const w = await renderSnapshot(snapshot);
+  const d = w.document;
+  try {
+    d.querySelector('[data-mode="graph"]').click();
+    const picker = d.querySelector('[data-act="graph-detail-picker"]');
+    picker.value = 'local:Demo.whole';
+    picker.dispatchEvent(new w.Event('change', {bubbles: true}));
+    const tab = d.querySelector('[data-act="explore-hoare"]');
+    assert.equal(tab.hidden, false);
+    tab.click();
+    assert.equal(tab.getAttribute('aria-pressed'), 'true');
+    assert.equal(d.querySelector('.hoare-rule').textContent, 'Sequential composition');
+    const premises = () => [...d.querySelectorAll('.hoare-premises button')];
+    assert.deepEqual(premises().map(b => b.dataset.id), ['Demo.k_pos', 'Demo.floor']);
+    assert.match(d.querySelector('.hoare-inference > .hoare-claim').textContent, /\{P\}pipeline\{Q\}/);
+    premises()[0].focus();
+    premises()[0].click();
+    assert.equal(d.activeElement, premises()[0]);
+    assert.equal(premises()[0].getAttribute('aria-pressed'), 'true');
+    assert.match(d.getElementById('hoare-details').textContent, /theorem k_pos/);
+    assert.ok(d.querySelector('#hoare-details .source-link'));
+    premises()[1].click();
+    assert.match(d.getElementById('hoare-details').textContent, /theorem floor/);
+    await w.glitnirPoll();
+    assert.match(d.getElementById('hoare-details').textContent, /theorem floor/);
+    d.querySelector('[data-act="explore-graph"]').click();
+    assert.equal(d.querySelector('[data-act="graph-detail-picker"]').value, 'local:Demo.whole');
+    tab.click();
+    tab.focus();
+    delete snapshot.hoare_proofs['Demo.whole'];
+    await w.glitnirPoll();
+    assert.equal(tab.hidden, true);
+    assert.equal(d.activeElement.dataset.act, 'explore-graph');
+  } finally { w.close(); }
+});

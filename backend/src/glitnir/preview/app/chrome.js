@@ -9,7 +9,7 @@
     markLiveChanges, namespaceScopes, openNotebook, openSource, projectCheckHTML, projectResolutionHTML,
     proofGraphHTML, proofProgressHTML, proofSections, readingFolds, recorded, reduced, renderDiagramDialog, renderDoc, renderInspector, researchAction,
     renderProofGraph, renderSource, renderTrail, requestedCut, restoreDiagramUI, revealSection, runEvidence, saveDiagramUI, sourceViewHTML, sourceClaimRanges,
-    selectGoalStep, showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
+    selectGoalStep, selectedHoareClaim, showNotebookAt, statusOf, title, toneOf, typesetMath, walkthroughMessage, walkthroughUnchecked, when, withheldBannerHTML} = workbench;
   const MAX_EXPORT_SOURCE_CHARACTERS = 1_000_000;
   const MAX_EXPORT_SOURCE_LINES = 20_000;
   let helpTimer;
@@ -424,8 +424,15 @@
     $('graph-view').hidden = UI.mode !== 'graph';
     const exploreTabs = $('explore-tabs');
     exploreTabs.hidden = UI.mode !== 'graph' || !hasExploreDerivation();
+    const current = UI.exploreHoare ? 'explore-hoare' : UI.exploreDerivation ? 'explore-derivation' : 'explore-graph';
+    const hoareTab = exploreTabs.querySelector('[data-act="explore-hoare"]');
+    const hideHoare = !selectedHoareClaim();
+    if (hideHoare && document.activeElement === hoareTab && !exploreTabs.hidden) {
+      exploreTabs.querySelector('[data-act="explore-graph"]').focus({preventScroll: true});
+    }
+    hoareTab.hidden = hideHoare;
     for (const button of exploreTabs.querySelectorAll('button')) {
-      button.setAttribute('aria-pressed', String((button.dataset.act === 'explore-derivation') === Boolean(UI.exploreDerivation)));
+      button.setAttribute('aria-pressed', String(button.dataset.act === current));
     }
     const notebookView = UI.mode === 'doc';
     document.body.dataset.view = UI.mode;
@@ -535,7 +542,7 @@
       if (atlasFocus.search && control) control.setSelectionRange(...atlasFocus.selection);
     }
     if (graphFocus && UI.mode === 'graph') {
-      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail && (graphFocus.act !== 'derivation-step' || el.value === graphFocus.value));
+      const control = [...$('graph-view').querySelectorAll('[data-act]')].find(el => el.dataset.act === graphFocus.act && el.dataset.graphId === graphFocus.graphId && el.dataset.graphDetail === graphFocus.graphDetail && el.dataset.id === graphFocus.id && (graphFocus.act !== 'derivation-step' || el.value === graphFocus.value));
       const cancel = UI.exploreDerivation && graphFocus.act === 'goal' ? $('proof-run-activity').querySelector('[data-act="goal-cancel"]') : null;
       (control || cancel)?.focus({preventScroll: true});
     }
@@ -843,6 +850,7 @@
         hideHelp();
         UI.mode = 'graph';
         UI.exploreDerivation = false;
+        UI.exploreHoare = false;
         UI.graphFocused = true;
         UI.graphFit = true;
         render({openClaimGraph: true});
@@ -857,12 +865,15 @@
       }
       case 'explore-graph':
       case 'explore-derivation':
+      case 'explore-hoare':
+        UI.exploreHoare = b.dataset.act === 'explore-hoare';
         UI.exploreDerivation = b.dataset.act === 'explore-derivation';
         render();
         break;
+      case 'hoare-premise': workbench.selectHoarePremise(b); break;
       case 'derivation-step': workbench.selectDerivationStep(b); break;
       case 'derivation-details': {
-        const heading = $('derivation-details')?.querySelector('h4');
+        const heading = $(id || 'derivation-details')?.querySelector('h4');
         heading?.focus({preventScroll: true});
         heading?.scrollIntoView?.({block: 'nearest'});
         break;

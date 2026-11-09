@@ -1,11 +1,22 @@
 """Optional packages that extend notebooks, found through entry points."""
 
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Any, Callable, Iterable, NamedTuple
+from typing import Any, Callable, Iterable, NamedTuple, TypedDict
 
 GROUP = "glitnir.providers"
+
+
+class HoareProof(TypedDict):
+    """A display of a saved source declaration, with optional rule information."""
+
+    pre: str
+    command: str
+    post: str
+    rule: str | None
+    premises: list[str]
 
 
 @dataclass(frozen=True)
@@ -28,6 +39,7 @@ class ViewProvider:
     preamble: str
     marker: str
     command: Callable[[str, str, tuple[str, ...]], str]
+    hoare_proofs: Callable[[Mapping[str, str]], dict[str, HoareProof]] | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +171,8 @@ def _checked(provider: Any) -> AnyProvider:
         if isinstance(provider.kinds, str):
             raise TypeError("declared kinds as a string")
         functions = {"command": provider.command}
+        if provider.hoare_proofs is not None:
+            functions["hoare_proofs"] = provider.hoare_proofs
     elif isinstance(provider, EvidenceProvider):
         if isinstance(provider.verbs, str):
             raise TypeError("declared verbs as a string")

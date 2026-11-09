@@ -1,5 +1,6 @@
 """Forseti views, simulation evidence and decisions for Glitnir notebooks."""
 
+from dataclasses import replace
 from importlib import resources
 
 from glitnir.providers import DecisionProvider, EvidenceProvider, ViewProvider
@@ -24,15 +25,16 @@ def providers() -> list[ViewProvider | EvidenceProvider | DecisionProvider]:
     from glitnir_forseti.decision_provider import decision_provider
     from glitnir_forseti.evidence_provider import evidence_providers
 
-    return [
-        ViewProvider(
-            name="forseti",
-            kinds=frozenset({"circuit", "model", "dynamics"}),
-            imports=("Lean", "Gimle.Asgard.Visualization.Model", "Gimle.Forseti"),
-            preamble=_preamble(),
-            marker="forsetiView:",
-            command=_command,
-        ),
-        *evidence_providers(),
-        decision_provider(),
-    ]
+    view = ViewProvider(
+        name="forseti",
+        kinds=frozenset({"circuit", "model", "dynamics"}),
+        imports=("Lean", "Gimle.Asgard.Visualization.Model", "Gimle.Forseti"),
+        preamble=_preamble(),
+        marker="forsetiView:",
+        command=_command,
+    )
+    if hasattr(view, "hoare_proofs"):
+        from glitnir_forseti.hoare_explore import hoare_proofs
+
+        view = replace(view, hoare_proofs=hoare_proofs)
+    return [view, *evidence_providers(), decision_provider()]

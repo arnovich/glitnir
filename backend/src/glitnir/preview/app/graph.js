@@ -485,6 +485,11 @@
     if (!root || !UI.data) return;
     if (workbench.renderAtlas?.(UI.data, {openClaimGraph, openExplore})) return;
     const derivationAvailable = workbench.hasExploreDerivation();
+    if (UI.exploreHoare && workbench.selectedHoareClaim()) {
+      workbench.renderHoareProof(root, workbench.selectedHoareClaim());
+      return;
+    }
+    UI.exploreHoare = false;
     if (derivationAvailable && UI.exploreDerivation && UI.graphSelected) {
       workbench.renderDerivation(root);
       return;

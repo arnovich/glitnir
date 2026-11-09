@@ -64,7 +64,7 @@ from glitnir.preview.cards import (
 )
 from glitnir.preview.linked import LEAN_NAME, Reference, sibling_references
 from glitnir.preview.walkthrough import WalkthroughMap, load_walkthrough
-from glitnir.providers import Providers
+from glitnir.providers import HoareProof, Providers
 
 NOTICE = (
     "Saved-source preview. Check this file explicitly "
@@ -187,6 +187,7 @@ class Snapshot(TypedDict):
     cells: list[Cell]
     claims: list[Any]
     project_claims: list[ClaimView]
+    hoare_proofs: NotRequired[dict[str, HoareProof]]
     project_non_claims: list[NonClaimView]
     project_withheld: WithheldView | None
     checking: list[Any]
@@ -518,6 +519,63 @@ class Fingerprints:
         return str(self.environment(imports)["sha256"])
 
 
+def _hoare_proofs(
+    providers: Providers, cells: list[Cell], claims: list[ClaimView]
+) -> dict[str, HoareProof]:
+    """Keep bounded proof displays whose declarations have source ranges."""
+    sources = {cell["claim"]: cell["text"] for cell in cells if "claim" in cell}
+    uses = {
+        claim["name"]: {
+            use["name"] for use in claim.get("uses", []) if use["in_notebook"]
+        }
+        for claim in claims
+    }
+    result: dict[str, HoareProof] = {}
+    for provider in {id(value): value for value in providers.views.values()}.values():
+        callback = provider.hoare_proofs
+        if callback is None:
+            continue
+        try:
+            supplied = callback(sources)
+            for name in sources.keys() & supplied.keys():
+                proof = supplied[name]
+                pre, command, post = proof["pre"], proof["command"], proof["post"]
+                rule, premises = proof["rule"], proof["premises"]
+                if not all(
+                    isinstance(term, str) and 0 < len(term) <= 1024
+                    for term in (pre, command, post)
+                ):
+                    continue
+                if rule is not None and (not isinstance(rule, str) or len(rule) > 120):
+                    continue
+                if (
+                    not isinstance(premises, list)
+                    or len(premises) > 8
+                    or not all(isinstance(p, str) and p in sources for p in premises)
+                ):
+                    continue
+                result.setdefault(
+                    name,
+                    {
+                        "pre": pre,
+                        "command": command,
+                        "post": post,
+                        "rule": rule,
+                        "premises": premises,
+                    },
+                )
+        except Exception:  # noqa: BLE001 - a provider must not break the notebook
+            continue
+    return {
+        name: (
+            proof
+            if all(p in result and p in uses.get(name, ()) for p in proof["premises"])
+            else {**proof, "rule": None, "premises": []}
+        )
+        for name, proof in result.items()
+    }
+
+
 def build_snapshot(
     path: Path,
     text: str,
@@ -531,8 +589,8 @@ def build_snapshot(
 
     Without `compare_environment` (only `static_export.SavedNotebook`),
     `fingerprint` is never called: saved results are compared with their
-    saved source only, as recorded. `providers` is called only when a
-    directive needs them.
+    saved source only, as recorded. Providers load for directives or matching
+    saved claims.
     """
     lines = _lines(text)
     entries, fallback = split_cells(text)
@@ -577,8 +635,11 @@ def build_snapshot(
     views = view_directives(entries, text)
     evidence = evidence_directives(entries, text)
     decisions = decision_directives(entries, text)
-    # Providers load only when a directive needs them.
-    loaded = providers() if views or evidence or decisions else None
+    # Proof displays use declarations located from check records for this source.
+    proof_source = bool(
+        project_claims and records and records["source_sha256"] == sha256
+    )
+    loaded = providers() if views or evidence or decisions or proof_source else None
     project = describe_project(path)
     snapshot: Snapshot = {
         "file": path.name,
@@ -648,6 +709,10 @@ def build_snapshot(
         "revisions": [],
         "assets": assets.statuses(path, assets.references(prose(entries))),
     }
+    if loaded is not None and proof_source:
+        proofs = _hoare_proofs(loaded, entries, project_claims)
+        if proofs:
+            snapshot["hoare_proofs"] = proofs
     walkthrough = load_walkthrough(path)
     if walkthrough is not None:
         snapshot["walkthrough"] = walkthrough

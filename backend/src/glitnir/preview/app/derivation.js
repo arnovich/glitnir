@@ -2,11 +2,53 @@
 (() => {
   'use strict';
   const workbench = window.glitnirWorkbench;
-  const {$, UI, claim, esc, goalBlocksHTML, goalSourceHTML, projectMode, proofGoalsHTML, sourceClaimRanges} = workbench;
+  const {$, UI, claim, esc, goalBlocksHTML, goalSourceHTML, lineLinkHTML, projectMode, proofGoalsHTML, sourceClaimRanges} = workbench;
   const SCOPED_WRAPPERS = new Set(['Lean.Parser.Tactic.case', 'Lean.Parser.Tactic.allGoals']);
   let position, renderedHTML;
 
   const hasExploreDerivation = () => projectMode() && !UI.data.walkthrough && sourceClaimRanges(UI.data.cells).size > 0;
+
+  let hoareSelection;
+  const selectedHoareClaim = () => {
+    const name = UI.graphSelected?.startsWith('local:') ? UI.graphSelected.slice(6) : null;
+    return name && !UI.data.walkthrough && Object.hasOwn(UI.data.hoare_proofs || {}, name) ? name : null;
+  };
+
+  function renderHoareProof(root, name) {
+    const proofs = UI.data.hoare_proofs;
+    const proof = proofs[name];
+    const key = JSON.stringify([UI.data.sha256, name]);
+    const selected = hoareSelection?.key === key ? hoareSelection.name : name;
+    const range = sourceClaimRanges(UI.data.cells).get(selected);
+    const triple = entry => `<span class="hoare-triple"><code>{${esc(entry.pre)}}</code><code>${esc(entry.command)}</code><code>{${esc(entry.post)}}</code></span>`;
+    const premise = premiseName => `<button type="button" class="secondary hoare-claim" data-act="hoare-premise" data-id="${esc(premiseName)}" aria-pressed="${selected === premiseName}" aria-controls="hoare-details"><strong>${esc(premiseName.split('.').at(-1))}</strong>${triple(proofs[premiseName])}</button>`;
+    const premises = proof.premises.map(premise).join('');
+    const rule = proof.rule ? `<div class="hoare-rule">${esc(proof.rule)}</div>`
+      : '<p class="small muted">No supported Hoare rule was identified for this declaration.</p>';
+    const html = `<section class="proof-graph-view hoare-view" aria-label="Hoare proof"><header><div><h2>Hoare proof</h2>
+      <p>Hoare triples and rule matches from saved source. Select a premise to see its Lean declaration.</p></div></header>
+      <div class="derivation-layout"><div class="hoare-inference">
+      ${premises ? `<div class="hoare-premises" aria-label="Premises" role="group">${premises}</div>` : ''}
+      ${rule}${premise(name)}
+      <p class="small muted derivation-selection">Selected: ${esc(selected.split('.').at(-1))}
+      <button type="button" class="ghost" data-act="derivation-details" data-id="hoare-details">Jump to declaration</button></p></div>
+      <section class="derivation-details" id="hoare-details" aria-label="Selected Hoare triple">
+      <div class="goal-tactic-heading"><h4 tabindex="-1">${esc(selected.split('.').at(-1))}</h4>${range ? lineLinkHTML(range.start, range.end, false) : ''}</div>
+      ${triple(proofs[selected])}${range ? `<pre class="goal-full-tactic"><code>${esc(range.text)}</code></pre>` : ''}
+      </section></div></section>`;
+    if (renderedHTML === html && root.querySelector('.hoare-view')) return;
+    root.innerHTML = html;
+    renderedHTML = html;
+  }
+
+  function selectHoarePremise(button) {
+    const name = selectedHoareClaim();
+    if (!name) return;
+    const selected = button.dataset.id;
+    if (selected !== name && !UI.data.hoare_proofs[name].premises.includes(selected)) return;
+    hoareSelection = {key: JSON.stringify([UI.data.sha256, name]), name: selected};
+    workbench.render();
+  }
 
   function transition(node) {
     const before = node.before_ids, after = node.after_ids;
@@ -205,5 +247,5 @@
     workbench.render();
   }
 
-  Object.assign(workbench, {hasExploreDerivation, renderDerivation, selectDerivationStep});
+  Object.assign(workbench, {hasExploreDerivation, renderDerivation, selectDerivationStep, selectedHoareClaim, renderHoareProof, selectHoarePremise});
 })();
