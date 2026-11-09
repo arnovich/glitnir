@@ -129,7 +129,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (closed) return;
       const items: JobItem[] = replies.flatMap(({owner, uri, jobs}) => (jobs ?? []).flatMap((job: any) => {
         if (typeof job?.id !== 'string' || !LEAN_JOB_ID.test(job.id) || typeof job.file !== 'string') return [];
-        const label = LEAN_JOB_LABELS.get(job.kind) || 'Lean job';
+        const label = job.kind === 'view' && typeof job.detail === 'string' && job.detail
+          ? `Render ${job.detail}` : LEAN_JOB_LABELS.get(job.kind) || 'Lean job';
         const state = LEAN_JOB_STATES.get(job.state);
         if (!state) return [];
         return [{id: job.id, owner, label: job.file, description: label,

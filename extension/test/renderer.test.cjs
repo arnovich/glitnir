@@ -6321,7 +6321,7 @@ test('the top bar names an external Lean job and clears after it finishes', asyn
 test('a cancellable job from another preview can be stopped from the header', async () => {
   const snapshot = projectNotebook(), messages = [];
   const id = '1'.repeat(32);
-  snapshot.lean_job = {id, kind: 'proof', file: 'Circuit.lean', same_process: false, can_stop: true};
+  snapshot.lean_job = {id, kind: 'view', detail: 'Demo.optimized', file: 'Circuit.lean', same_process: false, can_stop: true};
   const w = await renderSnapshot(snapshot, {onMessage: message => {
     messages.push(message);
     if (message.type === 'stopLeanJob') {
@@ -6335,6 +6335,7 @@ test('a cancellable job from another preview can be stopped from the header', as
     const d = w.document;
     d.getElementById('lean-jobs').click();
     assert.ok(messages.some(m => m.type === 'showLeanJobs'));
+    assert.match(d.getElementById('shared-lean-activity').textContent, /Rendering Demo\.optimized · Circuit\.lean/);
     const stop = d.getElementById('stop-shared-lean-job');
     assert.equal(stop.hidden, false);
     assert.match(stop.getAttribute('aria-label'), /Circuit.lean/);

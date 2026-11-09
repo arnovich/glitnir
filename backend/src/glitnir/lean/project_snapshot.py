@@ -65,12 +65,14 @@ class _LeanJob:
     kind: str
     source: Path
     stop: threading.Event | None
+    detail: str
     running: bool = False
 
     def status(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "kind": self.kind,
+            "detail": self.detail,
             "file": self.source.name.encode("utf-8", "replace").decode(),
             "state": (
                 "stopping"
@@ -103,12 +105,14 @@ def cancel_lean_job(identity: str) -> bool:
 
 @contextmanager
 def _track_job(
-    spec: tuple[str, Path] | None, stop: threading.Event | None
+    spec: tuple[str, Path] | None, stop: threading.Event | None, detail: str
 ) -> Iterator[_LeanJob | None]:
     if spec is None:
         yield None
         return
-    job = _LeanJob(uuid4().hex, *spec, stop)
+    job = _LeanJob(
+        uuid4().hex, *spec, stop, detail[:300].encode("utf-8", "replace").decode()
+    )
     with _JOBS_LOCK:
         _JOBS[job.id] = job
     try:
@@ -151,6 +155,7 @@ def active_lean_job() -> dict[str, Any] | None:
                 if isinstance(kind, str) and isinstance(file, str):
                     return {
                         "kind": kind,
+                        "detail": job.get("detail", ""),
                         "file": file.encode("utf-8", "replace").decode(),
                         "same_process": job["pid"] == os.getpid(),
                         "owner_pid": job["pid"],
@@ -178,7 +183,7 @@ def _publish_lean_job(job: _LeanJob | None) -> Iterator[None]:
                     os.ftruncate(fd, 0)
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     payload = {**job.status(), "pid": os.getpid()}
-                    os.pwrite(fd, json.dumps(payload).encode(), 0)
+                    os.pwrite(fd, json.dumps(payload, ensure_ascii=False).encode(), 0)
         yield
     finally:
         if fd >= 0:
@@ -192,6 +197,7 @@ def snapshot_slot(
     deadline: float | None = None,
     waiting: Callable[[], None] | None = None,
     job: tuple[str, Path] | None = None,
+    job_detail: str = "",
     stop: threading.Event | None = None,
 ) -> Iterator[None]:
     """Serialize expensive checks across backend processes in this user temp area.
@@ -211,7 +217,7 @@ def snapshot_slot(
             )
         if deadline is None:
             deadline = time.monotonic() + check_seconds()
-        with _track_job(job, stop) as activity:
+        with _track_job(job, stop, job_detail) as activity:
             told = False
             while True:
                 try:

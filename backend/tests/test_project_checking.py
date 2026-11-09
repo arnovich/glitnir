@@ -103,7 +103,7 @@ def test_activity_is_visible_across_processes_and_clears_on_exit(
     code = """
 from pathlib import Path
 from glitnir.lean.project_snapshot import snapshot_slot
-with snapshot_slot(job=("view", Path("Demo.lean"))):
+with snapshot_slot(job=("view", Path("Demo.lean")), job_detail="Demo.Circuit"):
     print("ready", flush=True)
     input()
 """
@@ -120,6 +120,7 @@ with snapshot_slot(job=("view", Path("Demo.lean"))):
             assert job is not None
             assert job["kind"] == "view"
             assert job["file"] == "Demo.lean"
+            assert job["detail"] == "Demo.Circuit"
             assert job["same_process"] is False
             assert job["can_stop"] is False
         finally:

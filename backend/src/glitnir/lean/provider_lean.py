@@ -388,6 +388,7 @@ def run_provider_batch(
     progress: Callable[[str], None] | None = None,
     wait: bool = False,
     environment_sha256: str | None = None,
+    job_detail: str = "",
 ) -> Mapping[str, Any]:
     """Elaborate the notebook and several provider commands in one Lean run.
 
@@ -442,6 +443,7 @@ def run_provider_batch(
             cancel=cancel if wait else None,
             waiting=lambda: report(WAITING),
             job=(needs, source),
+            job_detail=job_detail,
             stop=cancel,
         )
         with (

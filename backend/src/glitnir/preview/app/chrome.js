@@ -296,7 +296,7 @@
   const LEAN_JOB_LABELS = new Map([
     ['check', 'Checking saved file'],
     ['proof', 'Recording proof goals'],
-    ['view', 'Preparing a notebook view'],
+    ['view', 'Rendering notebook diagrams'],
     ['evidence', 'Running evidence'],
     ['decision', 'Preparing a proposed proof'],
     ['candidate', 'Checking a proposed proof'],
@@ -394,7 +394,8 @@
     stopShared.dataset.id = canStop ? holder.id : '';
     stopShared.setAttribute('aria-label', `Stop Lean job for ${holder?.file || 'this notebook'}`);
     $('lean-jobs').hidden = !HOST?.showLeanJobs;
-    const holderLabel = LEAN_JOB_LABELS.get(holder?.kind) || 'Lean is running';
+    const holderLabel = holder?.kind === 'view' && typeof holder.detail === 'string' && holder.detail
+      ? `Rendering ${holder.detail}` : LEAN_JOB_LABELS.get(holder?.kind) || 'Lean is running';
     const holderText = showHolder ? [
       holderLabel,
       typeof holder.file === 'string' && holder.file,
