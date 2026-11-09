@@ -581,6 +581,39 @@ def test_check_saves_records_and_shows_claim_cells(tmp_path, monkeypatch):
     assert "".join(c["text"] for c in snapshot["cells"]) == path.read_text()
 
 
+def test_saved_claim_can_supply_a_hoare_display(tmp_path, monkeypatch):
+    """A provider contributes a bounded view of the matching saved source."""
+    from glitnir.providers import ViewProvider
+
+    path = tmp_path / "A.lean"
+    path.write_text("/-! # Demo -/\ntheorem result : True := by\n  trivial\n")
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(
+        source_preview, "check_project", lambda *a, **k: fake_result(sha)
+    )
+    triple = {"pre": "P", "command": "f", "post": "Q", "rule": None, "premises": []}
+    provider = ViewProvider(
+        "demo",
+        frozenset({"circuit"}),
+        (),
+        "",
+        "demo:",
+        lambda *_: "",
+        hoare_proofs=lambda _: {"A.result": triple},
+    )
+    service = SourcePreviewService(
+        path, providers=lambda: Providers({"circuit": provider}, {}, {}, {})
+    )
+    try:
+        assert "hoare_proofs" not in service.snapshot()
+        check_and_wait(service, sha)
+        assert service.snapshot()["hoare_proofs"] == {"A.result": triple}
+        path.write_text(path.read_text() + "\n-- changed")
+        assert "hoare_proofs" not in service.snapshot()
+    finally:
+        service.close()
+
+
 def test_checked_examples_show_their_statement_and_non_claims(tmp_path, monkeypatch):
     """An example claim carries its checked statement; others are marked."""
     import hashlib

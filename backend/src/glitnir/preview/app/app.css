@@ -846,3 +846,12 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .check-result-details summary { cursor: pointer; width: fit-content; }
 .check-result-details dl { margin: .5rem 0; }
 .check-result-details dd { margin: 0 0 .35rem; overflow-wrap: anywhere; }
+
+.hoare-inference { display: grid; justify-items: center; gap: .65rem; min-width: 0; }
+.hoare-premises { display: flex; justify-content: center; flex-wrap: wrap; gap: .65rem; width: 100%; }
+.hoare-claim { display: grid; gap: .25rem; max-width: 100%; text-align: center; }
+.hoare-claim[aria-pressed="true"] { background: var(--blue-soft); border-color: var(--blue); }
+.hoare-triple { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: .25rem .45rem; }
+.hoare-triple code { overflow-wrap: anywhere; }
+.hoare-rule { width: 100%; border-bottom: 1px solid var(--ink); text-align: end; padding-bottom: .2rem; font-size: 12px; }
+.hoare-view .derivation-details .hoare-triple { justify-content: start; margin-bottom: .5rem; }
