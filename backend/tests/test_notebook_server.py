@@ -114,6 +114,39 @@ def test_the_notebook_endpoint_returns_the_snapshot(server) -> None:
     assert "prose" in [c["kind"] for c in snapshot["cells"]]
 
 
+def test_lean_jobs_route_lists_and_stops_one_job(
+    server, notebook, tmp_path, monkeypatch
+):
+    from glitnir.lean.project_snapshot import snapshot_slot
+
+    monkeypatch.setattr(
+        "glitnir.lean.project_snapshot.tempfile.gettempdir", lambda: str(tmp_path)
+    )
+    cancel = threading.Event()
+    with snapshot_slot(job=("proof", notebook), stop=cancel):
+        response, body = _request(server, "GET", "/api/lean/jobs")
+        assert response.status == 200
+        [job] = json.loads(body)["jobs"]
+        assert job["state"] == "running" and job["can_stop"]
+        url = "/api/lean/jobs/cancel"
+        assert _post(server, url, {"id": job["id"], "extra": True})[0].status == 400
+        response, _ = _request(
+            server,
+            "POST",
+            url,
+            json.dumps({"id": job["id"]}),
+            {"Content-Type": "application/json"},
+            app=False,
+        )
+        assert response.status == 403
+        assert not cancel.is_set()
+        assert json.loads(_post(server, url, {"id": job["id"]})[1]) == {
+            "cancelled": True
+        }
+        assert cancel.is_set()
+    assert json.loads(_post(server, url, {"id": job["id"]})[1]) == {"cancelled": False}
+
+
 def test_research_endpoint_reads_one_claim_and_never_accepts_a_write(
     server, service, monkeypatch
 ) -> None:

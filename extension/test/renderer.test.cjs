@@ -6281,7 +6281,7 @@ test('the top bar names an external Lean job and clears after it finishes', asyn
       assert.match(activity.textContent, /Recording proof goals/);
       assert.match(activity.textContent, /Circuit.lean/);
       assert.match(activity.textContent, /Started elsewhere/);
-      assert.equal(activity.querySelector('button'), null);
+      assert.equal(activity.querySelector('button:not([hidden])'), null);
     }
     snapshot.preview.check = {status: 'running', source_sha256: snapshot.sha256, message: 'Waiting for another Lean run to finish.', theorems: []};
     await w.glitnirPoll();
@@ -6291,6 +6291,34 @@ test('the top bar names an external Lean job and clears after it finishes', asyn
     snapshot.lean_job = null;
     await w.glitnirPoll();
     assert.equal(activity.hidden, true);
+  } finally {w.close();}
+});
+
+test('a cancellable job from another preview can be stopped from the header', async () => {
+  const snapshot = projectNotebook(), messages = [];
+  const id = '1'.repeat(32);
+  snapshot.lean_job = {id, kind: 'proof', file: 'Circuit.lean', same_process: false, can_stop: true};
+  const w = await renderSnapshot(snapshot, {onMessage: message => {
+    messages.push(message);
+    if (message.type === 'stopLeanJob') {
+      snapshot.lean_job = null;
+      queueMicrotask(() => w.dispatchEvent(new w.MessageEvent('message', {data: {
+        type: 'response', id: message.id, status: 200, json: {cancelled: true},
+      }})));
+    }
+  }});
+  try {
+    const d = w.document;
+    d.getElementById('lean-jobs').click();
+    assert.ok(messages.some(m => m.type === 'showLeanJobs'));
+    const stop = d.getElementById('stop-shared-lean-job');
+    assert.equal(stop.hidden, false);
+    assert.match(stop.getAttribute('aria-label'), /Circuit.lean/);
+    stop.click();
+    assert.ok(messages.some(m => m.type === 'stopLeanJob' && m.body === id));
+    assert.match(d.getElementById('shared-lean-activity').textContent, /Stopping/);
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(d.getElementById('run-activity').hidden, true);
   } finally {w.close();}
 });
 

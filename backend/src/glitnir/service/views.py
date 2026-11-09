@@ -384,6 +384,8 @@ class ViewDrawing:
             failure = {"error": f"View drawing failed: {error}"}
         finally:
             with self._context.state_lock:
+                if run.cancel.is_set():
+                    self._cancel_run(run)
                 for job, _entry in members:
                     self._end_view_job(job, failure)
                 self._view_run = None
@@ -407,6 +409,8 @@ class ViewDrawing:
             progress=progress,
             environment_sha256=members[0][0].environment_sha256,
         )
+        if run.cancel.is_set():
+            return {"error": VIEW_CANCELLED}
         if "views" not in result:
             return result
         for (job, _entry), drawing in zip(members, result["views"]):

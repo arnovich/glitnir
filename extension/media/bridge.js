@@ -9,7 +9,7 @@
   const images = /^image\/(png|jpeg|gif|webp|svg\+xml)$/;
   // Posts that only stop work never depend on the editor's text. The
   // extension host applies the same list (STOP_PATHS in backend.ts).
-  const STOP_PATHS = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel', '/api/project/check/cancel'];
+  const STOP_PATHS = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel', '/api/project/check/cancel', '/api/lean/jobs/cancel'];
 
   function externalHref(href) {
     if (/\s/.test(href)) return false;
@@ -62,6 +62,11 @@
       return decodeURIComponent(document.querySelector('meta[name="atlas-position"]')?.content || '');
     },
     saveAtlasPosition(body) { vscode.postMessage({type: 'atlasPosition', body}); },
+    showLeanJobs() { vscode.postMessage({type: 'showLeanJobs'}); },
+    async stopLeanJob(id) {
+      const reply = await request('', {body: id}, 'stopLeanJob');
+      return reply.json?.cancelled === true;
+    },
     async gitHistory() {
       const reply = await request('', {}, 'gitHistory');
       if (reply.status !== 200) throw new Error(reply.json?.error || 'Git history is unavailable.');

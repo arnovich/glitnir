@@ -24,6 +24,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Iterator
+from uuid import uuid4
 
 from glitnir.lean import artifact_store
 from glitnir.lean.artifact_store import ArtifactStore, StoreError
@@ -56,6 +57,65 @@ SLOT_WAIT_CANCELLED = "Waiting for another Lean run was cancelled."
 SLOT_WAIT_TIMED_OUT = "Waiting for another Lean run timed out."
 #: Seconds between attempts to take a busy slot while waiting for it.
 _SLOT_POLL_SECONDS = 0.25
+
+
+@dataclass
+class _LeanJob:
+    id: str
+    kind: str
+    source: Path
+    stop: threading.Event | None
+    running: bool = False
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "file": self.source.name.encode("utf-8", "replace").decode(),
+            "state": (
+                "stopping"
+                if self.stop is not None and self.stop.is_set()
+                else "running" if self.running else "waiting"
+            ),
+            "can_stop": self.stop is not None and not self.stop.is_set(),
+        }
+
+
+_JOBS: dict[str, _LeanJob] = {}
+_JOBS_LOCK = threading.Lock()
+
+
+def lean_jobs() -> list[dict[str, Any]]:
+    """List this process's running and waiting Lean jobs."""
+    with _JOBS_LOCK:
+        return [job.status() for job in _JOBS.values()]
+
+
+def cancel_lean_job(identity: str) -> bool:
+    """Request cancellation of exactly the listed job, if still present."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(identity)
+        if job is None or job.stop is None:
+            return False
+        job.stop.set()
+        return True
+
+
+@contextmanager
+def _track_job(
+    spec: tuple[str, Path] | None, stop: threading.Event | None
+) -> Iterator[_LeanJob | None]:
+    if spec is None:
+        yield None
+        return
+    job = _LeanJob(uuid4().hex, *spec, stop)
+    with _JOBS_LOCK:
+        _JOBS[job.id] = job
+    try:
+        yield job
+    finally:
+        with _JOBS_LOCK:
+            del _JOBS[job.id]
 
 
 def _slot_path() -> Path:
@@ -93,6 +153,9 @@ def active_lean_job() -> dict[str, Any] | None:
                         "kind": kind,
                         "file": file.encode("utf-8", "replace").decode(),
                         "same_process": job["pid"] == os.getpid(),
+                        "owner_pid": job["pid"],
+                        "id": job.get("id"),
+                        "can_stop": job.get("can_stop") is True,
                     }
         finally:
             os.close(fd)
@@ -102,7 +165,7 @@ def active_lean_job() -> dict[str, Any] | None:
 
 
 @contextmanager
-def _publish_lean_job(job: tuple[str, Path] | None) -> Iterator[None]:
+def _publish_lean_job(job: _LeanJob | None) -> Iterator[None]:
     """Publish advisory metadata while the execution slot is held."""
     fd = -1
     try:
@@ -114,8 +177,7 @@ def _publish_lean_job(job: tuple[str, Path] | None) -> Iterator[None]:
                     # bytes before locking so they cannot be seen as a new job.
                     os.ftruncate(fd, 0)
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    kind, source = job
-                    payload = {"pid": os.getpid(), "kind": kind, "file": source.name}
+                    payload = {**job.status(), "pid": os.getpid()}
                     os.pwrite(fd, json.dumps(payload).encode(), 0)
         yield
     finally:
@@ -130,6 +192,7 @@ def snapshot_slot(
     deadline: float | None = None,
     waiting: Callable[[], None] | None = None,
     job: tuple[str, Path] | None = None,
+    stop: threading.Event | None = None,
 ) -> Iterator[None]:
     """Serialize expensive checks across backend processes in this user temp area.
 
@@ -148,25 +211,29 @@ def snapshot_slot(
             )
         if deadline is None:
             deadline = time.monotonic() + check_seconds()
-        told = False
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError as error:
-                if cancel is None:
-                    raise SnapshotError(SLOT_BUSY) from error
-            if not told and waiting is not None:
-                waiting()
-            told = True
-            if cancel.wait(
-                max(0.0, min(_SLOT_POLL_SECONDS, deadline - time.monotonic()))
-            ):
-                raise SnapshotError(SLOT_WAIT_CANCELLED)
-            if time.monotonic() >= deadline:
-                raise SnapshotError(SLOT_WAIT_TIMED_OUT)
-        with _publish_lean_job(job):
-            yield
+        with _track_job(job, stop) as activity:
+            told = False
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError as error:
+                    if cancel is None:
+                        raise SnapshotError(SLOT_BUSY) from error
+                if not told and waiting is not None:
+                    waiting()
+                told = True
+                if cancel.wait(
+                    max(0.0, min(_SLOT_POLL_SECONDS, deadline - time.monotonic()))
+                ):
+                    raise SnapshotError(SLOT_WAIT_CANCELLED)
+                if time.monotonic() >= deadline:
+                    raise SnapshotError(SLOT_WAIT_TIMED_OUT)
+            if activity is not None:
+                with _JOBS_LOCK:
+                    activity.running = True
+            with _publish_lean_job(activity):
+                yield
     finally:
         os.close(fd)
 

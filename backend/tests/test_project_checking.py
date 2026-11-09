@@ -3,6 +3,7 @@
 import fcntl
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,9 @@ from glitnir.lean.project_snapshot import (
     SLOT_BUSY,
     SnapshotError,
     active_lean_job,
+    cancel_lean_job,
     copy_file,
+    lean_jobs,
     snapshot_slot,
 )
 
@@ -113,11 +116,12 @@ with snapshot_slot(job=("view", Path("Demo.lean"))):
         try:
             assert holder.stdout is not None
             assert holder.stdout.readline().strip() == "ready"
-            assert active_lean_job() == {
-                "kind": "view",
-                "file": "Demo.lean",
-                "same_process": False,
-            }
+            job = active_lean_job()
+            assert job is not None
+            assert job["kind"] == "view"
+            assert job["file"] == "Demo.lean"
+            assert job["same_process"] is False
+            assert job["can_stop"] is False
         finally:
             holder.kill()
             holder.wait(timeout=5)
@@ -127,6 +131,52 @@ with snapshot_slot(job=("view", Path("Demo.lean"))):
         fcntl.flock(observer, fcntl.LOCK_SH | fcntl.LOCK_NB)
         with snapshot_slot(job=("check", tmp_path / "Other.lean")):
             assert active_lean_job() is None
+
+
+def test_lean_job_cancellation_targets_the_exact_running_or_waiting_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancel one queued request without stopping its blocker or a replacement."""
+    monkeypatch.setattr(
+        "glitnir.lean.project_snapshot.tempfile.gettempdir", lambda: str(tmp_path)
+    )
+    running_cancel, waiting_cancel, waiting = (threading.Event() for _ in range(3))
+    outcomes: list[str] = []
+    source = tmp_path / "Demo.lean"
+
+    def wait_for_lean() -> None:
+        try:
+            with snapshot_slot(
+                job=("check", source),
+                cancel=waiting_cancel,
+                waiting=waiting.set,
+                stop=waiting_cancel,
+            ):
+                outcomes.append("acquired")
+        except SnapshotError as error:
+            outcomes.append(str(error))
+
+    with snapshot_slot(job=("proof", source), stop=running_cancel):
+        holder = active_lean_job()
+        assert holder is not None
+        waiter = threading.Thread(target=wait_for_lean)
+        waiter.start()
+        try:
+            assert waiting.wait(5)
+            jobs = {job["state"]: job for job in lean_jobs()}
+            assert jobs["running"]["id"] == holder["id"]
+            assert jobs["waiting"]["kind"] == "check"
+            assert cancel_lean_job(jobs["waiting"]["id"])
+            assert not running_cancel.is_set()
+            assert cancel_lean_job(holder["id"])
+            assert running_cancel.is_set()
+        finally:
+            waiting_cancel.set()
+            waiter.join(5)
+        assert outcomes == ["Waiting for another Lean run was cancelled."]
+    with snapshot_slot(job=("proof", source), stop=threading.Event()):
+        assert not cancel_lean_job(holder["id"])
+    assert lean_jobs() == []
 
 
 def test_a_waiting_caller_takes_the_slot_once_it_is_free() -> None:

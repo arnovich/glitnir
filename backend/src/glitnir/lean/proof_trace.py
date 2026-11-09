@@ -253,7 +253,7 @@ def trace_file(
         if hashlib.sha256(saved.encode()).hexdigest() != expected_sha256:
             raise SnapshotError("Saved source changed; refresh and retry.")
         with (
-            snapshot_slot(job=("proof", source)),
+            snapshot_slot(job=("proof", source), stop=cancellation),
             awake(),
             scratch_directory("glitnir-trace-") as temporary,
         ):

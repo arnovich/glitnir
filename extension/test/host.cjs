@@ -77,6 +77,59 @@ async function readLinkedNotebook(extension, root) {
   } finally { await backend.close(); }
 }
 
+/** Two preview processes report the same holder; only the owner can cancel its exact job. */
+async function stopSharedLeanJob(extension, root) {
+  const python = process.env.GLITNIR_HOST_PYTHON;
+  const {Backend} = require(path.join(extension.extensionPath, 'dist', 'backend.js'));
+  const script = `
+import os
+import sys
+import threading
+from pathlib import Path
+from glitnir.lean.project_snapshot import snapshot_slot
+from glitnir.service.preview import SourcePreviewService
+from glitnir.service.server import make_server
+source = Path(sys.argv[1])
+stop = threading.Event()
+started = threading.Event()
+def work():
+    with snapshot_slot(job=("proof", source), stop=stop):
+        started.set()
+        stop.wait(45)
+worker = threading.Thread(target=work, daemon=True)
+if sys.argv[2] == "owner":
+    worker.start()
+    if not started.wait(5):
+        raise RuntimeError("Lean test slot could not be acquired")
+with make_server(SourcePreviewService(source), token=os.environ["GLITNIR_SERVER_TOKEN"]) as server:
+    print(f"Serving {source} at http://127.0.0.1:{server.server_port}/  (Ctrl-C to stop)", flush=True)
+    server.serve_forever()
+`;
+  const backendFor = (file, mode) => new Backend({python, cwd: root.fsPath, env: {...process.env, TMPDIR: root.fsPath},
+    args: ['-I', '-B', '-u', '-c', script, path.join(root.fsPath, file), mode]});
+  const owner = backendFor('First.lean', 'owner');
+  const observer = backendFor('Second.lean', 'observer');
+  try {
+    await Promise.all([owner.ready, observer.ready]);
+    const {lean_job: holder} = (await observer.request('/api/notebook')).json;
+    assert.equal(holder.file, 'First.lean');
+    assert.equal(holder.same_process, false);
+    assert.equal(owner.ownsProcess(holder.owner_pid), true);
+    assert.equal(observer.ownsProcess(holder.owner_pid), false);
+    assert.deepEqual((await observer.request('/api/lean/jobs')).json.jobs, []);
+    const {jobs} = (await owner.request('/api/lean/jobs')).json;
+    assert.equal(jobs[0].id, holder.id);
+    const cancel = backend => backend.request('/api/lean/jobs/cancel', 'POST', JSON.stringify({id: holder.id}));
+    assert.equal((await cancel(observer)).json.cancelled, false);
+    assert.equal((await cancel(owner)).json.cancelled, true);
+    for (let i = 0; i < 30; i++) {
+      if (!(await observer.request('/api/notebook')).json.lean_job) return;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.fail('The shared Lean job did not clear after cancellation');
+  } finally { await Promise.all([owner.close(), observer.close()]); }
+}
+
 /**
  * Ask the real backend for a check through one line. The digest names no saved file, so the check stops before any
  * Lean runs, and reports the request back; the host transport refuses any other body.
@@ -192,8 +245,9 @@ async function run() {
   await acceptCandidate(extension, root);
   await readLinkedNotebook(extension, root);
   await checkThroughLine(extension, root);
+  await stopSharedLeanJob(extension, root);
   console.log(`Install uv terminal environment: ${(await installerEnvironment(extension, root)).join(' ')}`);
-  console.log('VS Code host: two previews, reverse navigation, edit/save, disposal, accepting a decision, reading a linked notebook and a check through one line passed.');
+  console.log('VS Code host: two previews, reverse navigation, edit/save, disposal, accepting a decision, reading a linked notebook, a check through one line and cross-preview Lean job cancellation passed.');
   if (process.env.GLITNIR_HOST_SUCCESS) require('node:fs').writeFileSync(process.env.GLITNIR_HOST_SUCCESS, 'passed');
 }
 

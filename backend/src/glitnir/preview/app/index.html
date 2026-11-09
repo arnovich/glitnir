@@ -61,7 +61,8 @@
           <p id="preview-footer">Statuses describe saved files checked by sandboxed Lean.</p>
         </div>
       </details>
-      <div id="run-activity" hidden><div id="proof-run-activity"></div><div id="shared-lean-activity" aria-hidden="true"></div></div>
+      <div id="run-activity" hidden><div id="proof-run-activity"></div><div id="shared-lean-job"><span id="shared-lean-activity" aria-hidden="true"></span><button type="button" class="secondary" id="stop-shared-lean-job" data-act="lean-stop" hidden>Stop</button></div></div>
+      <button type="button" class="secondary" id="lean-jobs" data-act="lean-jobs" hidden>Lean jobs</button>
       <span id="shared-lean-announcement" role="status"></span>
     </div>
   </header>

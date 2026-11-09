@@ -301,6 +301,18 @@
     ['decision', 'Preparing a proposed proof'],
     ['candidate', 'Checking a proposed proof'],
   ]);
+  let stoppingLeanJob;
+  async function stopSharedLeanJob(id) {
+    if (!id || stoppingLeanJob === id) return;
+    stoppingLeanJob = id;
+    render();
+    const cancelled = await HOST.stopLeanJob(id).catch(() => false);
+    if (!cancelled && stoppingLeanJob === id) {
+      stoppingLeanJob = null;
+      render();
+    }
+    void load();
+  }
   let renderedCheckHTML;
   function renderChrome() {
     const d = UI.data, cs = claims();
@@ -368,18 +380,26 @@
     const showProof = !linked && proofRun;
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
     const holder = d.lean_job;
+    if (stoppingLeanJob !== holder?.id) stoppingLeanJob = null;
     const shownLocally = holder?.same_process && (
       (holder.kind === 'proof' && showProof)
       || (holder.kind === 'check' && checkingNow && check.message !== 'Waiting for another Lean run to finish.')
     );
     const showHolder = holder && !shownLocally;
     const holderStatus = $('shared-lean-activity');
+    const stopShared = $('stop-shared-lean-job');
+    const canStop = showHolder && HOST?.stopLeanJob && holder.can_stop && holder.id;
+    const stopping = canStop && stoppingLeanJob === holder.id;
+    stopShared.hidden = !canStop || stopping;
+    stopShared.dataset.id = canStop ? holder.id : '';
+    stopShared.setAttribute('aria-label', `Stop Lean job for ${holder?.file || 'this notebook'}`);
+    $('lean-jobs').hidden = !HOST?.showLeanJobs;
     const holderLabel = LEAN_JOB_LABELS.get(holder?.kind) || 'Lean is running';
     const holderText = showHolder ? [
       holderLabel,
       typeof holder.file === 'string' && holder.file,
       holder.same_process === false && 'Started elsewhere',
-      'No stop control here',
+      stopping ? 'Stopping…' : !canStop && 'No stop control here',
     ].filter(Boolean).join(' · ') : '';
     if (holderStatus.textContent !== holderText) {
       holderStatus.textContent = holderText;
@@ -588,10 +608,10 @@
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
     if (activityFocus) {
-      const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)
+      const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus && !el.hidden)
         || (activityFocus === 'goal-cancel' && UI.mode === 'graph' && UI.exploreDerivation ? $('graph-view').querySelector('[data-act="goal"]') : null)
         || (activityFocus === 'goal-cancel' && UI.mode === 'doc' && UI.panel ? $('insp').querySelector('[data-act="goal"]') : null)
-        || $('status-summary');
+        || (activityFocus === 'lean-stop' && !$('lean-jobs').hidden ? $('lean-jobs') : $('status-summary'));
       control?.focus({preventScroll: true});
     }
     $('insp').scrollTop = scroll;
@@ -840,6 +860,8 @@
     const id = b.dataset.id;
     if (researchAction(b)) return;
     switch (b.dataset.act) {
+      case 'lean-jobs': HOST?.showLeanJobs?.(); break;
+      case 'lean-stop': if (!b.hidden && HOST?.stopLeanJob) void stopSharedLeanJob(id); break;
       case 'git-refresh': void loadGitHistory(true); break;
       case 'git-diff': void showGitDiff(b.dataset.sha); break;
       case 'diagram': diagramAction(b); break;

@@ -998,6 +998,7 @@ def _check_text(
             cancel=check.cancel,
             waiting=lambda: progress(SLOT_WAITING),
             job=(job_kind, source),
+            stop=check.cancel,
         ),
         awake(),
         scratch_directory("glitnir-check-") as temporary,
@@ -1141,6 +1142,8 @@ def check_project(
                 ),
                 checked_lines,
             )
+            if cancellation.is_set():
+                raise SnapshotError("Project check cancelled.")
             if not requested:
                 whole: CheckResult = {
                     **result,
@@ -1185,6 +1188,8 @@ def check_project(
                 ),
                 line,
             )
+            if cancellation.is_set():
+                raise SnapshotError("Project check cancelled.")
             message = failure_message(str(failure))
             if failure.note:
                 message = f"{message} ({failure.note})" if message else failure.note
