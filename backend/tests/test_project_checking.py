@@ -1,5 +1,8 @@
 """Project checks bind independently replayed observations to private snapshots."""
 
+import fcntl
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +11,7 @@ from conftest import EXAMPLES, claim_of, edits_of, example_entries, settle
 from glitnir.lean.project_snapshot import (
     SLOT_BUSY,
     SnapshotError,
+    active_lean_job,
     copy_file,
     snapshot_slot,
 )
@@ -60,6 +64,69 @@ def test_snapshot_slot_serializes_checks() -> None:
             with snapshot_slot():
                 pytest.fail("a second checker acquired the slot")
     assert str(raised.value) == SLOT_BUSY
+
+
+def test_active_lean_job_tracks_the_holder(tmp_path, monkeypatch) -> None:
+    """A busy slot reports its holder, then clears even after a failure."""
+    monkeypatch.setattr(
+        "glitnir.lean.project_snapshot.tempfile.gettempdir", lambda: str(tmp_path)
+    )
+    assert active_lean_job() is None
+    with pytest.raises(RuntimeError, match="worker failed"):
+        with snapshot_slot(job=("proof", tmp_path / "Circuit.lean")):
+            job = active_lean_job()
+            assert job is not None
+            assert job["kind"] == "proof"
+            assert job["file"] == "Circuit.lean"
+            assert job["same_process"] is True
+            with pytest.raises(SnapshotError, match="Another Lean run"):
+                with snapshot_slot(job=("check", tmp_path / "Other.lean")):
+                    pytest.fail("a second job acquired the slot")
+            assert active_lean_job() == job
+            raise RuntimeError("worker failed")
+    assert active_lean_job() is None
+    with snapshot_slot():
+        assert active_lean_job() is None
+
+
+def test_activity_is_visible_across_processes_and_clears_on_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different backend sees the holder even if it is killed before cleanup."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(
+        "glitnir.lean.project_snapshot.tempfile.gettempdir", lambda: str(tmp_path)
+    )
+    code = """
+from pathlib import Path
+from glitnir.lean.project_snapshot import snapshot_slot
+with snapshot_slot(job=("view", Path("Demo.lean"))):
+    print("ready", flush=True)
+    input()
+"""
+    with subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as holder:
+        try:
+            assert holder.stdout is not None
+            assert holder.stdout.readline().strip() == "ready"
+            assert active_lean_job() == {
+                "kind": "view",
+                "file": "Demo.lean",
+                "same_process": False,
+            }
+        finally:
+            holder.kill()
+            holder.wait(timeout=5)
+    assert active_lean_job() is None
+    [activity] = tmp_path.glob("*.activity")
+    with activity.open("rb") as observer:
+        fcntl.flock(observer, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        with snapshot_slot(job=("check", tmp_path / "Other.lean")):
+            assert active_lean_job() is None
 
 
 def test_a_waiting_caller_takes_the_slot_once_it_is_free() -> None:

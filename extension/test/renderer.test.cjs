@@ -6269,6 +6269,31 @@ test('goal results show the target and context before and after a step', async (
   } finally {w.close();}
 });
 
+test('the top bar names an external Lean job and clears after it finishes', async () => {
+  const snapshot = projectNotebook();
+  snapshot.lean_job = {kind: 'proof', file: 'Circuit.lean', same_process: false};
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document, activity = d.getElementById('run-activity');
+    for (const mode of ['doc', 'source', 'graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(activity.hidden, false);
+      assert.match(activity.textContent, /Recording proof goals/);
+      assert.match(activity.textContent, /Circuit.lean/);
+      assert.match(activity.textContent, /Started elsewhere/);
+      assert.equal(activity.querySelector('button'), null);
+    }
+    snapshot.preview.check = {status: 'running', source_sha256: snapshot.sha256, message: 'Waiting for another Lean run to finish.', theorems: []};
+    await w.glitnirPoll();
+    assert.match(activity.textContent, /Circuit.lean/);
+    assert.equal(activity.querySelector('[data-act="check-cancel"]').textContent, 'Stop waiting');
+    snapshot.preview.check = null;
+    snapshot.lean_job = null;
+    await w.glitnirPoll();
+    assert.equal(activity.hidden, true);
+  } finally {w.close();}
+});
+
 test('active checks stay visible and cancellable in Notebook, Source and Explore', async () => {
   const snapshot=projectNotebook(), messages=[];
   snapshot.preview.check={status:'running',source_sha256:snapshot.sha256,message:'Checking saved file',theorems:[]};

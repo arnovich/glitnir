@@ -20,7 +20,7 @@ import stat
 import tempfile
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Iterator
@@ -58,12 +58,78 @@ SLOT_WAIT_TIMED_OUT = "Waiting for another Lean run timed out."
 _SLOT_POLL_SECONDS = 0.25
 
 
+def _slot_path() -> Path:
+    return Path(tempfile.gettempdir()) / f"glitnir-project-check-{os.getuid()}.lock"
+
+
+def _activity_path() -> Path:
+    return _slot_path().with_suffix(".activity")
+
+
+def _private_activity_file(fd: int) -> bool:
+    info = os.fstat(fd)
+    return (
+        stat.S_ISREG(info.st_mode)
+        and info.st_uid == os.getuid()
+        and info.st_nlink == 1
+        and not info.st_mode & 0o077
+    )
+
+
+def active_lean_job() -> dict[str, Any] | None:
+    """Report the current published slot holder without touching the Lean lock."""
+    try:
+        fd = os.open(_activity_path(), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            if not _private_activity_file(fd):
+                return None
+            try:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                job = json.loads(os.pread(fd, 4096, 0))
+                kind, file = job["kind"], job["file"]
+                if isinstance(kind, str) and isinstance(file, str):
+                    return {
+                        "kind": kind,
+                        "file": file.encode("utf-8", "replace").decode(),
+                        "same_process": job["pid"] == os.getpid(),
+                    }
+        finally:
+            os.close(fd)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+@contextmanager
+def _publish_lean_job(job: tuple[str, Path] | None) -> Iterator[None]:
+    """Publish advisory metadata while the execution slot is held."""
+    fd = -1
+    try:
+        if job is not None:
+            with suppress(OSError):
+                fd = artifact_store.open_lock_file(_activity_path())
+                if _private_activity_file(fd):
+                    # Only the execution-slot owner writes here. Clear stale
+                    # bytes before locking so they cannot be seen as a new job.
+                    os.ftruncate(fd, 0)
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    kind, source = job
+                    payload = {"pid": os.getpid(), "kind": kind, "file": source.name}
+                    os.pwrite(fd, json.dumps(payload).encode(), 0)
+        yield
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
 @contextmanager
 def snapshot_slot(
     *,
     cancel: threading.Event | None = None,
     deadline: float | None = None,
     waiting: Callable[[], None] | None = None,
+    job: tuple[str, Path] | None = None,
 ) -> Iterator[None]:
     """Serialize expensive checks across backend processes in this user temp area.
 
@@ -73,8 +139,7 @@ def snapshot_slot(
     (`SLOT_WAIT_CANCELLED`) or at the `time.monotonic` `deadline`, by default
     the check time limit from now (`SLOT_WAIT_TIMED_OUT`).
     """
-    path = Path(tempfile.gettempdir()) / f"glitnir-project-check-{os.getuid()}.lock"
-    fd = artifact_store.open_lock_file(path)
+    fd = artifact_store.open_lock_file(_slot_path())
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
@@ -100,7 +165,8 @@ def snapshot_slot(
                 raise SnapshotError(SLOT_WAIT_CANCELLED)
             if time.monotonic() >= deadline:
                 raise SnapshotError(SLOT_WAIT_TIMED_OUT)
-        yield
+        with _publish_lean_job(job):
+            yield
     finally:
         os.close(fd)
 

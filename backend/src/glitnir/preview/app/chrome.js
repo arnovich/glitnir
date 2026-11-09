@@ -293,6 +293,14 @@
     }
   }
 
+  const LEAN_JOB_LABELS = new Map([
+    ['check', 'Checking saved file'],
+    ['proof', 'Recording proof goals'],
+    ['view', 'Preparing a notebook view'],
+    ['evidence', 'Running evidence'],
+    ['decision', 'Preparing a proposed proof'],
+    ['candidate', 'Checking a proposed proof'],
+  ]);
   let renderedCheckHTML;
   function renderChrome() {
     const d = UI.data, cs = claims();
@@ -359,7 +367,25 @@
     const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
     const showProof = !linked && proofRun;
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
-    activity.hidden = !checkingNow && !showProof;
+    const holder = d.lean_job;
+    const shownLocally = holder?.same_process && (
+      (holder.kind === 'proof' && showProof)
+      || (holder.kind === 'check' && checkingNow && check.message !== 'Waiting for another Lean run to finish.')
+    );
+    const showHolder = holder && !shownLocally;
+    const holderStatus = $('shared-lean-activity');
+    const holderLabel = LEAN_JOB_LABELS.get(holder?.kind) || 'Lean is running';
+    const holderText = showHolder ? [
+      holderLabel,
+      typeof holder.file === 'string' && holder.file,
+      holder.same_process === false && 'Started elsewhere',
+      'No stop control here',
+    ].filter(Boolean).join(' · ') : '';
+    if (holderStatus.textContent !== holderText) {
+      holderStatus.textContent = holderText;
+      $('shared-lean-announcement').textContent = holderText;
+    }
+    activity.hidden = !checkingNow && !showProof && !showHolder;
     const inspected = inspection();
     const inspectingNow = inspecting();
     if (inspectingNow && !linked) UI.dismissedInspectionSha = null;

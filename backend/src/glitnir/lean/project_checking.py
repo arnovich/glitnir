@@ -964,6 +964,7 @@ def _check_text(
     rest: str | None = None,
     acquired: Callable[[], None] = lambda: None,
     stages: StageTimes | None = None,
+    job_kind: str = "check",
 ) -> Checked:
     """Check one LF-normalised source text under a private project snapshot.
 
@@ -993,7 +994,11 @@ def _check_text(
     # The Mac is kept awake from the slot to the last Lean process: the stages
     # between Lean runs, the snapshot capture above all, take minutes too.
     with (
-        snapshot_slot(cancel=check.cancel, waiting=lambda: progress(SLOT_WAITING)),
+        snapshot_slot(
+            cancel=check.cancel,
+            waiting=lambda: progress(SLOT_WAITING),
+            job=(job_kind, source),
+        ),
         awake(),
         scratch_directory("glitnir-check-") as temporary,
         artifact_lease(temporary) as store,
@@ -1264,6 +1269,7 @@ def check_candidate(
                 cancel=cancel,
                 progress=lambda _: None,
                 stages=stages,
+                job_kind="candidate",
             )
         except CommandFailure as failure:
             verdict: Verdict = {

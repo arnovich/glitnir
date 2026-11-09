@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from glitnir.lean.project_snapshot import SnapshotError
+from glitnir.lean.project_snapshot import SnapshotError, active_lean_job
 from glitnir.lean.scratch import sweep_stale_scratch
 from glitnir.notebook.document import NotebookError
 from glitnir.preview.assets import AssetError
@@ -91,7 +91,10 @@ class _Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         try:
             if url.path == "/api/notebook":
-                self._json(HTTPStatus.OK, self.notebook.snapshot())
+                self._json(
+                    HTTPStatus.OK,
+                    {**self.notebook.snapshot(), "lean_job": active_lean_job()},
+                )
             elif url.path == "/api/research":
                 self._research(parse_qs(url.query))
             elif url.path == "/api/linked":
@@ -195,7 +198,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "send one notebook path"})
             return
         try:
-            self._json(HTTPStatus.OK, self.notebook.linked(links[0]))
+            self._json(
+                HTTPStatus.OK,
+                {**self.notebook.linked(links[0]), "lean_job": active_lean_job()},
+            )
         except NotebookLinkError as error:
             self._json(HTTPStatus(error.status), {"error": str(error)})
 
