@@ -5572,6 +5572,30 @@ test('Explore retains exceptional refresh messages and clears them after recover
   } finally {w.close();}
 });
 
+test('the preview forwards host shortcuts from its menus and help', async () => {
+  const w = await renderSnapshot(projectNotebook());
+  try {
+    const d = w.document;
+    for (const id of ['header-status', 'notebook-view-options', 'review-queue', 'keys']) {
+      const panel = d.getElementById(id);
+      if (id === 'keys') panel.hidden = false;
+      else panel.open = true;
+      const target = panel.querySelector('summary,button');
+      for (const modifier of ['metaKey', 'ctrlKey']) {
+        const event = new w.KeyboardEvent('keydown', {
+          key: 'P', shiftKey: true, [modifier]: true, bubbles: true, cancelable: true,
+        });
+        let forwarded = false;
+        w.addEventListener('keydown', received => { forwarded = received === event; }, {once: true});
+        target.dispatchEvent(event);
+        assert.ok(forwarded && !event.defaultPrevented, `${modifier} shortcut passes through ${id}`);
+      }
+      if (id === 'keys') panel.hidden = true;
+      else panel.open = false;
+    }
+  } finally { w.close(); }
+});
+
 test('header status distinguishes connection from proof status and exposes keyboard details', async () => {
   const snapshot = projectNotebook();
   let offline = false, status = 200;
