@@ -286,7 +286,8 @@
         }
       } finally {
         inFlight = null;
-        const busy = UI.data && (UI.data.checking.length || UI.data.preview?.check?.status === 'running' || UI.data.preview?.inspection?.status === 'running' || [...(UI.data.decisions || []), ...(UI.data.evidence || [])].some(e => e.status === 'running'));
+        void workbench.refreshLeanJobs?.();
+        const busy = UI.data && (!$('lean-jobs-drawer').hidden || UI.data.lean_job || UI.data.checking.length || UI.data.preview?.check?.status === 'running' || UI.data.preview?.inspection?.status === 'running' || [...(UI.data.decisions || []), ...(UI.data.evidence || [])].some(e => e.status === 'running'));
         scheduleLoad(reloadPending ? 250 : busy ? 1000 : 4000);
       }
     })();
@@ -504,12 +505,13 @@
     if (result.status === 'running') {
       const target = through && result.source_sha256 === sourceSha && (UI.data.project_claims || []).find(c => c.end_line === through);
       const label = through ? `Checking up to ${target ? projectClaimLabel(target) : `line ${through}`}` : 'Checking saved file';
+      const stopLabel = result.message === 'Waiting for another Lean run to finish.' ? 'Stop waiting' : 'Stop check';
       const stage = result.message === 'Resolving project environment' ? 'Inspecting project dependencies' : result.message;
       const timing = UI.checkTiming;
       const seconds = timing?.sha === sourceSha && timing.through === through ? Math.max(0, Math.floor((Date.now() - timing.started) / 1000)) : null;
       const elapsed = seconds === null ? '' : `${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`} elapsed`;
       const details = [through ? `Lines 1–${through}` : 'Whole saved file', elapsed].filter(Boolean).join(' · ');
-      return `<section class="check-progress" aria-label="Check progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="check-progress-title">${esc(label)}</strong><div class="check-progress-stage">${esc(stage)}…</div></div><div class="check-progress-meta small muted">${esc(details)}</div></div></div><button type="button" class="secondary" data-act="check-cancel" aria-label="Stop check">${icon('x')}Stop</button></section>`;
+      return `<section class="check-progress" aria-label="Check progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="check-progress-title">${esc(label)}</strong><div class="check-progress-stage">${esc(stage)}…</div></div><div class="check-progress-meta small muted">${esc(details)}</div></div></div><button type="button" class="secondary" data-act="check-cancel" aria-label="${stopLabel}">${icon('x')}${stopLabel === 'Stop check' ? 'Stop' : stopLabel}</button></section>`;
     }
     if (!UI.checkRequested) UI.checkTiming = null;
     if (result.status !== 'checked_snapshot') return `<h3>Check unavailable${through ? ` · lines 1–${esc(through)}` : ''}</h3><pre>${esc(result.message)}</pre>`;

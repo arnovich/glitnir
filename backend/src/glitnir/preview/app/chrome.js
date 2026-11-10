@@ -229,7 +229,7 @@
       let label = c ? (c.project ? claimLabel(c) : c.name) : short;
       if (!el.matches('.definition,.cell[data-claim]')) {
         const code = el.querySelector('pre')?.textContent.trim() || '';
-        if (el.matches('.import-header')) label = el.querySelector('summary')?.firstChild?.textContent.trim();
+        if (el.matches('details.source-context')) label = el.querySelector('summary')?.firstChild?.textContent.trim();
         else if (el.matches('.source-context') && /^(namespace|section|open|variable|universe|set_option)\b/.test(code)) label = code.split('\n')[0];
         else if (el.matches('.context-card') && !['Note', 'Additional notebook content'].includes(kindLabel)) label = kindLabel;
         else continue;
@@ -291,6 +291,74 @@
         else if (item.bottom > bounds.bottom) rail.scrollTop += item.bottom - bounds.bottom;
       }
     }
+  }
+
+  const LEAN_JOB_LABELS = new Map([
+    ['check', 'Checking saved file'],
+    ['proof', 'Recording proof goals'],
+    ['view', 'Rendering notebook diagrams'],
+    ['evidence', 'Running evidence'],
+    ['decision', 'Preparing a proposed proof'],
+    ['candidate', 'Checking a proposed proof'],
+  ]);
+  let stoppingLeanJob;
+  async function stopSharedLeanJob(id) {
+    if (!id || stoppingLeanJob === id) return;
+    stoppingLeanJob = id;
+    render();
+    const cancelled = await HOST.stopLeanJob(id).catch(() => false);
+    if (!cancelled && stoppingLeanJob === id) {
+      stoppingLeanJob = null;
+      render();
+    }
+    void load();
+  }
+  function toggleLeanJobs(open) {
+    $('lean-jobs-drawer').hidden = !open;
+    $('lean-jobs').setAttribute('aria-expanded', String(open));
+    if (open) void refreshLeanJobs();
+  }
+
+  let leanJobsRequest = false, renderedJobs;
+  async function refreshLeanJobs() {
+    if (!HOST?.listLeanJobs || leanJobsRequest) return;
+    leanJobsRequest = true;
+    try {
+      const {jobs, incomplete} = await HOST.listLeanJobs();
+      const count = jobs.length;
+      $('lean-jobs').textContent = count ? `Lean jobs · ${count}` : 'Lean jobs';
+      const status = $('lean-jobs-status');
+      const message = incomplete ? 'Some previews could not report their jobs.'
+        : count ? '' : 'No running or waiting Lean jobs in this window.';
+      if (status.textContent !== message) status.textContent = message;
+      status.hidden = !message;
+      const rows = $('lean-job-rows');
+      const html = jobs.map(job => `<li><div class="lean-job-label">${esc(job.label)}<small>${esc(job.file)}</small></div><span>${esc(job.state)}</span>
+        ${job.canStop ? `<button type="button" class="secondary" data-act="lean-row-stop" data-id="${esc(job.id)}" aria-label="Stop ${esc(job.label)} in ${esc(job.file)}">Stop</button>` : ''}</li>`).join('');
+      if (renderedJobs !== html) {
+        const focused = rows.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+        rows.innerHTML = html;
+        renderedJobs = html;
+        if (focused) ([...rows.querySelectorAll('button')].find(button => button.dataset.id === focused) || $('lean-jobs')).focus({preventScroll: true});
+      }
+      rows.hidden = !count;
+    } catch {
+      $('lean-jobs').textContent = 'Lean jobs';
+      $('lean-job-rows').hidden = true;
+      $('lean-jobs-status').hidden = false;
+      $('lean-jobs-status').textContent = 'Could not read Lean jobs.';
+    } finally {
+      leanJobsRequest = false;
+    }
+  }
+
+  async function stopListedLeanJob(button) {
+    if (button.disabled) return;
+    button.disabled = true;
+    await HOST.stopLeanJob(button.dataset.id).catch(() => false);
+    button.disabled = false;
+    void refreshLeanJobs();
+    void load();
   }
 
   let renderedCheckHTML;
@@ -359,7 +427,34 @@
     const proofRun = UI.goals?.trace?.status === 'running' ? UI.goals : null;
     const showProof = !linked && proofRun;
     $('proof-run-activity').innerHTML = showProof ? proofProgressHTML(proofRun) : '';
-    activity.hidden = !checkingNow && !showProof;
+    const holder = d.lean_job;
+    if (stoppingLeanJob !== holder?.id) stoppingLeanJob = null;
+    const shownLocally = holder?.same_process && (
+      (holder.kind === 'proof' && showProof)
+      || (holder.kind === 'check' && checkingNow && check.message !== 'Waiting for another Lean run to finish.')
+    );
+    const showHolder = holder && !shownLocally;
+    const holderStatus = $('shared-lean-activity');
+    const stopShared = $('stop-shared-lean-job');
+    const canStop = showHolder && HOST?.stopLeanJob && holder.can_stop && holder.id;
+    const stopping = canStop && stoppingLeanJob === holder.id;
+    stopShared.hidden = !canStop || stopping;
+    stopShared.dataset.id = canStop ? holder.id : '';
+    stopShared.setAttribute('aria-label', `Stop Lean job for ${holder?.file || 'this notebook'}`);
+    $('lean-jobs').hidden = !HOST?.listLeanJobs;
+    const holderLabel = holder?.kind === 'view' && typeof holder.detail === 'string' && holder.detail
+      ? `Rendering ${holder.detail}` : LEAN_JOB_LABELS.get(holder?.kind) || 'Lean is running';
+    const holderText = showHolder ? [
+      holderLabel,
+      typeof holder.file === 'string' && holder.file,
+      holder.same_process === false && 'Started elsewhere',
+      stopping ? 'Stopping…' : !canStop && 'No stop control here',
+    ].filter(Boolean).join(' · ') : '';
+    if (holderStatus.textContent !== holderText) {
+      holderStatus.textContent = holderText;
+      $('shared-lean-announcement').textContent = holderText;
+    }
+    activity.hidden = !checkingNow && !showProof && !showHolder;
     const inspected = inspection();
     const inspectingNow = inspecting();
     if (inspectingNow && !linked) UI.dismissedInspectionSha = null;
@@ -562,10 +657,10 @@
       if (link?.getAttribute('href') === linkFocus.href) link.focus({preventScroll: true});
     }
     if (activityFocus) {
-      const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus)
+      const control = [...$('run-activity').querySelectorAll('[data-act]')].find(el => el.dataset.act === activityFocus && !el.hidden)
         || (activityFocus === 'goal-cancel' && UI.mode === 'graph' && UI.exploreDerivation ? $('graph-view').querySelector('[data-act="goal"]') : null)
         || (activityFocus === 'goal-cancel' && UI.mode === 'doc' && UI.panel ? $('insp').querySelector('[data-act="goal"]') : null)
-        || $('status-summary');
+        || (activityFocus === 'lean-stop' && !$('lean-jobs').hidden ? $('lean-jobs') : $('status-summary'));
       control?.focus({preventScroll: true});
     }
     $('insp').scrollTop = scroll;
@@ -814,6 +909,9 @@
     const id = b.dataset.id;
     if (researchAction(b)) return;
     switch (b.dataset.act) {
+      case 'lean-jobs': if (HOST?.listLeanJobs) toggleLeanJobs($('lean-jobs-drawer').hidden); break;
+      case 'lean-row-stop': if (HOST?.stopLeanJob) void stopListedLeanJob(b); break;
+      case 'lean-stop': if (!b.hidden && HOST?.stopLeanJob) void stopSharedLeanJob(id); break;
       case 'git-refresh': void loadGitHistory(true); break;
       case 'git-diff': void showGitDiff(b.dataset.sha); break;
       case 'diagram': diagramAction(b); break;
@@ -977,6 +1075,11 @@
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (e.target.closest('#lean-jobs-drawer,#lean-jobs') && !$('lean-jobs-drawer').hidden) {
+        toggleLeanJobs(false);
+        $('lean-jobs').focus({preventScroll: true});
+        return;
+      }
       if ($('notebook-view-options').open && $('history').open) {
         $('history').open = false;
         $('history').querySelector('summary').focus({preventScroll: true});
@@ -1020,7 +1123,7 @@
     if (map[e.key]) { e.preventDefault(); map[e.key](); }
   });
 
-  Object.assign(workbench, {render, renderChrome, renderConnection, select, showSourceLines});
+  Object.assign(workbench, {refreshLeanJobs, render, renderChrome, renderConnection, select, showSourceLines});
 
   load();
 })();

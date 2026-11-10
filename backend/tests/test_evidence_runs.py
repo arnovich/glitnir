@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import threading
 from pathlib import Path
 
 import pytest
@@ -85,12 +86,46 @@ def test_an_evidence_run_saves_a_current_snapshot(tmp_path, monkeypatch):
         "#demo_evidence M",
         "demoEvidence:",
     )
-    assert lean[1]["cancel"] is service._cancel
+    assert isinstance(lean[1]["cancel"], threading.Event)
+    assert lean[1]["cancel"] is not service._cancel
     assert compute[1].target == "M" and compute[2] == {"x": 1}
     saved = json.loads(records_path(service.path).read_text())["evidence"][key]
     assert saved["provider"] == "demo" and saved["fingerprint"] == FP
     assert saved["created"].endswith("+00:00")
     assert service.path.read_text() == EVIDENCE_TEXT
+
+
+def test_stopping_lean_evidence_leaves_the_preview_available(tmp_path, monkeypatch):
+    """A stopped Lean stage saves no evidence and leaves later requests usable."""
+    from glitnir.lean.project_snapshot import cancel_lean_job, lean_jobs, snapshot_slot
+
+    service, calls = evidence_service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "glitnir.lean.project_snapshot.tempfile.gettempdir", lambda: str(tmp_path)
+    )
+    started = threading.Event()
+
+    def interrupted(source, *, cancel, **_options):
+        with snapshot_slot(job=("evidence", source), stop=cancel):
+            started.set()
+            assert cancel.wait(5)
+            return {"payload": '{"x": 1}'}
+
+    try:
+        with monkeypatch.context() as attempt:
+            attempt.setattr(source_runs, "run_provider_lean", interrupted)
+            service.run_evidence(evidence_sha(), 4)
+            assert started.wait(5)
+            [job] = lean_jobs()
+            assert cancel_lean_job(job["id"])
+            settle(service)
+            assert evidence_card(service)["run_error"] == "Evidence run cancelled."
+            assert not service._cancel.is_set()
+            assert not calls
+        run_evidence(service)
+        assert evidence_card(service)["status"] == "current"
+    finally:
+        service.close()
 
 
 class _ExpectedError(ValueError):

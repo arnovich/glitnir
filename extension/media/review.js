@@ -24,6 +24,7 @@
   function closeQueue() { queueMenu.open = false; queueSummary.focus({preventScroll: true}); }
   document.addEventListener('click', event => { if (!queueMenu.contains(event.target)) queueMenu.open = false; });
   queueMenu.addEventListener('keydown', event => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeQueue(); }
     else if (event.key.length === 1) event.stopPropagation();
   });
@@ -186,7 +187,7 @@
   function restoreHelpFocus() { (helpFocus?.isConnected && !helpFocus.closest('[hidden]') ? helpFocus : $('keys-open')).focus(); }
   function helpClose() { $('keys-close').click(); restoreHelpFocus(); }
   document.addEventListener('keydown', event => {
-    if (event.defaultPrevented || event.isComposing) return;
+    if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
     if (!help.hidden) {
       if (event.key === 'Escape') { event.preventDefault(); helpClose(); }
       if (event.key === 'Tab') {
@@ -207,7 +208,6 @@
       return;
     }
     if (!app.contains(event.target) || event.target.isContentEditable || event.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) { if ('npejksirg?'.includes(event.key) && event.key.length === 1) event.stopImmediatePropagation(); return; }
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
     const overlay = [...document.querySelectorAll('.overlay')].some(e => e !== help && !e.hidden);
     if (overlay || $('history')?.open) { if (event.key !== 'Escape') event.stopImmediatePropagation(); return; }
     if (!$('review-letter-keys').checked) { if (event.key.length === 1) event.stopImmediatePropagation(); return; }

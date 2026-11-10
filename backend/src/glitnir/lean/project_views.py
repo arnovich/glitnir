@@ -85,6 +85,7 @@ def render_project_views(
         return _provider_failed(provider, error)
     results: list[Mapping[str, Any] | None] = []
     commands: list[tuple[int, str]] = []
+    names: list[str] = []
     for line, kind, name, using in views:
         try:
             command = provider.command(kind, name, using)
@@ -95,7 +96,11 @@ def render_project_views(
             continue
         results.append(None)
         commands.append((line, command))
+        names.append(name if len(name) <= 120 else "…" + name[-119:])
     if commands:
+        detail = ", ".join(names[:2])
+        if len(names) > 2:
+            detail += f" and {len(names) - 2} more"
         result = run_provider_batch(
             source,
             expected_sha256=expected_sha256,
@@ -109,6 +114,7 @@ def render_project_views(
             progress=progress,
             wait=True,
             environment_sha256=environment_sha256,
+            job_detail=detail,
         )
         if "views" not in result:
             return result

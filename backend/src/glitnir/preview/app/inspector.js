@@ -4,7 +4,7 @@
   const workbench = window.glitnirWorkbench;
   const {$, API, HOST, UI, cellEntries, checkBusy, checkThroughHTML, checkedStatementHTML, claim, claimReading, claims,
     currencyNoted, currencyText, docHTML, environmentEpoch, esc, fetch, helpHTML, icon, inlineHTML,
-    leanOff, leanVersion, lineLinkHTML, linkedPath, projectMode, recorded, refresh, statusOf, title, trimmed,
+    leanOff, leanVersion, lineLinkHTML, linkedPath, load, projectMode, recorded, refresh, statusOf, title, trimmed,
     researchHTML, useChipsHTML, walkthroughMessage, walkthroughUnchecked} = workbench;
   // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
   const render = (...a) => workbench.render(...a);
@@ -45,6 +45,7 @@
   let goalTimer, goalEpoch = 0;
   let goalPosition;
   let inspectorHTML;
+  const blockedByLean = trace => trace.message?.startsWith('Another Lean run is in progress');
   const traceRunning = trace => trace?.status === 'running';
   const traceFinished = trace => ['ready', 'partial'].includes(trace?.status);
   // The dependency epoch in which this page first saw each observation. An
@@ -104,6 +105,7 @@
       UI.goals = {...UI.goals, previous: traceFinished(trace) ? null : UI.goals.previous, trace};
       render();
       if (traceRunning(trace)) goalTimer = setTimeout(() => pollGoals(id, epoch), 750);
+      else if (blockedByLean(trace)) void load();
     } catch (error) {
       if (epoch !== goalEpoch) return;
       UI.goals = {...UI.goals, trace: {status: 'unavailable', source_sha256: UI.goals.trace.source_sha256, message: error.message || String(error), nodes: []}};
@@ -136,7 +138,7 @@
     : empty;
   function proofProgressHTML(run) {
     const seconds = Math.max(0, Math.floor((Date.now() - (run.started ?? Date.now())) / 1000));
-    return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s elapsed</div></div></div><button type="button" class="secondary" data-act="goal-cancel">Cancel</button></section>`;
+    return `<section class="proof-progress"><div class="check-progress-copy"><span class="check-progress-indicator" aria-hidden="true"></span><div><div role="status"><strong class="proof-progress-title">${run.refreshing ? 'Refreshing proof goals' : 'Recording proof goals'}</strong><div class="proof-progress-stage goal-state">${esc(run.trace.message || 'Preparing the saved proof')}…</div></div><div class="small muted proof-progress-time">${seconds}s elapsed</div></div></div><button type="button" class="secondary" data-act="goal-cancel">${run.starting || run.owned ? 'Cancel' : 'Stop following'}</button></section>`;
   }
   function proofGoalsHTML(c, range = c.project, renderSteps = goalStepsHTML, renderHeader) {
     const head = `<h5>Proof steps ${helpHTML('proof-goals', 'About proof goals', 'See what Lean still needs to prove before and after each tactic. Run Check saved file to update the proof status.')}</h5>`;
@@ -157,6 +159,9 @@
       else if (goals.environment !== environmentEpoch()) { message = note('amber', 'The source or its dependencies changed since these goals were recorded.'); refresh = true; }
       else if (trace.status === 'detached') message = note('muted', 'Stopped following the recording. Lean is still running.');
       else if (trace.status === 'cancelled') message = note('muted', 'Recording cancelled. No goals were recorded in this run.');
+      else if (blockedByLean(trace)) message = note('amber', UI.data.lean_job
+        ? 'Lean is busy. See the running job in the top bar.'
+        : 'Another Lean run blocked this attempt. Try again.');
       else if (!traceFinished(trace)) message = note('red', `No proof goals: ${esc(trace.message || trace.status)}`);
       else { display = trace; refresh = true; }
     }

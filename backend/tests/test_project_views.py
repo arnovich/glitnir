@@ -929,9 +929,14 @@ def test_several_views_are_drawn_in_one_run(tmp_path, monkeypatch):
     from glitnir.lean.project_views import render_project_views
 
     source, _ = lake(tmp_path, monkeypatch, {"Demo.View": [["View.olean"]]})
+    from glitnir.lean.project_snapshot import active_lean_job
+
     requests = []
+    active_details = []
 
     def run(runtime, arguments, **options):
+        job = active_lean_job()
+        active_details.append(job.get("detail") if job else None)
         requests.append(json.loads(Path(arguments[4]).read_text()))
         drawn = {"information": ["demoView:<svg/>"], "errors": []}
         invalid = {"information": ["demoView:<html/>"], "errors": []}
@@ -967,6 +972,7 @@ def test_several_views_are_drawn_in_one_run(tmp_path, monkeypatch):
         ],
         cancel=threading.Event(),
     )
+    assert active_details == ["c, later"]
     [request] = requests
     assert [view["command"] for view in request["views"]] == [
         "#demo_view c",

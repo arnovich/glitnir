@@ -47,7 +47,7 @@ def _fake(monkeypatch, theorems=None, error=None):
     """Replace the Lean check; record the checked text and its bound digest."""
     calls = []
 
-    def fake(source, text, *, saved_sha256, cancel, progress, stages):
+    def fake(source, text, *, saved_sha256, cancel, progress, stages, job_kind):
         calls.append((source, text, saved_sha256))
         if error is not None:
             raise error(text) if callable(error) else error

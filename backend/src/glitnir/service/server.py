@@ -35,7 +35,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from glitnir.lean.project_snapshot import SnapshotError
+from glitnir.lean.project_snapshot import (
+    SnapshotError,
+    active_lean_job,
+    cancel_lean_job,
+    lean_jobs,
+)
 from glitnir.lean.scratch import sweep_stale_scratch
 from glitnir.notebook.document import NotebookError
 from glitnir.preview.assets import AssetError
@@ -91,7 +96,12 @@ class _Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         try:
             if url.path == "/api/notebook":
-                self._json(HTTPStatus.OK, self.notebook.snapshot())
+                self._json(
+                    HTTPStatus.OK,
+                    {**self.notebook.snapshot(), "lean_job": active_lean_job()},
+                )
+            elif url.path == "/api/lean/jobs":
+                self._json(HTTPStatus.OK, {"jobs": lean_jobs()})
             elif url.path == "/api/research":
                 self._research(parse_qs(url.query))
             elif url.path == "/api/linked":
@@ -119,6 +129,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         route = urlparse(self.path).path
         actions = {
+            "/api/lean/jobs/cancel": self._cancel_lean_job,
             "/api/project/inspect": self._inspect_project,
             "/api/project/check": self._check_project,
             "/api/proof/start": self._start_proof,
@@ -163,6 +174,16 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._json(status, answer)
 
+    def _cancel_lean_job(self, body: dict[str, Any]) -> tuple[HTTPStatus, Any]:
+        identity = body.get("id")
+        if (
+            set(body) != {"id"}
+            or not isinstance(identity, str)
+            or not _JOB.fullmatch(identity)
+        ):
+            raise ValueError("Send one Lean job id.")
+        return HTTPStatus.OK, {"cancelled": cancel_lean_job(identity)}
+
     def _view(self, query: dict[str, list[str]]) -> None:
         """Report the drawing of the view directive at one cell and line.
 
@@ -195,7 +216,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "send one notebook path"})
             return
         try:
-            self._json(HTTPStatus.OK, self.notebook.linked(links[0]))
+            self._json(
+                HTTPStatus.OK,
+                {**self.notebook.linked(links[0]), "lean_job": active_lean_job()},
+            )
         except NotebookLinkError as error:
             self._json(HTTPStatus(error.status), {"error": str(error)})
 

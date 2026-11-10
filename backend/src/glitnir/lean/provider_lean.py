@@ -388,6 +388,7 @@ def run_provider_batch(
     progress: Callable[[str], None] | None = None,
     wait: bool = False,
     environment_sha256: str | None = None,
+    job_detail: str = "",
 ) -> Mapping[str, Any]:
     """Elaborate the notebook and several provider commands in one Lean run.
 
@@ -438,10 +439,12 @@ def run_provider_batch(
             }
         if not views:
             return {"views": []}
-        slot = (
-            snapshot_slot(cancel=cancel, waiting=lambda: report(WAITING))
-            if wait
-            else snapshot_slot()
+        slot = snapshot_slot(
+            cancel=cancel if wait else None,
+            waiting=lambda: report(WAITING),
+            job=(needs, source),
+            job_detail=job_detail,
+            stop=cancel,
         )
         with (
             slot,
@@ -603,7 +606,7 @@ def provider_imports_error(
             return invalid
         if describe_project(source)["kind"] != "lake":
             return {"error": LAKE_NEEDED[needs]}
-        with snapshot_slot():
+        with snapshot_slot(job=(needs, source), stop=cancel):
             setup, _resolution, _root = _setup(source, expected_sha256, cancel, needs)
         return _missing_import(imports, setup, needs)
     except (OSError, ValueError, KeyError, SandboxUnavailable) as error:

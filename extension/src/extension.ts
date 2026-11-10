@@ -22,8 +22,27 @@ interface Preview {
   python: string;
   ready: boolean;
   accepting: boolean;
+  leanJob?: {id: string; owner: Backend};
+  leanJobOwners?: Map<string, Backend>;
   exportTarget?: {token: string; uri: vscode.Uri};
   pendingReveal?: {type: string; index: number; sha256: string; line?: number; character?: number};
+}
+
+const LEAN_JOB_ID = /^[0-9a-f]{32}$/;
+const LEAN_JOB_LABELS: ReadonlyMap<string, string> = new Map([
+  ['check', 'Check saved file'], ['proof', 'Record proof goals'],
+  ['view', 'Draw notebook view'], ['evidence', 'Run evidence'],
+  ['decision', 'Prepare proposed proof'], ['candidate', 'Check proposed proof'],
+]);
+const LEAN_JOB_STATES: ReadonlyMap<string, string> = new Map([
+  ['running', 'Running'], ['waiting', 'Waiting for Lean'], ['stopping', 'Stopping'],
+]);
+
+async function stopLeanJob(owner: Backend, id: string): Promise<boolean> {
+  if (!vscode.workspace.isTrusted) throw new Error('The workspace is no longer trusted.');
+  const reply = await owner.request('/api/lean/jobs/cancel', 'POST', JSON.stringify({id}));
+  if (reply.status !== 200) throw new Error(reply.json?.error || 'Could not stop the Lean job.');
+  return reply.json?.cancelled === true;
 }
 
 async function writeHTMLExport(target: vscode.Uri, html: string): Promise<void> {
@@ -88,6 +107,30 @@ export function activate(context: vscode.ExtensionContext): void {
     const promise = preview.backend.close();
     stopping.add(promise);
     void promise.finally(() => stopping.delete(promise));
+  }
+
+  async function listLeanJobs(preview: Preview) {
+    if (!vscode.workspace.isTrusted) throw new Error('The workspace is no longer trusted.');
+    const replies = await Promise.all([...previews.values()].filter(p => p.backend.running && p.backend.port).map(async ({backend, uri}) => {
+      try {
+        const reply = await backend.request('/api/lean/jobs');
+        if (reply.status === 200 && Array.isArray(reply.json?.jobs)) return {owner: backend, uri, jobs: reply.json.jobs};
+      } catch { /* A preview may have closed during the request. */ }
+      return {owner: backend, uri, jobs: null};
+    }));
+    const owners = new Map<string, Backend>();
+    const jobs = replies.flatMap(({owner, uri, jobs}) => (jobs ?? []).flatMap((job: any) => {
+      if (typeof job?.id !== 'string' || !LEAN_JOB_ID.test(job.id) || typeof job.file !== 'string') return [];
+      const label = job.kind === 'view' && typeof job.detail === 'string' && job.detail
+        ? `Rendering ${job.detail}` : LEAN_JOB_LABELS.get(job.kind) || 'Lean job';
+      const state = LEAN_JOB_STATES.get(job.state);
+      if (!state) return [];
+      const canStop = job.can_stop === true;
+      if (canStop) owners.set(job.id, owner);
+      return [{id: job.id, label, file: vscode.workspace.asRelativePath(uri, true), state, canStop}];
+    }));
+    preview.leanJobOwners = owners;
+    return {jobs, incomplete: replies.some(reply => reply.jobs === null)};
   }
 
   async function openPreview(requested?: vscode.Uri): Promise<void> {
@@ -161,6 +204,27 @@ export function activate(context: vscode.ExtensionContext): void {
     const positionKey = 'atlas.position.' + uri.toString();
     panel.webview.onDidReceiveMessage(async message => {
       if (!message || typeof message !== 'object') return;
+      if (message.type === 'listLeanJobs' && Number.isSafeInteger(message.id)) {
+        try {
+          const json = await listLeanJobs(preview);
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json});
+        } catch {
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 409, json: {}});
+        }
+        return;
+      }
+      if (message.type === 'stopLeanJob' && Number.isSafeInteger(message.id)) {
+        try {
+          const id = message.body;
+          const owner = preview.leanJob?.id === id ? preview.leanJob?.owner : preview.leanJobOwners?.get(id);
+          const cancelled = owner ? await stopLeanJob(owner, id) : false;
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 200, json: {cancelled}});
+        } catch (error) {
+          void vscode.window.showErrorMessage(String(error));
+          void panel.webview.postMessage({type: 'response', id: message.id, status: 409, json: {cancelled: false}});
+        }
+        return;
+      }
       if (message.type === 'atlasPosition') {
         if (typeof message.body === 'string' && message.body.length <= 4096 && vscode.workspace.isTrusted) {
           try { await context.workspaceState.update(positionKey, message.body); }
@@ -327,6 +391,18 @@ export function activate(context: vscode.ExtensionContext): void {
         if (heldWhileDirty(message.path, method, dirty())) throw new Error('Save or revert unsaved Lean files before running preview actions. The preview shows saved files.');
         if (message.body !== undefined && typeof message.body !== 'string') throw new Error('Invalid request body');
         const reply = await backend.request(message.path, method, message.body);
+        if (reply.status === 200 && (message.path === '/api/notebook' || message.path.startsWith('/api/linked?'))) {
+          const holder = reply.json?.lean_job;
+          preview.leanJob = undefined;
+          if (holder && typeof holder.id === 'string' && LEAN_JOB_ID.test(holder.id)) {
+            const owner = [...previews.values()].find(p => p.backend.ownsProcess(holder.owner_pid));
+            if (holder.can_stop === true && owner) preview.leanJob = {id: holder.id, owner: owner.backend};
+          }
+          if (holder) {
+            delete holder.owner_pid;
+            holder.can_stop = Boolean(preview.leanJob);
+          }
+        }
         void panel.webview.postMessage({type: 'response', id: message.id, ...reply});
       } catch (error) {
         void panel.webview.postMessage({type: 'response', id: message.id, status: 409, json: {error: String(error)}});

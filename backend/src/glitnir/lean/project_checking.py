@@ -964,6 +964,7 @@ def _check_text(
     rest: str | None = None,
     acquired: Callable[[], None] = lambda: None,
     stages: StageTimes | None = None,
+    job_kind: str = "check",
 ) -> Checked:
     """Check one LF-normalised source text under a private project snapshot.
 
@@ -993,7 +994,12 @@ def _check_text(
     # The Mac is kept awake from the slot to the last Lean process: the stages
     # between Lean runs, the snapshot capture above all, take minutes too.
     with (
-        snapshot_slot(cancel=check.cancel, waiting=lambda: progress(SLOT_WAITING)),
+        snapshot_slot(
+            cancel=check.cancel,
+            waiting=lambda: progress(SLOT_WAITING),
+            job=(job_kind, source),
+            stop=check.cancel,
+        ),
         awake(),
         scratch_directory("glitnir-check-") as temporary,
         artifact_lease(temporary) as store,
@@ -1136,6 +1142,8 @@ def check_project(
                 ),
                 checked_lines,
             )
+            if cancellation.is_set():
+                raise SnapshotError("Project check cancelled.")
             if not requested:
                 whole: CheckResult = {
                     **result,
@@ -1180,6 +1188,8 @@ def check_project(
                 ),
                 line,
             )
+            if cancellation.is_set():
+                raise SnapshotError("Project check cancelled.")
             message = failure_message(str(failure))
             if failure.note:
                 message = f"{message} ({failure.note})" if message else failure.note
@@ -1264,6 +1274,7 @@ def check_candidate(
                 cancel=cancel,
                 progress=lambda _: None,
                 stages=stages,
+                job_kind="candidate",
             )
         except CommandFailure as failure:
             verdict: Verdict = {

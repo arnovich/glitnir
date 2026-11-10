@@ -80,7 +80,7 @@ test('the shared renderer loads through the bridge and keeps unsaved checks off 
 });
 
 // Loads the packaged renderer over a fixed snapshot and waits for it to draw.
-async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onResearch, onAsset, onWindow, browser = false} = {}) {
+async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onView, onProof, onGit, onNotebook, onLinked, onResearch, onAsset, onLeanJobs, onWindow, browser = false} = {}) {
   const media = path.resolve(__dirname, '../../dist/media');
   const html = readFileSync(path.join(media, 'index.html'), 'utf8').replace('<body>', '<body><div id="editor-state"></div><button id="open-source"></button><button id="next-unresolved" hidden></button>');
   const dom = new JSDOM(html, {runScripts: 'outside-only', url: 'https://preview.invalid/'});
@@ -102,6 +102,12 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
     }
     if (['gitHistory', 'gitDiff'].includes(message.type)) {
       Promise.resolve(onGit?.(message)).then(json => window.dispatchEvent(new window.MessageEvent('message', {data: {type: 'response', id: message.id, status: 200, json}})));
+      return;
+    }
+    if (message.type === 'listLeanJobs') {
+      queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {data: {
+        type: 'response', id: message.id, status: 200, json: onLeanJobs?.() ?? {jobs: [], incomplete: false},
+      }})));
       return;
     }
     if (message.type !== 'request') return;
@@ -4968,6 +4974,27 @@ for (const kind of ['definition', 'constructor', 'unavailable']) {
   });
 }
 
+test('consecutive print commands fold with a single edit range', async () => {
+  const snapshot = projectNotebook(), messages = [];
+  const text = 'namespace Demo\n#print axioms Demo.first\n#print axioms Demo.second\n\nend Demo\n';
+  snapshot.cells = [{index: 0, kind: 'source', start: 1, end: 5, text}];
+  snapshot.project_claims = [];
+  const w = await renderSnapshot(snapshot, {onMessage: message => messages.push(message)});
+  try {
+    const fold = w.document.querySelector('#doc details.print-fold');
+    assert.ok(fold);
+    assert.equal(fold.open, false);
+    assert.match(fold.querySelector('summary').textContent, /2 #print commands/);
+    assert.equal(fold.querySelector('pre').textContent, '#print axioms Demo.first\n#print axioms Demo.second');
+    const edits = fold.querySelectorAll('.source-edit');
+    assert.equal(edits.length, 1);
+    edits[0].click();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {type: 'source', index: 0, sha256: snapshot.sha256, range: {start: 2, end: 3}});
+    assert.equal(fold.open, false);
+    assert.match(fold.parentElement.textContent, /end Demo/);
+  } finally {w.close();}
+});
+
 for (const browser of [false, true]) {
   test(`the import header is one collapsed exact-source block (${browser ? 'browser' : 'editor'})`, async () => {
     const snapshot = projectNotebook();
@@ -5570,6 +5597,30 @@ test('Explore retains exceptional refresh messages and clears them after recover
     assert.equal(d.getElementById('live-status').hidden, true);
     assert.equal(w.getComputedStyle(activity).display, 'none');
   } finally {w.close();}
+});
+
+test('the preview forwards host shortcuts from its menus and help', async () => {
+  const w = await renderSnapshot(projectNotebook());
+  try {
+    const d = w.document;
+    for (const id of ['header-status', 'notebook-view-options', 'review-queue', 'keys']) {
+      const panel = d.getElementById(id);
+      if (id === 'keys') panel.hidden = false;
+      else panel.open = true;
+      const target = panel.querySelector('summary,button');
+      for (const modifier of ['metaKey', 'ctrlKey']) {
+        const event = new w.KeyboardEvent('keydown', {
+          key: 'P', shiftKey: true, [modifier]: true, bubbles: true, cancelable: true,
+        });
+        let forwarded = false;
+        w.addEventListener('keydown', received => { forwarded = received === event; }, {once: true});
+        target.dispatchEvent(event);
+        assert.ok(forwarded && !event.defaultPrevented, `${modifier} shortcut passes through ${id}`);
+      }
+      if (id === 'keys') panel.hidden = true;
+      else panel.open = false;
+    }
+  } finally { w.close(); }
 });
 
 test('header status distinguishes connection from proof status and exposes keyboard details', async () => {
@@ -6266,6 +6317,97 @@ test('goal results show the target and context before and after a step', async (
     assert.equal(d.querySelector('.goal-before .goal-target').textContent,'⊢ eta + 1 > 1');
     assert.equal(d.querySelector('.goal-result .goal-target').textContent,'⊢ eta > 0');
     assert.equal(d.querySelector('.goal-before .goal-context pre').textContent,'eta : ℝ\nheta : eta > 0');
+  } finally {w.close();}
+});
+
+test('the top bar names an external Lean job and clears after it finishes', async () => {
+  const snapshot = projectNotebook();
+  snapshot.lean_job = {kind: 'proof', file: 'Circuit.lean', same_process: false};
+  const w = await renderSnapshot(snapshot);
+  try {
+    const d = w.document, activity = d.getElementById('run-activity');
+    for (const mode of ['doc', 'source', 'graph']) {
+      d.querySelector(`[data-mode="${mode}"]`).click();
+      assert.equal(activity.hidden, false);
+      assert.match(activity.textContent, /Recording proof goals/);
+      assert.match(activity.textContent, /Circuit.lean/);
+      assert.match(activity.textContent, /Started elsewhere/);
+      assert.equal(activity.querySelector('button:not([hidden])'), null);
+    }
+    snapshot.preview.check = {status: 'running', source_sha256: snapshot.sha256, message: 'Waiting for another Lean run to finish.', theorems: []};
+    await w.glitnirPoll();
+    assert.match(activity.textContent, /Circuit.lean/);
+    assert.equal(activity.querySelector('[data-act="check-cancel"]').textContent, 'Stop waiting');
+    snapshot.preview.check = null;
+    snapshot.lean_job = null;
+    await w.glitnirPoll();
+    assert.equal(activity.hidden, true);
+  } finally {w.close();}
+});
+
+test('a cancellable job from another preview can be stopped from the header', async () => {
+  const snapshot = projectNotebook(), messages = [];
+  const id = '1'.repeat(32);
+  snapshot.lean_job = {id, kind: 'view', detail: 'Demo.optimized', file: 'Circuit.lean', same_process: false, can_stop: true};
+  const w = await renderSnapshot(snapshot, {onMessage: message => {
+    messages.push(message);
+    if (message.type === 'stopLeanJob') {
+      snapshot.lean_job = null;
+      queueMicrotask(() => w.dispatchEvent(new w.MessageEvent('message', {data: {
+        type: 'response', id: message.id, status: 200, json: {cancelled: true},
+      }})));
+    }
+  }});
+  try {
+    const d = w.document;
+    assert.match(d.getElementById('shared-lean-activity').textContent, /Rendering Demo\.optimized · Circuit\.lean/);
+    const stop = d.getElementById('stop-shared-lean-job');
+    assert.equal(stop.hidden, false);
+    assert.match(stop.getAttribute('aria-label'), /Circuit.lean/);
+    stop.click();
+    assert.ok(messages.some(m => m.type === 'stopLeanJob' && m.body === id));
+    assert.match(d.getElementById('shared-lean-activity').textContent, /Stopping/);
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(d.getElementById('run-activity').hidden, true);
+  } finally {w.close();}
+});
+
+test('the inline Lean jobs drawer lists jobs and stops the selected row', async () => {
+  const id = '2'.repeat(32), messages = [];
+  let jobs = [{id, label: 'Rendering Demo.optimized', file: 'Examples/Circuit.lean', state: 'Waiting for Lean', canStop: true}];
+  const w = await renderSnapshot(projectNotebook(), {
+    onLeanJobs: () => ({jobs, incomplete: false}),
+    onMessage: message => {
+      messages.push(message);
+      if (message.type === 'stopLeanJob') {
+        jobs = [];
+        queueMicrotask(() => w.dispatchEvent(new w.MessageEvent('message', {data: {
+          type: 'response', id: message.id, status: 200, json: {cancelled: true},
+        }})));
+      }
+    },
+  });
+  try {
+    const d = w.document, trigger = d.getElementById('lean-jobs'), drawer = d.getElementById('lean-jobs-drawer');
+    assert.equal(trigger.textContent, 'Lean jobs · 1');
+    assert.equal(drawer.hidden, true);
+    trigger.click();
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(drawer.previousElementSibling.tagName, 'HEADER');
+    assert.match(drawer.textContent, /Rendering Demo\.optimized/);
+    assert.match(drawer.textContent, /Examples\/Circuit\.lean/);
+    assert.match(drawer.textContent, /Waiting for Lean/);
+    const stop = drawer.querySelector('button');
+    stop.focus();
+    stop.click();
+    assert.ok(messages.some(message => message.type === 'stopLeanJob' && message.body === id));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(trigger.textContent, 'Lean jobs');
+    assert.match(drawer.textContent, /No running or waiting Lean jobs/);
+    assert.equal(drawer.querySelector('button'), null);
+    trigger.dispatchEvent(new w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+    assert.equal(drawer.hidden, true);
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
   } finally {w.close();}
 });
 

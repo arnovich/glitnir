@@ -68,6 +68,10 @@ const BODIES: Record<string, (body: string | undefined) => boolean> = {
   '/api/decide/stop': empty, '/api/view/cancel': directive, '/api/project/inspect/cancel': empty,
   '/api/project/check/cancel': empty,
   '/api/project/check': check,
+  '/api/lean/jobs/cancel': body => {
+    const value = object(body);
+    return value !== undefined && Object.keys(value).length === 1 && typeof value.id === 'string' && /^[0-9a-f]{32}$/.test(value.id);
+  },
 };
 
 /**
@@ -75,7 +79,7 @@ const BODIES: Record<string, (body: string | undefined) => boolean> = {
  * Lean files do not hold them back. `media/bridge.js` keeps the same list.
  */
 export const STOP_PATHS: readonly string[] = ['/api/proof/cancel', '/api/decide/stop', '/api/view/cancel', '/api/project/inspect/cancel',
-  '/api/project/check/cancel'];
+  '/api/project/check/cancel', '/api/lean/jobs/cancel'];
 
 /** Whether a preview request must wait until unsaved Lean files are saved or reverted. */
 export function heldWhileDirty(path: string, method: string, dirty: boolean): boolean {
@@ -96,7 +100,7 @@ const QUERIES: Record<string, RegExp> = {
  */
 export function validateRequest(path: string, method: string, body?: string): string {
   const allowed: Record<string, string[]> = {
-    '/api/notebook': [], '/api/proof/trace': [], '/api/export/styles': [], '/api/view': ['cell', 'line'],
+    '/api/notebook': [], '/api/lean/jobs': [], '/api/proof/trace': [], '/api/export/styles': [], '/api/view': ['cell', 'line'],
     '/asset': ['path', 'sha256'], '/api/linked': ['path'], '/api/research': ['claim'],
   };
   const post = ['/api/proof/start', '/api/proof/cancel', '/api/project/inspect', ...Object.keys(BODIES)];
@@ -130,6 +134,8 @@ export class Backend {
   private shutdownTimeoutMs: number;
 
   get running(): boolean { return !this.closed && !this.exited; }
+
+  ownsProcess(pid: unknown): boolean { return this.running && this.child.pid !== undefined && this.child.pid === pid; }
 
   constructor(options: BackendOptions) {
     this.shutdownTimeoutMs = options.shutdownTimeoutMs ?? 7000;
@@ -172,6 +178,7 @@ export class Backend {
     if (body && Buffer.byteLength(body) > 1_000_000) throw new Error('Preview request too large');
     await this.ready;
     if (this.closed || this.exited) throw new Error('Glitnir server is closed. Reopen the preview.');
+    const timeout = path === '/api/lean/jobs' ? 2000 : REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
       const request = http.request({
         hostname: '127.0.0.1', port: this.port, path, method,
@@ -201,7 +208,7 @@ export class Backend {
       this.requests.add(request);
       request.once('close', () => this.requests.delete(request));
       request.once('error', reject);
-      request.setTimeout(REQUEST_TIMEOUT_MS, () => request.destroy(new Error('Glitnir request timed out')));
+      request.setTimeout(timeout, () => request.destroy(new Error('Glitnir request timed out')));
       request.end(body);
     });
   }

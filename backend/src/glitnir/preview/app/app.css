@@ -537,10 +537,10 @@ button.help-icon:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .glitnir-linked-view #history{display:none}
 @media(max-width:600px){.notebook-trail{padding:8px 16px}.notebook-own{margin-left:0}}
 
-.import-header{display:block;color:var(--muted);font-size:12px}
-.import-header>summary{cursor:pointer}
-.import-header>summary .source-controls{float:right}
-.import-header>pre{margin-top:10px}
+:is(.import-header,.print-fold){display:block;color:var(--muted);font-size:12px}
+:is(.import-header,.print-fold)>summary{cursor:pointer}
+:is(.import-header,.print-fold)>summary .source-controls{float:right}
+:is(.import-header,.print-fold)>pre{margin-top:10px}
 
 /* Shared reading-first and map-first proof atlas. */
 .proof-atlas .atlas-controls,.proof-atlas .atlas-trail{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
@@ -785,6 +785,19 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 #run-activity :is(.check-progress-title,.proof-progress-title){font-size:inherit}
 #run-activity :is(.check-progress-stage,.proof-progress-stage,.check-progress-meta,.proof-progress-time,.check-progress-indicator){margin:0}
 #run-activity .check-progress-indicator{width:11px;height:11px}
+#shared-lean-announcement{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#shared-lean-job{display:flex;align-items:center;gap:8px}
+#lean-jobs{margin-inline-start:auto;font-size:11px;padding:3px 7px}
+#run-activity:not([hidden]) + #lean-jobs{margin-inline-start:0}
+#lean-jobs-drawer{padding:10px 16px;background:var(--chrome);border-bottom:1px solid var(--border);font-size:13px}
+#lean-jobs-status{margin:4px 0;color:var(--muted)}
+#lean-job-rows{list-style:none;padding:0;margin:0;max-height:17rem;overflow:auto}
+#lean-job-rows li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px 14px;padding:8px 0}
+#lean-job-rows li+li{border-top:1px solid var(--border)}
+#lean-job-rows .lean-job-label{overflow-wrap:anywhere}
+#lean-job-rows small{display:block;color:var(--muted);overflow-wrap:anywhere}
+#lean-job-rows button{font-size:12px;padding:4px 8px}
+#shared-lean-activity:not(:empty){font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 #run-activity button{font-size:11px;padding:3px 7px}
 #run-activity button .ic{width:12px;height:12px}
 .goal-context{margin-top:8px;color:var(--muted)}

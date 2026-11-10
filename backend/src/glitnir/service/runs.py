@@ -8,7 +8,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
@@ -253,6 +253,7 @@ class _EvidenceJob:
     keep: frozenset[str]
     provider: EvidenceProvider
     request: EvidenceRequest
+    cancel: threading.Event = field(default_factory=threading.Event)
 
 
 @dataclass(frozen=True)
@@ -291,6 +292,7 @@ class DirectiveRuns:
         # per server.
         self._run_lock = threading.Lock()
         self._evidence_worker: threading.Thread | None = None
+        self._evidence_cancel: threading.Event | None = None
         self._decision_worker: threading.Thread | None = None
         # Set by Stop or close; present only while a decision runs.
         self._decision_cancel: threading.Event | None = None
@@ -307,7 +309,9 @@ class DirectiveRuns:
         return self._running, dict(self._run_errors), frozenset(self._saved_failures)
 
     def cancel(self) -> None:
-        """Stop the running decision, if any; hold `state_lock`."""
+        """Stop Lean during shutdown; hold `state_lock`."""
+        if self._evidence_cancel is not None:
+            self._evidence_cancel.set()
         if self._decision_cancel is not None:
             self._decision_cancel.set()
 
@@ -394,6 +398,8 @@ class DirectiveRuns:
                 if decision:
                     self._decision_worker = worker
                 else:
+                    assert isinstance(job, _EvidenceJob)
+                    self._evidence_cancel = job.cancel
                     self._evidence_worker = worker
                 try:
                     worker.start()
@@ -403,6 +409,7 @@ class DirectiveRuns:
                     if decision:
                         self._decision_worker = None
                     else:
+                        self._evidence_cancel = None
                         self._evidence_worker = None
                     kind = "Decision" if decision else "Evidence"
                     raise SnapshotError(
@@ -441,6 +448,7 @@ class DirectiveRuns:
         """
         with self._context.state_lock:
             self._running = None
+            self._evidence_cancel = None
             self._decision_cancel = None
             if saved:
                 self._saved_failures.add(key)
@@ -521,10 +529,12 @@ class DirectiveRuns:
                 command=command,
                 marker=marker,
                 needs="evidence",
-                cancel=self._context.cancel,
+                cancel=job.cancel,
                 wait=True,
                 environment_sha256=None if environment.get("unknown") else fingerprint,
             )
+            if job.cancel.is_set():
+                return "Evidence run cancelled.", None
             if key is not None and isinstance(result.get("payload"), str):
                 self._keep_emission(key, result["payload"], job, imports, environment)
         if "payload" not in result:
