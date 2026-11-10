@@ -111,7 +111,7 @@ With Python 3.12+, uv and Node 22+, run from the repository root:
 uv build backend --wheel --out-dir backend/dist
 uv venv --python 3.12 --no-python-downloads .venv
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
-  'backend/dist/glitnir-0.1.15-py3-none-any.whl[dev]'
+  'backend/dist/glitnir-0.1.16-py3-none-any.whl[dev]'
 (cd backend && ../.venv/bin/python -m pytest \
   && ../.venv/bin/black --check src tests scripts experiments \
   && ../.venv/bin/isort --check-only src tests scripts experiments \
@@ -122,7 +122,7 @@ uv pip install --python .venv/bin/python -c backend/requirements-dev.lock \
 uv build plugins/forseti --wheel --out-dir plugins/forseti/dist
 uv pip install --python .venv/bin/python -c backend/requirements-dev.lock lark z3-solver
 uv pip install --python .venv/bin/python --no-deps \
-  plugins/forseti/dist/glitnir_forseti-0.1.15-py3-none-any.whl
+  plugins/forseti/dist/glitnir_forseti-0.1.16-py3-none-any.whl
 (cd plugins/forseti && ../../.venv/bin/python -m pytest -q && ../../.venv/bin/black --check src tests tools \
   && ../../.venv/bin/isort --check-only src tests tools && ../../.venv/bin/flake8 src tests tools \
   && ../../.venv/bin/mypy src)
@@ -518,3 +518,28 @@ Path("decay.json").write_text(json.dumps(page))  # read by your renderer driver
 excluded from the backend wheel and extension. See its README for the bounded
 benchmark, isolation/recovery probes, evidence and production decision. It does
 not install a service or add an API or editor setting.
+
+### Optional notebook handoffs
+
+`HandoffProvider` in `glitnir.providers.handoff` adds reviewed, non-proof notebook
+requests through the same `glitnir.providers` entry point. `prepare` may read
+capabilities, but must not mutate remote state. `submit` accepts the exact saved
+envelope and a transient credential; it must support idempotent recovery and
+must not launch agents. Neither method changes source or proof records. The
+editor owns destination confirmation, private request journals and SecretStorage.
+
+The initial implementation is `plugins/taskvalet` (`glitnir-taskvalet`). Build its
+wheel and install it with **Install Extension Package… → Choose wheel**. It is
+not a bundled release asset or a new entry in the release download picker.
+See its README for supported credentials, source-only scope and recovery.
+
+Validate this optional package with the backend wheel installed:
+
+```sh
+uv build plugins/taskvalet --wheel --out-dir plugins/taskvalet/dist
+uv pip install --python .venv/bin/python --no-deps plugins/taskvalet/dist/*.whl
+(cd plugins/taskvalet && ../../.venv/bin/python -m pytest -q \
+  && ../../.venv/bin/black --check src tests \
+  && ../../.venv/bin/isort --check-only src tests \
+  && ../../.venv/bin/flake8 src tests && ../../.venv/bin/mypy src)
+```

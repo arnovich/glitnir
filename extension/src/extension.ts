@@ -13,6 +13,7 @@ import {sourceCell, sourceTactic, cellAtLine} from './navigation';
 import {validationCommand} from './validation-command';
 import {GitHistory} from './git-history';
 import {acceptDecision} from './accept-decision';
+import {NotebookHandoff} from './handoff';
 
 interface Preview {
   panel: vscode.WebviewPanel;
@@ -77,6 +78,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Glitnir');
   setup = new EnvironmentSetup(context, output);
   context.subscriptions.push(output);
+  const handoff = new NotebookHandoff(context, setup);
+  for (const [command, action] of [['sendNotebook', () => handoff.start()], ['recoverNotebookHandoff', () => handoff.recover()], ['setHandoffCredential', () => handoff.credential()]] as const) {
+    context.subscriptions.push(vscode.commands.registerCommand('glitnir.' + command, async () => {
+      try { await action(); } catch (error) { void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Notebook handoff failed.'); }
+    }));
+  }
   let environmentEpoch = 0;
   /** Like a `glitnir.pythonPath` change: previews served by `python` close so reopening loads its providers again. */
   function closePreviewsUsing(python: string): boolean {

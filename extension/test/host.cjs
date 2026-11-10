@@ -198,6 +198,7 @@ async function run() {
   assert.equal(vscode.workspace.getConfiguration('glitnir', vscode.workspace.workspaceFolders[0].uri).get('pythonPath'), '', 'host test uses automatic discovery');
   const commands = await vscode.commands.getCommands(true);
   assert.ok(commands.includes('glitnir.setup'));
+  for (const command of ['sendNotebook', 'recoverNotebookHandoff', 'setHandoffCredential']) assert.ok(commands.includes('glitnir.' + command));
   assert.ok(commands.includes('glitnir.setupAgent'));
   assert.ok(commands.includes('glitnir.installExtensionPackage'));
   assert.ok(commands.includes('glitnir.setupBackendForThisVersion'));

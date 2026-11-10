@@ -1,0 +1,28 @@
+[project]
+name = "glitnir-taskvalet"
+version = "0.1.0"
+description = "Reviewed notebook request handoffs from Glitnir to Taskvalet"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["glitnir>=0.1.16,<0.2"]
+
+[project.entry-points."glitnir.providers"]
+taskvalet = "glitnir_taskvalet:providers"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/glitnir_taskvalet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true

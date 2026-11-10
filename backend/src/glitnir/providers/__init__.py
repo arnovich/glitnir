@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import Any, Callable, Iterable, NamedTuple, NotRequired, TypedDict
 
+from .handoff import HandoffProvider
+
 GROUP = "glitnir.providers"
 
 
@@ -224,7 +226,14 @@ def load_providers() -> Providers:
     loaded = Providers({}, {}, {}, {})
     for entry in _entry_points():
         try:
-            found = [_checked(provider) for provider in entry.load()()]
+            declared = list(entry.load()())
+            found = [
+                _checked(provider)
+                for provider in declared
+                if not isinstance(provider, HandoffProvider)
+            ]
+            if declared and not found:
+                continue
             if not found:
                 raise ValueError("returned no providers")
             own = Providers({}, {}, {}, {})
