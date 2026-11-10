@@ -13,6 +13,7 @@ from pathlib import Path
 
 from glitnir.lean.awake import awake
 from glitnir.lean.environment import bind_to_parent, kill_and_reap
+from glitnir.lean.limits import lean_thread_arguments
 from glitnir.lean.project_snapshot import SnapshotError
 from glitnir.lean.sandbox import confine
 
@@ -100,7 +101,11 @@ def run_observer(
         "LANG": "C.UTF-8",
     }
     command = confine(
-        [str(toolchain / "bin" / arguments[0]), *arguments[1:]],
+        [
+            str(toolchain / "bin" / arguments[0]),
+            *(lean_thread_arguments() if arguments[0] == "lean" else []),
+            *arguments[1:],
+        ],
         readable=readable,
         writable=[cwd] if writable else [],
         cwd=cwd,

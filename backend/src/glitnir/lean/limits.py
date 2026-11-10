@@ -115,6 +115,31 @@ def memory_limit_mb() -> int:
     return min(max(int(configured), MIN_MEMORY_LIMIT_MB), MAX_MEMORY_LIMIT_MB)
 
 
+def lean_threads() -> int | None:
+    """Read the operator's Lean thread budget, preserving Lean's default if unset.
+
+    Explicit settings must be ASCII decimal integers from 1 to 256. Reject
+    mistakes rather than silently allowing each compute slot to use the host's
+    entire thread pool. This configures Lean's scheduler, not an OS CPU quota.
+    """
+    configured = os.environ.get("GLITNIR_LEAN_THREADS")
+    if configured is None:
+        return None
+    if (
+        len(configured) > 3
+        or not (configured.isascii() and configured.isdigit())
+        or not 1 <= int(configured) <= 256
+    ):
+        raise ValueError("GLITNIR_LEAN_THREADS must be an integer from 1 to 256")
+    return int(configured)
+
+
+def lean_thread_arguments() -> list[str]:
+    """Return the native Lean scheduler option when explicitly configured."""
+    threads = lean_threads()
+    return [] if threads is None else [f"-j{threads}"]
+
+
 def _bounded(value: object, label: str, maximum: int) -> int:
     if type(value) is not int:
         raise TypeError(f"{label} must be a non-Boolean integer")

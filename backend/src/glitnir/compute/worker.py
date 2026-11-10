@@ -27,7 +27,7 @@ from glitnir.compute.telemetry import (
 from glitnir.compute.telemetry import observations as valid_observations
 from glitnir.compute.telemetry import supports
 from glitnir.lean.environment import kill_and_reap
-from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB
+from glitnir.lean.limits import DEFAULT_MEMORY_LIMIT_MB, lean_threads
 from glitnir.lean.project_checking import check_project
 from glitnir.lean.results import CheckOutcome
 
@@ -92,6 +92,7 @@ class Worker:
         max_memory_mb: int = DEFAULT_MEMORY_LIMIT_MB,
     ) -> None:
         """Bind a serial worker to one prepared project and private journal."""
+        self._lean_threads = lean_threads()
         if (
             (prepared is None and not recipes)
             or (prepared is not None and (not prepared.is_dir() or recipes is not None))
@@ -189,13 +190,25 @@ class Worker:
         environment = {
             key: value
             for key, value in os.environ.items()
-            if key in {"HOME", "PATH", "USER", "TMPDIR", "LANG", "LC_ALL", "ELAN_HOME"}
+            if key
+            in {
+                "HOME",
+                "PATH",
+                "USER",
+                "TMPDIR",
+                "LANG",
+                "LC_ALL",
+                "ELAN_HOME",
+                "XDG_CACHE_HOME",
+            }
         }
         environment.update(
             GLITNIR_EXECUTION_BACKEND="local",
             GLITNIR_ELABORATION_TIMEOUT_MS=str(max(1, int(remaining * 1000))),
             GLITNIR_MEMORY_LIMIT_MB=str(request["memory_mb"]),
         )
+        if self._lean_threads is not None:
+            environment["GLITNIR_LEAN_THREADS"] = str(self._lean_threads)
         phase = "preparing" if self.cache else "checking"
         telemetry_enabled = supports(job)
         telemetry_live = telemetry_enabled

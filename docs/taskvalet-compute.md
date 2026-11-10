@@ -81,6 +81,47 @@ Add workers on larger machines to add capacity. Glitnir serializes Lean runs in
 each user's temporary area, so workers intended to run concurrently need
 separate users or private TMPDIR directories with their own resource allocation.
 
+### Thread budgets and two-slot hosts
+
+Set `GLITNIR_LEAN_THREADS=2` in each worker service's environment as a starting
+point for two slots on an eight-core host. It sets native Lean's `-j2` option
+for prepared-project inspection and the observer runs used by compilation,
+reporting and independent replay. The worker validates the value before
+registration or claiming work and retains it for its lifetime. Accepted values
+are ASCII decimal integers from 1 through 256; an invalid or empty value fails
+startup. If unset, Lean retains its existing default. Restart a worker to change
+the budget. This setting is local operator policy, not a client job option.
+
+The option controls Lean's task scheduler; it does not make the current replay
+algorithm parallel, impose an OS CPU quota, or limit Lake preparation builds.
+Keep service CPU/memory/process limits, and prepare environments separately.
+Use one service and OS user per slot, with private `HOME`, `TMPDIR`, journal,
+and cache directories. On Linux, the checker inherits the service's
+`XDG_CACHE_HOME`; on macOS caches follow `HOME/Library/Caches`. The worker does
+not create or isolate the service's home or temporary directories for you.
+The prepared project may be shared read-only; mutable staging and replay caches
+must be private to each slot. Keep the exact wheel, toolchain and prepared
+environment consistent across the clients and workers.
+
+Before selecting a host's production budget, benchmark 1, 2 and 4 Lean threads
+with one slot and then two slots. For each combination, use the same frozen
+Forseti/Mathlib candidates and resource ceilings; measure cold caches separately
+from repeated warm checks. Record wheel/checker and environment identities,
+queue and native stage times, completed checks per minute, peak service RSS,
+CPU throttling and disk usage. Repeat runs and report variation, cancellations
+and failures, not just the fastest completion. Choose the setting that improves
+two-slot throughput within the memory/CPU allocation; a shorter single-check
+time alone is insufficient.
+
+`backend/tests/test_compute_slots.py` exercises two installed-wheel workers over
+a loopback compute-protocol peer, observes overlapping native Lean descendants,
+cancels one lease, and checks that the other slot and the cancelled slot's next
+job succeed. Each has private staging, temporary files and caches. This is a
+small local native control, not a Taskvalet scheduler test or a Forseti/Mathlib
+capacity measurement. Run it with the live-test prerequisites described in
+`DEVELOPMENT.md`; repeat deployment acceptance against the actual Taskvalet server
+and frozen Forseti/Mathlib environment before admitting swarm work.
+
 Use immutable, versioned environment names. Client and worker must have matching
 saved project/dependency sources and Lake configuration; only the selected
 candidate is transported. Other uncommitted edits must already exist on the

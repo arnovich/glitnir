@@ -970,6 +970,90 @@ def dynamic_worker_case(registered_repositories, tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def two_slot_server():
+    """Serve a tiny compute protocol peer to two real installed-wheel workers.
+
+    This tests Glitnir's HTTP transport and worker lifecycle, not Taskvalet's
+    scheduler. Job assignment is explicit; no server-side retries are modeled.
+    """
+    import json
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    state = {
+        "queues": {},
+        "workers": {},
+        "claims": [],
+        "completed": {},
+        "cancelled": set(),
+        "recovery_waiting": threading.Event(),
+        "allow_recovery": threading.Event(),
+    }
+    lock = threading.Lock()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            token = self.headers["Authorization"].removeprefix("Bearer ")
+            if (
+                self.path.endswith("/claim")
+                and token == "slot0"
+                and len(state["queues"][token]) == 1
+            ):
+                state["recovery_waiting"].set()
+                if not state["allow_recovery"].wait(timeout=8):
+                    self.send_error(503, "Test did not release recovery")
+                    return
+            with lock:
+                if self.path.endswith("/workers"):
+                    state["workers"][token] = body
+                    response = {}
+                elif self.path.endswith("/claim"):
+                    request = state["queues"][token].pop(0)
+                    state["claims"].append((token, request["request_id"]))
+                    response = {
+                        "job": {
+                            "id": request["request_id"],
+                            "request": request,
+                            "deadline": time.time() + 600,
+                        },
+                        "lease": "a" * 64,
+                    }
+                elif self.path.endswith("/heartbeat"):
+                    job = self.path.split("/")[-2]
+                    response = {
+                        "state": "cancelled" if job in state["cancelled"] else "running"
+                    }
+                elif self.path.endswith("/complete"):
+                    job = self.path.split("/")[-2]
+                    state["completed"][job] = body
+                    response = {"state": "completed"}
+                else:
+                    raise AssertionError(self.path)
+            encoded = json.dumps(response).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", state, lock
+    finally:
+        state["allow_recovery"].set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+@pytest.fixture
 def registered_git_dependency(tmp_path, project_toolchain):
     """A real locked dependency and root, built locally before freezing its recipe."""
     import json
