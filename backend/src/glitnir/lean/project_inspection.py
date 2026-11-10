@@ -20,7 +20,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 from glitnir.lean.artifacts import artifact_files, valid_artifacts
 from glitnir.lean.awake import awake
 from glitnir.lean.environment import MAX_SOURCE_BYTES, bind_to_parent, kill_and_reap
-from glitnir.lean.limits import check_seconds
+from glitnir.lean.limits import check_seconds, lean_thread_arguments
 from glitnir.lean.prepared_packages import PROGRAM, Resolution, validate_resolution
 from glitnir.lean.project import (
     LakeProject,
@@ -187,6 +187,7 @@ def _run(
     executable = (
         [
             str(toolchain / "bin/lean"),
+            *lean_thread_arguments(),
             "-M2048",
             "--plugin",
             str(
