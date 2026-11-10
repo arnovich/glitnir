@@ -17,3 +17,19 @@ def test_handoff_does_not_change_existing_provider_tuple(monkeypatch):
     views, evidence, decisions, errors = load_providers()
     assert not (views or evidence or decisions or errors)
     assert load_handoffs() == {"demo": provider}
+
+
+def test_handoff_discovery_advertises_optional_status(monkeypatch, capsys):
+    """The editor offers refresh only when the installed provider supports it."""
+    import io
+    import json
+
+    from glitnir.service import handoff
+
+    provider = HandoffProvider("demo", "Send notebook", lambda p, t: p, lambda p, t: p)
+    monkeypatch.setattr(handoff, "load_handoffs", lambda: {"demo": provider})
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"action":"list"}'))
+    handoff.main()
+    assert json.loads(capsys.readouterr().out) == [
+        {"name": "demo", "label": "Send notebook", "supportsStatus": False}
+    ]

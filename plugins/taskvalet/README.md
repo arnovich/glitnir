@@ -8,10 +8,16 @@ previews/starts any campaign on the Taskvalet board.
 Install the wheel with **Glitnir: Install Extension Package…** (Choose wheel).
 This package requires Glitnir 0.1.16 or newer, which provides the handoff API.
 Configure the existing Taskvalet HTTPS server and project settings, then invoke
-**Glitnir: Send Notebook…**. Select Taskvalet and provide a project-registered agent
-credential when prompted. The handoff credential is kept separately from compute
+**Glitnir: Send Notebook…**. Select Taskvalet to open the review panel. Review the destination and saved
+notebook source, enter a research objective, then choose **Submit request**.
+Provide a project-registered agent credential in the masked VS Code prompt if needed. The handoff credential is kept separately from compute
 credentials in VS Code SecretStorage. Owner, machine, reader and compute-only
 credentials are not supported by this submission flow.
+
+The panel keeps the source and objective visible after submission, shows the
+request task status, and provides **Refresh status** and **Open request**. Status
+refresh reads only that request task, never campaign controls. Failed refreshes
+show Unknown with an error; a recorded status includes its last-check time.
 
 Review the complete source and objective before submitting. The request contains
 only the saved notebook, its digest and your objective; imported sources and
@@ -22,7 +28,8 @@ not a runnable research assignment or proof result.
 Use **Glitnir: Set Notebook Handoff Credential…** to replace a mistyped or expired credential. Pending recovery still requires the original credential identity.
 
 A saved pending envelope blocks a second submission. A definite rejection of the first submission is archived; a new submission requires a fresh preview. Once an outcome is uncertain, later rejections never retire its envelope: operator reconciliation may be needed. Separate editor windows keep separate recovery files. **Glitnir: Recover Notebook
-Handoff…** explicitly retries that exact request and credential identity; nothing
+Handoff…** reopens pending or last-submitted requests in the panel.
+**Retry saved request** explicitly retries the original request and credential identity; nothing
 retries on reload. If credentials are revoked, restore access to the original
 identity or reconcile the saved request with the operator. Do not create a new
 request to work around an uncertain result. The board link is the authoritative

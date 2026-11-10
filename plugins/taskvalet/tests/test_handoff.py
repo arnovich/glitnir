@@ -166,3 +166,65 @@ def test_transport_only_classifies_receipt_checked_revision_conflicts(
     with pytest.raises(ValueError) as caught:
         _request("https://tasks.example", "lab", "secret", "POST", "/commands", {})
     assert isinstance(caught.value, RequestRefused) is safe
+
+
+def test_request_status_reads_only_the_exact_returned_task(api, monkeypatch):
+    import glitnir_taskvalet
+
+    draft = prepare(
+        {
+            "server": "https://tasks.example",
+            "project": "lab",
+            "name": "A.lean",
+            "source": "x",
+            "objective": "Explore",
+        },
+        "secret",
+    )
+    original = glitnir_taskvalet._request
+
+    def request(server, project, token, method, route, body=None):
+        if route.endswith("/tasks/001-request"):
+            api.append((method, route, body))
+            return {
+                "id": "001-request",
+                "project": "lab",
+                "stage": "needs_input",
+                "title": "Research request",
+            }
+        return original(server, project, token, method, route, body)
+
+    monkeypatch.setattr(glitnir_taskvalet, "_request", request)
+    result = glitnir_taskvalet.status(
+        {"request": draft, "task": "001-request"}, "secret"
+    )
+    assert result["stage"] == "needs_input"
+    assert all(method == "GET" for method, _, _ in api)
+    assert api[-1][1] == "/api/v1/projects/lab/tasks/001-request"
+    with pytest.raises(ValueError):
+        glitnir_taskvalet.status({"request": draft, "task": "../campaigns"}, "secret")
+
+
+def test_request_status_rejects_cross_project_result(api, monkeypatch):
+    import glitnir_taskvalet
+
+    draft = prepare(
+        {
+            "server": "https://tasks.example",
+            "project": "lab",
+            "name": "A.lean",
+            "source": "x",
+            "objective": "Explore",
+        },
+        "secret",
+    )
+    original = glitnir_taskvalet._request
+
+    def request(server, project, token, method, route, body=None):
+        if "/tasks/" in route:
+            return {"id": "001-request", "project": "other", "stage": "finished"}
+        return original(server, project, token, method, route, body)
+
+    monkeypatch.setattr(glitnir_taskvalet, "_request", request)
+    with pytest.raises(ValueError, match="different request"):
+        glitnir_taskvalet.status({"request": draft, "task": "001-request"}, "secret")

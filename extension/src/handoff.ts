@@ -4,9 +4,11 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {EnvironmentSetup} from './setup';
 import {HandoffJournal} from './handoff-journal';
+import {HandoffAction, HandoffReview, HandoffReviewPanel} from './handoff-panel';
 
-interface Provider {name: string; label: string}
-interface Pending {provider: Provider; python: string; scope: string; payload: any}
+interface Provider {name: string; label: string; supportsStatus?: boolean}
+interface Pending {provider: Provider; python: string; scope: string; payload: any; review?: HandoffReview}
+interface Submitted {pending: Pending; receipt: any}
 
 
 /** Run installed plugin code in isolated Python, passing secrets only on stdin. */
@@ -43,6 +45,7 @@ export function handoffScope(provider: string, server: string, project: string):
 /** Optional installed-provider handoffs; opening the editor never sends a request. */
 export class NotebookHandoff {
   private busy = false;
+  private panel?: HandoffReviewPanel;
   private readonly journal: HandoffJournal<Pending>;
   constructor(private readonly context: vscode.ExtensionContext, private readonly setup: EnvironmentSetup, private readonly run: typeof invoke = invoke) {
     this.journal = new HandoffJournal(path.join(context.globalStorageUri.fsPath, 'notebook-handoffs'));
@@ -56,7 +59,8 @@ export class NotebookHandoff {
     this.trusted();
     const existing = await this.context.secrets.get(scope);
     if (existing && !replace) return existing;
-    const value = await vscode.window.showInputBox({title: 'Registered-agent credential for ' + scope.slice('glitnir.handoff:'.length), password: true, ignoreFocusOut: true});
+    const [, server, project] = JSON.parse(scope.slice('glitnir.handoff:'.length)) as string[];
+    const value = await vscode.window.showInputBox({title: `Handoff credential for ${server} / ${project}`, password: true, ignoreFocusOut: true});
     if (!value) return undefined;
     if (value.length > 256 || /\s/.test(value)) throw new Error('Invalid handoff credential.');
     this.trusted();
@@ -64,28 +68,83 @@ export class NotebookHandoff {
     return value;
   }
 
-  private async send(id: string, pending: Pending, token: string, recovering = false): Promise<void> {
+  private async send(id: string, pending: Pending, token: string, recovering = false): Promise<any> {
     this.trusted();
     const receipt = await this.run(pending.python, {action: 'submit', provider: pending.provider.name, payload: pending.payload, token});
     if (receipt.refused === true) {
       // A later rejection cannot disprove an earlier committed, lost response.
       if (recovering) throw new Error('Recovery was refused. The earlier outcome is still unknown; retain this request and reconcile it with the operator.');
       await this.journal.finish(id, receipt);
-      await vscode.window.showWarningMessage('This submission was rejected without creating a task. Prepare a fresh notebook preview to try again.');
-      return;
+      return receipt;
     }
     const url = new URL(receipt.url);
     if (url.origin !== new URL(pending.payload.server).origin || url.protocol !== 'https:' || url.username || url.password)
       throw new Error('The handoff receipt names another destination. Retain the saved request.');
+    receipt.checkedAt = new Date().toLocaleString();
     // Preserve the receipt before removing the pending envelope.
-    await this.context.globalState.update('glitnir.lastNotebookHandoff', receipt);
+    await this.context.globalState.update('glitnir.lastNotebookHandoff', {pending, receipt});
     await this.journal.finish(id, receipt);
-    const open = await vscode.window.showInformationMessage('Request submitted; awaiting owner setup and launch.', 'Open request');
-    if (open) await vscode.env.openExternal(vscode.Uri.parse(url.href));
+    return receipt;
+  }
+
+  private review(pending: Pending): HandoffReview {
+    return pending.review ?? {notebook: 'Saved notebook request', source: 'This older request retains its original source in the saved envelope.', objective: 'Original research objective', server: pending.payload.server, project: pending.payload.project};
+  }
+
+  private showRequest(review: HandoffReview, saved?: {pending: Pending; id?: string; receipt?: any},
+    providerLabel = saved?.pending.provider.label, canRefresh = saved?.pending.provider.supportsStatus === true, prepare?: (objective: string) => Promise<{pending: Pending; token: string} | undefined>): void {
+    let pending = saved?.pending, id = saved?.id, receipt = saved?.receipt;
+    const panel = new HandoffReviewPanel({...review, providerLabel, canRefresh, phase: receipt ? 'submitted' : id ? 'uncertain' : 'review', stage: receipt?.stage, task: receipt?.task, checkedAt: receipt?.checkedAt}, async (action: HandoffAction, objective: string) => {
+      if (this.busy) return;
+      this.busy = true;
+      try {
+        this.trusted();
+        if (action === 'open' && pending && receipt) {
+          const url = new URL(receipt.url);
+          if (url.protocol !== 'https:' || url.origin !== new URL(pending.payload.server).origin || url.username || url.password) throw new Error('Invalid request destination.');
+          await vscode.env.openExternal(vscode.Uri.parse(url.href));
+          return;
+        }
+        if (action === 'refresh' && canRefresh && pending && receipt) {
+          panel.update({refreshing: true, error: undefined});
+          const token = await this.token(pending.scope);
+          if (!token || panel.closed) {panel.update({refreshing: false}); return;}
+          this.trusted();
+          const status = await this.run(pending.python, {action: 'status', provider: pending.provider.name, payload: {request: pending.payload, task: receipt.task}, token});
+          if (status.task !== receipt.task) throw new Error('Status belongs to another request.');
+          receipt = {...receipt, stage: status.stage, checkedAt: new Date().toLocaleString()};
+          await this.context.globalState.update('glitnir.lastNotebookHandoff', {pending, receipt});
+          panel.update({stage: receipt.stage, refreshing: false, checkedAt: receipt.checkedAt});
+          return;
+        }
+        let token: string | undefined;
+        const recovering = action === 'retry';
+        panel.update({phase: 'submitting', objective: recovering && pending ? this.review(pending).objective : objective, error: undefined});
+        if (!recovering && prepare) {
+          if ((await this.journal.pending()).length) throw new Error('Recover the existing pending request before submitting another.');
+          const prepared = await prepare(objective);
+          if (!prepared || panel.closed) {panel.update({phase: 'review'}); return;}
+          pending = prepared.pending; token = prepared.token;
+          id = await this.journal.persist(pending);
+        } else if (recovering && pending && id) {
+          token = await this.token(pending.scope);
+          if (!token || panel.closed) {panel.update({phase: 'uncertain'}); return;}
+        }
+        if (!pending || !id || !token) throw new Error('No reviewed request is available.');
+        receipt = await this.send(id, pending, token, recovering);
+        if (receipt.refused) {panel.update({phase: 'rejected'}); return;}
+        panel.update({phase: 'submitted', task: receipt.task, stage: receipt.stage, checkedAt: receipt.checkedAt});
+      } catch (error) {
+        panel.update({phase: receipt && !receipt.refused ? 'submitted' : id ? 'uncertain' : 'review', refreshing: false, ...(action === 'refresh' ? {stage: 'unknown'} : {}),
+          error: error instanceof Error ? error.message : 'Request could not be completed.'});
+      } finally { this.busy = false; }
+    }, () => {if (this.panel === panel) this.panel = undefined;});
+    this.panel = panel;
   }
 
   async start(): Promise<void> {
     if (this.busy) return;
+    if (this.panel) {this.panel.reveal(); return;}
     this.busy = true;
     try {
       this.trusted();
@@ -110,29 +169,26 @@ export class NotebookHandoff {
       const server = config.get<string>(provider.name + 'Server', '');
       const project = config.get<string>(provider.name + 'Project', '');
       const scope = handoffScope(provider.name, server, project);
-      const connect = await vscode.window.showWarningMessage(`Connect ${provider.label} to ${new URL(server).origin}, project ${project}? The plugin will verify your handoff credential before preparing a request.`, {modal: true}, 'Connect');
-      if (connect !== 'Connect') return;
-      const token = await this.token(scope);
-      if (!token) return;
-      const objective = await vscode.window.showInputBox({title: 'Research objective for this notebook', ignoreFocusOut: true});
-      if (!objective?.trim()) return;
-      const payload = await this.run(environment.python, {action: 'prepare', provider: provider.name, token,
-        payload: {server: new URL(server).origin, project, name: path.basename(document.uri.fsPath), source, objective}});
-      const review = await vscode.workspace.openTextDocument({language: 'json', content: JSON.stringify(payload, null, 2)});
-      await vscode.window.showTextDocument(review, {preview: true, viewColumn: vscode.ViewColumn.Beside});
-      const confirm = await vscode.window.showWarningMessage(`Send the displayed notebook request to ${server}, project ${project}? The saved source is included. Owner setup and launch are still required.`, {modal: true}, 'Submit request');
-      if (confirm !== 'Submit request') return;
-      this.trusted();
-      const current = vscode.workspace.getConfiguration('glitnir', document.uri);
-      if (handoffScope(provider.name, current.get<string>(provider.name + 'Server', ''), current.get<string>(provider.name + 'Project', '')) !== scope
-          || await this.context.secrets.get(scope) !== token || document.isDirty
-          || document.getText() !== source
-          || Buffer.from(await vscode.workspace.fs.readFile(document.uri)).toString('utf8') !== source)
-        throw new Error('Source, destination or credential changed; prepare a new preview.');
-      if (payload.source_sha256 !== createHash('sha256').update(source).digest('hex')) throw new Error('Provider returned a different source binding.');
-      const pending: Pending = {provider, python: environment.python, scope, payload};
-      const id = await this.journal.persist(pending);
-      await this.send(id, pending, token);
+      const review: HandoffReview = {server: new URL(server).origin, project, notebook: path.basename(document.uri.fsPath), source, objective: ''};
+      this.showRequest(review, undefined, provider.label, provider.supportsStatus === true, async objective => {
+        const unchanged = async (): Promise<void> => {
+          this.trusted();
+          const current = vscode.workspace.getConfiguration('glitnir', document.uri);
+          if (handoffScope(provider.name, current.get<string>(provider.name + 'Server', ''), current.get<string>(provider.name + 'Project', '')) !== scope
+              || document.isDirty || document.getText() !== source
+              || Buffer.from(await vscode.workspace.fs.readFile(document.uri)).toString('utf8') !== source)
+            throw new Error('Source or destination changed; close this panel and prepare a fresh review.');
+        };
+        await unchanged();
+        const token = await this.token(scope);
+        if (!token) return;
+        const payload = await this.run(environment.python, {action: 'prepare', provider: provider.name, token,
+          payload: {server: review.server, project, name: review.notebook, source, objective}});
+        await unchanged();
+        if (await this.context.secrets.get(scope) !== token) throw new Error('Credential changed; prepare a fresh review.');
+        if (payload.source_sha256 !== createHash('sha256').update(source).digest('hex')) throw new Error('Provider returned a different source binding.');
+        return {pending: {provider, python: environment.python, scope, payload, review: {...review, objective}}, token};
+      });
     } finally { this.busy = false; }
   }
 
@@ -153,23 +209,21 @@ export class NotebookHandoff {
 
   async recover(): Promise<void> {
     if (this.busy) return;
+    if (this.panel) {this.panel.reveal(); return;}
     this.busy = true;
     try {
       this.trusted();
       const requests = await this.journal.pending();
       if (!requests.length) {
-        const last = this.context.globalState.get<{url: string}>('glitnir.lastNotebookHandoff');
-        if (last && await vscode.window.showInformationMessage('No pending handoff. Open the last submitted request?', 'Open request'))
-          await vscode.env.openExternal(vscode.Uri.parse(last.url));
+        const last = this.context.globalState.get<Submitted>('glitnir.lastNotebookHandoff');
+        if (last?.pending && last.receipt) this.showRequest(this.review(last.pending), last);
+        else void vscode.window.showInformationMessage('No saved request is available in this version.');
         return;
       }
       const selected = await vscode.window.showQuickPick(requests.map(r => ({label: r.value.provider.label, description: r.value.payload.server + ' / ' + r.value.payload.project, request: r})), {title: 'Recover saved notebook request'});
       if (!selected) return;
       const {id, value: pending} = selected.request;
-      const choice = await vscode.window.showWarningMessage(`Retry the exact saved request to ${pending.payload.server}, project ${pending.payload.project}, as ${pending.payload.actor}? It uses the originally reviewed source, not the current editor.`, {modal: true}, 'Retry saved request');
-      if (choice !== 'Retry saved request') return;
-      const token = await this.token(pending.scope);
-      if (token) await this.send(id, pending, token, true);
+      this.showRequest(this.review(pending), {pending, id});
     } finally { this.busy = false; }
   }
 }

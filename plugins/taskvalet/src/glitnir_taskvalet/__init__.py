@@ -189,8 +189,8 @@ def prepare(value: dict[str, Any], token: str) -> dict[str, Any]:
     }
 
 
-def submit(value: dict[str, Any], token: str) -> dict[str, Any]:
-    """Submit or recover the exact saved create envelope, never a campaign."""
+def _bound_request(value: dict[str, Any], token: str) -> tuple[str, str]:
+    """Verify the original actor, credential, destination and storage identity."""
     server, project = _destination(value)
     identity = _identity(server, project, token)
     if identity["actor"] != value["actor"] or identity["id"] != value["credential_id"]:
@@ -204,6 +204,12 @@ def submit(value: dict[str, Any], token: str) -> dict[str, Any]:
         or configured.get("storage_id") != value["storage_id"]
     ):
         raise ValueError("Taskvalet storage changed; reconcile the original request")
+    return server, project
+
+
+def submit(value: dict[str, Any], token: str) -> dict[str, Any]:
+    """Submit or recover the exact saved create envelope, never a campaign."""
+    server, project = _bound_request(value, token)
     command = value["command"]
     if command.get("action") != "create" or set(command) != {
         "action",
@@ -248,10 +254,29 @@ def submit(value: dict[str, Any], token: str) -> dict[str, Any]:
     return {
         "url": f"{server}/#task={project}/{task_id}",
         "task": task_id,
+        "stage": task.get("stage", "unknown"),
         "message": "Request submitted; awaiting owner setup and launch.",
     }
 
 
+def status(value: dict[str, Any], token: str) -> dict[str, Any]:
+    """Read one submitted request task; never inspect or launch a campaign."""
+    task_id = value["task"]
+    if not isinstance(task_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", task_id
+    ):
+        raise ValueError("Invalid request task identifier")
+    server, project = _bound_request(value["request"], token)
+    task = _request(
+        server, project, token, "GET", f"/api/v1/projects/{project}/tasks/{task_id}"
+    )
+    if task.get("id") != task_id or task.get("project") != project:
+        raise ValueError("Taskvalet returned a different request task")
+    stages = {"new", "ready", "ongoing", "needs_input", "review", "finished"}
+    stage = task.get("stage", "unknown")
+    return {"task": task_id, "stage": stage if stage in stages else "unknown"}
+
+
 def providers() -> list[HandoffProvider]:
     """Register the optional Taskvalet handoff with Glitnir."""
-    return [HandoffProvider("taskvalet", "Send to Taskvalet", prepare, submit)]
+    return [HandoffProvider("taskvalet", "Send to Taskvalet", prepare, submit, status)]

@@ -526,7 +526,10 @@ requests through the same `glitnir.providers` entry point. `prepare` may read
 capabilities, but must not mutate remote state. `submit` accepts the exact saved
 envelope and a transient credential; it must support idempotent recovery and
 must not launch agents. Neither method changes source or proof records. The
-editor owns destination confirmation, private request journals and SecretStorage.
+editor owns the review/status panel, destination confirmation, private request
+journals and SecretStorage. An optional read-only `status` callback refreshes the
+returned request task; provider discovery advertises this capability. The webview
+receives only review fields and status, never credentials or API envelopes.
 
 The initial implementation is `plugins/taskvalet` (`glitnir-taskvalet`). Build its
 wheel and install it with **Install Extension Package… → Choose wheel**. It is

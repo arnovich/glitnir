@@ -205,6 +205,13 @@ async function run() {
   assert.equal(vscode.workspace.getConfiguration('glitnir').get('offerBackendUpdate'), true, 'the update offer is on by default');
   assert.ok(!commands.includes('glitnir.removeExtensionPackage'), 'removal is manual');
   assert.ok(commands.includes('glitnir.revealCell'));
+  const {HandoffReviewPanel} = require(path.join(extension.extensionPath, 'dist', 'handoff-panel.js'));
+  let handoffClosed = false;
+  const handoff = new HandoffReviewPanel({notebook: 'First.lean', source: 'theorem simple : True := by trivial', objective: 'Explore the proof', server: 'https://tasks.example', project: 'lab', phase: 'review'}, async () => {throw new Error('No request should be submitted by the host smoke test.');}, () => {handoffClosed=true;});
+  assert.ok(handoff.panel.webview.html.includes('Research objective'));
+  handoff.update({phase: 'submitted', task: '001-request', stage: 'new', canRefresh: true});
+  handoff.panel.dispose();
+  assert.ok(handoffClosed);
   const root = vscode.workspace.workspaceFolders[0].uri;
   const first = vscode.Uri.joinPath(root, 'First.lean');
   const second = vscode.Uri.joinPath(root, 'Second.lean');

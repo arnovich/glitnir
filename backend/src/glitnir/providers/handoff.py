@@ -13,12 +13,14 @@ class HandoffProvider:
     Preparation may read remote capabilities but must not mutate remote state.
     Submission must support exact-envelope recovery without launching agents.
     The host owns confirmation and durable storage before submission.
+    Optional status reads an existing request without launching or changing work.
     """
 
     name: str
     label: str
     prepare: Callable[[dict[str, Any], str], dict[str, Any]]
     submit: Callable[[dict[str, Any], str], dict[str, Any]]
+    status: Callable[[dict[str, Any], str], dict[str, Any]] | None = None
 
 
 def load_handoffs() -> dict[str, HandoffProvider]:
@@ -33,6 +35,7 @@ def load_handoffs() -> dict[str, HandoffProvider]:
                 or not provider.label
                 or not callable(provider.prepare)
                 or not callable(provider.submit)
+                or (provider.status is not None and not callable(provider.status))
                 or provider.name in found
             ):
                 raise ValueError("Invalid or duplicate notebook handoff provider")

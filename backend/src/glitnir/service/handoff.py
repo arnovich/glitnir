@@ -8,7 +8,7 @@ from glitnir.providers.handoff import load_handoffs
 
 
 def main() -> None:
-    """Dispatch only explicit list, prepare or submit requests from the editor."""
+    """Dispatch explicit discovery, preparation, submission and status requests."""
     try:
         request = json.loads(sys.stdin.read(200_001))
         with contextlib.redirect_stdout(sys.stderr):
@@ -16,13 +16,21 @@ def main() -> None:
             action = request["action"]
             if action == "list":
                 result = [
-                    {"name": p.name, "label": p.label} for p in providers.values()
+                    {
+                        "name": p.name,
+                        "label": p.label,
+                        "supportsStatus": p.status is not None,
+                    }
+                    for p in providers.values()
                 ]
             else:
                 provider = providers[request["provider"]]
-                if action not in {"prepare", "submit"}:
+                if action not in {"prepare", "submit", "status"}:
                     raise ValueError("Unsupported handoff action")
-                result = getattr(provider, action)(request["payload"], request["token"])
+                callback = getattr(provider, action)
+                if callback is None:
+                    raise ValueError("This handoff does not support status refresh")
+                result = callback(request["payload"], request["token"])
         print(json.dumps(result))
     except Exception:
         # Provider exceptions may contain credentials or server response bodies.

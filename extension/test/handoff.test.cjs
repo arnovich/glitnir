@@ -8,11 +8,16 @@ const fs = require('node:fs');
 const {HandoffJournal} = require('../../dist/handoff-journal');
 
 function load(vscode = {}) {
-  const exports = {};
+  const exports = {}; const panels = [];
+  class HandoffReviewPanel {
+    constructor(state, action, onClose) {this.state=state;this.action=action;this.onClose=onClose;this.closed=false;panels.push(this);}
+    update(value) {this.state={...this.state,...value};}
+    reveal() {}
+  }
   vm.runInNewContext(fs.readFileSync(require.resolve('../../dist/handoff'), 'utf8'), {
-    exports, URL, Buffer, setTimeout, clearTimeout, require: name => name === 'vscode' ? vscode : name === './setup' ? {} : name === './handoff-journal' ? {HandoffJournal} : require(name),
+    exports, URL, Buffer, setTimeout, clearTimeout, require: name => name === 'vscode' ? vscode : name === './setup' ? {} : name === './handoff-journal' ? {HandoffJournal} : name === './handoff-panel' ? {HandoffReviewPanel} : require(name),
   });
-  return exports;
+  return {...exports, panels};
 }
 
 test('handoff credentials are separate and destination-bound', () => {
@@ -103,10 +108,52 @@ test('reviewed handoff refuses source changes before persisting or submitting', 
       if (request.action === 'prepare') return {source_sha256: require('node:crypto').createHash('sha256').update(source).digest('hex')};
       submits++; throw Error('unexpected submit');
     };
-    const {NotebookHandoff} = load(vscode);
+    const {NotebookHandoff, panels} = load(vscode);
     const instance = new NotebookHandoff({globalStorageUri: {fsPath: root}, secrets: {get: async () => 'secret'}}, {resolve: async () => ({python: 'python'})}, runner);
-    await assert.rejects(instance.start(), /Source, destination or credential changed/);
+    await instance.start();
+    source += '-- changed during review\n';
+    await panels[0].action('submit', 'Explore this theorem');
+    assert.match(panels[0].state.error, /Source or destination changed/);
     assert.equal(submits, 0);
     assert.deepEqual(await new HandoffJournal(path.join(root, 'notebook-handoffs')).pending(), []);
+  } finally { await rm(root, {recursive: true, force: true}); }
+});
+
+test('panel submits once, keeps secrets in the host and refreshes the returned task', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'handoff-'));
+  try {
+    const source = 'theorem demo : True := by trivial\n';
+    const document = {uri: {scheme: 'file', path: '/Demo.lean', fsPath: '/Demo.lean'}, isDirty: false, getText: () => source};
+    const values = {taskvaletServer: 'https://tasks.example', taskvaletProject: 'lab'};
+    const saved = new Map(); const calls = []; let lostResponse = true;
+    const vscode = {workspace: {isTrusted: true, textDocuments: [document], fs: {readFile: async () => Buffer.from(source)},
+      getConfiguration: () => ({get: (key, fallback) => values[key] ?? fallback})},
+      window: {activeTextEditor: {document}, showQuickPick: async items => items[0]}};
+    const journal = new HandoffJournal(path.join(root, 'notebook-handoffs'));
+    const runner = async (python, request) => {
+      calls.push(request.action);
+      if (request.action === 'list') return [{name: 'taskvalet', label: 'Send to Taskvalet', supportsStatus: true}];
+      if (request.action === 'prepare') return {server: values.taskvaletServer, project: 'lab', source_sha256: require('node:crypto').createHash('sha256').update(source).digest('hex')};
+      if (request.action === 'submit') {
+        assert.equal((await journal.pending()).length, 1, 'journal precedes POST');
+        if (lostResponse) {lostResponse=false;throw Error('Response lost');}
+        return {url: 'https://tasks.example/#task=lab/001-request', task: '001-request', stage: 'new'};
+      }
+      assert.equal(request.action, 'status');assert.equal(request.payload.task, '001-request');
+      return {task: '001-request', stage: 'needs_input'};
+    };
+    const {NotebookHandoff, panels} = load(vscode);
+    const instance = new NotebookHandoff({globalStorageUri: {fsPath: root}, secrets: {get: async () => 'private-secret'},
+      globalState: {get: key => saved.get(key), update: async (key, value) => saved.set(key,value)}}, {resolve: async () => ({python: 'python'})}, runner);
+    await instance.start();assert.deepEqual(calls, ['list']);
+    await Promise.all([panels[0].action('submit', 'Explore a simpler proof'),panels[0].action('submit','Duplicate')]);
+    assert.equal(calls.filter(a => a === 'submit').length,1);assert.equal(panels[0].state.phase,'uncertain');
+    await panels[0].action('retry','');
+    assert.equal(panels[0].state.phase,'submitted');
+    assert.equal(panels[0].state.objective,'Explore a simpler proof');assert.ok(!JSON.stringify(panels[0].state).includes('private-secret'));
+    await panels[0].action('refresh','');assert.equal(panels[0].state.stage,'needs_input');
+    assert.equal((await journal.pending()).length,0);
+    panels[0].onClose();await instance.recover();assert.equal(panels[1].state.task,'001-request');
+    assert.equal(panels[1].state.source,source);
   } finally { await rm(root, {recursive: true, force: true}); }
 });
