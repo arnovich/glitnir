@@ -2445,7 +2445,11 @@ test('views are drawn in the background: progress, Stop and Draw again', async (
     assert.equal(view().querySelector('[data-act="view-cancel"]'), null, 'a queued view has nothing to stop');
     await wait(2100);
     assert.equal(view().querySelector('.view-wait').textContent, 'Waiting for another view to finish drawing.', 'the card keeps its own state');
-    await wait(6300);
+    const deadline = Date.now() + 10000;
+    while (!view().querySelector('img') || !view().textContent.includes('May be out of date')) {
+      assert.ok(Date.now() < deadline, 'the background drawing must finish with its dependency warning');
+      await wait(25);
+    }
     assert.match(view().querySelector('img').getAttribute('src'), /^data:image\/svg\+xml/);
     assert.match(view().textContent, /May be out of date: the state of a dependency could not be read/);
     // Polls go to the job's own route; the notebook route is asked only to start.

@@ -88,6 +88,44 @@ test('a refused recovery cannot retire an earlier committed but lost response', 
   } finally { await rm(root, {recursive: true, force: true}); }
 });
 
+test('a reloaded host recovers the exact lost-response request only after an explicit retry', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'handoff-reload-'));
+  try {
+    const saved = new Map();
+    const vscode = {workspace: {isTrusted: true}, window: {showQuickPick: async items => items[0]}};
+    const context = {globalStorageUri: {fsPath: root}, secrets: {get: async () => 'secret'},
+      globalState: {get: key => saved.get(key), update: async (key, value) => saved.set(key, value)}};
+    const {NotebookHandoff, handoffScope} = load(vscode);
+    const pending = {provider: {name: 'taskvalet', label: 'Taskvalet'}, python: 'original-python',
+      scope: handoffScope('taskvalet', 'https://tasks.example', 'lab'),
+      payload: {server: 'https://tasks.example', project: 'lab', request_id: require('node:crypto').randomUUID(),
+        actor: 'agent/a', source_sha256: 'a'.repeat(64), body: {objective: 'Original objective'}}};
+    const journal = new HandoffJournal(path.join(root, 'notebook-handoffs'));
+    const id = await journal.persist(pending);
+    const first = new NotebookHandoff(context, {}, async () => {throw Error('Response lost after commit');});
+    await assert.rejects(first.send(id, pending, 'secret'), /Response lost/);
+
+    const reloaded = load(vscode);
+    const calls = [];
+    const next = new reloaded.NotebookHandoff(context, {resolve: () => assert.fail('must not prepare a replacement')}, async (python, request) => {
+      calls.push(request.action);
+      assert.equal(python, pending.python);
+      assert.equal(request.action, 'submit');
+      assert.deepEqual(request.payload, pending.payload);
+      return {url: 'https://tasks.example/#task=lab/001-original', task: '001-original', stage: 'new'};
+    });
+    assert.deepEqual(calls, [], 'constructing the replacement host must not retry');
+    await next.recover();
+    assert.deepEqual(calls, [], 'opening recovery must not submit');
+    assert.equal(reloaded.panels[0].state.phase, 'uncertain');
+    assert.deepEqual(await journal.pending(), [{id, value: pending}]);
+    await reloaded.panels[0].action('retry', 'Ignore this replacement objective');
+    assert.deepEqual(calls, ['submit']);
+    assert.equal(reloaded.panels[0].state.phase, 'submitted');
+    assert.deepEqual(await journal.pending(), []);
+  } finally { await rm(root, {recursive: true, force: true}); }
+});
+
 test('reviewed handoff refuses source changes before persisting or submitting', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'handoff-'));
   try {

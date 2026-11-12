@@ -9,6 +9,10 @@ const python = process.env.GLITNIR_TEST_PYTHON || process.env.GLITNIR_BUILD_PYTH
 process.env.HOMEBREW_GLITNIR_PARENT = 'inherited';
 if (!python) throw new Error('Set GLITNIR_TEST_PYTHON to the installed compatible runtime.');
 const root = mkdtempSync(path.join(tmpdir(), 'glitnir-vscode-host-'));
+const profile = path.join(root, 'profile');
+mkdirSync(path.join(profile, 'User'), {recursive: true});
+// Keep the isolated editor test independent of built-in AI service startup.
+writeFileSync(path.join(profile, 'User', 'settings.json'), JSON.stringify({'chat.disableAIFeatures': true}));
 const workspace = path.join(root, 'workspace');
 mkdirSync(path.join(workspace, '.vscode'), {recursive: true});
 // No Glitnir settings: exercise discovery of a nearby installation.
