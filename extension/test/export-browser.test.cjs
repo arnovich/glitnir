@@ -7,12 +7,12 @@ const {spawn} = require('node:child_process');
 const {pathToFileURL} = require('node:url');
 const {test} = require('node:test');
 const {JSDOM} = require('jsdom');
+const {stopBrowser, useProcessGroup} = require('./browser-process.cjs');
 
 const candidates = process.platform === 'darwin'
   ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
   : ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
 const chrome = process.env.GLITNIR_TEST_CHROME || candidates.find(existsSync);
-const useProcessGroup = process.platform === 'linux';
 
 function devtools(child) {
   return new Promise((resolve, reject) => {
@@ -26,57 +26,6 @@ function devtools(child) {
     child.once('exit', code => { clearTimeout(timeout); reject(new Error(`Chrome exited before DevTools was ready (${code}): ${stderr}`)); });
     child.once('error', error => { clearTimeout(timeout); reject(error); });
   });
-}
-
-function within(promise, timeoutMs) {
-  let timer;
-  return Promise.race([
-    promise.then(() => true, () => false),
-    new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); }),
-  ]).finally(() => clearTimeout(timer));
-}
-
-function browserAlive(child) {
-  if (!Number.isInteger(child.pid)) return false;
-  if (!useProcessGroup) return child.exitCode === null && child.signalCode === null;
-  try {
-    process.kill(-child.pid, 0);
-    return true;
-  } catch (error) {
-    if (error.code === 'ESRCH') return false;
-    throw error;
-  }
-}
-
-function signalBrowser(child, signal) {
-  if (!browserAlive(child)) return;
-  try {
-    if (!useProcessGroup) child.kill(signal);
-    else process.kill(-child.pid, signal);
-  } catch (error) {
-    if (error.code !== 'ESRCH') throw error;
-  }
-}
-
-async function waitForBrowserShutdown(child, closed, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (browserAlive(child) && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 25));
-  }
-  if (browserAlive(child)) return false;
-  return within(closed, Math.max(0, deadline - Date.now()));
-}
-
-async function stopBrowser(child, closed, client) {
-  if (client) await within(client.send('Browser.close'), 1000);
-  client?.socket.close();
-  if (!Number.isInteger(child.pid)) return;
-  if (await waitForBrowserShutdown(child, closed, 2000)) return;
-  signalBrowser(child, 'SIGTERM');
-  if (await waitForBrowserShutdown(child, closed, 2000)) return;
-  signalBrowser(child, 'SIGKILL');
-  if (await waitForBrowserShutdown(child, closed, 2000)) return;
-  throw new Error(`Chrome process group ${child.pid} did not close after SIGKILL`);
 }
 
 async function pageClient(browserURL) {
