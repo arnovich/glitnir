@@ -30,7 +30,16 @@
   }
   window.addEventListener('message', event => {
     const message = event.data;
-    if (message.type === 'response') {
+    if (message.type === 'handoffAvailable') {
+      document.getElementById('send-taskvalet')?.remove();
+      const menu = document.querySelector('#notebook-view-options .view-options-panel');
+      if (message.taskvalet === true && menu) {
+        const button = document.createElement('button');
+        button.id = 'send-taskvalet'; button.type = 'button';
+        button.textContent = 'Send to Taskvalet…';
+        menu.prepend(button);
+      }
+    } else if (message.type === 'response') {
       const item = pending.get(message.id);
       if (item) { clearTimeout(item.timeout); pending.delete(message.id); item.resolve(message); }
     } else if (message.type === 'revealCell') {
@@ -115,6 +124,13 @@
   document.addEventListener('click', event => {
     const target = event.target.closest('a,button');
     if (!target) return;
+    if (target.id === 'send-taskvalet') {
+      if (document.body.classList.contains('glitnir-linked-view')) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      document.getElementById('notebook-view-options').open = false;
+      vscode.postMessage({type: 'sendNotebook'});
+      return;
+    }
     if (target.dataset.act === 'accept') {
       // Accepting writes the notebook, which only the editor may do: the
       // preview names the decision and the editor fetches its checked block.

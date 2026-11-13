@@ -209,6 +209,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const positionKey = 'atlas.position.' + uri.toString();
     panel.webview.onDidReceiveMessage(async message => {
       if (!message || typeof message !== 'object') return;
+      if (message.type === 'sendNotebook') {
+        try { await handoff.start(uri, 'taskvalet'); }
+        catch (error) { void vscode.window.showErrorMessage(error instanceof Error ? error.message : 'Notebook handoff failed.'); }
+        return;
+      }
       if (message.type === 'listLeanJobs' && Number.isSafeInteger(message.id)) {
         try {
           const json = await listLeanJobs(preview);
@@ -240,6 +245,9 @@ export function activate(context: vscode.ExtensionContext): void {
       if (message.type === 'ready') {
         preview.ready = true;
         updateState();
+        void handoff.available(environment.python, 'taskvalet').then(taskvalet => {
+          if (previews.get(key) === preview) void panel.webview.postMessage({type: 'handoffAvailable', taskvalet});
+        }).catch(() => {});
         if (preview.pendingReveal) {
           void panel.webview.postMessage(preview.pendingReveal);
           preview.pendingReveal = undefined;

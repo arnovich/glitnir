@@ -215,8 +215,26 @@ test('notebook-only preview hands off saved source without opening a text editor
     await instance.start(uri);
     assert.equal(panels[0].state.source, source);
     assert.equal(panels[0].state.notebook, 'Preview.lean');
+    await assert.rejects(instance.start({...uri, fsPath: '/Other.lean', path: '/Other.lean'}), /Close the existing handoff panel/);
+    assert.equal(panels.length, 1);
     documents.push({uri, isDirty: true, getText: () => source + '-- edit'});
     await panels[0].action('submit', 'Investigate');
     assert.match(panels[0].state.error, /Source or destination changed/);
   } finally { await rm(root, {recursive: true, force: true}); }
+});
+
+test('menu discovery uses only the local provider list and fails closed', async () => {
+  const {NotebookHandoff} = load({workspace: {isTrusted: true}});
+  const context = {globalStorageUri: {fsPath: '/unused'}, secrets: {get: () => assert.fail('secret read')}};
+  let providers = [];
+  const instance = new NotebookHandoff(context, {}, async (python, request) => {
+    assert.equal(python, 'python'); assert.deepEqual(JSON.parse(JSON.stringify(request)), {action: 'list'});
+    if (providers === null) throw Error('unavailable');
+    return providers;
+  });
+  assert.equal(await instance.available('python', 'taskvalet'), false);
+  providers = [{name: 'taskvalet'}];
+  assert.equal(await instance.available('python', 'taskvalet'), true);
+  providers = null;
+  assert.equal(await instance.available('python', 'taskvalet'), false);
 });

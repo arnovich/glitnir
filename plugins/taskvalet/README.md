@@ -7,8 +7,11 @@ previews/starts any campaign on the Taskvalet board.
 
 Install the wheel with **Glitnir: Install Extension Package…** (Choose wheel).
 This package requires Glitnir 0.1.16 or newer, which provides the handoff API.
-Configure the existing Taskvalet HTTPS server and project settings, then invoke
-**Glitnir: Send Notebook…**. Select Taskvalet to open the review panel. Review the destination and saved
+Configure the existing Taskvalet HTTPS server and project settings, then choose
+**More → Send to Taskvalet…** in the notebook. This entry appears when the plugin
+is installed in that notebook’s Python environment. It opens the review panel,
+without submitting. Alternatively, invoke **Glitnir: Send Notebook…** and select
+Taskvalet. Review the destination and saved
 notebook source, enter a research objective, then choose **Submit request**.
 Provide a project-registered agent credential in the masked VS Code prompt if needed. The handoff credential is kept separately from compute
 credentials in VS Code SecretStorage. Owner, machine, reader and compute-only

@@ -46,6 +46,7 @@ export function handoffScope(provider: string, server: string, project: string):
 export class NotebookHandoff {
   private busy = false;
   private panel?: HandoffReviewPanel;
+  private panelNotebook?: string;
   private readonly journal: HandoffJournal<Pending>;
   constructor(private readonly context: vscode.ExtensionContext, private readonly setup: EnvironmentSetup, private readonly run: typeof invoke = invoke) {
     this.journal = new HandoffJournal(path.join(context.globalStorageUri.fsPath, 'notebook-handoffs'));
@@ -138,13 +139,27 @@ export class NotebookHandoff {
         panel.update({phase: receipt && !receipt.refused ? 'submitted' : id ? 'uncertain' : 'review', refreshing: false, ...(action === 'refresh' ? {stage: 'unknown'} : {}),
           error: error instanceof Error ? error.message : 'Request could not be completed.'});
       } finally { this.busy = false; }
-    }, () => {if (this.panel === panel) this.panel = undefined;});
+    }, () => {if (this.panel === panel) {this.panel = undefined; this.panelNotebook = undefined;}});
     this.panel = panel;
   }
 
-  async start(target?: vscode.Uri): Promise<void> {
+  /** Discover a local capability without reading credentials or contacting Taskvalet. */
+  async available(python: string, provider: string): Promise<boolean> {
+    this.trusted();
+    try {
+      const providers: Provider[] = await this.run(python, {action: 'list'});
+      return providers.some(item => item.name === provider);
+    } catch { return false; }
+  }
+
+  async start(target?: vscode.Uri, providerName?: string): Promise<void> {
     if (this.busy) return;
-    if (this.panel) {this.panel.reveal(); return;}
+    if (this.panel) {
+      const requested = target ?? vscode.window.activeTextEditor?.document.uri;
+      if (requested && requested.fsPath !== this.panelNotebook)
+        throw new Error('Close the existing handoff panel before reviewing another notebook. Pending requests remain available through Recover Notebook Handoff.');
+      this.panel.reveal(); return;
+    }
     this.busy = true;
     try {
       this.trusted();
@@ -163,8 +178,10 @@ export class NotebookHandoff {
       if (!environment) return;
       const providers: Provider[] = await this.run(environment.python, {action: 'list'});
       if (!providers.length) throw new Error('Install a notebook handoff extension package first.');
-      const selected = await vscode.window.showQuickPick(providers.map(p => ({label: p.label, provider: p})), {title: 'Send saved notebook'});
-      if (!selected) return;
+      const selected = providerName ? {provider: providers.find(p => p.name === providerName)}
+        : await vscode.window.showQuickPick(providers.map(p => ({label: p.label, provider: p})), {title: 'Send saved notebook'});
+      if (providerName && !selected?.provider) throw new Error('Install the Taskvalet handoff package first.');
+      if (!selected?.provider) return;
       const provider = selected.provider;
       if (!/^[a-z][a-z0-9_-]*$/.test(provider.name)) throw new Error('Invalid handoff provider name.');
       const config = vscode.workspace.getConfiguration('glitnir', uri);
@@ -172,6 +189,7 @@ export class NotebookHandoff {
       const project = config.get<string>(provider.name + 'Project', '');
       const scope = handoffScope(provider.name, server, project);
       const review: HandoffReview = {server: new URL(server).origin, project, notebook: path.basename(uri.fsPath), source, objective: ''};
+      this.panelNotebook = uri.fsPath;
       this.showRequest(review, undefined, provider.label, provider.supportsStatus === true, async objective => {
         const unchanged = async (): Promise<void> => {
           this.trusted();
