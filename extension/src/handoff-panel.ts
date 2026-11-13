@@ -2,7 +2,11 @@ import {randomBytes} from 'node:crypto';
 import * as vscode from 'vscode';
 
 export interface HandoffReview {notebook: string; source: string; objective: string; server: string; project: string}
+export interface ResearchResults {availability: string; message: string; digest?: string; hasFindings?: boolean; truncated?: boolean; sections?: {investigation?: string; kind: string; author: string; version: number; problem: string; text: string; truncated?: boolean}[]}
 export interface HandoffPanelState extends HandoffReview {
+  results?: ResearchResults;
+  freshness?: string;
+  reviewed?: boolean;
   phase: 'review' | 'submitting' | 'submitted' | 'uncertain' | 'rejected';
   providerLabel?: string;
   canRefresh?: boolean;
@@ -12,7 +16,7 @@ export interface HandoffPanelState extends HandoffReview {
   checkedAt?: string;
   refreshing?: boolean;
 }
-export type HandoffAction = 'submit' | 'retry' | 'refresh' | 'open';
+export type HandoffAction = 'submit' | 'retry' | 'refresh' | 'open' | 'markReviewed';
 
 /** A self-contained themed view; data arrives as messages and is rendered as text. */
 export function handoffHtml(): string {
@@ -29,6 +33,7 @@ body{font-family:var(--vscode-font-family,system-ui);color:var(--vscode-foregrou
 <section class="card" aria-labelledby="notebook-title"><h2 id="notebook-title">Notebook</h2><p id="notebook"></p><details open><summary>Review saved source</summary><pre id="source" tabindex="0"></pre></details><p class="hint">Only this saved notebook is included. Imported files and the compiled environment are not uploaded.</p></section>
 <section class="card"><label for="objective">Research objective</label><textarea id="objective" maxlength="2000" placeholder="What would you like to investigate or improve?"></textarea><p class="hint">Describe the question or result you want the researchers to work on.</p></section>
 <section class="card" aria-labelledby="status-title"><div class="row"><h2 id="status-title">Request status</h2><span class="badge" id="stage">Not submitted</span></div><div role="status" aria-live="polite"><p id="status" class="status-text"></p><p id="task" class="hint"></p><p id="checked" class="hint"></p><p id="status-note" class="hint"></p></div><p id="error" class="error" role="alert" hidden></p><div class="actions"><button id="submit" type="button">Submit request</button><button id="retry" type="button" hidden>Retry saved request</button><button id="refresh" class="secondary" type="button" hidden>Refresh status</button><button id="open" class="secondary" type="button" hidden>Open request</button></div><p class="hint">The owner prepares assignments and launches work on the destination board. A request does not launch a swarm or change proof status.</p></section>
+<section class="card" id="results-card" hidden><h2>Research results</h2><p id="freshness" class="hint"></p><p id="results-message"></p><p id="results-limit" class="hint"></p><div id="result-sections"></div><button id="markReviewed" class="secondary" type="button">Mark reviewed locally</button><p class="hint">Reviewing does not accept the Taskvalet task, apply source changes, or mark any claim proven.</p></section>
 </main><script nonce="${nonce}">
 const host=acquireVsCodeApi();const $=id=>document.getElementById(id);let state=null;
 const stages={new:'New request',ready:'Queued',ongoing:'In progress',needs_input:'Needs input',review:'In review',finished:'Finished'};
@@ -39,9 +44,14 @@ $('retry').hidden=value.phase!=='uncertain';$('retry').disabled=false;$('refresh
 $('stage').textContent=value.phase==='submitted'?(stages[value.stage]||'Unknown'):({review:'Not submitted',submitting:'Sending…',uncertain:'Outcome unknown',rejected:'Not submitted'}[value.phase]||'Unknown');
 $('status').textContent=value.phase==='submitted'?(value.refreshing?'Checking the request…':'Request submitted. Status shown here is the request task, not a running swarm.'):
 ({review:'Ready when you are. Sending will create an unqueued research request.',submitting:'Sending the reviewed request. You can safely close this panel; its recovery record is saved before submission.',uncertain:'The response was not confirmed. Retry the saved request to recover its original result; do not create a replacement.',rejected:'The server rejected this request. Close this panel and reopen Send Notebook to prepare a fresh review.'}[value.phase]||'');
+$('results-card').hidden=value.phase!=='submitted';$('freshness').textContent=value.freshness||'Source freshness has not been checked.';
+$('results-message').textContent=value.results?.message||'Refresh to retrieve linked research results.';
+$('results-limit').textContent=value.results?.truncated?'This is a bounded preview. Open Taskvalet for the complete record.':'';
+$('result-sections').replaceChildren();for(const item of value.results?.sections||[]){const section=document.createElement('section');const title=document.createElement('h3');title.textContent=(item.investigation||'Investigation')+' · '+item.kind.replaceAll('_',' ')+' · version '+item.version;const author=document.createElement('p');author.textContent=item.author;const body=document.createElement('pre');body.textContent=item.text+(item.truncated?'\\n[Excerpt — open Taskvalet for the complete record]':'');section.append(title,author,body);$('result-sections').append(section);}
+$('markReviewed').hidden=!value.results?.hasFindings;$('markReviewed').disabled=!!value.reviewed;$('markReviewed').textContent=value.reviewed?'Reviewed locally':'Mark reviewed locally';
 $('status-note').textContent=value.phase==='submitted'&&!value.canRefresh?'Live refresh is unavailable for this provider. Open the request on the destination board for its current status.':'';$('task').textContent=value.task||'';$('checked').textContent=value.checkedAt?'Last checked '+value.checkedAt:'';$('error').textContent=value.error||'';$('error').hidden=!value.error;}
 $('objective').addEventListener('input',()=>{$('submit').disabled=!$('objective').value.trim();});
-for(const action of ['submit','retry','refresh','open'])$(action).addEventListener('click',()=>{if($(action).disabled||$(action).hidden)return;if(action!=='open')$(action).disabled=true;host.postMessage({action,objective:$('objective').value});});
+for(const action of ['submit','retry','refresh','open','markReviewed'])$(action).addEventListener('click',()=>{if($(action).disabled||$(action).hidden)return;if(action!=='open')$(action).disabled=true;host.postMessage({action,objective:$('objective').value});});
 window.addEventListener('message',event=>{if(event.data.type==='state')render(event.data.state);});host.postMessage({action:'ready'});
 </script></body></html>`;
 }
@@ -56,7 +66,7 @@ export class HandoffReviewPanel {
       if (this.closed || !message || typeof message.action !== 'string') return;
       if (message.action === 'ready') return this.update({});
       const name = message.action as HandoffAction;
-      const allowed = (name === 'submit' && this.state.phase === 'review') || (name === 'retry' && this.state.phase === 'uncertain') || ((name === 'open' || (name === 'refresh' && this.state.canRefresh)) && this.state.phase === 'submitted');
+      const allowed = (name === 'submit' && this.state.phase === 'review') || (name === 'retry' && this.state.phase === 'uncertain') || ((name === 'open' || name === 'markReviewed' || (name === 'refresh' && this.state.canRefresh)) && this.state.phase === 'submitted');
       if (!allowed || (name === 'refresh' && this.state.refreshing)) return;
       const objective = typeof message.objective === 'string' ? message.objective.trim() : '';
       if (name === 'submit' && (!objective || objective.length > 2000)) return;

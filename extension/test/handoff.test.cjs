@@ -43,6 +43,8 @@ test('separate editor windows retain independent lost-response envelopes', async
     await a.finish(one, {url: 'https://tasks.example/#task=lab/one'});
     assert.equal((await b.pending())[0].id, two);
     assert.ok(await readFile(path.join(root, one + '.completed'), 'utf8'));
+    const restarted = new HandoffJournal(root);
+    assert.deepEqual(await restarted.submitted(), [{id: one, value: {request: 'one'}, receipt: {url: 'https://tasks.example/#task=lab/one'}}]);
   } finally { await rm(root, {recursive: true, force: true}); }
 });
 
@@ -237,4 +239,70 @@ test('menu discovery uses only the local provider list and fails closed', async 
   assert.equal(await instance.available('python', 'taskvalet'), true);
   providers = null;
   assert.equal(await instance.available('python', 'taskvalet'), false);
+});
+
+test('Jobs retains multiple submitted requests across reloads and opens only a saved identity', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'handoff-jobs-'));
+  try {
+    const journal = new HandoffJournal(path.join(root, 'notebook-handoffs'));
+    const request = name => ({provider: {name: 'taskvalet', label: 'Taskvalet'}, python: 'python',
+      payload: {server: 'https://tasks.example', project: 'lab'},
+      review: {notebook: name, source: 'source', objective: 'objective', server: 'https://tasks.example', project: 'lab'}});
+    const one = await journal.persist(request('One.lean'));
+    await journal.finish(one, {task: '001-one', stage: 'review'});
+    const two = await journal.persist(request('Two.lean'));
+    await journal.finish(two, {task: '002-two', stage: 'new'});
+    const {NotebookHandoff, panels} = load({workspace: {isTrusted: true}});
+    const instance = new NotebookHandoff({globalStorageUri: {fsPath: root}, secrets: {get: () => assert.fail('secret read')}}, {}, () => assert.fail('network'));
+    const jobs = await instance.jobs();
+    assert.equal(jobs.length, 2);
+    assert.ok(jobs.every(job => job.canReview && !job.canStop));
+    assert.equal(jobs.find(job => job.id === 'handoff:' + one).state, 'Ready for review');
+    await assert.rejects(instance.openRequest('https://untrusted.example'), /Invalid/);
+    await instance.openRequest('handoff:' + two);
+    assert.equal(panels[0].state.notebook, 'Two.lean');
+    assert.equal(panels[0].state.task, '002-two');
+  } finally { await rm(root, {recursive: true, force: true}); }
+});
+
+test('tracking polls read-only, persists findings, warns on stale source and notifies once across reload', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'handoff-monitor-'));
+  try {
+    const journal = new HandoffJournal(path.join(root, 'notebook-handoffs'));
+    const pending = {notebookPath: '/Demo.lean', provider: {name: 'taskvalet', label: 'Taskvalet', supportsStatus: true},
+      python: 'python', scope: 'scope', payload: {}, review: {notebook: 'Demo.lean', source: 'original', objective: 'Explore', server: 'https://tasks.example', project: 'lab'}};
+    const id = await journal.persist(pending); await journal.finish(id, {task: '001-request', stage: 'new'});
+    const notices=[];const calls=[];
+    const vscode={Uri:{file:path=>({fsPath:path})},workspace:{isTrusted:true,textDocuments:[],fs:{readFile:async()=>Buffer.from('changed')}},
+      window:{showInformationMessage:async message=>{notices.push(message);},showInputBox:()=>assert.fail('background prompt')}};
+    const {NotebookHandoff}=load(vscode);
+    const context={globalStorageUri:{fsPath:root},secrets:{get:async()=> 'secret'}};
+    const runner=async (python,request)=>{calls.push(request);return {task:'001-request',stage:'review',results:{availability:'available',digest:'finding-v1',hasFindings:true,sections:[],message:'Review findings'}};};
+    await new NotebookHandoff(context,{},runner).refreshTracked();
+    const restarted=new NotebookHandoff(context,{},runner);await restarted.refreshTracked();
+    assert.equal(notices.length,1);assert.ok(calls.every(call=>call.action==='status'&&call.payload.results===true));
+    assert.equal((await restarted.jobs())[0].state,'Results need review');
+    assert.match((await journal.submitted())[0].receipt.freshness,/changed/);
+    vscode.workspace.isTrusted=false;await restarted.refreshTracked();assert.equal(calls.length,2);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('reviewing a recovered result survives an in-flight poll and an unanswered notification', async () => {
+  const root=await mkdtemp(path.join(os.tmpdir(),'handoff-review-race-'));
+  try {
+    const journal=new HandoffJournal(path.join(root,'notebook-handoffs'));
+    const pending={provider:{name:'taskvalet',label:'Taskvalet',supportsStatus:true},python:'python',scope:'scope',payload:{},review:{notebook:'A.lean',source:'source',objective:'Explore'}};
+    const id=await journal.persist(pending);const results={availability:'available',digest:'v1',hasFindings:true,sections:[]};
+    await journal.finish(id,{task:'001-request',stage:'review',results});
+    let resolveStatus;let entered;const started=new Promise(resolve=>{entered=resolve;});let notifications=0;
+    const {NotebookHandoff,panels}=load({workspace:{isTrusted:true},window:{showInformationMessage:()=>{notifications++;return new Promise(()=>{});}}});
+    const context={globalStorageUri:{fsPath:root},secrets:{get:async()=> 'secret'}};
+    const instance=new NotebookHandoff(context,{},async()=>{entered();return new Promise(resolve=>{resolveStatus=resolve;});});
+    const refresh=instance.refreshTracked();await started;
+    await instance.recover();await panels[0].action('markReviewed','');
+    resolveStatus({task:'001-request',stage:'review',results});await refresh;
+    assert.equal((await journal.submitted())[0].receipt.reviewedDigest,'v1');assert.equal(notifications,0);
+    let reads=0;const newer=new NotebookHandoff(context,{},async()=>{reads++;return {task:'001-request',stage:'review',results:{...results,digest:'v2'}};});
+    await newer.refreshTracked();await newer.refreshTracked();assert.equal(reads,2);assert.equal(notifications,1);
+  } finally {await rm(root,{recursive:true,force:true});}
 });

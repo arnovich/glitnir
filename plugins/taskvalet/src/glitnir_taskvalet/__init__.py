@@ -274,7 +274,158 @@ def status(value: dict[str, Any], token: str) -> dict[str, Any]:
         raise ValueError("Taskvalet returned a different request task")
     stages = {"new", "ready", "ongoing", "needs_input", "review", "finished"}
     stage = task.get("stage", "unknown")
-    return {"task": task_id, "stage": stage if stage in stages else "unknown"}
+    result: dict[str, Any] = {
+        "task": task_id,
+        "stage": stage if stage in stages else "unknown",
+    }
+    if value.get("results") is True:
+        result["results"] = _research_results(
+            server, project, task_id, value["request"], token
+        )
+    return result
+
+
+def _research_results(
+    server: str, project: str, task: str, request: dict[str, Any], token: str
+) -> dict[str, Any]:
+    """Project bounded, source-bound research as untrusted review text, never proof."""
+    try:
+        view = _request(
+            server,
+            project,
+            token,
+            "GET",
+            f"/api/v1/projects/{project}/tasks/{task}/research-results",
+        )
+    except ValueError:
+        return {
+            "availability": "unavailable",
+            "message": (
+                "Research results could not be read. The server may need the "
+                "request-link update, or this project/credential may not "
+                "support research. Open Taskvalet for details."
+            ),
+        }
+    if view.get("project") != project or view.get("task") != task:
+        raise ValueError("Research results belong to another request")
+    investigations = view.get("investigations")
+    if not isinstance(investigations, list) or len(investigations) > 20:
+        raise ValueError("Invalid research results")
+    expected = hashlib.sha256(request["command"]["text"].strip().encode()).hexdigest()
+    sections: list[dict[str, Any]] = []
+    identities: list[str] = []
+    remaining = 50_000
+    has_findings = False
+    for investigation in investigations:
+        problem = investigation["problem"]
+        origin = problem["data"].get("origin", {})
+        if (
+            investigation.get("project") != project
+            or origin.get("task") != task
+            or origin.get("context_sha256") != expected
+        ):
+            raise ValueError(
+                "Research origin does not match the submitted request context"
+            )
+        problem_id = str(uuid.UUID(problem["id"]))
+        for group in ("summaries", "findings", "verifications", "history"):
+            records = investigation.get(group, [])
+            if not isinstance(records, list):
+                raise ValueError("Invalid research record list")
+            for record in records:
+                if record.get("problem") != problem_id:
+                    raise ValueError("Research record belongs to another problem")
+                data = record["data"]
+                if group in {"summaries", "verifications"} or (
+                    group == "findings"
+                    and data.get("kind") not in {"direction", "note"}
+                ):
+                    has_findings = True
+                text = (
+                    data.get("text")
+                    if group != "history"
+                    else "\n".join(
+                        str(data.get(key, ""))
+                        for key in ("title", "statement", "assumptions")
+                    )
+                )
+                text = str(text or "")
+                for artifact in data.get("artifacts", []):
+                    text += (
+                        "\nArtifact: "
+                        + str(artifact.get("uri", ""))
+                        + "\nPinned revision: "
+                        + str(artifact.get("revision", ""))
+                    )
+                if data.get("references"):
+                    text += "\nReferences: " + ", ".join(
+                        str(reference) for reference in data["references"]
+                    )
+                if data.get("supersedes"):
+                    text += "\nSupersedes finding: " + str(data["supersedes"])
+                report = record.get("compute_report")
+                if isinstance(report, dict):
+                    text += "\nWorker compute evidence: " + (
+                        "report satisfies the server evidence gate"
+                        if report.get("passed") is True
+                        else "not established"
+                    )
+                    text += (
+                        "\nThis is worker evidence, not an independent "
+                        "local proof check."
+                    )
+                    for issue in report.get("issues", []):
+                        text += "\nLimitation: " + str(issue)
+                identities.append(str(record["id"]) + ":" + str(record["version"]))
+                if remaining <= 0 or len(sections) >= 100:
+                    continue
+                excerpt = text[: min(remaining, 10_000)]
+                remaining -= len(excerpt)
+                sections.append(
+                    {
+                        "kind": str(data.get("kind", record["kind"])),
+                        "investigation": str(
+                            problem["data"].get("title", "Investigation")
+                        )[:240],
+                        "author": str(record.get("author", ""))[:200],
+                        "version": record["problem_version"],
+                        "problem": problem_id,
+                        "text": excerpt,
+                        "truncated": len(excerpt) < len(text),
+                    }
+                )
+        for assignment in investigation.get("assignments", [])[:40]:
+            if assignment.get("problem") != problem_id:
+                raise ValueError("Assignment belongs to another problem")
+            current = assignment.get("task", {})
+            if len(sections) < 100:
+                sections.append(
+                    {
+                        "kind": "assignment",
+                        "author": str(current.get("agent") or "Unassigned")[:200],
+                        "version": assignment["problem_version"],
+                        "problem": problem_id,
+                        "text": str(current.get("title", ""))[:240]
+                        + " — "
+                        + str(current.get("stage", "unknown"))[:50],
+                    }
+                )
+    return {
+        "availability": "available",
+        "sections": sections,
+        "digest": hashlib.sha256("\n".join(sorted(identities)).encode()).hexdigest(),
+        "hasFindings": has_findings,
+        "truncated": remaining <= 0 or len(sections) >= 100,
+        "message": (
+            "No investigation is linked yet."
+            if not investigations
+            else (
+                "Research statements and findings are proposals. Independent local "
+                "checking remains the proof authority. Campaign controls and any "
+                "reported resource usage remain on the board."
+            )
+        ),
+    }
 
 
 def providers() -> list[HandoffProvider]:

@@ -37,3 +37,30 @@ retries on reload. If credentials are revoked, restore access to the original
 identity or reconcile the saved request with the operator. Do not create a new
 request to work around an uncertain result. The board link is the authoritative
 place to inspect the task. Direct campaign controls remain gated by task 410.
+
+
+Submitted requests remain in the notebook’s **Jobs** drawer, including after a
+reload. **View request** reopens their source-bound review panel. While Glitnir
+is active it polls one saved request each minute, rotating through the retained
+requests; it uses only an existing stored credential and never automatically
+submits, recovers, launches or stops work. Missing credentials and failed reads
+leave status unknown. Use **Refresh status** for an immediate read.
+
+On an updated Taskvalet server, choose **Create research from this request** on
+the request’s board details. The research form preserves the originating request
+and Taskvalet records a fingerprint of its Context. Revisions keep that origin.
+This requires a server-owned SQLite research project. Existing investigations
+without an origin are not guessed or retroactively linked.
+
+Glitnir reads linked statements, attributed findings, summaries, checks and
+assignment states. External artifact references are displayed with their pinned
+revision; Glitnir does not fetch or execute them. New classified findings notify
+once per result version; **Mark reviewed locally** only records local review.
+Results remain proposals and never accept tasks or update Lean source/proof status.
+The panel warns if the local notebook has changed or cannot be checked. Older
+requests without a saved local path report source freshness as unknown.
+
+Results are a bounded preview; open the board for the full record, campaign
+controls and any reported resource usage. On an older or unsupported server,
+request tracking still works and the panel explains that results are unavailable.
+Background polling runs only while the extension is active, not as a system service.

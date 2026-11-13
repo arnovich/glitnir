@@ -32,3 +32,12 @@ test('providers without a status callback retain the board link without a broken
  const d=dom.window.document;assert.equal(d.querySelector('#refresh').hidden,true);assert.equal(d.querySelector('#open').hidden,false);assert.match(d.querySelector('#status-note').textContent,/Live refresh is unavailable/);
  dom.window.close();
 });
+
+test('results are plain text with stale-source warning and local-only review',()=>{
+ const messages=[];const dom=new JSDOM(load().handoffHtml(),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m)});}});
+ const state={phase:'submitted',canRefresh:true,freshness:'Notebook has changed since submission.',results:{availability:'available',hasFindings:true,digest:'one',message:'Research is not proof',sections:[{kind:'conjecture',author:'researcher',version:1,problem:'problem',text:'<img src=x onerror="window.attacked=true">'}]}};
+ dom.window.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'state',state}}));
+ const d=dom.window.document;assert.equal(d.querySelector('#results-card').hidden,false);assert.equal(d.querySelector('#result-sections img'),null);assert.match(d.querySelector('#freshness').textContent,/changed/);
+ d.querySelector('#markReviewed').click();assert.equal(messages.at(-1).action,'markReviewed');assert.equal(d.querySelectorAll('[id*=apply]').length,0);
+ dom.window.close();
+});

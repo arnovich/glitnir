@@ -71,6 +71,7 @@
       return decodeURIComponent(document.querySelector('meta[name="atlas-position"]')?.content || '');
     },
     saveAtlasPosition(body) { vscode.postMessage({type: 'atlasPosition', body}); },
+    openNotebookRequest(id) { vscode.postMessage({type: 'openNotebookRequest', id}); },
     async listLeanJobs() {
       const reply = await request('', {}, 'listLeanJobs');
       if (reply.status !== 200) throw new Error('Could not read Lean jobs.');

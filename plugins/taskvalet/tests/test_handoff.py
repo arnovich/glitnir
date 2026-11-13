@@ -228,3 +228,66 @@ def test_request_status_rejects_cross_project_result(api, monkeypatch):
     monkeypatch.setattr(glitnir_taskvalet, "_request", request)
     with pytest.raises(ValueError, match="different request"):
         glitnir_taskvalet.status({"request": draft, "task": "001-request"}, "secret")
+
+
+def test_results_require_exact_request_context_and_preserve_attribution(monkeypatch):
+    """Matching names are not provenance; only the frozen request origin is accepted."""
+    import hashlib
+    from uuid import uuid4
+
+    import glitnir_taskvalet
+
+    problem = str(uuid4())
+    record = {
+        "id": str(uuid4()),
+        "kind": "finding",
+        "version": 1,
+        "problem": problem,
+        "problem_version": 1,
+        "author": "agent/researcher",
+        "data": {"kind": "conjecture", "text": "A proposal, not proof"},
+    }
+    origin = {
+        "task": "001-request",
+        "context_sha256": hashlib.sha256(b"saved context").hexdigest(),
+    }
+    response = {
+        "project": "lab",
+        "task": "001-request",
+        "investigations": [
+            {
+                "project": "lab",
+                "problem": {"id": problem, "data": {"origin": origin}},
+                "findings": [record],
+            }
+        ],
+    }
+    monkeypatch.setattr(glitnir_taskvalet, "_request", lambda *args: response)
+    request = {"command": {"text": "saved context"}}
+    result = glitnir_taskvalet._research_results(
+        "https://tasks.example", "lab", "001-request", request, "secret"
+    )
+    assert result["hasFindings"]
+    assert result["sections"][0]["author"] == "agent/researcher"
+    response["investigations"][0]["history"] = [
+        {
+            "id": str(uuid4()),
+            "kind": "problem",
+            "version": version,
+            "problem": problem,
+            "problem_version": version,
+            "author": "owner",
+            "data": {"statement": "x" * 50_000},
+        }
+        for version in range(1, 8)
+    ]
+    bounded = glitnir_taskvalet._research_results(
+        "https://tasks.example", "lab", "001-request", request, "secret"
+    )
+    assert bounded["hasFindings"] and bounded["truncated"]
+    assert bounded["sections"][0]["kind"] == "conjecture"
+    origin["context_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="origin"):
+        glitnir_taskvalet._research_results(
+            "https://tasks.example", "lab", "001-request", request, "secret"
+        )

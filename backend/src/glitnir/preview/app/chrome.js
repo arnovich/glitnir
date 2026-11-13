@@ -326,7 +326,10 @@
     try {
       const {jobs, incomplete} = await HOST.listLeanJobs();
       const count = jobs.length;
-      $('lean-jobs').textContent = count ? `Lean jobs · ${count}` : 'Lean jobs';
+      const title = jobs.some(job => job.canReview) ? 'Jobs' : 'Lean jobs';
+      $('lean-jobs').textContent = count ? `${title} · ${count}` : title;
+      $('lean-jobs-drawer').setAttribute('aria-label', title + ' in this window');
+      $('lean-job-rows').setAttribute('aria-label', title === 'Jobs' ? 'Lean jobs and notebook requests' : 'Running and waiting Lean jobs');
       const status = $('lean-jobs-status');
       const message = incomplete ? 'Some previews could not report their jobs.'
         : count ? '' : 'No running or waiting Lean jobs in this window.';
@@ -334,6 +337,7 @@
       status.hidden = !message;
       const rows = $('lean-job-rows');
       const html = jobs.map(job => `<li><div class="lean-job-label">${esc(job.label)}<small>${esc(job.file)}</small></div><span>${esc(job.state)}</span>
+        ${job.canReview ? `<button type="button" class="secondary" data-act="notebook-request" data-id="${esc(job.id)}">View request</button>` : ''}
         ${job.canStop ? `<button type="button" class="secondary" data-act="lean-row-stop" data-id="${esc(job.id)}" aria-label="Stop ${esc(job.label)} in ${esc(job.file)}">Stop</button>` : ''}</li>`).join('');
       if (renderedJobs !== html) {
         const focused = rows.contains(document.activeElement) ? document.activeElement.dataset.id : null;
@@ -909,6 +913,7 @@
     const id = b.dataset.id;
     if (researchAction(b)) return;
     switch (b.dataset.act) {
+      case 'notebook-request': if (HOST?.openNotebookRequest) HOST.openNotebookRequest(b.dataset.id); break;
       case 'lean-jobs': if (HOST?.listLeanJobs) toggleLeanJobs($('lean-jobs-drawer').hidden); break;
       case 'lean-row-stop': if (HOST?.stopLeanJob) void stopListedLeanJob(b); break;
       case 'lean-stop': if (!b.hidden && HOST?.stopLeanJob) void stopSharedLeanJob(id); break;

@@ -6757,3 +6757,20 @@ test('Hoare circuit substitution renders an equivalence as a clickable premise',
     assert.match(d.getElementById('hoare-details').textContent, /\{P\}original\{Q\}/);
   } finally { w.close(); }
 });
+
+
+test('Jobs opens a durable notebook request without offering Stop', async () => {
+  const id = 'handoff:' + '1'.repeat(36), messages = [];
+  const w = await renderSnapshot(projectNotebook(), {
+    onLeanJobs: () => ({jobs: [{id, label: 'Notebook request', file: 'Demo.lean', state: 'Results need review', canStop: false, canReview: true}], incomplete: false}),
+    onMessage: message => messages.push(message),
+  });
+  try {
+    const drawer = w.document.getElementById('lean-jobs-drawer');
+    assert.equal(w.document.getElementById('lean-jobs').textContent, 'Jobs · 1');
+    assert.match(drawer.getAttribute('aria-label'), /^Jobs/);
+    assert.equal(drawer.querySelector('[data-act="lean-row-stop"]'), null);
+    drawer.querySelector('[data-act="notebook-request"]').click();
+    assert.ok(messages.some(message => message.type === 'openNotebookRequest' && message.id === id));
+  } finally {w.close();}
+});
