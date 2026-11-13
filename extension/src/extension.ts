@@ -146,12 +146,9 @@ export function activate(context: vscode.ExtensionContext): void {
     if (shuttingDown) return;
     const existing = previews.get(key);
     if (existing && !existing.backend.running) existing.panel.dispose();
-    const document = await vscode.workspace.openTextDocument(uri);
-    if (shuttingDown) return;
-    await vscode.window.showTextDocument(document, {viewColumn: vscode.ViewColumn.One, preserveFocus: true});
-    if (shuttingDown) return;
-    // Opening the document yields; another command may already have opened it.
-    if (previews.has(key)) { previews.get(key)!.panel.reveal(vscode.ViewColumn.Beside); return; }
+    // Read saved files through the backend; loading a Lean text document here
+    // would start the Lean extension even when the user only wants to read.
+    if (previews.has(key)) { previews.get(key)!.panel.reveal(); return; }
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before starting Glitnir.');
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     const cwd = folder?.uri.fsPath ?? path.dirname(uri.fsPath);
@@ -164,11 +161,11 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!environment || shuttingDown) return;
     if (epoch !== environmentEpoch) throw new Error('Glitnir settings changed during setup. Open the preview again.');
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before starting Glitnir.');
-    if (previews.has(key)) { previews.get(key)!.panel.reveal(vscode.ViewColumn.Beside); return; }
+    if (previews.has(key)) { previews.get(key)!.panel.reveal(); return; }
     const computeEnv = await executionEnvironment(config, context.secrets);
     if (epoch !== environmentEpoch || shuttingDown) throw new Error('Glitnir settings changed. Open the preview again.');
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before starting Glitnir.');
-    if (previews.has(key)) { previews.get(key)!.panel.reveal(vscode.ViewColumn.Beside); return; }
+    if (previews.has(key)) { previews.get(key)!.panel.reveal(); return; }
     const backend = new Backend({
       python: environment.python, cwd, args: ['-I', '-B', '-u', '-m', 'glitnir.notebook', 'serve', uri.fsPath, '--port', '0'],
       env: {...(environment.processEnv ?? process.env), ...computeEnv, PYTHONUNBUFFERED: '1',
@@ -181,7 +178,7 @@ export function activate(context: vscode.ExtensionContext): void {
     });
     let panel: vscode.WebviewPanel;
     try {
-      panel = vscode.window.createWebviewPanel('glitnir.notebook', `Glitnir: ${path.basename(uri.fsPath)}`, vscode.ViewColumn.Beside, {
+      panel = vscode.window.createWebviewPanel('glitnir.notebook', `Glitnir: ${path.basename(uri.fsPath)}`, vscode.ViewColumn.Active, {
         enableScripts: true, localResourceRoots: [media], retainContextWhenHidden: true,
       });
     } catch (error) { await backend.close(); throw error; }

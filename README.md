@@ -6,7 +6,7 @@ Glitnir is a simple notebook format that makes it easier for a standard human ma
 
 A notebook is an ordinary `.lean` file: the prose lives in a specific Markdown format inside its `/-! … -/` comment blocks, so it builds with Lean like any other file.
 
-Glitnir is also this VS Code extension, which renders and checks notebooks beside their source, and an authoring skill that teaches coding agents such as Claude Code or Codex to write Lean in this style.
+Glitnir is also this VS Code extension, which renders and checks notebooks in the editor, and an authoring skill that teaches coding agents such as Claude Code or Codex to write Lean in this style.
 
 See [example notebooks](https://notebooks.gimlelabs.com/).
 
@@ -24,7 +24,7 @@ Generally I am not a believer in new agent harnesses for math. I think coding ag
 
 ## The VS Code extension
 
-The extension opens any `.lean` file as a rendered notebook beside your editor.
+The extension opens any `.lean` file as a rendered notebook in the current editor group.
 Names written **Glitnir: …** are Command Palette commands; other bold names are
 buttons in the preview.
 
@@ -92,11 +92,12 @@ Then:
    offline machine, download `glitnir-VERSION.vsix` from a
    [release](https://github.com/arnovich/glitnir/releases) and run
    **Extensions: Install from VSIX…**.
-2. Open a Lean file in a trusted workspace and run **Glitnir: Set Up
-   Environment → Set Up** (also offered when you first open a notebook). It
-   downloads the backend wheel of the extension's own release, verifies its
+2. Open the project folder in a trusted workspace. Right-click a `.lean` file
+   in Explorer and choose **Open in Glitnir** to read it without opening the
+   Lean source editor.
+3. If prompted, choose **Set Up** (also available through **Glitnir: Set Up
+   Environment**). This downloads the backend wheel of the extension's own release, verifies its
    checksum and installs it with uv into its own environment.
-3. Run **Glitnir: Open in Glitnir**.
 
 Marketplace installs update automatically. After an update, Glitnir offers once
 to set up the new version's backend and reinstall your extension packages, in

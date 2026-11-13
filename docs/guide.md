@@ -153,9 +153,11 @@ shown but not saved. Without a provider the line shows why.
 
 ### Reading
 
-Run **Glitnir: Open in Glitnir** from the Command Palette, or **Open in Glitnir**
-on a `.lean` file in the Explorer's context menu. The preview opens beside the
-editor and shows the saved file, not unsaved edits. **Contents** lists the
+Choose **Open in Glitnir** on a `.lean` file in the Explorer's context menu.
+The notebook opens in the current editor group without loading the Lean source
+editor or starting its language server. For a Lean file already open in an
+editor, **Glitnir: Open in Glitnir** is also available from the Command Palette.
+The preview shows the saved file, not unsaved edits. **Contents** lists the
 sections, `s` switches between the rendered document and the Lean source, and
 `g` opens the recorded proof graph.
 
