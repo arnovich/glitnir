@@ -14,6 +14,8 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   let memoryInspect = {defaultValue: 16384, globalValue: 12288};
   let saveTarget, dialogs = 0, clipboard;
   const externalUris = [];
+  const openedDocuments = [];
+  let resolveEnvironment = async () => ({python: '/workspace/.venv/bin/python'});
   let references = [];
   let candidateReply;
   let packageRestart;
@@ -43,7 +45,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
       const parsed = new URL(value);
       return {scheme: parsed.protocol.slice(0, -1), toString: () => value};
     }},
-    ViewColumn: {One: 1, Beside: 2}, env: {
+    ViewColumn: {One: 1, Beside: 2, Active: -1}, env: {
       clipboard: {writeText: async text => { clipboard = text; }},
       openExternal: async uri => { externalUris.push(uri.toString()); return true; },
     },
@@ -73,7 +75,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
         },
         delete: async uri => { pendingWrites.delete(uri.fsPath); },
       },
-      openTextDocument: async uri => documents.find(d => d.uri.fsPath === uri.fsPath) || {uri},
+      openTextDocument: async uri => { openedDocuments.push(uri.fsPath); return documents.find(d => d.uri.fsPath === uri.fsPath) || {uri}; },
       getWorkspaceFolder: () => ({uri: file('/workspace')}),
       getConfiguration: namespace => (assert.equal(namespace, 'glitnir'), {get: (key, fallback) => ({pythonPath: '.venv/bin/python', memoryLimitMb: memoryInspect.globalValue ?? memoryInspect.defaultValue})[key] ?? fallback, inspect: key => (assert.equal(key, 'memoryLimitMb'), memoryInspect)}),
       onDidChangeTextDocument: fn => { events.change = fn; return {}; },
@@ -85,13 +87,13 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
       showSaveDialog: async () => { dialogs++; return saveTarget; },
       showTextDocument: async document => { fake.window.shown = document; return editor; },
       createOutputChannel: () => ({append() {}}), showErrorMessage: text => { throw new Error(text); },
-      createWebviewPanel: (kind, title) => {
+      createWebviewPanel: (kind, title, column) => {
         assert.equal(kind, 'glitnir.notebook');
         const panel = {
-          title, messages: [],
+          title, column, messages: [], reveals: [],
           webview: {postMessage(message) { panel.messages.push(message); }, onDidReceiveMessage(fn) { panel.receive = fn; }},
           onDidDispose(fn) { panel.closed = fn; },
-          dispose() { panel.closed(); }, reveal() { panel.revealed = true; },
+          dispose() { panel.closed(); }, reveal(...args) { panel.revealed = true; panel.reveals.push(args); },
         };
         panels.push(panel); return panel;
       },
@@ -114,7 +116,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
       dispose() { packageCalls.push(['dispose']); }
     }};
     if (name === './setup' && parent.filename.endsWith('/dist/extension.js')) return {EnvironmentSetup: class {
-      async resolve() { return {python: '/workspace/.venv/bin/python'}; }
+      resolve() { return resolveEnvironment(); }
       dispose() {}
     }};
     return load.call(this, name, parent, ...rest);
@@ -132,7 +134,14 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
     await assert.rejects(open(file(alias)), /symbolic link/);
     assert.equal(servers.length, 0, 'a symlink cannot silently change the import context');
   } finally { rmSync(temporary, {recursive: true}); }
+  const alreadyLoaded = documents.splice(0);
   await Promise.all([open(file(fixture)), open(file(fixture))]);
+  assert.deepEqual(openedDocuments, [], 'Explorer opening must not load a Lean document or start its language server');
+  assert.equal(fake.window.shown, undefined, 'opening the notebook does not show a source editor');
+  assert.equal(panels[0].column, fake.ViewColumn.Active, 'a notebook-only opening fills the current group');
+  await open(file(fixture));
+  assert.deepEqual(panels[0].reveals.at(-1), [], 'reopening preserves the existing preview group');
+  documents.push(...alreadyLoaded);
   assert.equal(panels.length, 1);
   assert.equal(gitFiles.length, 1);
   assert.equal(gitFiles[0], require('node:fs').realpathSync(fixture));
@@ -145,7 +154,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   await panels[0].receive({type: 'gitHistory', id: 403});
   assert.equal(panels[0].messages.at(-1).status, 409);
   fake.workspace.isTrusted = true;
-  assert.equal(fake.window.shown.uri.fsPath, fixture);
+  assert.equal(fake.window.shown, undefined);
   assert.equal(servers[0].options.python, '/workspace/.venv/bin/python');
   assert.deepEqual(servers[0].options.args.slice(-4), ['serve', fixture, '--port', '0']);
   assert.ok(!('FORSETI_LEAN_PROJECT' in servers[0].options.env), 'no pinned Lean release is passed');
@@ -200,6 +209,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.equal(panel.messages.at(-1).status, 200);
   await panel.receive({type: 'request', id: 5, path: '/api/project/check', method: 'POST', body: '{"sha256":"' + hash + '","through_line":3}'});
   assert.equal(panel.messages.at(-1).status, 200, 'a check through one claim');
+  assert.deepEqual(openedDocuments, [], 'saved-file checking does not open the Lean editor');
   for (const body of ['{}', '{"sha256":"' + hash + '","through_line":0}', '{"sha256":"' + hash + '","file":"Other.lean"}']) {
     await panel.receive({type: 'request', id: 6, path: '/api/project/check', method: 'POST', body});
     assert.equal(panel.messages.at(-1).status, 409, body);
@@ -253,6 +263,9 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
     await panel.receive({type: 'export', id: 18, body: '<p>replay</p>', token: prepared.json.token});
     assert.equal(panel.messages.at(-1).status, 409, 'an export target capability is single-use');
   } finally { rmSync(exportDirectory, {recursive: true}); }
+  await panel.receive({type: 'source'});
+  assert.equal(openedDocuments.at(-1), fixture, 'Edit in VS Code explicitly loads the notebook source');
+  assert.equal(fake.window.shown.uri.fsPath, fixture);
   await panel.receive({type: 'source', index: 0, sha256: hash, path: '/tmp/foreign.lean'});
   assert.equal(fake.window.shown.uri.fsPath, fixture, 'webview cannot choose another source file');
   assert.deepEqual(editor.selection.start, {line: 0, character: 0});
@@ -336,11 +349,11 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   assert.equal(servers.length, 5);
   assert.ok(!('GLITNIR_MEMORY_LIMIT_MB' in servers[4].options.env), 'a defaulted memory setting leaves the backend to size its own');
   let resume;
-  fake.workspace.openTextDocument = uri => new Promise(resolve => { resume = () => resolve({uri}); });
+  resolveEnvironment = () => new Promise(resolve => { resume = () => resolve({python: '/workspace/.venv/bin/python'}); });
   const opening = open(file(path.join(path.dirname(fixture), 'DissipativeModel.lean')));
   const deadline = Date.now() + 3000;
   while (!resume) {
-    assert.ok(Date.now() < deadline, 'pending open reached the editor');
+    assert.ok(Date.now() < deadline, 'pending open reached runtime setup');
     await new Promise(resolve => setImmediate(resolve));
   }
   await extension.deactivate();

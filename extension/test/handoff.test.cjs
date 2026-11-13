@@ -56,6 +56,7 @@ test('untrusted or dirty editor refuses before invoking provider or reading a se
     await assert.rejects(instance.start(), /Trust/);
     vscode.workspace.isTrusted = true;
     vscode.window.activeTextEditor = {document: {uri: {scheme: 'file', path: '/A.lean'}, isDirty: true}};
+    vscode.workspace.textDocuments = [vscode.window.activeTextEditor.document];
     await assert.rejects(instance.start(), /saved/);
   } finally { await rm(root, {recursive: true, force: true}); }
 });
@@ -193,5 +194,29 @@ test('panel submits once, keeps secrets in the host and refreshes the returned t
     assert.equal((await journal.pending()).length,0);
     panels[0].onClose();await instance.recover();assert.equal(panels[1].state.task,'001-request');
     assert.equal(panels[1].state.source,source);
+  } finally { await rm(root, {recursive: true, force: true}); }
+});
+
+test('notebook-only preview hands off saved source without opening a text editor', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'handoff-preview-'));
+  try {
+    const uri = {scheme: 'file', path: '/Preview.lean', fsPath: '/Preview.lean'};
+    const source = 'theorem preview : True := by trivial\n';
+    const documents = [];
+    const values = {taskvaletServer: 'https://tasks.example', taskvaletProject: 'lab'};
+    const vscode = {workspace: {isTrusted: true, textDocuments: documents,
+      fs: {readFile: async () => Buffer.from(source)},
+      getConfiguration: () => ({get: key => values[key]})},
+      window: {showQuickPick: async items => items[0]}};
+    const {NotebookHandoff, panels} = load(vscode);
+    const instance = new NotebookHandoff({globalStorageUri: {fsPath: root}},
+      {resolve: async target => {assert.equal(target, uri); return {python: 'python'};}},
+      async requestPython => [{name: 'taskvalet', label: 'Taskvalet'}]);
+    await instance.start(uri);
+    assert.equal(panels[0].state.source, source);
+    assert.equal(panels[0].state.notebook, 'Preview.lean');
+    documents.push({uri, isDirty: true, getText: () => source + '-- edit'});
+    await panels[0].action('submit', 'Investigate');
+    assert.match(panels[0].state.error, /Source or destination changed/);
   } finally { await rm(root, {recursive: true, force: true}); }
 });

@@ -142,22 +142,24 @@ export class NotebookHandoff {
     this.panel = panel;
   }
 
-  async start(): Promise<void> {
+  async start(target?: vscode.Uri): Promise<void> {
     if (this.busy) return;
     if (this.panel) {this.panel.reveal(); return;}
     this.busy = true;
     try {
       this.trusted();
       if ((await this.journal.pending()).length) throw new Error('Recover the pending notebook handoff before creating another request.');
-      const document = vscode.window.activeTextEditor?.document;
-      if (!document || document.uri.scheme !== 'file' || !document.uri.path.endsWith('.lean') || document.isDirty)
+      const uri = target ?? vscode.window.activeTextEditor?.document.uri;
+      const openDocument = () => vscode.workspace.textDocuments.find(d => d.uri.fsPath === uri?.fsPath);
+      const document = openDocument();
+      if (!uri || uri.scheme !== 'file' || !uri.path.endsWith('.lean') || document?.isDirty)
         throw new Error('Open a saved, unchanged Lean notebook first.');
       if (vscode.workspace.textDocuments.some(d => d.isDirty && d.uri.path.endsWith('.lean')))
         throw new Error('Save changed Lean files before preparing the handoff.');
-      const source = document.getText();
-      const disk = Buffer.from(await vscode.workspace.fs.readFile(document.uri)).toString('utf8');
+      const disk = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+      const source = document?.getText() ?? disk;
       if (source !== disk) throw new Error('The notebook changed on disk. Reopen it before submitting.');
-      const environment = await this.setup.resolve(document.uri);
+      const environment = await this.setup.resolve(uri);
       if (!environment) return;
       const providers: Provider[] = await this.run(environment.python, {action: 'list'});
       if (!providers.length) throw new Error('Install a notebook handoff extension package first.');
@@ -165,18 +167,18 @@ export class NotebookHandoff {
       if (!selected) return;
       const provider = selected.provider;
       if (!/^[a-z][a-z0-9_-]*$/.test(provider.name)) throw new Error('Invalid handoff provider name.');
-      const config = vscode.workspace.getConfiguration('glitnir', document.uri);
+      const config = vscode.workspace.getConfiguration('glitnir', uri);
       const server = config.get<string>(provider.name + 'Server', '');
       const project = config.get<string>(provider.name + 'Project', '');
       const scope = handoffScope(provider.name, server, project);
-      const review: HandoffReview = {server: new URL(server).origin, project, notebook: path.basename(document.uri.fsPath), source, objective: ''};
+      const review: HandoffReview = {server: new URL(server).origin, project, notebook: path.basename(uri.fsPath), source, objective: ''};
       this.showRequest(review, undefined, provider.label, provider.supportsStatus === true, async objective => {
         const unchanged = async (): Promise<void> => {
           this.trusted();
-          const current = vscode.workspace.getConfiguration('glitnir', document.uri);
+          const current = vscode.workspace.getConfiguration('glitnir', uri);
           if (handoffScope(provider.name, current.get<string>(provider.name + 'Server', ''), current.get<string>(provider.name + 'Project', '')) !== scope
-              || document.isDirty || document.getText() !== source
-              || Buffer.from(await vscode.workspace.fs.readFile(document.uri)).toString('utf8') !== source)
+              || openDocument()?.isDirty || (openDocument()?.getText() ?? source) !== source
+              || Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8') !== source)
             throw new Error('Source or destination changed; close this panel and prepare a fresh review.');
         };
         await unchanged();
@@ -192,9 +194,9 @@ export class NotebookHandoff {
     } finally { this.busy = false; }
   }
 
-  async credential(): Promise<void> {
+  async credential(target?: vscode.Uri): Promise<void> {
     this.trusted();
-    const uri = vscode.window.activeTextEditor?.document.uri;
+    const uri = target ?? vscode.window.activeTextEditor?.document.uri;
     if (!uri) throw new Error('Open a notebook first.');
     const environment = await this.setup.resolve(uri);
     if (!environment) return;
