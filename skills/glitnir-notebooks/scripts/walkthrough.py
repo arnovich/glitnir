@@ -1620,11 +1620,8 @@ def _page_data(
 
 
 _PAGE_STYLE = """
-:root { --bg:#f6f7f9; --panel:#fff; --ink:#1f2328; --muted:#5b636d;
+:root { color-scheme:light; --bg:#f6f7f9; --panel:#fff; --ink:#1f2328; --muted:#5b636d;
   --line:#dde1e6; --code:#f0f2f4; --link:#2457a6; }
-@media (prefers-color-scheme: dark) { :root { --bg:#16181b; --panel:#1f2328;
-  --ink:#e6e8ea; --muted:#9aa3ad; --line:#363b42; --code:#2a2f35;
-  --link:#7aa7e8; } }
 body { margin:0; background:var(--bg); color:var(--ink);
   font:15px/1.5 Helvetica, Arial, sans-serif; }
 main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);
