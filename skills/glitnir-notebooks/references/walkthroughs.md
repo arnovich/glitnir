@@ -1,8 +1,9 @@
 # Walkthroughs of existing formalizations
 
-A walkthrough explains a finished Lean project through its paper's argument
-rather than its files. It has two parts: a map of the paper's numbered
-statements and which ones each proof uses, and a notebook read from the top. In
+A walkthrough explains an existing Lean proof through its mathematical argument.
+It has two parts: a map of statements and their supporting steps, and a notebook
+read from the top. A paper supplies the statement order when one exists; a
+source-only walkthrough uses an explicitly curated reading order. In
 the notebook each key statement is explained, shown as the project states it in
 Lean, and restated as a claim proved by the project's own theorem. Write it for
 the user's own understanding first, and well enough that others can read it.
@@ -227,7 +228,33 @@ of the walkthrough grants a claim a status.
 
 ## The workflow
 
-### 1. Gather context
+### 1. Establish the reader and feasibility
+
+Infer the reader's background and desired depth from the request; ask only when
+that changes the explanation materially. State the working assumption briefly:
+for example, "comfortable with induction, new to Lean; explain the main proof
+and one difficult branch." Name prerequisites and introduce notation when used.
+Do not turn this into a questionnaire or require approval of a routine outline.
+
+Before expanding the notebook, inspect the original's toolchain, built imports,
+Glitnir runtime and preview availability. Try one representative claim with the
+text helper; when already authorized and available, elaborate and check that
+small notebook too. Record which checks can run now: source comparison, Lean
+elaboration, independent Glitnir checking, and rendered inspection. These are
+separate observations, not interchangeable levels of mathematical authority.
+An incompatible toolchain remains explicitly unchecked. Account for existing
+build/download authorization; do not ask again when the user has already given it.
+Do not install or change dependencies merely to improve displayed status.
+
+Inspect the selected theorem's binders and namespace context early. If the
+helper cannot restate it, plan a prose explanation with an exact source citation
+and give the reason. Report mapped statements versus claim cards and exclusions;
+a sparse set of cards need not imply a sparse explanation.
+
+Read [worked-example.md](worked-example.md) for a complete source-only example,
+including a public module, an induction bridge and a prose-only explicit binder.
+
+### 2. Gather context
 
 Start with what the user supplied. Then read the project: its READMEs; the
 file of top-level statements a reader must trust (often a short file such as
@@ -241,7 +268,7 @@ version in `sources`, the trusted file in `project.trusted`, and the project's
 
 *Check:* the outline names the trusted statement file and every source used.
 
-### 2. Extract the outline
+### 3. Extract the outline
 
 List the paper's statements in its order, each with its label, section and
 pages, kind, statement in your own words, the idea of its proof, the statements
@@ -250,7 +277,8 @@ the project's own index for the paper-to-Lean mapping and its recorded
 differences. An index may list `alias` entries, which `check` does not scan:
 follow each alias to the declaration it names and list that. Outline a large
 project from the top: the main text first, each appendix as one node, deeper
-levels only when asked. Node kinds are fixed:
+levels selectively where needed to explain the chosen bottleneck. Do not expand
+every appendix simply to increase coverage. Node kinds are fixed:
 
 - An equation the claims rest on is a `lemma` node labelled with the paper's
   equation number, such as `Equation (5)`.
@@ -260,9 +288,26 @@ levels only when asked. Node kinds are fixed:
 - A paper item split into several nodes, one per claim, is labelled with the
   paper's name and the part in parentheses, such as `Theorem 22 (3SUM)`.
 
+Without a paper, start from the chosen result, follow its proof to intermediate
+lemmas, and use mathematical labels such as "The induction bridge". Keep the
+same schema: omit paper-only `pages` and `section`, record source files as
+`kind: "other"` (and READMEs or audit notes under their own kinds), and use
+`uses` for curated support links grounded in the inspected Lean proof. Say that
+this is a source-only reading route, not automatically extracted dependencies.
+Do not invent a paper, theorem numbers or a paper-versus-Lean discrepancy.
+
 *Check:* `python -B scripts/walkthrough.py check OUTLINE` exits 0.
 
-### 3. Draw the map
+### 4. Write and inspect one proof branch
+
+Before expanding coverage, write the headline result and one branch that makes
+its hardest inference understandable. For each step explain the inputs, the
+conclusion, why the inference holds, and where the enclosing proof uses it.
+Follow intermediate lemmas until reaching a useful boundary for this reader;
+name that boundary and what it leaves unexplained. A small proof may need only
+one calculation. A large proof may need nested `{fold}` sections or an atlas.
+Do this even when no atlas is requested. A list of theorem names is not an
+explanation of their composition.
 
 Open the walkthrough notebook beside `outline.json` in Glitnir and choose
 **Explore** (or **Statement graph** when an atlas is present). The map shows direct uses only: a use also reached through another
@@ -275,12 +320,12 @@ the same map without an external fetch.
 *Check:* look at the rendered map, by whatever means you have, and fix the
 outline, not the picture. If you cannot view it, say that it was not inspected.
 
-### 4. Write the notebook
+### 5. Complete the notebook
 
 Open with the title and scope; what is proved and which file a reader must
 trust; the original's authors and licence, as the rules say; tell the reader
-that **Explore** (or **Statement graph** when an atlas is present) shows how the paper's statements fit together; and give the
-strategy in one page. If the walkthrough cannot be checked (step 6), say so
+that **Explore** (or **Statement graph** when an atlas is present) shows how the statements fit together; and give the
+strategy in one page. If the walkthrough cannot be independently checked, say so
 here. Then write one `{fold}` section per part of the argument, in
 reading order, whose first paragraph is its summary. In each, give the
 statement, the idea, how Lean states it and where that differs, and the claim.
@@ -294,7 +339,7 @@ whole file as source. If you are maintaining an older multi-file walkthrough,
 pass every file in the same helper run; its Explore view maps only claims in the
 file currently open. If you cannot open the preview, say so in the report.
 
-### 5. Add figures
+### 6. Add figures when they clarify an inference
 
 Draw SVG figures under `assets/`, each illustrating one statement's idea,
 referenced from prose as SKILL.md describes, and recorded in `figures`. Figures
@@ -303,9 +348,9 @@ explain; they never carry an argument.
 *Check:* look at every figure rendered, and check that each number in a caption
 matches the statement it illustrates.
 
-### 6. Validate and report
+### 7. Validate and review the explanation
 
-1. Run `check --notebook` as in step 4.
+1. Run `check --notebook` as in step 5.
 2. Compile each file with `lake env lean <file>` from the walkthrough's folder
    only when the original is built and the user has agreed (see below).
    Otherwise report compilation as not run.
@@ -313,6 +358,24 @@ matches the statement it illustrates.
    is the Lean version Glitnir supports. Otherwise state in the notebook and the
    report that the walkthrough is unchecked and why, for example: the original
    pins another Lean version.
+
+Review the mathematics as well as the files. For each main result, compare prose
+with the source: domains, quantifier order, hypotheses, boundary cases and the
+direction/strength of the conclusion. Identify any specialization or analogy.
+For the deepened branch, verify each explanatory inference against the proof;
+checking a restated theorem does not check nearby prose or curated links.
+
+Read the collapsed overview, then the expanded branch, as the intended reader.
+Can they state the result, explain why its hypotheses matter, reconstruct the
+central inference and identify the remaining boundary without opening Lean?
+Repair missing reasoning rather than adding more theorem cards. Check notation,
+figures and captions against the same hypotheses.
+
+Before sharing pinned source links, compare the cited files with the recorded
+commit and inspect local changes. The helper reads working-tree text and does
+not detect dirty source files. Disclose local differences in a draft; publish
+pinned links only when they describe the cited source. Do not silently update a
+revision without revisiting the mathematical explanation.
 
 Report the sources used and their versions, the project commit, what is
 unchecked, every recorded paper-to-Lean difference, and any note from `check`.
@@ -322,10 +385,15 @@ when asked and when you can.
 
 ## The Lake project
 
-Untested: this template and the compile step have not yet been run on a real
-project. Nor is it known whether a walkthrough file that is not a module may
-import the module files of a project that uses the Lean module system. Treat
-any failure as a limitation to report, not as a reason to change the original.
+The bundled [worked example](worked-example.md) exercises a sibling Lake
+project importing public declarations from a `module` file, through elaboration
+and, after copying the unchanged dependency inside the walkthrough project,
+independent checking. The sibling `path` below supports Lean elaboration only:
+Glitnir refuses dependencies outside the inspected project. Follow the example's
+isolated-copy procedure for its checkable variant; do not weaken the sandbox.
+This validates that small standard-library setup,
+not arbitrary projects or private declarations. Treat other configuration
+failures as limitations to report, not reasons to change the original.
 
 ```toml
 name = "odd-sums-walkthrough"
@@ -359,6 +427,8 @@ for any build.
    its statements as nodes it uses), and add any new sources.
 3. If the project has moved, rerun `check`, fix the entries it reports, and set
    `project.commit` to the commit you verified against.
-4. Rerun `check` and `map`.
+4. Rerun `check --notebook`; if `atlas.json` exists, run `proof_atlas.py --report`
+   too. Inspect Explore and the static export. Run `map` only when maintaining
+   existing legacy generated map assets.
 5. Add or revise only the sections you were asked to; never rewrite others.
-6. Validate and report as in step 6.
+6. Validate and report as in step 7.

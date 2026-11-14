@@ -1,0 +1,99 @@
+{
+  "format": "glitnir.walkthrough-outline/v1",
+  "title": "Two ticks per round",
+  "overview": "A source-only reading route: support links are curated from the induction proof, not extracted automatically.",
+  "project": {
+    "root": "../counter",
+    "commit": "6b69d10684d3f53254089023bda10642e0fb0818",
+    "toolchain": "leanprover/lean4:v4.35.0",
+    "trusted": null,
+    "repository": "https://github.com/arnovich/glitnir",
+    "path": "skills/glitnir-notebooks/assets/counter-example/counter"
+  },
+  "sources": [
+    {
+      "kind": "other",
+      "path": "../counter/Counter.lean",
+      "title": "Counter formalization",
+      "version": "6b69d10684d3f53254089023bda10642e0fb0818"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "counter",
+      "label": "The recursive counter",
+      "kind": "definition",
+      "statement": "$T(0)=0$ and $T(n+1)=T(n)+2$.",
+      "idea": "Define one round by adding two to the preceding count.",
+      "uses": [],
+      "lean": [
+        {
+          "name": "Counter.ticks",
+          "file": "Counter.lean",
+          "line": 8,
+          "type": ": Nat → Nat",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "recurrence",
+      "label": "One round adds two",
+      "kind": "lemma",
+      "statement": "$T(n+1)=T(n)+2$.",
+      "idea": "Unfold the successor clause of the definition; both sides are identical.",
+      "uses": [
+        "counter"
+      ],
+      "lean": [
+        {
+          "name": "Counter.ticks_step",
+          "file": "Counter.lean",
+          "line": 13,
+          "type": "(n : Nat) : ticks (n + 1) = ticks n + 2",
+          "note": "Exact source equation; prose-only because the helper does not support this explicit binder."
+        }
+      ]
+    },
+    {
+      "id": "arithmetic",
+      "label": "The doubled successor",
+      "kind": "lemma",
+      "statement": "$(n+1)+(n+1)=(n+n)+2$.",
+      "idea": "Regroup the four summands to put the two copies of n first and the two ones last.",
+      "uses": [],
+      "lean": [
+        {
+          "name": "Counter.double_step",
+          "file": "Counter.lean",
+          "line": 17,
+          "type": ": ∀ n : Nat, (n + 1) + (n + 1) = (n + n) + 2",
+          "note": ""
+        }
+      ],
+      "claim": "arithmetic_bridge"
+    },
+    {
+      "id": "result",
+      "label": "Two ticks per round",
+      "kind": "theorem",
+      "statement": "$T(n)=n+n$ for every natural number $n$.",
+      "idea": "Induct on n. The base is zero; the recurrence, induction hypothesis and doubled-successor identity close the successor case.",
+      "uses": [
+        "counter",
+        "recurrence",
+        "arithmetic"
+      ],
+      "lean": [
+        {
+          "name": "Counter.ticks_eq_double",
+          "file": "Counter.lean",
+          "line": 22,
+          "type": ": ∀ n : Nat, ticks n = n + n",
+          "note": ""
+        }
+      ],
+      "claim": "result"
+    }
+  ]
+}
