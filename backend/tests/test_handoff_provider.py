@@ -31,5 +31,44 @@ def test_handoff_discovery_advertises_optional_status(monkeypatch, capsys):
     monkeypatch.setattr("sys.stdin", io.StringIO('{"action":"list"}'))
     handoff.main()
     assert json.loads(capsys.readouterr().out) == [
-        {"name": "demo", "label": "Send notebook", "supportsStatus": False}
+        {
+            "name": "demo",
+            "label": "Send notebook",
+            "supportsStatus": False,
+            "supportsLaunchReview": False,
+        }
     ]
+
+
+def test_launch_review_bridge_is_explicit_and_separate(monkeypatch, capsys):
+    """Only the explicit optional callback receives the launch credential."""
+    import io
+    import json
+
+    from glitnir.service import handoff
+
+    calls = []
+    provider = HandoffProvider(
+        "demo",
+        "Demo",
+        lambda p, t: p,
+        lambda p, t: p,
+        launch_review=lambda p, t: calls.append((p, t)) or {"ready": False},
+    )
+    monkeypatch.setattr(handoff, "load_handoffs", lambda: {"demo": provider})
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "action": "launch_review",
+                    "provider": "demo",
+                    "payload": {"task": "one"},
+                    "token": "separate-secret",
+                }
+            )
+        ),
+    )
+    handoff.main()
+    assert json.loads(capsys.readouterr().out) == {"ready": False}
+    assert calls == [({"task": "one"}, "separate-secret")]

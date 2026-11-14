@@ -546,3 +546,20 @@ uv pip install --python .venv/bin/python --no-deps plugins/taskvalet/dist/*.whl
   && ../../.venv/bin/isort --check-only src tests \
   && ../../.venv/bin/flake8 src tests && ../../.venv/bin/mypy src)
 ```
+
+An optional `launch_review` handoff callback advertises `supportsLaunchReview`.
+It receives a separately scoped credential and performs read-only preflight only;
+it must never admit work. The panel exposes fixed policy and readiness blockers,
+not API JSON. The current Taskvalet implementation deliberately cannot enable
+Launch, even if a future server reports readiness. Executable launch/recovery will
+require a separate reviewed capability rather than changing submission semantics.
+
+Task 410 preflight validation: backend 2,261 passed / 102 skipped; extension suite
+453 passed and final handoff/panel regressions 21 passed; Taskvalet plugin 19 passed.
+Python formatting/lint/types, thin VSIX build and installed-VSIX isolated host tests
+passed. Desktop (1440px) and narrow (390px) panel inspections confirmed text-only
+policy/blocker rendering without horizontal overflow. Security, recovery and
+runtime reviewers cleared this preflight-only increment. Readiness has its own
+atomic journal record so status polling cannot overwrite it or undo credential
+replacement. Live launch, deployment and installation into the user's normal
+profile were not part of this validation.

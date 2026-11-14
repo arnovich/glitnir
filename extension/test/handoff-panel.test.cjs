@@ -22,7 +22,7 @@ test('submitted panel freezes the objective and displays request status without 
  const messages=[];const dom=new JSDOM(load().handoffHtml(),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m)});}});
  dom.window.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'state',state:{phase:'submitted',canRefresh:true,stage:'needs_input',objective:'Explore',task:'001-request',server:'https://tasks.example',project:'lab'}}}));
  const d=dom.window.document;assert.equal(d.querySelector('#objective').readOnly,true);assert.equal(d.querySelector('#submit').hidden,true);assert.equal(d.querySelector('#stage').textContent,'Needs input');
- d.querySelector('#refresh').click();assert.equal(messages.at(-1).action,'refresh');assert.equal(d.querySelectorAll('[id*=launch]').length,0);
+ d.querySelector('#refresh').click();assert.equal(messages.at(-1).action,'refresh');assert.equal(d.querySelector('#launch-card').hidden,true);
  dom.window.close();
 });
 
@@ -39,5 +39,17 @@ test('results are plain text with stale-source warning and local-only review',()
  dom.window.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'state',state}}));
  const d=dom.window.document;assert.equal(d.querySelector('#results-card').hidden,false);assert.equal(d.querySelector('#result-sections img'),null);assert.match(d.querySelector('#freshness').textContent,/changed/);
  d.querySelector('#markReviewed').click();assert.equal(messages.at(-1).action,'markReviewed');assert.equal(d.querySelectorAll('[id*=apply]').length,0);
+ dom.window.close();
+});
+
+test('launch setup shows fixed policy and blockers without enabling paid work',()=>{
+ const messages=[];const dom=new JSDOM(load().handoffHtml(),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m)});}});
+ const state={phase:'submitted',canLaunchReview:true,launch:{team:'<img src=x>',team_version:2,environment:'lean-project',max_seconds:300,max_workers:2,compute_available:1,ready:true,status:'not_started',blockers:['Supported host unavailable']}};
+ dom.window.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'state',state}}));
+ const d=dom.window.document;assert.equal(d.querySelector('#launch-card').hidden,false);
+ assert.equal(d.querySelector('#launch-team').textContent,'<img src=x> · version 2');
+ assert.equal(d.querySelector('#launch-card img'),null);assert.equal(d.querySelector('#launch-start').disabled,true);
+ assert.match(d.querySelector('#launch-blockers').textContent,/host unavailable/);
+ d.querySelector('#launchReview').click();assert.equal(messages.at(-1).action,'launchReview');
  dom.window.close();
 });

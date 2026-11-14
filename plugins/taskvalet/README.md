@@ -64,3 +64,27 @@ Results are a bounded preview; open the board for the full record, campaign
 controls and any reported resource usage. On an older or unsupported server,
 request tracking still works and the panel explains that results are unavailable.
 Background polling runs only while the extension is active, not as a system service.
+
+### Scoped launch setup (preflight only)
+
+The request panel can review one administrator-prepared external team and compute
+environment through Taskvalet's `taskvalet.notebook-launch/v1` contract. Use **Set
+launch credential** for a request-scoped `campaign_client` key, then **Check launch
+readiness**. The extension stores this key in VS Code SecretStorage separately
+from submission/compute credentials, bound to provider, HTTPS origin, project and
+request. Keys are never put in the webview, request journal, settings or logs.
+An expired/revoked key can be replaced explicitly; this does not rotate a campaign.
+
+This increment does not enable live launch. The panel reports the fixed team,
+environment, wall-time/parallelism limits, observed compute capacity and blockers;
+**Launch swarm** remains unavailable. The current external participant host lacks
+verified live transport/lifecycle support. Compute readiness or run contact alone
+does not establish that support. The server also refuses launch, so changing the
+webview cannot bypass the gate. No owner credential is needed or accepted here.
+
+Existing request submission, Jobs tracking and attributed results review continue
+independently. Readiness checks start no work and are never run automatically.
+An older server without this contract cannot provide launch setup; retain the
+saved request and use the existing board workflow. Future launch admission needs
+its own reviewed preview/recovery, scoped compute-target enforcement and verified
+remote-stop contract. A stop request must not be presented as confirmed cleanup.

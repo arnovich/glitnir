@@ -6,7 +6,7 @@ import {EnvironmentSetup} from './setup';
 import {HandoffJournal} from './handoff-journal';
 import {HandoffAction, HandoffReview, HandoffReviewPanel, ResearchResults} from './handoff-panel';
 
-interface Provider {name: string; label: string; supportsStatus?: boolean}
+interface Provider {name: string; label: string; supportsStatus?: boolean; supportsLaunchReview?: boolean}
 interface Pending {notebookPath?: string; provider: Provider; python: string; scope: string; payload: any; review?: HandoffReview}
 interface Submitted {pending: Pending; receipt: any}
 
@@ -40,6 +40,12 @@ export function handoffScope(provider: string, server: string, project: string):
     throw new Error('Configure an HTTPS server origin without credentials or a path.');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(project)) throw new Error('Configure the handoff project.');
   return 'glitnir.handoff:' + JSON.stringify([provider, url.origin, project]);
+}
+
+/** Launch authority is isolated from submission and from every other notebook request. */
+export function launchScope(provider: string, server: string, project: string, task: string): string {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(task)) throw new Error('Invalid saved request.');
+  return 'glitnir.launch:' + JSON.stringify([handoffScope(provider, server, project), task]);
 }
 
 /** Optional installed-provider handoffs; opening the editor never sends a request. */
@@ -98,11 +104,29 @@ export class NotebookHandoff {
   private showRequest(review: HandoffReview, saved?: {pending: Pending; id?: string; receipt?: any},
     providerLabel = saved?.pending.provider.label, canRefresh = saved?.pending.provider.supportsStatus === true, prepare?: (objective: string) => Promise<{pending: Pending; token: string} | undefined>): void {
     let pending = saved?.pending, id = saved?.id, receipt = saved?.receipt;
-    const panel = new HandoffReviewPanel({...review, providerLabel, canRefresh, phase: receipt ? 'submitted' : id ? 'uncertain' : 'review', stage: receipt?.stage, task: receipt?.task, checkedAt: receipt?.checkedAt, results: receipt?.results, freshness: receipt?.freshness, reviewed: !!receipt?.results?.digest && receipt.reviewedDigest === receipt.results.digest, error: receipt?.error}, async (action: HandoffAction, objective: string) => {
+    const panel = new HandoffReviewPanel({...review, providerLabel, canRefresh, phase: receipt ? 'submitted' : id ? 'uncertain' : 'review', stage: receipt?.stage, task: receipt?.task, checkedAt: receipt?.checkedAt, results: receipt?.results, freshness: receipt?.freshness, reviewed: !!receipt?.results?.digest && receipt.reviewedDigest === receipt.results.digest, error: receipt?.error, canLaunchReview: pending?.provider.supportsLaunchReview === true, launch: receipt?.launch}, async (action: HandoffAction, objective: string) => {
       if (this.busy) return;
       this.busy = true;
       try {
         this.trusted();
+        if ((action === 'launchReview' || action === 'launchCredential') && pending && receipt && id && pending.provider.supportsLaunchReview) {
+          const scope = launchScope(pending.provider.name, pending.payload.server, pending.payload.project, receipt.task);
+          let token = action === 'launchCredential' ? undefined : await this.context.secrets.get(scope);
+          if (!token) {
+            token = await vscode.window.showInputBox({title: `Request-scoped launch credential for ${review.server} / ${review.project} / ${receipt.task}`, prompt: 'Use the administrator-provisioned campaign credential, separate from your notebook submission key.', password: true, ignoreFocusOut: true});
+            if (!token || panel.closed) return;
+            if (token.length > 256 || /\s/.test(token)) throw new Error('Invalid launch credential.');
+            this.trusted();
+            await this.context.secrets.store(scope, token);
+          }
+          if (action === 'launchCredential') {receipt = {...receipt, launch: undefined}; await this.journal.saveLaunch(id, undefined); panel.update({launch: undefined, error: undefined}); return;}
+          this.trusted();
+          const launch = await this.run(pending.python, {action: 'launch_review', provider: pending.provider.name, payload: {request: pending.payload, task: receipt.task}, token});
+          receipt = {...receipt, launch: {...launch, checkedAt: new Date().toLocaleString()}};
+          await this.journal.saveLaunch(id, receipt.launch);
+          panel.update({launch: receipt.launch, error: undefined});
+          return;
+        }
         if (action === 'open' && pending && receipt) {
           const url = new URL(receipt.url);
           if (url.protocol !== 'https:' || url.origin !== new URL(pending.payload.server).origin || url.username || url.password) throw new Error('Invalid request destination.');
@@ -143,11 +167,11 @@ export class NotebookHandoff {
         if (!pending || !id || !token) throw new Error('No reviewed request is available.');
         receipt = await this.send(id, pending, token, recovering);
         if (receipt.refused) {panel.update({phase: 'rejected'}); return;}
-        panel.update({phase: 'submitted', task: receipt.task, stage: receipt.stage, checkedAt: receipt.checkedAt});
+        panel.update({phase: 'submitted', task: receipt.task, stage: receipt.stage, checkedAt: receipt.checkedAt, canLaunchReview: pending.provider.supportsLaunchReview === true});
       } catch (error) {
         panel.update({phase: receipt && !receipt.refused ? 'submitted' : id ? 'uncertain' : 'review', refreshing: false, ...(action === 'refresh' ? {stage: 'unknown'} : {}),
           error: error instanceof Error ? error.message : 'Request could not be completed.'});
-      } finally { this.busy = false; }
+      } finally { this.busy = false; panel.update({}); }
     }, () => {if (this.panel === panel) {this.panel = undefined; this.panelNotebook = undefined;}});
     this.panel = panel;
   }
@@ -321,6 +345,11 @@ export class NotebookHandoff {
     const pending = (await this.journal.pending()).find(item => item.id === id);
     const record = completed ?? pending;
     if (!record) throw new Error('The saved request is unavailable.');
+    try {
+      const providers: Provider[] = await this.run(record.value.python, {action: 'list'});
+      const installed = providers.find(provider => provider.name === record.value.provider.name);
+      if (installed) record.value.provider = installed;
+    } catch { /* Keep saved capabilities when local discovery is unavailable. */ }
     this.panelNotebook = record.value.notebookPath;
     this.showRequest(this.review(record.value), {pending: record.value, id, receipt: completed?.receipt});
   }

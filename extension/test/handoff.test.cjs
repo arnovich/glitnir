@@ -306,3 +306,68 @@ test('reviewing a recovered result survives an in-flight poll and an unanswered 
     await newer.refreshTracked();await newer.refreshTracked();assert.equal(reads,2);assert.equal(notifications,1);
   } finally {await rm(root,{recursive:true,force:true});}
 });
+
+test('launch review uses a separate request-bound secret and never calls submit or start', async () => {
+ const root=await mkdtemp(path.join(os.tmpdir(),'handoff-launch-'));
+ try {
+  const provider={name:'taskvalet',label:'Taskvalet',supportsLaunchReview:true};
+  const journal=new HandoffJournal(path.join(root,'notebook-handoffs'));
+  const pending={provider,python:'python',scope:'submission-secret-scope',payload:{server:'https://tasks.example',project:'lab',source_sha256:'a'.repeat(64)},review:{notebook:'A.lean',source:'source',objective:'Explore',server:'https://tasks.example',project:'lab'}};
+  const id=await journal.persist(pending);await journal.finish(id,{task:'001-request',stage:'new'});
+  const secretReads=[];const calls=[];
+  const {NotebookHandoff,panels,launchScope}=load({workspace:{isTrusted:true},window:{}});
+  const context={globalStorageUri:{fsPath:root},secrets:{get:async key=>{secretReads.push(key);return 'launch-secret';}}};
+  const instance=new NotebookHandoff(context,{},async(python,request)=>{calls.push(request);if(request.action==='list')return [provider];return {team:'Prepared team',ready:false,blockers:['Host unavailable']};});
+  await instance.openRequest('handoff:'+id);assert.equal(secretReads.length,0);
+  await panels[0].action('launchReview','');
+  assert.deepEqual(secretReads,[launchScope('taskvalet','https://tasks.example','lab','001-request')]);
+  assert.notEqual(secretReads[0],launchScope('taskvalet','https://tasks.example','lab','002-request'));
+  assert.equal(calls.at(-1).action,'launch_review');assert.equal(calls.at(-1).token,'launch-secret');
+  assert.ok(!calls.some(call=>['submit','start'].includes(call.action)));
+  assert.equal((await journal.submitted())[0].receipt.launch.team,'Prepared team');
+ } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('readiness survives an older poll and credential cancellation restores controls', async () => {
+ const root=await mkdtemp(path.join(os.tmpdir(),'handoff-launch-race-'));
+ try {
+  const provider={name:'taskvalet',label:'Taskvalet',supportsLaunchReview:true,supportsStatus:true};
+  const journal=new HandoffJournal(path.join(root,'notebook-handoffs'));
+  const pending={provider,python:'python',scope:'submission',payload:{server:'https://tasks.example',project:'lab'},review:{notebook:'A.lean',source:'source',objective:'Explore',server:'https://tasks.example',project:'lab'}};
+  const id=await journal.persist(pending);await journal.finish(id,{task:'001-request',stage:'new'});
+  let resolveStatus;let entered;const started=new Promise(resolve=>entered=resolve);
+  const vscode={workspace:{isTrusted:true},window:{showInputBox:async()=>undefined}};
+  const {NotebookHandoff,panels}=load(vscode);
+  const context={globalStorageUri:{fsPath:root},secrets:{get:async()=> 'secret'}};
+  const instance=new NotebookHandoff(context,{},async(python,request)=>{
+   if(request.action==='list')return [provider];
+   if(request.action==='status'){entered();return new Promise(resolve=>resolveStatus=resolve);}
+   return {team:'New team',ready:false,blockers:['Host unavailable']};
+  });
+  await instance.openRequest('handoff:'+id);
+  const poll=instance.refreshTracked();await started;
+  await panels[0].action('launchReview','');
+  resolveStatus({task:'001-request',stage:'new'});await poll;
+  assert.equal((await journal.submitted())[0].receipt.launch.team,'New team');
+  let updates=0;const oldUpdate=panels[0].update.bind(panels[0]);panels[0].update=value=>{updates++;oldUpdate(value);};
+  await panels[0].action('launchCredential','');assert.ok(updates>0);
+  context.secrets.get=async()=>undefined;updates=0;
+  await panels[0].action('launchReview','');assert.ok(updates>0);
+ } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('independent readiness and clear survive a status writer paused after its final read', async () => {
+ const root=await mkdtemp(path.join(os.tmpdir(),'handoff-launch-write-'));
+ try {
+  const journal=new HandoffJournal(root);
+  const id=await journal.persist({request:'one'});await journal.finish(id,{task:'one'});
+  const stale=(await journal.submitted())[0].receipt;
+  await journal.saveLaunch(id,{team:'Newly checked team'});
+  await journal.finish(id,stale);
+  assert.equal((await journal.submitted())[0].receipt.launch.team,'Newly checked team');
+  const beforeClear=(await journal.submitted())[0].receipt;
+  await journal.saveLaunch(id,undefined);
+  await journal.finish(id,beforeClear);
+  assert.equal((await new HandoffJournal(root).submitted())[0].receipt.launch,undefined);
+ } finally {await rm(root,{recursive:true,force:true});}
+});

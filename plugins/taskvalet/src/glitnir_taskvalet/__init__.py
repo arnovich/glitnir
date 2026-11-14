@@ -428,6 +428,72 @@ def _research_results(
     }
 
 
+def launch_review(value: dict[str, Any], token: str) -> dict[str, Any]:
+    """Inspect one scoped team/environment without admitting or retrying any work."""
+    saved = value["request"]
+    server, project = _destination(saved)
+    task = value["task"]
+    if not isinstance(task, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task):
+        raise ValueError("Invalid saved request")
+    response = _request(
+        server,
+        project,
+        token,
+        "POST",
+        f"/api/v1/projects/{project}/notebook-launch/preview",
+        {},
+    )
+    if (
+        response.get("format") != "taskvalet.notebook-launch/v1"
+        or response.get("task") != task
+        or response.get("source_sha256") != saved["source_sha256"]
+        or response.get("storage_id") != saved["storage_id"]
+        or response.get("context_sha256")
+        != hashlib.sha256(saved["command"]["text"].strip().encode()).hexdigest()
+    ):
+        raise ValueError("Launch scope binding differs from this notebook request")
+    blockers = response.get("blockers")
+    if (
+        not isinstance(blockers, list)
+        or len(blockers) > 20
+        or not all(isinstance(item, str) and len(item) <= 2000 for item in blockers)
+    ):
+        raise ValueError("Invalid launch readiness")
+    for key in ("team", "environment", "status"):
+        if not isinstance(response.get(key), str) or len(response[key]) > 200:
+            raise ValueError("Invalid launch display field")
+    for key in ("team_version", "max_seconds", "max_workers"):
+        if type(response.get(key)) is not int or not 1 <= response[key] <= 3600:
+            raise ValueError("Invalid launch limits")
+    available = response.get("compute_available")
+    if available is not None and (
+        type(available) is not int or not 0 <= available <= 1000
+    ):
+        raise ValueError("Invalid compute readiness")
+    # This host implements review only. Even a future server cannot silently
+    # upgrade a saved request into execution authority or a paid launch.
+    return {
+        **{
+            key: response[key]
+            for key in (
+                "team",
+                "team_version",
+                "environment",
+                "max_seconds",
+                "max_workers",
+                "status",
+            )
+        },
+        "compute_available": available,
+        "ready": False,
+        "blockers": blockers or ["Live launch is not supported by this client."],
+    }
+
+
 def providers() -> list[HandoffProvider]:
     """Register the optional Taskvalet handoff with Glitnir."""
-    return [HandoffProvider("taskvalet", "Send to Taskvalet", prepare, submit, status)]
+    return [
+        HandoffProvider(
+            "taskvalet", "Send to Taskvalet", prepare, submit, status, launch_review
+        )
+    ]

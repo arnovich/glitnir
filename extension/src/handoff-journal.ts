@@ -41,9 +41,18 @@ export class HandoffJournal<T> {
       }
       try { receipt.reviewedDigest = await readFile(path.join(this.directory, id + '.reviewed'), 'utf8'); }
       catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+      try { receipt.launch = JSON.parse(await readFile(path.join(this.directory, id + '.launch'), 'utf8')) ?? undefined; }
+      catch (error: any) { if (error.code !== 'ENOENT') throw error; }
       found.push({id, value: JSON.parse(request), receipt});
     }
     return found;
+  }
+  /** Separate readiness state survives older status writes; null is a durable clear. */
+  async saveLaunch(id: string, value: object | undefined): Promise<void> {
+    if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('Invalid request identity.');
+    const temporary = path.join(this.directory, id + '.' + randomUUID() + '.launching');
+    await writeFile(temporary, JSON.stringify(value ?? null), {flag: 'wx', mode: 0o600});
+    await rename(temporary, path.join(this.directory, id + '.launch'));
   }
   /** Keep local review independent of in-flight status receipt replacements. */
   async markReviewed(id: string, digest: string): Promise<void> {
