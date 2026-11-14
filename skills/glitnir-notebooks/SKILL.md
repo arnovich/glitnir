@@ -1,13 +1,13 @@
 ---
 name: glitnir-notebooks
-description: Write or revise Lean notebooks for Glitnir, combining mathematical prose, definitions, and checked mathematical claims, or write a guided walkthrough or proof atlas of an existing Lean formalization and its paper. Use for notebook authoring, converting a Lean file for Glitnir, or writing or extending a walkthrough of an existing project; not for extension development or unrelated Lean proof work.
+description: Write or revise Lean notebooks for Glitnir, combining mathematical prose, definitions, and checked mathematical claims, or write a guided walkthrough or proof atlas of an existing Lean formalization, with or without a paper. Use for notebook authoring, converting a Lean file for Glitnir, or writing or extending a walkthrough of an existing project; not for extension development or unrelated Lean proof work.
 ---
 
 # Author Glitnir notebooks
 
 **Use when:** the user wants a mathematical notebook displayed by Glitnir,
 or wants to edit or convert an existing one (the sections below); or wants a
-guided walkthrough of an existing Lean formalization and its paper, or to
+guided walkthrough of an existing Lean formalization, with or without a paper, or to
 extend one (see "Walk through an existing formalization"). Converting changes
 the user's file into a notebook; a walkthrough leaves the original untouched
 and restates its theorems in a separate notebook.
@@ -154,10 +154,11 @@ these directives.
 
 ## Walk through an existing formalization
 
-A walkthrough explains a finished Lean project, often too large to read file by
-file, through its paper's argument: a map of the paper's statements and what
-each proof uses, and a notebook read from the top in which each key statement is
-restated as a claim proved by the project's own theorem. It lives in a folder of
+A walkthrough explains an existing Lean proof for a stated reader, with or
+without a paper. Start from the result and deepen a difficult inference before
+expanding coverage. Map the statements and supporting steps, preserving the
+paper's route when one exists. In the notebook, restate supported key statements
+as claims proved by the project's own theorems. It lives in a folder of
 its own beside the repository that contains the original, never inside it, and
 never changes the original. Its source of truth is an `outline.json`, which the
 bundled helper checks against the project and Glitnir reads directly for the
@@ -170,7 +171,10 @@ instead. The helper needs Python 3.10 or newer, so never use the system Python:
 macOS ships 3.9.
 
 Follow [references/walkthroughs.md](references/walkthroughs.md) step by step,
-both to write a walkthrough and to extend one, and write the outline as
+both to write a walkthrough and to extend one. It includes a reader brief,
+feasibility preflight and source-only route. Read
+[references/worked-example.md](references/worked-example.md) for a complete
+small example and its validation commands. Write the outline as
 [references/walkthrough-outline.md](references/walkthrough-outline.md)
 describes. Ask before building the original or downloading a paper. Never
 describe a claim as checked unless a Glitnir check of the walkthrough reported
@@ -195,7 +199,7 @@ grants proof status or replaces the outline/source checks.
 
 Steps 1 and 2 need the notebook's imports built (a loose file needs only Lean),
 and step 2 needs the Lean version Glitnir supports. When either is missing, as is usual for a walkthrough
-(follow step 6 of [references/walkthroughs.md](references/walkthroughs.md)),
+(follow step 7 of [references/walkthroughs.md](references/walkthroughs.md)),
 report that step as not run and why.
 
 1. Save the source. Run the project's existing Lean validation, usually

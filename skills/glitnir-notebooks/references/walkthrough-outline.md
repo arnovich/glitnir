@@ -1,6 +1,6 @@
 # The walkthrough outline
 
-`outline.json` is a walkthrough's source of truth: the paper's statements, how
+`outline.json` is a walkthrough's source of truth: the paper's statements (or a source-only reading route), how
 they depend on each other and which Lean declarations formalize them. The
 notebook and the map are written from it, and a later agent extends the
 walkthrough by reading it first. Check it with
@@ -21,8 +21,8 @@ format; do not add one.
 | `title` | yes | the walkthrough's title |
 | `project` | yes | the original Lean project (below) |
 | `sources` | yes | every source used (below) |
-| `nodes` | yes | the statements, in the paper's order (below) |
-| `overview` | no | one or two sentences on what the paper proves; shown on the map page |
+| `nodes` | yes | the statements in paper order, or curated reading order without a paper (below) |
+| `overview` | no | one or two sentences on the result and reading route; shown on the map page |
 | `figures` | no | the figures under `assets/` (below); the helper does not read them |
 
 ## `project`
@@ -65,12 +65,12 @@ the local path.
 
 Each node is one statement of the paper, an equation the claims rest on, an
 idea-level step, or an appendix or out-of-scope section summarized as one node
-([walkthroughs.md](walkthroughs.md), step 2):
+([walkthroughs.md](walkthroughs.md), step 3):
 
 | Key | Required | Value |
 |---|---|---|
 | `id` | yes | short, unique and stable once published, such as `lem2`; never renumber |
-| `label` | yes | the paper's name for it, such as `Lemma 2` or `Equation (5)`; for one of several nodes made from one paper item, that name followed by the part in parentheses, such as `Theorem 22 (3SUM)` |
+| `label` | yes | a descriptive mathematical label, or the paper's name when present, such as `Lemma 2` or `Equation (5)`; for one of several nodes made from one paper item, that name followed by the part in parentheses, such as `Theorem 22 (3SUM)` |
 | `kind` | yes | `definition`, `lemma`, `proposition`, `theorem`, `corollary`, `algorithm` or `appendix` |
 | `section` | no | the paper's section, such as `§3` or `Appendix B` |
 | `pages` | no | the PDF's page numbers, counted from its first page as the map's `#page=` links use them, such as `14` or `14-15`; where printed page numbers differ, give those in prose |
@@ -85,6 +85,11 @@ route, keep the paper's uses here and describe the Lean route in the `lean`
 entries' `note` and the notebook's prose. The map draws only direct uses: a use
 also reached through another listed use is not drawn, so listing it does no
 harm.
+
+For a source-only walkthrough, use descriptive mathematical labels and order the
+nodes for the reader. Omit paper page/section fields and record the inspected
+Lean files in `sources`. Here `uses` records curated support from the Lean proof;
+say so in the overview. Do not add schema fields or fabricate paper metadata.
 
 ## `lean` entries
 

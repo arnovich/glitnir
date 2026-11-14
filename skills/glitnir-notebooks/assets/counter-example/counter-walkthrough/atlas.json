@@ -1,0 +1,74 @@
+{
+  "format": "glitnir.proof-atlas/v1",
+  "commit": "6b69d10684d3f53254089023bda10642e0fb0818",
+  "nodes": [
+    {
+      "id": "result",
+      "label": "Two ticks per round",
+      "statement": "result",
+      "declarations": [
+        "Counter.ticks_eq_double"
+      ],
+      "goal": "Prove $T(n)=n+n$ for every natural number.",
+      "scope": "Natural numbers, including zero; the counter starts at zero and adds two per round.",
+      "role": "The headline result.",
+      "idea": "Use induction: both sides start at zero. In the successor case, substitute the induction hypothesis into $T(n)+2$ and use the doubled-successor identity backwards.",
+      "difference": ""
+    },
+    {
+      "id": "step",
+      "label": "Substitute the induction hypothesis",
+      "statement": "result",
+      "declarations": [
+        "Counter.ticks_eq_double"
+      ],
+      "goal": "Derive $T(n+1)=(n+1)+(n+1)$ from $T(n)=n+n$.",
+      "scope": "The induction hypothesis holds for this n; it is not an additional hypothesis of the final theorem.",
+      "role": "The successor case of the enclosing induction; a curated subargument inside the theorem, not a separate Lean declaration.",
+      "idea": "$T(n+1)=T(n)+2=(n+n)+2=(n+1)+(n+1)$. The middle equality applies the function $k↦k+2$ to the induction hypothesis. The last equality reverses the arithmetic bridge.",
+      "difference": ""
+    },
+    {
+      "id": "recurrence",
+      "label": "Unfold one round",
+      "statement": "recurrence",
+      "declarations": [
+        "Counter.ticks_step"
+      ],
+      "goal": "Replace $T(n+1)$ with $T(n)+2$.",
+      "scope": "Any natural number n.",
+      "role": "The first equality of the successor calculation.",
+      "idea": "The successor equation is the defining clause of Counter.ticks. This branch stops at that definition; no claim card is supplied for the explicit-binder lemma.",
+      "difference": ""
+    },
+    {
+      "id": "arithmetic",
+      "label": "Regroup the doubled successor",
+      "statement": "arithmetic",
+      "declarations": [
+        "Counter.double_step"
+      ],
+      "goal": "Identify $(n+n)+2$ with $(n+1)+(n+1)$.",
+      "scope": "Natural-number addition; no positivity hypothesis.",
+      "role": "The final equality of the successor calculation.",
+      "idea": "Regroup $n+1+n+1$ as $n+n+1+1$. The source proves the identity with omega; this explanation stops at elementary addition, not at the internals of that tactic.",
+      "difference": ""
+    }
+  ],
+  "routes": [
+    {
+      "id": "lean",
+      "label": "Lean proof (curated)",
+      "root": "result",
+      "supports": {
+        "result": [
+          "step"
+        ],
+        "step": [
+          "recurrence",
+          "arithmetic"
+        ]
+      }
+    }
+  ]
+}

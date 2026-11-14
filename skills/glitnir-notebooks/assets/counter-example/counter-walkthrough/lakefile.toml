@@ -1,0 +1,13 @@
+name = "counter-walkthrough"
+defaultTargets = ["Walkthrough"]
+
+[[require]]
+name = "counter"
+path = "../counter"
+
+[leanOptions]
+autoImplicit = false
+
+[[lean_lib]]
+name = "Walkthrough"
+roots = ["Walkthrough"]

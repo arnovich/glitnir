@@ -1521,3 +1521,15 @@ def atlas() -> dict:
             }
         ],
     }
+
+
+@pytest.fixture
+def walkthrough_example(tmp_path: Path) -> Path:
+    """Copy the bundled source and sibling notebook without building originals."""
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "skills/glitnir-notebooks/assets/counter-example"
+    )
+    root = tmp_path / "example"
+    shutil.copytree(source, root)
+    return root
