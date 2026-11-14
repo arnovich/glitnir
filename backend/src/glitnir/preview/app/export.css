@@ -1,3 +1,4 @@
+:root{color-scheme:light}
 /* Static pages are documents: no fixed panes, selection or hover affordances. */
 /* Pages read in a full browser window, not a side pane: a 974px column plus
    32px padding on either side and borders, centred on wider screens. */

@@ -1,447 +1,168 @@
 # Glitnir user guide
 
-This guide describes the notebook format, the preview, checking, settings,
-keyboard shortcuts and extension packages in full. The [README](../README.md) is the
-short version. Installation, upgrading and troubleshooting are in the
+Glitnir lets you read, inspect and check Lean notebooks in VS Code. A notebook
+is an ordinary `.lean` file, with explanations alongside the definitions and proofs.
+For installation, upgrades or a backend that will not start, use the
 [setup guide](../extension/media/setup.md).
-
-## The notebook format
-
-A Glitnir notebook is a `.lean` file that builds with standard Lean. Glitnir
-reads it as *cells*:
-
-- **Prose cells** are column-zero `/-! … -/` comment blocks, written in Markdown
-  with `$…$` and `$$…$$` for mathematics.
-- **Lean cells** are everything between prose cells: imports, namespaces,
-  definitions and claims, shown as source.
-- **Claims** are named `theorem` or `lemma` declarations. Each one is rendered
-  with its statement and proof shown separately and its check status alongside.
-- **Docstrings** (`/-- … -/`) placed immediately above a definition or claim
-  become its description.
-
-Definitions that appear before a claim form its context. A claim should not
-depend on declarations that come later in the file. `sorry` marks unfinished
-work and is never reported as a success.
-
-### Sections
-
-Markdown headings in prose cells (levels 2–6) structure the notebook. A section
-runs until the next heading of the same or a higher level, or the end of the
-file, and includes the Lean cells in between. Add ` {fold}` at the end of a
-heading to make that section collapsible. The first paragraph after the heading
-stays visible as the summary:
-
-```lean
-/-!
-## Establish the bound {fold}
-
-Damping gives the upper bound; a square gives the lower bound.
-
-The detailed argument follows, with its supporting lemmas below.
--/
-```
-
-### Images and links
-
-A prose line that is only an image, such as `![caption](assets/figure.png)`,
-shows that file from the `assets/` folder beside the notebook.
-Click an image (or focus it and press Enter or Space) to inspect it at the full
-preview width. Close the image viewer with **Close image** or Escape.
-Images must be PNG, JPEG, GIF, WebP or SVG files of at most 10 MB, named by a
-relative path inside `assets/`; the preview says why any other reference, or a missing,
-changed or oversized file, is not shown. SVG files are shown only as images, so
-any scripts in them do not run, and **Export HTML** embeds the images so the
-snapshot works offline. Images are illustrations: they do not affect checking
-or saved results. `[Basics](Basics.lean)` links to a sibling notebook: the
-preview reads it in the same panel, read-only and with its own saved results,
-with **Back**, **Forward** and a trail of the notebooks read; **Open in its own
-preview** opens it where it can be checked. To use another notebook's results,
-import it like any Lean module (`import Basics`); it must be a module of the
-same Lake project and built with `lake build`. Prose also supports emphasis
-with `*text*` or `_text_`, plus `[label](https://example.com)` and
-`[label](mailto:name@example.com)` links. Other URL schemes stay as text. These
-links and emphasis are retained by **Export HTML**, and mathematics in section
-headings is typeset like mathematics in paragraphs.
-
-### Optional directives
-
-Standalone comment lines can request extra views of objects defined earlier in
-the notebook, such as `-- @view circuit myCircuit`. Views are drawn by optional
-provider packages (see [Extensions](#extension-packages)); without one, the directive
-reports an error instead of drawing.
-
-`-- @evidence <verb> <target> (options)` shows a simulation of an object defined
-earlier as a card with a chart, provenance and a **Run** button, for example
-`-- @evidence simulate dissipative (h := 1/100) (steps := 400)`, sampled
-paths of a stepped model under random shocks (`-- @evidence sample`), or a
-payoff's hedge on random paths (`-- @evidence hedge`). It runs
-only when you click **Run**, one run at a time, and the result is saved in
-`<Notebook>.glitnir.json`. A card is Never run, Running, Current, Failed or Out
-of date (anything above the directive, or the environment, changed). A failed
-run is saved too when it failed in Lean, in the provider, with output that is
-not evidence, or at its time limit: the card then reads Failed, or keeps its
-last chart with a note that the last run failed. A provider crash is saved as
-its exception type only. Failures of the setup, such as an unbuilt module or a
-missing Python dependency, are shown but not saved. While the preview is open,
-running a directive again after editing only its options (or the lines below it)
-reuses what Lean printed for it before, as long as the source above it and the
-environment are unchanged: the run takes seconds, so a corrected option, or one
-the provider still refuses, such as a state count that does not match the
-circuit, is reported at once. Lean's first run of a directive cannot be skipped:
-only it shows the target's shape. Evidence is never proof: it changes no claim's status
-and not the check exit code. Without a
-provider the line shows why, and saved results stay viewable.
-
-Views are drawn with the notebook's proofs skipped: theorem and lemma proofs are
-replaced by `sorry` and examples are skipped, so a drawing does not re-run them.
-If that draws nothing, Glitnir draws with the full notebook. A freshly drawn
-card that skipped the proofs says "Drawn without re-running the notebook's
-proofs." Evidence runs are elaborated the same way. A drawing never grants or
-changes a claim's status. Drawings are saved in `<Notebook>.glitnir.json` (the
-`views` section, at most 4 MiB) and reused without running Lean while the source
-through the directive, the environment and the provider are unchanged. A reused
-drawing does not show the note, even if it was drawn without the proofs. If
-saving a check, evidence or a decision would make the file larger than 16 MiB,
-the saved drawings are removed from it first and drawn again when needed.
-Commit that file to keep a gallery of the notebook free of Lean for views.
-
-`-- @decide <name> : <goal>` asks an installed decision provider for a Lean proof
-(or refutation) of a goal; continuation lines start with `--` and at least two
-spaces:
-
-```lean
--- @decide disk : entailment x, y : x^2 + y^2 <= 1 |- x^2 <= 1 and y^2 <= 1
--- @decide energy_band : trajectory three-state from (1, 2, -1) at 2
---   observe V always : V >= 0 and V <= 6
-```
-
-It becomes a card, and nothing runs until you click **Run** (one provider run at
-a time, evidence included). The provider proposes a Lean block; Glitnir checks
-the saved text up to the directive plus that block with its own sandboxed
-kernel check, which is the only proof authority. The card shows its status
-(Never run, Running, Unknown, Rejected, Candidate, Accepted, Failed or Out of
-date), the stages, the statement in Lean's kernel form (for example
-`Eq (instHAdd.hAdd 2 2) 4`), the axioms and the full block. A proven block
-declares `theorem <name>`; a refutation declares `theorem <name>_refuted : ¬ (…)`.
-The provider is trusted only for matching the theorem to your goal: the kernel
-guarantees the theorem, so read the statement before accepting.
-
-- **Accept** (VS Code preview only, only for a checked candidate) inserts the
-  block right after the directive through the editor and saves the file. It is
-  refused while the notebook has unsaved edits, or when the editor's text is not
-  the saved file the backend reads. Saved edits below the directive since the
-  run keep the candidate acceptable; an edit above it (or an environment change)
-  makes it Out of date, and it must be run again. Accept is the only path that
-  writes Lean source; the backend never does.
-- **Discard** removes the saved result and any saved failure (refused while
-  that decision runs).
-- **Stop** cancels the run, also with unsaved edits. A provider whose `decide`
-  ignores Stop blocks other provider runs until the preview closes.
-
-Results are saved in `<Notebook>.glitnir.json` under `decisions`, with the same
-16 MiB and unreadable-file rules as evidence. A block the kernel check rejects
-is such a result (Rejected), and so is Unknown. A run that fails before there
-is a result is saved too, as for evidence, when the provider crashed or refused
-the goal, returned an outcome that is not a decision of the directive, or the
-candidate check reached its time limit: the card then reads Failed, or keeps
-its saved result with a note that the last run failed. A provider crash is
-saved as its exception type only; setup failures (a missing import, Lake, the
-sandbox, a missing Python dependency such as Z3), a busy checker and Stop are
-shown but not saved. Without a provider the line shows why.
 
 ## Using the preview
 
-### Reading
+Right-click a `.lean` file in Explorer and choose **Open in Glitnir**. This opens
+its notebook without starting the Lean source editor. You can also use the
+**Glitnir: Open in Glitnir** command from an open file.
 
-Choose **Open in Glitnir** on a `.lean` file in the Explorer's context menu.
-The notebook opens in the current editor group without loading the Lean source
-editor or starting its language server. For a Lean file already open in an
-editor, **Glitnir: Open in Glitnir** is also available from the Command Palette.
-The preview shows the saved file, not unsaved edits. **Contents** lists the
-sections, `s` switches between the rendered document and the Lean source, and
-`g` opens the recorded proof graph.
+- **Notebook** shows the mathematical narrative and claim cards. Use Contents
+  to find a section or declaration; select a claim to open its Inspector.
+- **Source** shows the saved Lean file. Line links connect it to the notebook;
+  **Edit in VS Code** opens the source for editing.
+- **Explore** shows recorded claim relationships or a guided proof atlas.
 
-Hover or focus a small **?** icon for an explanation of the adjacent graph or
-action. Escape dismisses the explanation.
+Saving the file refreshes the preview, including saves made by a coding agent.
+**More → Follow live edits** controls whether the notebook scrolls to changes.
+It does not start a proof check.
 
-- **Edit in VS Code** on a cell jumps to its source. **Glitnir: Reveal in
-  Glitnir** (the editor title button, the editor context menu, or `⌘K G` on
-  macOS and `Ctrl+K G` on Linux) shows the cursor's place in the preview.
-- Every save, from VS Code or a coding agent, refreshes the preview and briefly
-  highlights the changed sections. **Follow live edits**, under **More**, scrolls to them after each save.
-- `j` and `k` step through the claims; `i` shows the claim
-  inspector for the selected claim.
-- `n` and `p`, or **Glitnir: Next Review Item** and **Glitnir: Previous Review
-  Item**, step through the claims that need attention: out of date, not
-  rechecked, containing `sorry`, resting on additional assumptions, or where
-  checking stopped.
-
-Selecting a theorem in the Notebook or Contents reopens the Inspector if it was
-closed. Background refreshes leave a closed Inspector closed.
-
-### Proof goals and steps
-
-Select a theorem to open its Inspector. **Inspect proof** records the saved proof
-with Lean. The Inspector shows **Starting goals** first, then what Lean still
-needs to prove after the step you choose. Use **Previous**, **Next**, or the step
-picker. For each step, the Inspector shows the tactic, its source lines, and
-the goals and context before and after it. When Lean records a goal splitting
-into subgoals, **Goal split** shows them above an inference bar. Select a goal
-to jump to its recorded tactic. While refreshing, any still current
-results stay visible under **Previous recording** until the new goals arrive.
-
-Use the pencil beside a recorded tactic to open that tactic in VS Code.
-
-Recording runs Lean in the sandbox within `glitnir.elaborationTimeoutMs`. It
-shows what Lean reported for the saved file without updating the claim’s check
-status. **Check saved file** checks the whole file. **Check up to this claim**
-and `r` check through the selected claim. Activity and cancellation stay
-available in Notebook, Source and Explore. Competing check and
-refresh actions are disabled during recording. When Lean reports source progress,
-the counts show lines reached, lines left, and recorded tactics. They do not
-estimate time remaining.
-
-### Linked notebooks
-
-A Markdown link to a sibling notebook, such as `[Basics](Basics.lean)`, opens it
-in the same panel, read-only and with its own saved results; see [Images and
-links](#images-and-links). A claim chip of another notebook opens it at that
-claim. Use **Open in its own preview** to check it.
-
-### Export and history
-
-- **Export HTML** saves an offline snapshot of the rendered notebook and its
-  exact saved Lean source, with images embedded. **Notebook** and **Source**
-  switch without a server or scripts, and source locations link between the two
-  views. A link to another notebook stays a link when its `Module.html` export
-  already exists beside the selected file; otherwise it becomes plain text.
-- **History** lists recent Git commits of the notebook, each with its diff.
-
-A gallery can also publish notebooks from their committed saved results without
-running any checks; see [Static export](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#static-export-galleries)
-in DEVELOPMENT.md.
+**Needs review** lists claims that are out of date, contain `sorry`, use extra
+assumptions, or were not rechecked. Use **Previous** and **Next** to visit them.
+An empty review list does not certify the file. The status beside the filename
+separates the backend connection from check results; click it for details.
 
 ## Checking
 
-A notebook is ordinary Lean that builds with its Lake project (or, for a loose
-file, the standard library). Checks are explicit: **Check saved file** checks the
-whole saved file, and nothing is checked when you only move around.
-Glitnir checks one Lean version, today 4.35.0. A notebook whose project is on
-another version still opens and reads, with a banner at the top saying that
-checking, proof steps, views, evidence and decisions are off; its saved results
-show, marked out of date, and none of those controls is offered. A loose file with
-no declared version counts as 4.35.0. Glitnir adopts new Lean versions by moving
-that one version forward.
-Results are saved beside the notebook in `<Notebook>.glitnir.json`; a result goes
-out of date when anything above the claim changes (any edit above it, not only
-to declarations it uses), when an edit below it continues its command (another
-proof step, `where`, `termination_by`), or the toolchain, `lake-manifest.json`, a rebuilt
-import or a dependency checkout changes. Where the project lives does not count:
-a committed `.glitnir.json` stays current in another clone or on another machine
-whose sources, dependencies and compiled imports are byte-identical, and reads
-as out of date otherwise. If a command fails, only the claims
-from that command onward are withheld, and they show as plain source under a
-"Checking stopped at line N" banner. See the
-[authoring skill](https://github.com/arnovich/glitnir/blob/main/skills/glitnir-notebooks/SKILL.md)
-for the full rules.
+Save the file, then choose **Check saved file**. Glitnir elaborates it in a
+sandbox and independently replays its declarations in Lean's kernel. Checking
+needs **Lean 4.35.0**. For a Lake project, build its dependencies first
+(`lake build`; for Mathlib, first run `lake exe cache get`). A loose `.lean`
+file can use the standard library without a Lake project. Files using another Lean version remain readable, but
+Glitnir cannot check them.
 
-**Glitnir: Copy Validation Command** copies the equivalent command-line check of
-the saved file, for a terminal or a coding agent. It runs
-`python -m glitnir.notebook check FILE.lean` with the backend's Python, prints
-one JSON result and writes no notebook metadata. It exits 0 when every theorem is
-kernel checked, 1 when some contain `sorry` or extra assumptions or when a
-failing command withheld the claims after it, and 2 when checking is unavailable.
+| Claim status | Meaning |
+| --- | --- |
+| **checked** | The proof uses only Lean's standard axioms. |
+| **admitted** | The proof depends on `sorry`. |
+| **assumptions** | The proof depends on additional axioms; inspect the list. |
 
-### Checking through a claim
+A failed, stopped or unavailable check is not a proof. Drawings and simulations
+never change a claim's status. `native_decide` introduces an additional axiom
+and therefore gives **assumptions**.
 
-**Check up to this claim** in the Inspector (or `r` on the selected
-claim) checks only lines 1 through that claim's last line: the same sandboxed
-compile and kernel replay of that prefix. Every checked prefix, also the one
-before a failing command, ends where Glitnir's own lexer finds a command end: the
-next code is a word that never occurs inside a command (a declaration keyword,
-`namespace`, `section`, `end`, `variable`, `include`, `private`, … at any column),
-or at column 0 `omit`, `open`/`set_option` (not their `… in` forms), `#print`, a
-module doc, or a doc comment or `@[…]` followed by a command word; or the file
-ends. A
-`mutual … end` block is one command. A cut inside a command moves back to the
-end of the command before it, so no command is ever checked shortened. Claims
-after it are not checked: each keeps its earlier saved result, marked "Not
-rechecked", current only while the environment it was checked in and the source
-through its last line still match. The next check of the whole file replaces
-every result.
+To check only the work so far, select a claim and use its **Check lines 1–…** action.
+Later claims keep their earlier results, marked **Not rechecked**. Unsupported
+commands such as `#eval` and `#check` stop checking from that point; the preview
+explains where and why.
 
-### What a check accepts
-
-Named theorems may use `set_option ... in`, including nested options. The option
-applies only to that theorem, and its checked source range includes the whole
-wrapper. A partial check cannot split the wrapper from the theorem or shorten its
-proof. Other scoped commands, including `open ... in` and scoped anonymous
-`example` declarations, remain unsupported and withhold the check from there.
-
-Besides declarations, `namespace`/`section`/`end`, `open`, `export`, `variable`,
-`include`, `omit`, `set_option`, `attribute` and module docs, a notebook may use
-`#print axioms c`.
-It only prints and decides nothing: statuses come from the kernel replay's own
-axiom lists, described below. A `#print axioms` of a missing name fails like any
-command, and one naming a lemma Lean generates on demand (such as `f.eq_1`)
-withholds the check from that line, because Lean would add that lemma to the
-module. Every other command, including other `#print` forms, `#check` and
-`#eval`, withholds the check from that line.
-
-An `example` whose type is a proposition is a claim, shown as "example (line N)"
-with its **Checked statement**. Lean discards examples, so the checker compiles
-each as a private theorem with a reserved name, which stays in the checked module
-like any other declaration. Its status is about that theorem's statement, which
-the card shows as Lean prints it where the example stands (its namespace, `open`s
-and this project's notation, which is project code), with the kernel form, every
-name in full and without notation, one fold away; both are display only. Results
-saved before this (format `v1`) still load and show only the kernel form. The
-checker finds every `example` keyword with its own lexer, replaces only those
-keywords (the rest of the file is compared byte for byte, and lines keep their
-numbers), and the theorem is then bound, replayed and given its status like any
-other. The helper that reads the file runs its code and only decides which
-examples are claims; it cannot choose what is compiled. Section variables are
-included as for a theorem (the ones the statement mentions, plus instances), not
-as Lean includes them for an example (also the ones its proof uses), so state any
-hypothesis the proof uses. An example without a type, or whose type is not a
-proposition, claims nothing and is marked "not a claim". Examples that use
-`decl_name%`, and examples in a file the lexer cannot read exactly (for example,
-a string containing `{`), withhold the check from that example. A file with a
-carriage return left after CRLF normalisation is refused.
-
-### Statuses
-
-A theorem's status comes from the axioms it depends on: `checked` when they are
-all among Lean's standard axioms and declared by the toolchain's own modules,
-`admitted` when they include `sorryAx`, `assumptions` otherwise. The kernel
-replay collects these axioms itself, in the environment where it has just
-checked the notebook's declarations, walking every dependency (imported lemmas
-included) from its checked value rather than from summaries stored in compiled
-files. The separate module report lists them too, for display; when the two
-lists differ the check is unavailable rather than trusting either. A proof by
-`native_decide` rests on an axiom Lean adds to the module that uses
-`native_decide`, so its status is `assumptions`.
+Results are saved in `<Notebook>.glitnir.json` beside the source. Keep both files
+in Git. A result becomes out of date when its relevant source or checked
+environment changes. Results can remain current in another checkout or on
+another machine when the compiled artifacts are byte-identical.
 
 ### Imports and caches
 
-Every check replays the notebook's own declarations in Lean's kernel on top of
-its compiled imports. The first check of a set of imports also replays every
-imported declaration (all of Mathlib, for a Mathlib notebook) into an empty
-environment, as a separate step with its own 60-minute limit ("Replaying imported
-modules once; later checks reuse it"); the check's own time limit starts after it.
-Glitnir records each successful replay of the imports in your user cache
-(`~/Library/Caches/glitnir/replay` on macOS, `$XDG_CACHE_HOME/glitnir/replay` or
-`~/.cache/glitnir/replay` elsewhere), keyed by the digests of the toolchain, the
-replay program and every module file of the import closure. A larger closure
-that contains a recorded one with identical module files (a notebook importing
-Mathlib and one more module, after one importing Mathlib) replays only its other
-modules' declarations, on top of the recorded ones, and is recorded in turn
-("imports cached (+N modules)"). When one of those other modules restates a
-recorded theorem and its copy wins Lean's merge of the two (it is loaded later
-and is not identical), all of its imports are replayed instead; an identical
-or earlier restatement keeps the incremental replay. Building on a recorded
-replay holds both rebuilt environments in memory at once: for Mathlib about
-4.7 GB, within the 16 GB default of `glitnir.memoryLimitMb`.
-A result's `replay` field is `full`, `imports cached`, or `imports cached (+N
-modules)`. The notebook's own declarations are replayed either way, in an
-environment rebuilt from nothing but the replayed imports' declarations (no
-compiled code from the project or its dependencies), which the first replay
-verified equals its own. When the imports do not hold the kernel's own quotient
-(`init_quot`), or a notebook restates an imported theorem, the whole closure is
-replayed from an empty environment instead. Delete the cache directory to force
-full replays. Anyone who can write to it can forge a record, which is the same
-trust as being able to change your files.
+The first check replays the imported libraries too, which can take many minutes
+for Mathlib. Later checks reuse that replay while its inputs match; the notebook's
+own declarations are always replayed. Some upgrades invalidate the cache and
+saved results, so the next check takes longer. See
+[development notes](../DEVELOPMENT.md#architecture) for the checking design and
+[troubleshooting](../extension/media/setup.md#troubleshooting) for setup problems.
 
-Each check reads the files it depends on (the toolchain, compiled imports and
-project sources) once, hashes them, and links its private snapshot to a copy of
-the toolchain's and compiled imports' exact bytes in a store beside the replay
-cache (`glitnir/artifacts`), named by their SHA-256 and never changed once
-written. Checks with the same dependencies share these files instead of copying
-gigabytes each time. Lean sees only the toolchain's files and its own project's,
-read-only; project sources are hashed but never stored. The least recently used
-files are removed when the store exceeds 40 GiB or would leave less free space
-than 10 GiB (or a tenth of the disk, if that is less), never while a check uses
-them. Delete it at any time to free the space.
+## Inspecting a proof
 
-Upgrading to a version that changes the replay program invalidates saved results
-once (they show as out of date) and the recorded import replays, so the first
-check after an upgrade replays the imports again. A version that changes how the
-environment is identified shows saved results as out of date once, too.
+Select a claim, then choose **Show proof steps** in its Inspector. Glitnir records
+the saved proof with Lean and shows the starting goals, each tactic, and the
+goals before and after it. Inspection is a separate action from checking.
 
-### Uses and the claim graph
+**Explore** shows the relationships recorded by a check. Select a statement to
+see its uses and users, then **Show in Notebook** to return to the explanation.
+The graph is a reading aid: it can omit dependencies used only by unfolding.
 
-Each result also records the claims it uses: the theorems its statement and proof
-name directly, from this notebook or from another notebook of the project (a
-module the project builds itself, not a dependency). Cards show them as chips.
-**View claim graph**, beside **Contents**, opens a focused graph of the
-selected claim, its recorded dependencies and the claims that use it. Switch
-to **Full graph** to see the notebook overview with the same selection. The
-top **Explore** tab opens the overview or the guided view for a proof atlas.
-In narrow panels, the Notebook body shows the shortcut above its claims.
-In Explore, **Choose a claim** changes the selection and **Show in Notebook**
-returns to its declaration.
-The full graph lays relationships out from foundations at the bottom to results
-at the top. It drops an edge when the same dependency is already visible through
-another direct dependency. Imported claims are separate nodes; opening one
-reads its notebook in the same panel when that notebook is available. Node
-colours are recorded claim statuses, with out-of-date results shown in amber
-and results not compared with this project's environment labelled
-**Freshness unknown**. The details distinguish **No saved result** from an
-existing saved result whose freshness is unknown. **Dependencies haven’t been
-recorded** means the saved result has no dependency list. **No recorded
-dependencies** means the list is present and empty. Maps open fitted to the canvas.
-**Fit graph** restores the overview, and **Reset zoom** restores actual size. Zoomed maps retain their scroll
-position through refreshes. The graph can be zoomed and scrolled,
-and the static HTML export includes an inert copy.
+A walkthrough may also provide a proof atlas: **Read** explains an argument,
+**Route map** follows a curated route, and **Statement graph** shows its mapped
+statements. Use **Search proof**, route choices and navigation history to find
+your way. These routes are explanations, not extracted proof dependencies.
+Walkthroughs for incompatible Lean versions stay **Unchecked**.
 
-For a guided paper walkthrough, an `outline.json` beside the Lean notebook is
-the map's source of truth. New walkthroughs keep mapped claims in that one
-notebook. The same **Explore** view shows the
-paper's definitions, lemmas, theorems and appendices instead of the claim-only
-graph. Box colours distinguish statement kinds; the status dot comes from the
-saved walkthrough claim named by the outline. **Statement details** gives the
-paper page and pinned public Lean declarations. Selecting a mapped node opens
-its details; **Show in Notebook** returns to its walkthrough claim.
-A local-only paper is identified without exposing a
-filesystem path; links require a public HTTPS URL. Static export includes the
-same self-contained map and safe public links. It loads no map script, font or
-other external resource.
+## The notebook format
 
-The outline also records the formalization's `lean-toolchain`. Glitnir compares
-that declaration with its one supported Lean version and combines it with the
-walkthrough notebook project's own compatibility. If either differs, every
-saved claim result is shown as **Unchecked** throughout the preview and static
-export, with the reason stated explicitly; saved source and historical records
-remain readable. An outline with no valid compatibility record fails closed.
-Glitnir does not port or build another-version formalization on a laptop. A
-future port is separate work: its upstream commit and port diff must remain
-visible, and only current Glitnir checks of that port may supply claim statuses.
+Put Markdown prose in column-zero `/-! … -/` comments. Everything between those
+comments is Lean code. Named theorems and lemmas become claim cards; `/-- … -/`
+docstrings describe the declaration immediately below them.
 
-Selecting a node opens **Statement details**, highlighting its adjacent arrows.
-The details list every recorded use and user even when an implied arrow is
-hidden; select a relationship to inspect that statement. **Show in Notebook**
-returns to the highlighted claim and places keyboard focus there; its exact
-Lean source remains available from the claim's existing source action. None of
-these graph actions runs Lean, updates a record, or changes proof authority.
-Lean leaves out lemmas a tactic uses only by unfolding (`rfl` lemmas in `simp`),
-so a claim may use more than its graph shows.
+```lean
+/-!
+# A first notebook
+
+Explain the idea, then state and prove it.
+-/
+
+theorem hello : True := by
+  trivial
+```
+
+Use `$…$` for inline mathematics and `$$…$$` for displayed equations. Headings
+structure the notebook. Add ` {fold}` to a heading to make its section
+collapsible, with the first paragraph as its visible summary.
+
+An image on its own line, `![Caption](assets/figure.png)`, embeds a local image
+from the notebook's `assets/` folder. `[Next](Next.lean)` links to a sibling
+notebook; Glitnir reads it in the same panel, with Back and Forward navigation.
+To check that notebook, choose **Open in its own preview**.
+
+For the full authoring conventions and directive syntax, use the
+[notebook authoring skill](../skills/glitnir-notebooks/SKILL.md).
+
+## Extension packages
+
+Ordinary Lean and Mathlib notebooks need no plugin. For Forseti notebooks, run
+**Glitnir: Install Extension Package… → Forseti → Download from this release**.
+Choose the `z3` extra if you want decision procedures.
+
+- **Views** (`-- @view`) draw supported circuits and models.
+- **Evidence** (`-- @evidence`) runs simulations and displays their results.
+- **Decisions** (`-- @decide`) propose a proof or refutation as a Lean block.
+  Glitnir checks that block before **Accept** inserts it into the saved notebook.
+  An unresolved decision establishes neither the claim nor its negation.
+
+The notebook must import the Lean libraries its directives use. The
+[Forseti reference](../plugins/forseti/README.md) lists supported goals, options
+and dependencies. The [setup guide](../extension/media/setup.md#the-forseti-plugin)
+covers installation. Packages share the backend environment, so changes affect
+other windows using it too; reopen their previews after installing or upgrading.
+
+## Export and history
+
+Choose **More → Export HTML** for a self-contained, light-mode page with the
+rendered notebook and its complete saved Lean source. It works offline without
+scripts. Export linked notebooks into the same folder to retain links between
+them. Export the linked notebooks first, then re-export the referring notebook.
+The snapshot records results as they stood when exported; it does not
+check them or keep them up to date.
+
+**More → History** shows recent Git commits of the notebook and their diffs.
+
+## Coding agents
+
+Run **Glitnir: Set Up Coding Agent**, choose the workspace and agent, then start
+a new agent session and ask it to use `glitnir-notebooks`. The command supports
+Codex and Claude Code, or exports the skill for another agent. Use
+**Glitnir: Copy Validation Command** to give an agent the command for checking
+the notebook.
+
+For remote Lean checks through an existing Taskvalet service, see
+[Taskvalet computation workers](taskvalet-compute.md). Checks can run remotely;
+proof inspection, views, evidence and decisions run locally. The service needs
+its own configured workers and credentials.
 
 ## Settings
 
-| Setting | Default | Purpose |
-|---|---|---|
-| `glitnir.elaborationTimeoutMs` | `600000` (10 min) | Time limit for checks and proof-step recording, in milliseconds, capped at 30 minutes. It also bounds the project inspection that resolves a notebook's Lake setup before a check, a view or evidence run (`import Mathlib` makes that take minutes), each Lean run of a view, and the wait of a check, view or evidence run for another Lean run to finish: one runs at a time, and the others wait their turn rather than fail. Inspections and views run in the background and the preview polls them, so none is cut short by a request timeout; **Stop** cancels either. Applies to previews opened after the change. |
-| `glitnir.memoryLimitMb` | `16384` (16 GB) | Memory limit for Lean checks, proof-step recording, views, evidence and decisions, in megabytes, between 1024 and 32768. Unless set, Glitnir uses 16384, or 2048 less than the machine's memory when that is smaller. Applies to previews opened after the change. |
-| `glitnir.pythonPath` | empty | Python with the Glitnir backend installed. Empty finds an existing environment. |
-| `glitnir.offerBackendUpdate` | `true` | After an extension update, offer once to set up the new version's backend and carry over extension packages (see [Upgrading](../extension/media/setup.md#upgrading)). Nothing downloads until you click **Set Up**. |
-
-Changing `glitnir.pythonPath` closes open previews; reopen them to apply the
-change.
+Use **Glitnir: Open Settings** to choose the backend Python, adjust Lean's time
+and memory limits, or configure Taskvalet. Reopen previews after changing their
+runtime settings. The defaults allow ten minutes and up to 16 GB for Lean;
+the memory default is lower on smaller machines. Import replay has its own
+longer time limit.
 
 ## Keyboard shortcuts
 
-Single keys work while the preview has focus, outside text fields; press **?** in
-the preview for this list. Moving never starts a check.
+Single keys work when the preview has focus, outside text fields. Press **?**
+to see the shortcuts. Navigation never starts a check.
 
 <!-- shortcuts:start (a test keeps this table equal to the preview's list) -->
 | Keys | Action |
@@ -457,276 +178,3 @@ the preview for this list. Moving never starts a check.
 | `Esc` | Close this dialog or the History panel |
 | `⌘K` then `G` (macOS), `Ctrl+K` then `G` (Linux) | In the Lean editor: show the cursor’s place in Glitnir. Release the first keys before G |
 <!-- shortcuts:end -->
-
-The Command Palette also has **Glitnir: Next Review Item**, **Glitnir: Previous Review Item** and
-**Glitnir: Keyboard Shortcuts**.
-
-## Extension packages
-
-Optional Python packages can add notebook features. They are found through the
-`glitnir.providers` entry-point group, so install them into the same Python
-environment as the Glitnir backend.
-
-### Installing extension packages
-
-To install one, run **Glitnir: Install Extension Package…** (also offered in
-**Glitnir: Set Up Environment**) in a trusted workspace with the backend set up:
-
-1. **Pick a package.** The list shows the packages Glitnir knows about (for now
-   **Forseti**: circuit, model and dynamics diagrams, simulation evidence and
-   decision procedures), marked "installed (version)" when they are, and last
-   **Other wheel file…** for third-party or development wheels.
-2. **Choose the source** of a known package. **Download from this release
-   (recommended)** fetches the wheel the extension pins from the GitHub release
-   its backend comes from and installs it only if its SHA-256 equals the one the
-   extension records; the release's `SHA256SUMS` and the plugin binding in
-   `glitnir-candidate.json` must bind the same bytes, or it is refused. A build
-   packaged without the plugin wheel does not offer it. **Choose downloaded
-   wheel** selects a file, which must be that package's wheel; the confirmation
-   says whether it is identical to the release's or a local wheel. For an
-   installed package this reinstalls or updates it.
-3. **Answer its questions**, such as "Install z3 for decision procedures? (adds
-   the z3-solver package from PyPI)", asked only for extras the wheel offers.
-   Notes say what cannot be installed from here.
-4. **Confirm**, and Glitnir installs it and lists the providers now available.
-
-The list of known packages is data only and grants no trust: every wheel goes
-through the same checks, and a downloaded one must be the wheel the extension
-pins. With **Other wheel file…**, select the package's `.whl` file. Glitnir reads the wheel's metadata without
-running it and refuses a file that declares no `glitnir.providers` entry point or
-is the backend itself. Pick any optional extras (none are preselected), confirm,
-and uv installs the wheel into the backend's Python. Its dependencies, and those
-of the chosen extras, come from PyPI as prebuilt wheels; the installed backend
-keeps its version. Only extras whose packages Glitnir knows to be published on
-PyPI are offered (for now `z3-solver`); others are listed with what to install
-yourself. A message then lists the view kinds, evidence verbs and decision kinds
-now available (with what is still missing, such as an extra), or the providers
-that failed to load (details in **Output → Glitnir**). Glitnir refuses a wheel
-that could reach beyond its package, such as one that touches the backend's own
-files or adds a startup hook; [DEVELOPMENT.md](https://github.com/arnovich/glitnir/blob/main/DEVELOPMENT.md#extension-packages)
-lists the exact rules. The Set Up Environment item appears only once a backend
-is detected.
-
-Glitnir does not remove packages for you: uninstalling deletes whatever the
-installed package's file list names, which Glitnir cannot vouch for. To remove
-one, check its files, then run `uv pip uninstall --python <backend python>
-<name>` and reopen the previews.
-
-The backend installed by Set Up Environment is shared by every window and
-workspace using it, so a package change affects them all, while only this
-window's previews close; reopen previews in other windows too. If uv fails or is
-cancelled, the environment may be partly changed: run the install
-again. After an extension update that pins a new backend, **Set Up** in the
-update notification (or **Glitnir: Set Up Backend for This Version**) creates a
-new environment and carries over the packages published with the release; see
-[Upgrading](../extension/media/setup.md#upgrading).
-
-To install by hand instead, find the backend's Python (shown in **Output →
-Glitnir** as "Glitnir environment: …", or set by the `glitnir.pythonPath`
-setting) and install the wheel into it, with the extras you need. Then close and
-reopen the notebook preview:
-
-```sh
-uv pip install --python <backend python> \
-  "./glitnir_forseti-VERSION-py3-none-any.whl[z3]"
-```
-
-### Forseti: views, evidence and decisions
-
-`glitnir-forseti` ([install it](../extension/media/setup.md#the-forseti-plugin); source in
-[`plugins/forseti`](https://github.com/arnovich/glitnir/tree/main/plugins/forseti))
-provides three features.
-
-**Views.** It draws Forseti circuit, model and dynamics views for
-`-- @view circuit|model|dynamics <name>` directives. The notebook must sit in a
-Lake project whose packages build `Gimle.Forseti` and
-`Gimle.Asgard.Visualization.Model`; the notebook need not import the
-visualization module, which the view loads from the project's build. If that
-build is missing or out of date, the card names the `lake build` command to run.
-A loose `.lean` file has no prepared imports to draw from. A view is drawn in the
-background: a notebook's views of this provider are drawn together in one Lean
-run, and a card says what it is doing, including waiting for another Lean run.
-If that run times out, each of its views is drawn in a run of its own when asked
-for again. **Stop** on a card drops only that view. Views and evidence reuse the
-prepared Lake setup while the environment is unchanged (checks never do). On
-macOS the Mac is kept awake while Glitnir's checks, proof steps, views and
-evidence run Lean or Lake; decision runs are not covered.
-
-**Evidence.** It runs `-- @evidence simulate|iterate|sample|hedge <target>`
-directives, loading `Gimle.Asgard.Compile.RationalInterchange` and
-`Gimle.Asgard.Model.Continuous` from the project's build in the same way.
-`simulate` needs nothing more; `iterate` needs Python Asgard (`gimle-asgard`),
-which is not on PyPI: install it into the backend's environment from its own
-wheel or checkout. Without it, `iterate` cards say so and cannot run, and the
-provider list shows `iterate` as unavailable. `sample` draws seeded shock paths
-in float64 through a stepped model the plugin knows: its target is
-`Gimle.Forseti.Examples.HedgedSpread.compiled`, and the notebook must import
-`Gimle.Forseti.Examples.HedgedSpreadStepped`, which defines its step. It needs
-nothing more, requires `(law := gaussian|twopoint|threepoint)`,
-`(variance := …)` and `(observe := …)`, and takes `paths` (4000, at most
-100000), `steps` (256), `seed` (7), `show` (8, or `paths` if fewer) and
-`barrier` (1) as options. Its card is sampled evidence beside a proved bound,
-never the bound.
-`hedge` runs the binomial hedge of a payoff on seeded random paths in float64
-and needs nothing more. Its target is `Gimle.Forseti.Hedging.call`, `.put` or
-`.straddle`, and the notebook must import `Gimle.Forseti.Hedging`. It requires
-`(strike := …)`, `(spot := …)`, `(down := …)`, `(up := …)` and `(steps := …)`
-(at most 250), and takes `law` (`uniform`, the default, `twopoint` or
-`gaussian`, which requires `(sigma := …)`), `paths` (4000, at most 100000),
-`seed` (7) and, given together, `against_down` and `against_up`, which draw the
-paths in another band than the hedge's, usually a wider one. `sigma` is the
-per-step standard deviation of the simple return, in the units of `down` and
-`up` (1/100 is 1 % a step), not an annualised volatility. A run of more than
-20 million payoff evaluations and draws is refused: with the default 4000 paths,
-at most 69 steps for `uniform` and `twopoint` and 36 for `gaussian`. Its card
-shows the seller's profit and loss at expiry by its quantiles (the x axis is the
-quantile level, not time) and the paths that end below zero. It is sampled
-evidence beside a `hedging` decision, never a proved number.
-Numbers in options are plain decimals or fractions such as `0.01` or `1/100`.
-
-**Decisions.** It decides `-- @decide <name> : <goal>` directives of kind
-`entailment`, `trajectory`, `stream`, `stepped` or `hedging` (the `z3` extra,
-`glitnir-forseti[z3]`, is needed). Its blocks need the Forseti and Asgard modules
-the goal uses imported in the notebook; a missing one shows as the check's
-unknown-identifier rejection. `stepped` decisions and `sample` evidence need a
-Forseti Lean build that contains `Gimle.Forseti.Stepped` and
-`Gimle.Forseti.Examples.HedgedSpreadStepped`, as the pinned release, Forseti Lean
-v0.6.0, does; an older build reports the missing module.
-
-A `hedging` goal asks whether the binomial hedge of a `call`, `put` or
-`straddle` over a band of per-step moves covers the payoff, for example
-`hedging call strike 100 spot 100 band down 1/50 up 1/50 steps 20 premium
-3555/1000 covers`, or `hedging call strike 100 spot 100 band down 1/100 up 1/100
-steps 20 against down 1/50 up 1/50 shortfall <= 4`. Moves are simple returns as
-fractions of the spot: ±2 % a step is `down 1/50 up 1/50` or
-`down 0.02 up 0.02`; `2`, `2%` and `1e-2` do not mean 2 %. A `covers` claim is
-PROVEN when the premium is at least the binomial price at the band's ends, so
-the hedge from it covers the payoff on every path whose simple returns stay in
-the band, and REFUTED when it is below, since no spot-feedback strategy covers
-the payoff from there. A `shortfall` claim compares a hedge built for one band
-with paths of a band that contains the hedge's, equal or wider: it is PROVEN
-only for equal bands with a nonnegative bound, REFUTED by one exhibited extreme
-path of the wider band, and otherwise UNKNOWN, since no theorem bounds the
-shortfall over the band's other paths. Read as a sale: the seller takes in the
-premium and holds the hedge, borrowing or lending at zero interest with no
-transaction costs, so wealth is the premium plus the trading gains; the payoff
-is European, paid on the spot after the last step. PROVEN and REFUTED are
-the decider's proposals: it runs no Lean, and the notebook's Lean check of the
-proposed block decides. Numbers are exact rationals. A payoff other than `call`,
-`put` or `straddle`, a spot or step count that is not positive and a move that
-is not positive cannot be written in a notebook (the directive is a parse
-error). A down move of 1 or more, and an `against` band that does not contain
-the hedge's band, are `UNKNOWN: unsupported`. A `covers` claim is decided up to
-250 steps and a `shortfall` claim up to 60. `hedging` decisions and `hedge`
-evidence need a Forseti Lean build that contains `Gimle.Forseti.Hedging`, as the
-pinned release, Forseti Lean v0.6.0, does; an older build reports the missing
-module.
-
-`entailment`, `trajectory`, `stepped` and `hedging` decisions and `simulate`,
-`sample` and `hedge` evidence passed Glitnir's check in the plugin's live tests
-against Forseti Lean v0.6.0, the pinned release, on Lean 4.35.0 (Linux CI,
-2026-10-29, run 40847259729). `stream` decisions and `iterate` evidence were
-run through Glitnir's checker locally on macOS on 2026-10-23 (Glitnir 0.1.5,
-Lean 4.35.0); CI covers `stream` decisions only, as `iterate` needs Python
-Asgard. The first check of a Forseti project replays Mathlib and
-Forseti once (about 18 minutes on a laptop); later checks take a few minutes. The
-[plugin README](https://github.com/arnovich/glitnir/blob/main/plugins/forseti/README.md)
-lists every option and goal form.
-
-## Coding agents
-
-Run **Glitnir: Set Up Coding Agent**, choose your workspace and agent, then start
-a new agent session and ask it to use `glitnir-notebooks`.
-See the bundled [authoring skill](https://github.com/arnovich/glitnir/blob/main/skills/glitnir-notebooks/SKILL.md).
-
-The command installs the skill into the workspace, keeping any edits you made to
-an earlier copy: **Codex** uses `.agents/skills/glitnir-notebooks` and **Claude
-Code** uses `.claude/skills/glitnir-notebooks`. **Export for another agent**
-writes it to a folder you choose; give its `SKILL.md` to your agent. Agents can
-check a notebook with the command from **Glitnir: Copy Validation Command**.
-
-
-## Explore a proof atlas
-
-A walkthrough with an `atlas.json` sidecar offers three views in Explore:
-
-- **Read** explains the selected argument, with its scope and proof idea.
-- **Route map** shows the chosen route’s curated support links, in pages of 24 arguments.
-- **Statement graph** shows notebook statements and their recorded links.
-
-The sidebar holds route choices, **Search proof**, and the reading flow. Its current
-argument is highlighted and shared supports are identified. Selecting a step or
-search result keeps the active view; switching routes starts at that route’s result.
-The statement graph selects the statement mapped to the chosen argument. Use the
-named Back/Forward buttons under **Navigation history** to retrace visits. At a
-shared argument, **View this argument in** opens it on another route.
-
-**Sources and details** below the explanation holds mapped declaration references,
-statement status, source revision and **Copy argument link**. The explanation stays
-visible when these details are open. The copy action produces a notebook-relative
-fragment in VS Code or a full URL in browser preview. Opening a link restores its
-argument and route; unknown destinations produce a diagnostic. Reopening the same
-notebook restores its position when the atlas revision matches.
-
-Routes are curated explanations, not extracted Lean dependencies. Navigation never
-checks a claim or changes its status; incompatible toolchains remain unchecked.
-Pinned source notes distinguish related counterparts and differing formal statements.
-Static HTML exports retain route indexes, supporting links and backlinks so they can
-be explored without the live sidebar. Malformed atlases produce diagnostics without
-removing the statement map.
-
-The status line beneath the filename separates the server connection from proof-check results.
-Its dot reports connection only. Hover for a summary, or click the status group
-(or focus it and press Enter) for connection details, the displayed saved source's
-SHA-256 hash, and any Lean compatibility explanation. Escape closes the details.
-**Not checked** identifies an incompatible walkthrough without a misleading zero
-unchecked count; **Checking unavailable** preserves the distinction between saved
-results and whether this installation can check them. A project with no observed
-results or saved file check says **No check results**. An empty review queue does
-not certify a proof and has no status message in the navigation toolbar.
-Refresh progress and errors appear in the same header group while relevant;
-a successful refresh clears that message without running a proof check.
-**Follow live edits** remains a separate scrolling preference.
-
-**Source** is a peer of **Notebook** and **Explore**. Use the mode controls or
-source line links to move between views. Hovering or focusing the filename shows the full
-local path; exported snapshots omit that local path. Project setup details live
-in the header status panel, while actionable warnings stay visible.
-
-Source uses an editor-style layout with a fixed line-number gutter, restrained
-syntax colours and distinct documentation headings. Its source text and line
-links stay unchanged; saved-result and selected-range markers remain separate.
-
-Keyboard shortcuts are listed in the **?** help dialog. The Notebook contents
-sidebar stays focused on navigating the notebook.
-
-When the project or walkthrough requires an incompatible Lean toolchain, the
-Inspector explains why proof steps are unavailable.
-
-Proof inspection is a claim action rather than a notebook-wide mode. The title
-stays in the same position in Notebook, Source and Explore; Notebook-only
-review navigation sits below it and stays visible as the title scrolls away.
-**Needs review · N items** opens a jump list of names and reasons. **Previous**,
-**Item X of N**, and **Next** stay together; the position identifies the selected
-review item, not completed work. The bar disappears when the review queue is empty,
-which does not certify the file. **More** groups **History**, **Export HTML**,
-and the **Follow live edits** notebook preference.
-
-Notebook contents nests rendered declarations and setup beneath section headings,
-including before any check results exist. Text badges and colours identify
-declaration kinds; saved-result dots remain separate. Walkthrough mappings can
-identify corollaries or propositions when their claim binding is unambiguous.
-
-Source offers **Hide comments** for a code-only reading view. Original line
-numbers stay unchanged and link back to Notebook; hover or focus makes the
-return action explicit. Static exports always include the complete saved source.
-Opening an explicit source range from Notebook shows comments again so the
-requested lines remain visible.
-
-The Notebook contents sidebar has independent section chevrons: use a chevron to
-fold its subitems, or the section title to navigate. Navigating to a declaration
-reveals its parent sections in the contents; notebook content folds stay independent.
-Drag the sidebar’s right edge to resize it, or focus that edge and use Left/Right
-(20 pixels), Home (minimum) or End (maximum). Double-click resets its width.
-Widths adapt to the available window space, and widths and folded sections are
-remembered for each notebook when preference storage is available.

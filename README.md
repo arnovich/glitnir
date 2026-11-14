@@ -43,7 +43,7 @@ buttons in the preview.
   axioms). Results are saved beside the notebook in `<Notebook>.glitnir.json`,
   and stay current in another clone or on another machine with byte-identical
   builds.
-- **Proof steps:** **Inspect proof** in the Notebook Inspector shows the tactic
+- **Proof steps:** **Show proof steps** in the Notebook Inspector shows the tactic
   and goals before and after each step of the saved proof.
 - **Evidence and decisions:** `-- @evidence` directives show simulations as cards
   that run on click; `-- @decide` directives ask a provider for a Lean block,

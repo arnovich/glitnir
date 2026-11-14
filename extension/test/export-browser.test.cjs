@@ -137,7 +137,8 @@ test('offline export switches views and follows source and sibling fragments in 
       + '<a class="notebook-reference" href="/?reference=Missing">Missing notebook</a>';
     const source = dom.window.document.createElement('section');
     source.innerHTML = '<p class="source-note">SOURCE_ONLY_MARKER</p><div class="source"><table><tr id="source-L2"><td class="ln"><a href="#cell-first">2</a></td><td>theorem first : True</td></tr></table></div>';
-    const css = readFileSync(path.resolve(__dirname, '../../backend/src/glitnir/preview/app/export.css'), 'utf8');
+    const css = ['app.css', 'export.css'].map(file => readFileSync(path.resolve(__dirname, '../../backend/src/glitnir/preview/app', file), 'utf8')).join('\n');
+    dom.window.document.documentElement.dataset.theme = 'dark';
     const html = await dom.window.glitnirExport({content, source, title: 'Offline export', file: 'Root.lean', sha256: 'a'.repeat(64), css, availableExports: ['Other']});
     dom.window.close();
     const root = path.join(directory, 'Root.html');
@@ -149,6 +150,7 @@ test('offline export switches views and follows source and sibling fragments in 
     await client.send('Network.enable');
     await client.send('Network.setBlockedURLs', {urls: ['http://*', 'https://*']});
     await client.send('Page.enable');
+    await client.send('Emulation.setEmulatedMedia', {features: [{name: 'prefers-color-scheme', value: 'dark'}]});
     client.socket.addEventListener('message', event => {
       const message = JSON.parse(event.data);
       if (message.method === 'Network.requestWillBeSent') requests.push(message.params.request.url);
@@ -157,6 +159,7 @@ test('offline export switches views and follows source and sibling fragments in 
     const loaded = client.event('Page.loadEventFired');
     await client.send('Page.navigate', {url: pathToFileURL(root).href});
     await loaded;
+    assert.deepEqual(await evaluate(`[getComputedStyle(document.querySelector('.app')).backgroundColor, getComputedStyle(document.documentElement).colorScheme]`), ['rgb(255, 255, 255)', 'light']);
     assert.deepEqual(await evaluate(`(() => {
       const source = document.querySelector('.source-pane'), documentPane = document.querySelector('.document-pane');
       return [getComputedStyle(documentPane).display, getComputedStyle(source).display, location.hash];
