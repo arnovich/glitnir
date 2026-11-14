@@ -827,6 +827,13 @@ KATEX_INTEGRITY = {
 }
 
 
+def test_map_html_always_uses_light_colors(tmp_path: Path) -> None:
+    """Published maps stay readable in light colors under a dark OS theme."""
+    page = map_page(tmp_path, outline())
+    assert "color-scheme:light" in page
+    assert "prefers-color-scheme" not in page
+
+
 def test_map_html_loads_only_katex_from_cdnjs(tmp_path: Path) -> None:
     page = map_page(tmp_path, outline())
     base = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/"

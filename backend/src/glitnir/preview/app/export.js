@@ -5,12 +5,15 @@
   window.glitnirExport = async ({content, source, title, renderedTitle, file, sha256, preview, css, availableExports = []}) => {
     const page = document.implementation.createHTMLDocument(title);
     page.documentElement.lang = 'en';
+    // A shared document keeps the light palette, regardless of editor or OS theme.
+    page.documentElement.dataset.theme = 'light';
     const meta = (name, value, attribute = 'name') => {
       const node = page.createElement('meta');
       node.setAttribute(attribute, name); node.content = value; page.head.append(node);
     };
     const charset = page.createElement('meta'); charset.setAttribute('charset', 'utf-8'); page.head.prepend(charset);
     meta('viewport', 'width=device-width, initial-scale=1');
+    meta('color-scheme', 'light');
     meta('Content-Security-Policy', "default-src 'none'; script-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'", 'http-equiv');
     const style = page.createElement('style'); style.textContent = css; page.head.append(style);
     page.body.className = 'static-notebook';
