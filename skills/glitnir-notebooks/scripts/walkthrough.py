@@ -26,6 +26,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -657,13 +658,151 @@ def check_commit(outline: dict[str, Any], base: Path) -> list[Problem]:
     return [Problem("note", f"project moved {count} commits since {recorded}")]
 
 
+def _git_bytes(root: Path, *args: str) -> bytes:
+    """Read Git objects without text decoding or external diff filters."""
+    result = subprocess.run(
+        ["git", "--no-replace-objects", "--literal-pathspecs", "-C", str(root), *args],
+        capture_output=True,
+        timeout=_GIT_TIMEOUT_SECONDS,
+        check=True,
+    )
+    return result.stdout
+
+
+def pinned_files(
+    outline: dict[str, Any], base: Path, repository: Path | None = None
+) -> dict[str, tuple[bytes, bool]]:
+    """Verify source bytes against a Git tree, returning regular pinned files.
+
+    Exported projects use an explicit repository and project.path. The repository
+    provides objects only: its worktree is never copied or executed.
+    """
+    root = _project_root(outline, base).resolve()
+    repo = repository.resolve() if repository is not None else root
+    top = Path(_git_bytes(repo, "rev-parse", "--show-toplevel").decode().strip())
+    if repository is None:
+        prefix = root.relative_to(top).as_posix()
+        declared_path = outline["project"].get("path")
+        if declared_path is not None and Path(str(declared_path)).as_posix() != prefix:
+            raise ValueError(
+                "project.path differs from the project root in its repository"
+            )
+    else:
+        prefix = str(outline["project"].get("path", "."))
+    path = Path(prefix)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("project.path must stay inside the source repository")
+    prefix = "" if path.as_posix() == "." else path.as_posix().rstrip("/") + "/"
+    commit = str(outline["project"]["commit"])
+    if not _COMMIT_RE.fullmatch(commit):
+        raise ValueError("invalid source commit")
+    matches = (
+        _git_bytes(top, "rev-parse", "--disambiguate=" + commit).decode().splitlines()
+    )
+    if (
+        len(matches) != 1
+        or _git_bytes(top, "cat-file", "-t", matches[0]).strip() != b"commit"
+    ):
+        raise ValueError("source commit is missing, ambiguous, or not a commit object")
+    resolved = matches[0]
+    entries = _git_bytes(
+        top, "ls-tree", "-rz", "--full-tree", resolved, "--", prefix or "."
+    )
+    files: dict[str, tuple[bytes, bool]] = {}
+    for record in entries.split(b"\0"):
+        if not record:
+            continue
+        meta, raw_name = record.split(b"\t", 1)
+        mode, kind, oid = meta.decode().split()
+        name = raw_name.decode("utf-8")
+        if not name.startswith(prefix):
+            raise ValueError("source tree is outside project.path")
+        relative = name[len(prefix) :]
+        if Path(relative).is_absolute() or any(
+            part in ("..", ".git", ".lake") for part in Path(relative).parts
+        ):
+            raise ValueError(f"unsupported source path: {relative}")
+        if mode not in ("100644", "100755") or kind != "blob":
+            raise ValueError(
+                f"unsupported source entry {relative}: symlink or submodule"
+            )
+        file = root / relative
+        if file.resolve() != file.absolute() or not file.is_file():
+            raise ValueError(f"missing or symlinked source file: {relative}")
+        content = _git_bytes(top, "cat-file", "blob", oid)
+        if file.read_bytes() != content:
+            raise ValueError(f"source differs from pinned commit: {relative}")
+        files[relative] = (content, mode == "100755")
+    if not files:
+        raise ValueError("no project files at the pinned commit and path")
+    for folder, dirs, names in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in (".git", ".lake", "__pycache__")]
+        if any((Path(folder) / d).is_symlink() for d in dirs):
+            raise ValueError("symlinked source directory is unsupported")
+        for name in names:
+            file = Path(folder) / name
+            relative = file.relative_to(root).as_posix()
+            if (
+                name.endswith(".lean")
+                or name in ("lean-toolchain", "lakefile.toml", "lake-manifest.json")
+            ) and relative not in files:
+                raise ValueError(
+                    f"source input is absent from pinned commit: {relative}"
+                )
+    cited = [str(entry["file"]) for _, entry in _lean_entries(outline)]
+    if outline["project"].get("trusted"):
+        cited.append(str(outline["project"]["trusted"]))
+    for name in cited:
+        if (
+            Path(name).is_absolute()
+            or ".." in Path(name).parts
+            or Path(name).as_posix() not in files
+        ):
+            raise ValueError(f"cited source is outside the pinned project tree: {name}")
+    return files
+
+
+def check_provenance(
+    outline: dict[str, Any], base: Path, repository: Path | None = None
+) -> list[Problem]:
+    """Fail closed when source provenance cannot be verified."""
+    try:
+        pinned_files(outline, base, repository)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return [_error(f"source provenance: {error}")]
+    return []
+
+
+def vendor_project(
+    outline: dict[str, Any], base: Path, out: Path, repository: Path | None = None
+) -> list[Problem]:
+    """Write a new dependency directory from verified immutable Git bytes."""
+    try:
+        files = pinned_files(outline, base, repository)
+        out.mkdir()  # Refuse an existing destination, including a symlink.
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return [_error(f"source provenance / vendor destination: {error}")]
+    try:
+        for relative, (content, executable) in files.items():
+            target = out / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            target.chmod(0o755 if executable else 0o644)
+    except OSError as error:
+        shutil.rmtree(out)
+        return [_error(f"cannot write vendor copy: {error}")]
+    return []
+
+
 _CLAIM_RE = re.compile(
     r"^(?P<attributes>(?:@\[[^\]]*\]\s*)*)"
     r"(?:(?:private|protected|noncomputable|nonrec|partial|unsafe"
     r"|public|scoped|local)\s+)*"
     r"(?:theorem|lemma)\s+(?P<name>[^\s:(\[{⟨]+)(?P<rest>.*)$"
 )
-_EXACT_RE = re.compile(r":=\s*by\s+exact\s+(?P<target>\S+)")
+_EXACT_RE = re.compile(
+    r":=\s*by\s+exact\s+(?P<target>\S+)(?P<arguments>(?:\s+.*)?)", re.DOTALL
+)
 _TOKEN_RE = re.compile(
     r"(?:[^\W\d]|«[^»]*»)(?:[\w'!?]|«[^»]*»|\.(?=[^\W\d]|«))*|\d+|\S"
 )
@@ -1251,7 +1390,9 @@ def _check_claim(
         return [
             _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
         ]
-    return _compare_claim(root, names, name, header, target, entries[0])
+    return _compare_claim(
+        root, names, name, header, target, entries[0], exact.group("arguments")
+    )
 
 
 def takes_explicit_arguments(header: str) -> bool:
@@ -1273,6 +1414,37 @@ def takes_explicit_arguments(header: str) -> bool:
     return False
 
 
+def forwarded_arguments(header: str) -> str | None:
+    """Return exact named forwarding for explicit and strict-implicit groups.
+
+    Reuse the header token/group scanner. Anonymous, duplicate, and unnamed
+    explicit binders cannot be forwarded unambiguously and remain unsupported.
+    """
+    tokens = _tokens(header)
+    arguments: list[str] = []
+    seen: set[str] = set()
+    index = 0
+    while index < len(tokens) and tokens[index] != ":":
+        opener = tokens[index]
+        if opener not in _GROUP_OPENERS:
+            return None
+        end = _group_end(tokens, index)
+        if end <= index:
+            return None
+        names = _group_binders(tokens, index, opener != "[")
+        if len(set(names)) != len(names) or any(
+            name == "_" or name in seen for name in names
+        ):
+            return None
+        seen.update(names)
+        if opener in "(⦃":
+            if not names:
+                return None
+            arguments.extend(f" ({name} := {name})" for name in names)
+        index = end
+    return "".join(arguments)
+
+
 def _compare_claim(
     root: Path,
     names: ProjectNames,
@@ -1280,6 +1452,7 @@ def _compare_claim(
     header: str,
     target: str,
     entry: dict[str, Any],
+    arguments: str = "",
 ) -> list[Problem]:
     """Compare one claim's header with the declaration it cites."""
     known, protected = names.known, names.protected
@@ -1309,13 +1482,18 @@ def _compare_claim(
                 "variables; restate it in prose instead"
             )
         ]
-    if any(takes_explicit_arguments(d.type) for d in found):
-        return [
-            _error(
-                f"claim {claim} cites {target}, which takes explicit arguments; "
-                "explain it in prose instead"
-            )
-        ]
+    for declaration in found:
+        expected = forwarded_arguments(declaration.type)
+        if expected is None or _tokens(arguments) != _tokens(expected):
+            return [
+                _error(
+                    f"claim {claim} is not 'by exact <project theorem>'; "
+                    f"claim {claim} cites {target}, which takes explicit arguments "
+                    "or has unsupported forwarding; use exactly "
+                    f"'by exact {target}{expected or ''}' with named binders, "
+                    "or explain it in prose"
+                )
+            ]
     ambiguous = sorted(
         {
             name
@@ -1752,6 +1930,22 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         help="notebook file to compare; repeat it for every file of the walkthrough",
     )
+    check.add_argument(
+        "--require-provenance",
+        action="store_true",
+        help="require source bytes to match the pinned Git tree",
+    )
+    check.add_argument(
+        "--source-repository",
+        type=Path,
+        help="Git object source for an exported project; uses project.path",
+    )
+    vendor = commands.add_parser(
+        "vendor", help="copy verified pinned source into a new directory"
+    )
+    vendor.add_argument("outline", type=Path)
+    vendor.add_argument("--out", type=Path, required=True)
+    vendor.add_argument("--source-repository", type=Path)
     draw = commands.add_parser("map", help="draw the outline's map")
     draw.add_argument("outline", type=Path)
     draw.add_argument("--out", type=Path, help="folder to write (default: outline's)")
@@ -1793,6 +1987,17 @@ def main(argv: list[str] | None = None) -> int:
     problems = check_outline(outline)
     if args.command == "map":
         return _run_map(args, outline, problems)
+    if args.command == "vendor":
+        if not problems:
+            problems += vendor_project(
+                outline, args.outline.parent, args.out, args.source_repository
+            )
+        for problem in problems:
+            print(f"{problem.level}: {problem.message}")
+        if any(p.level == "error" for p in problems):
+            return 1
+        print(f"verified source copied to {args.out}")
+        return 0
     if not any(p.level == "error" for p in problems):
         base = args.outline.parent
         problems += (
@@ -1800,6 +2005,8 @@ def main(argv: list[str] | None = None) -> int:
             + check_lean_entries(outline, base)
             + check_commit(outline, base)
         )
+        if args.require_provenance or args.source_repository is not None:
+            problems += check_provenance(outline, base, args.source_repository)
         if args.notebook is not None and not any(p.level == "error" for p in problems):
             problems += check_notebook(outline, base, args.notebook)
     for problem in problems:

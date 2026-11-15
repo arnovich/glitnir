@@ -979,7 +979,7 @@ def test_the_skill_names_a_python_that_can_run_the_helper() -> None:
 
 def test_every_documented_command_exists() -> None:
     commands = documented_commands()
-    assert {words[0] for words in commands} == {"check", "map"}
+    assert {words[0] for words in commands} == {"check", "map", "vendor"}
     for words in commands:
         usage = run(words[0], "--help").stdout
         for word in words[1:]:
@@ -1639,3 +1639,185 @@ def test_a_declaration_on_its_docstring_line_resolves_names(
     claim = in_w("theorem c : cost = 5", "A.t")
     out = files_run(tmp_path, {"R.lean": source}, "A.t", claim).stdout
     assert "there cost means A.cost" in out, out
+
+
+@pytest.mark.parametrize("change", ["body", "staged", "added", "deleted", "unknown"])
+def test_strict_provenance_refuses_changed_sources(tmp_path: Path, change: str) -> None:
+    """Even unchanged theorem headers must not hide changed source provenance."""
+    commit = make_project(tmp_path)
+    source = tmp_path / "proj/Main.lean"
+    if change in ("body", "staged"):
+        source.write_text(source.read_text() + "\n-- changed proof source\n")
+        if change == "staged":
+            git(tmp_path, "add", "proj/Main.lean")
+    elif change == "added":
+        (tmp_path / "proj/Extra.lean").write_text("axiom extra : False\n")
+    elif change == "deleted":
+        source.unlink()
+    else:
+        commit = "0" * 40
+    result = run(
+        "check",
+        str(write(tmp_path, lean_outline(commit, entry()))),
+        "--require-provenance",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "provenance" in result.stdout
+
+
+def test_strict_provenance_checks_export_against_original_repo(tmp_path: Path) -> None:
+    """A copied project can be verified without inventing new Git history."""
+    commit = make_project(tmp_path)
+    copied = tmp_path / "copy"
+    shutil.copytree(tmp_path / "proj", copied)
+    data = lean_outline(commit, entry())
+    data["project"].update(root="copy", path="proj")
+    result = run(
+        "check",
+        str(write(tmp_path, data)),
+        "--require-provenance",
+        "--source-repository",
+        str(tmp_path),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    (copied / "Main.lean").write_text(LEAN_SOURCE + "\n-- changed\n")
+    result = run(
+        "check",
+        str(write(tmp_path, data)),
+        "--require-provenance",
+        "--source-repository",
+        str(tmp_path),
+    )
+    assert result.returncode == 1 and "provenance" in result.stdout
+
+
+def test_vendor_copies_pinned_files_and_refuses_existing_destination(
+    tmp_path: Path,
+) -> None:
+    """Vendoring preserves source bytes and never overwrites an existing folder."""
+    commit = make_project(tmp_path)
+    outline_path = write(tmp_path, lean_outline(commit, entry()))
+    destination = tmp_path / "notebook/vendor"
+    destination.parent.mkdir()
+    result = run("vendor", str(outline_path), "--out", str(destination))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (destination / "Main.lean").read_bytes() == (
+        tmp_path / "proj/Main.lean"
+    ).read_bytes()
+    assert not (destination / ".git").exists()
+    again = run("vendor", str(outline_path), "--out", str(destination))
+    assert again.returncode == 1
+    assert "exists" in again.stdout
+
+
+@pytest.mark.parametrize("binder", ["(n : Nat)", "⦃n : Nat⦄", "{m : Nat} (n : Nat)"])
+def test_named_argument_forwarding_passes(tmp_path: Path, binder: str) -> None:
+    """A wrapper forwards the original named binder instead of specializing it."""
+    make_project(tmp_path)
+    header = f"{binder} : n = n"
+    (tmp_path / "proj/B.lean").write_text(f"theorem t {header} := rfl\n")
+    git(tmp_path, "add", "proj/B.lean")
+    git(tmp_path, "commit", "-q", "-m", "binder")
+    data = lean_outline(
+        git(tmp_path, "rev-parse", "HEAD"),
+        entry(name="t", file="B.lean", line=1, type=header),
+    )
+    data["nodes"][0]["claim"] = "c"
+    result = notebook_run(
+        tmp_path, data, f"theorem c {header} := by\n  exact t (n := n)\n"
+    )
+    assert result.returncode == 0, result.stdout
+    for tail in ("(n := 0)", "(n := n) <;> trivial", "(n := n) (n := n)"):
+        result = notebook_run(
+            tmp_path, data, f"theorem c {header} := by\n  exact t {tail}\n"
+        )
+        assert result.returncode == 1, result.stdout
+
+
+@pytest.mark.parametrize(
+    "unsafe", ["symlink", "parent_symlink", "wrong_path", "missing_repo"]
+)
+def test_provenance_refuses_unverifiable_sources(tmp_path: Path, unsafe: str) -> None:
+    """Provenance cannot be claimed from links, an unrelated tree, or no history."""
+    commit = make_project(tmp_path)
+    data = lean_outline(commit, entry())
+    if unsafe == "symlink":
+        source = tmp_path / "proj/Main.lean"
+        source.rename(tmp_path / "other/Main.lean")
+        source.symlink_to(tmp_path / "other/Main.lean")
+    elif unsafe == "parent_symlink":
+        folder = tmp_path / "proj/Linked"
+        folder.symlink_to(tmp_path / "other", target_is_directory=True)
+        (tmp_path / "other/Extra.lean").write_text("axiom extra : False\n")
+    elif unsafe == "wrong_path":
+        data["project"]["path"] = "../escape"
+    else:
+        shutil.rmtree(tmp_path / ".git")
+    extra = ["--source-repository", str(tmp_path)] if unsafe == "wrong_path" else []
+    result = run("check", str(write(tmp_path, data)), "--require-provenance", *extra)
+    assert result.returncode == 1, result.stdout
+    assert "provenance" in result.stdout
+
+
+def test_provenance_ignores_unrelated_commits_and_build_output(tmp_path: Path) -> None:
+    """A monorepo sibling change does not invalidate identical project bytes."""
+    commit = make_project(tmp_path)
+    (tmp_path / "other/x.txt").write_text("changed sibling")
+    git(tmp_path, "add", "other/x.txt")
+    git(tmp_path, "commit", "-q", "-m", "sibling")
+    build = tmp_path / "proj/.lake/build"
+    build.mkdir(parents=True)
+    (build / "Generated.lean").write_text("build output")
+    result = run(
+        "check",
+        str(write(tmp_path, lean_outline(commit, entry()))),
+        "--require-provenance",
+    )
+    assert result.returncode == 0, result.stdout
+
+
+def test_vendor_refuses_modified_source_without_partial_copy(tmp_path: Path) -> None:
+    """A failed verification must not leave a dependency looking prepared."""
+    commit = make_project(tmp_path)
+    (tmp_path / "proj/Main.lean").write_text(LEAN_SOURCE + "-- modified\n")
+    destination = tmp_path / "vendor"
+    result = run(
+        "vendor",
+        str(write(tmp_path, lean_outline(commit, entry()))),
+        "--out",
+        str(destination),
+    )
+    assert result.returncode == 1 and not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "header", ["(_ : Nat) : True", "(n : Nat) (n : Nat) : True", "(n n : Nat) : True"]
+)
+def test_anonymous_and_shadowed_binders_remain_unsupported(header: str) -> None:
+    """Named forwarding cannot express anonymous or shadowed binder identity."""
+    assert load_script().forwarded_arguments(header) is None
+
+
+def test_provenance_rejects_wrong_public_project_path(tmp_path: Path) -> None:
+    """Public links must identify the same project tree as the checkout."""
+    commit = make_project(tmp_path)
+    data = lean_outline(commit, entry())
+    data["project"]["path"] = "unrelated/wrong"
+    result = run("check", str(write(tmp_path, data)), "--require-provenance")
+    assert result.returncode == 1 and "project.path" in result.stdout
+
+
+def test_provenance_hash_cannot_be_redirected_by_a_branch(tmp_path: Path) -> None:
+    """A branch named after an old hash must not validate a newer source tree."""
+    commit = make_project(tmp_path)
+    source = tmp_path / "proj/Main.lean"
+    source.write_text(source.read_text() + "\n-- newer source\n")
+    git(tmp_path, "add", "proj/Main.lean")
+    git(tmp_path, "commit", "-q", "-m", "newer")
+    git(tmp_path, "branch", commit[:8])
+    result = run(
+        "check",
+        str(write(tmp_path, lean_outline(commit[:8], entry()))),
+        "--require-provenance",
+    )
+    assert result.returncode == 1 and "source differs" in result.stdout

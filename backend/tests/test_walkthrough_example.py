@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from glitnir.lean.project_checking import check_project
@@ -49,8 +50,6 @@ def test_live_counter_example_source(tmp_path: Path, project_toolchain: Path) ->
 
 def test_worked_walkthrough_maps_real_source(walkthrough_example: Path) -> None:
     """The shipped claims and atlas bind to the actual bundled source headers."""
-    import sys
-
     from glitnir.preview.walkthrough import load_walkthrough
     from glitnir.service.static_export import SavedNotebook
 
@@ -104,9 +103,26 @@ def test_live_worked_walkthrough_checks_public_module(
     )
     assert refused["status"] == "unavailable", refused
     assert "outside the project" in refused["message"], refused
+    (walkthrough_example / "counter/lake-manifest.json").unlink(missing_ok=True)
     original = walkthrough_example / "counter"
     local = root / "vendor-counter"
-    shutil.copytree(original, local, ignore=shutil.ignore_patterns(".lake"))
+    subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(EXAMPLE.parents[1] / "scripts/walkthrough.py"),
+            "vendor",
+            str(root / "outline.json"),
+            "--out",
+            str(local),
+            "--source-repository",
+            str(EXAMPLE.parents[3]),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     for name in ("Counter.lean", "lean-toolchain", "lakefile.toml"):
         assert (original / name).read_bytes() == (local / name).read_bytes()
     lakefile = root / "lakefile.toml"
@@ -126,7 +142,30 @@ def test_live_worked_walkthrough_checks_public_module(
     assert result["status"] == "checked_snapshot", result
     claims = {claim["name"]: claim for claim in result["theorems"]}
     assert set(claims) == {
+        "CounterWalkthrough.recurrence",
         "CounterWalkthrough.arithmetic_bridge",
         "CounterWalkthrough.result",
     }
     assert all(claim["status"] == "checked" for claim in claims.values())
+
+
+def test_live_named_binder_wrappers(
+    binder_wrapper_project: Path, project_toolchain: Path
+) -> None:
+    """Check strict, grouped, dependent and generic binders with kernel replay."""
+    subprocess.run(
+        [str(project_toolchain / "bin/lake"), "--keep-toolchain", "build"],
+        cwd=binder_wrapper_project,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(project_toolchain)},
+    )
+    source = binder_wrapper_project / "Wrappers.lean"
+    result = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    claims = {claim["name"]: claim for claim in result["theorems"]}
+    assert len(claims) == 8
+    assert all(claim["status"] == "checked" for claim in claims.values()), result

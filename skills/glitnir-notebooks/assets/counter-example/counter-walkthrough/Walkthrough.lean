@@ -14,10 +14,9 @@ no accompanying paper. The final statement is `Counter.ticks_eq_double` in
 and support links are curated from that proof. Explore shows the same route.
 
 The strategy is to show that the recursive counter and $n+n$ start at the
-same value and gain the same amount each round. Two statements below have
-claim cards. The recurrence lemma has an explicit argument and is cited in
-prose because the walkthrough helper cannot restate that form. The definition
-is also prose-only. These coverage limits do not hide a missing proof.
+same value and gain the same amount each round. Three statements below have
+claim cards, including the recurrence with its explicit round argument.
+The definition is explained in prose.
 
 Opening this file does not check it. Run Glitnir's check to obtain observations
 for this copy; the bundled example includes no saved status records. Source
@@ -38,9 +37,14 @@ model; the theorem quantifies over every natural number, not just this sample.
 
 `Counter.ticks_step (n : Nat)` states the second equation. Its proof is `rfl`:
 Lean unfolds the successor clause of the definition, leaving identical sides.
-The lemma is public, but its explicit binder is outside the text helper's
-supported claim shape. We therefore explain it here without a claim card.
+The wrapper forwards that same round count by name, without specializing it.
+-/
 
+/-- The next round contributes exactly two ticks. -/
+theorem recurrence (n : Nat) : Counter.ticks (n + 1) = Counter.ticks n + 2 := by
+  exact Counter.ticks_step (n := n)
+
+/-!
 ## Why the proposed answer gains two {fold}
 
 Replacing $n$ by $n+1$ in both summands adds two in total:

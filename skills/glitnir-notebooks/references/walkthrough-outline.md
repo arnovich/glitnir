@@ -43,6 +43,13 @@ that touch its folder; commits elsewhere in the repository are ignored. The map
 links to `<repository>/blob/<commit>/<path>/<file>#L<line>` when it is drawn for
 publication, so set `repository` and `path` before publishing.
 
+Delivery additionally requires `check --require-provenance`: every pinned project
+file must match its Git bytes, and every cited Lean/trusted file must belong to
+that tree. Copied sources can use `--source-repository LOCAL_CLONE`; `path` then
+selects the project inside that clone at `commit`. Neither this check nor the
+source pin certifies external paper contents, transitive imports or build output.
+See the walkthrough recipe for failures and verified dependency preparation.
+
 ## `sources`
 
 Each source is an object:
