@@ -51,9 +51,10 @@
           "file": "Counter.lean",
           "line": 13,
           "type": "(n : Nat) : ticks (n + 1) = ticks n + 2",
-          "note": "Exact source equation; prose-only because the helper does not support this explicit binder."
+          "note": "The wrapper forwards the explicit round argument by name."
         }
-      ]
+      ],
+      "claim": "recurrence"
     },
     {
       "id": "arithmetic",

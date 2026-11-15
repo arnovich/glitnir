@@ -221,3 +221,8 @@ Simulation output, including `-- @evidence` cards, is evidence, not proof; it
 changes no claim status. A `-- @decide` card never replaces checking: only
 the Lean check of the saved file grants a theorem its status. Notebook status records describe
 checking observations; they do not themselves grant mathematical authority.
+
+For walkthrough delivery, require `walkthrough.py check --require-provenance`;
+plain `check` is only a draft text check. The walkthrough reference documents
+verified dependency preparation with `vendor` and exact named forwarding for
+explicit theorem binders. Run Lean elaboration and independent checking too.

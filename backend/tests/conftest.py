@@ -1533,3 +1533,35 @@ def walkthrough_example(tmp_path: Path) -> Path:
     root = tmp_path / "example"
     shutil.copytree(source, root)
     return root
+
+
+@pytest.fixture
+def binder_wrapper_project(tmp_path: Path) -> Path:
+    """Build a small project covering the newly supported forwarding shapes."""
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    root = tmp_path / "binder-wrappers"
+    root.mkdir()
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (root / "lakefile.toml").write_text(
+        'name = "binder_wrappers"\n[[lean_lib]]\nname = "Wrappers"\n'
+    )
+    (root / "Wrappers.lean").write_text(
+        "namespace Source\n"
+        "theorem strict ⦃n : Nat⦄ : n = n := rfl\n"
+        "theorem grouped (n m : Nat) : n + m = n + m := rfl\n"
+        "theorem dependent (n : Nat) (h : n = n) : n = n := h\n"
+        "theorem generic {α : Type} [Inhabited α] (x : α) : x = x := rfl\n"
+        "end Source\n"
+        "namespace Walkthrough\n"
+        "theorem strict ⦃n : Nat⦄ : n = n := by\n"
+        "  exact Source.strict (n := n)\n"
+        "theorem grouped (n m : Nat) : n + m = n + m := by\n"
+        "  exact Source.grouped (n := n) (m := m)\n"
+        "theorem dependent (n : Nat) (h : n = n) : n = n := by\n"
+        "  exact Source.dependent (n := n) (h := h)\n"
+        "theorem generic {α : Type} [Inhabited α] (x : α) : x = x := by\n"
+        "  exact Source.generic (x := x)\n"
+        "end Walkthrough\n"
+    )
+    return root

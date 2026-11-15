@@ -119,7 +119,8 @@ theorem theorem1 : OddSums.MainResults.OddSumIsSquare := by
 ```
 
 The shape is `theorem <id> : <the project's statement> := by`, then
-`exact <project theorem>` indented on the next line, and nothing else. Use `by`
+`exact <project theorem>` with any required named forwarding arguments
+indented on the next line, and nothing else. Use `by`
 so that the preview shows the claim as a claim card. The node's `claim` is
 `<id>`, a plain name without a dot: Lean reads `theorem A.c` inside
 `namespace A`, where its statement's names can mean other declarations, so
@@ -176,12 +177,15 @@ the statement with the project's text:
   own declared type.
 - A theorem that depends on section `variable`s cannot be compared, and a claim
   citing it is an error. Explain it in prose and cite it by name.
-- A theorem whose header binds explicit `( )` or strict-implicit `⦃ ⦄`
-  arguments before the colon that starts its type cannot be restated: `exact`
-  does not supply those arguments, so the claim would not compile, and a claim
-  citing it is an error. Explain it in prose and cite it by name. Implicit
-  `{ }` and instance `[ ]` binders are fine, and so is a `∀ (n : ℕ), …` after
-  the colon.
+- Forward explicit `( )` and strict-implicit `⦃ ⦄` binders by name, in
+  declaration order: `exact Project.result (n := n) (h := h)`. Keep the
+  original header, qualifying project names as usual. Every such binder must
+  be forwarded unchanged; positional arguments, specialization and extra tactics
+  are rejected. Implicit `{ }` and instance `[ ]` binders remain inferred.
+  Anonymous or duplicate binder names and section-variable context remain
+  unsupported: explain those declarations in prose. A `∀` after the type colon
+  remains part of the statement and requires no forwarding. Always elaborate and
+  independently check the wrapper; textual comparison is not a proof checker.
 - In a project that uses the Lean module system (its files begin with
   `module`), cite only public declarations: those under `public section` or
   marked `public`. A private one would not elaborate in the walkthrough, and
@@ -252,7 +256,7 @@ and give the reason. Report mapped statements versus claim cards and exclusions;
 a sparse set of cards need not imply a sparse explanation.
 
 Read [worked-example.md](worked-example.md) for a complete source-only example,
-including a public module, an induction bridge and a prose-only explicit binder.
+including a public module, an induction bridge and an explicit-binder wrapper.
 
 ### 2. Gather context
 
@@ -371,11 +375,40 @@ central inference and identify the remaining boundary without opening Lean?
 Repair missing reasoning rather than adding more theorem cards. Check notation,
 figures and captions against the same hypotheses.
 
-Before sharing pinned source links, compare the cited files with the recorded
-commit and inspect local changes. The helper reads working-tree text and does
-not detect dirty source files. Disclose local differences in a draft; publish
-pinned links only when they describe the cited source. Do not silently update a
-revision without revisiting the mathematical explanation.
+Before sharing pinned source links, run:
+
+```sh
+python -B scripts/walkthrough.py check OUTLINE --require-provenance --notebook NOTEBOOK
+```
+
+This fails unless every file in the pinned project tree matches the working
+source byte for byte. It rejects missing commits, modified or deleted files,
+symlinks, submodules, and additional Lean files or Lake configuration not in the
+pin. Other untracked assets and generated `.lake` output are outside this check;
+this is source provenance, not certification of compiled artifacts or transitive
+dependencies. Ordinary `check` remains a draft text check and its success does
+not establish provenance. Disclose differences in drafts; do not silently update
+a pin to hide a mathematical change.
+
+For an exported copy, supply `--source-repository /path/to/original/clone`:
+`project.path` identifies the subdirectory at `project.commit` in that repository
+(default repository root). No fetch or source execution occurs. Git history must
+be available locally; a missing object is a blocker for strict validation.
+
+For a sibling Lake dependency rejected as outside the inspection root, use:
+
+```sh
+python -B scripts/walkthrough.py vendor OUTLINE --out NOTEBOOK_ROOT/vendor-source
+```
+
+The destination must not exist and its parent must exist. The command requires
+verified provenance and writes only pinned regular files, preserving executable
+bits; it never copies `.git` or local build output. Exported copies need the same
+`--source-repository` option. Set the disposable notebook's Lake dependency path
+to `vendor-source`, then build and check there. Keep the outline pointing at the
+original source. This does not rewrite Lake configuration or relocate arbitrary
+transitive dependencies: prepare those inside the inspection root too, or report
+the unsupported setup. Never broaden the checker sandbox to accommodate a path.
 
 Report the sources used and their versions, the project commit, what is
 unchecked, every recorded paper-to-Lean difference, and any note from `check`.

@@ -10,7 +10,7 @@ small example using only Lean's standard library:
 
 - `counter/Counter.lean`: a public module defining a recursive counter and proving
   that it equals `n+n`, with its Lake configuration, toolchain and MIT licence.
-- `counter-walkthrough/Walkthrough.lean`: the explanation and two restated claims.
+- `counter-walkthrough/Walkthrough.lean`: the explanation and three restated claims.
 - `counter-walkthrough/outline.json`: exact declaration headers and source lines.
 - `counter-walkthrough/atlas.json`: the result, its induction step and two supports.
 
@@ -40,10 +40,10 @@ inference. The atlas exposes the same calculation as a subargument inside the
 main theorem, explicitly not a separately proved lemma. Its two-edge depth is
 appropriate for this small proof; depth is not a quality score.
 
-`Counter.ticks_step (n : Nat)` is explained without a card because the text
-helper rejects explicit binders. The notebook discloses that limitation and
-still explains the recurrence. Its two cards restate the exact other theorem
-types. No wrapper support or checker restriction is bypassed.
+`Counter.ticks_step (n : Nat)` has a claim card that forwards its round
+argument unchanged: `exact Counter.ticks_step (n := n)`. All three cards
+restate their original theorem headers. Implicit and instance binders can still
+be inferred; unsupported section-variable context remains prose-only.
 
 ## Reproduce the validation
 
@@ -60,33 +60,34 @@ cp -R "$SKILL/assets/counter-example/counter-walkthrough" "$DEMO/counter-walkthr
 This bundled example explicitly permits building those disposable copies. It
 requires the pinned Lean toolchain already installed; do not download or build
 an unrelated formalization. In the commands below, `python` means the matching
-Glitnir backend interpreter. First validate the source mapping:
+Glitnir backend interpreter. Set `REPO` to the local Glitnir clone containing
+the pinned source commit. First validate the source mapping and provenance:
 
 ```sh
-python -B "$SKILL/scripts/walkthrough.py" check "$DEMO/counter-walkthrough/outline.json" --notebook "$DEMO/counter-walkthrough/Walkthrough.lean"
+python -B "$SKILL/scripts/walkthrough.py" check "$DEMO/counter-walkthrough/outline.json" --notebook "$DEMO/counter-walkthrough/Walkthrough.lean" --require-provenance --source-repository "$REPO"
 python -B "$SKILL/scripts/proof_atlas.py" --report "$DEMO/counter-walkthrough/outline.json"
 ```
 
-The source check may note that Git cannot read the copied project: the copy is
-not a clone, while the recorded commit identifies the bundled source upstream.
-It must still report no source/type/claim errors. Atlas coverage should be four
-arguments, depth two, and two terminal boundaries. Neither helper grants status.
+The source check compares the exported source bytes with the recorded commit
+in `REPO`, using `project.path`. It must report no provenance, source, type or
+claim errors. Atlas coverage should be four arguments, depth two, and two
+terminal boundaries. Neither helper grants proof status.
 
 The sibling dependency builds in Lean, but Glitnir's prepared-project inspection
-refuses paths outside the notebook project. To check this example, make an
-unchanged local copy inside the disposable walkthrough and point Lake to it:
+refuses paths outside the notebook project. Prepare a verified local dependency
+inside the disposable walkthrough, then point Lake to it:
 
 ```sh
-cp -R "$DEMO/counter" "$DEMO/counter-walkthrough/vendor-counter"
+python -B "$SKILL/scripts/walkthrough.py" vendor "$DEMO/counter-walkthrough/outline.json" --source-repository "$REPO" --out "$DEMO/counter-walkthrough/vendor-counter"
 python -c 'from pathlib import Path; import sys; p = Path(sys.argv[1]); p.write_text(p.read_text().replace("../counter", "vendor-counter"))' "$DEMO/counter-walkthrough/lakefile.toml"
 ```
 
-The outline still cites the original sibling source. Compare `Counter.lean`,
-`lean-toolchain` and `lakefile.toml` between the original and the copied dependency
-before checking; this copy must not change the mathematics or configuration.
-For a real project, an isolated copy also needs all prepared transitive
-dependencies inside the inspection root. This tiny example does not establish
-that arbitrary projects can be relocated. Report unsupported setup honestly.
+Run preparation before building the sibling source: a generated, unpinned
+`lake-manifest.json` is refused as an additional source input. The outline still
+cites the original sibling source. Vendoring copies verified Git bytes and never
+changes mathematics, configurations, or the original source commit. For a real
+project, prepared transitive dependencies must also stay inside the inspection
+root; this tiny example does not establish that arbitrary projects can relocate.
 
 From `$DEMO/counter-walkthrough`, run:
 
@@ -98,7 +99,8 @@ python -m glitnir.notebook check Walkthrough.lean
 
 The first command builds the tiny local dependency and the notebook. This tests
 an ordinary notebook importing a public `module` file. Inspect the final JSON:
-both `CounterWalkthrough.arithmetic_bridge` and `CounterWalkthrough.result`
+`CounterWalkthrough.recurrence`, `CounterWalkthrough.arithmetic_bridge` and
+`CounterWalkthrough.result`
 should have `checked` observations under Glitnir's standard axiom policy. Do not
 infer an empty axiom list from a checked status. The headless command does not
 save `.glitnir.json`; no records are bundled or fabricated.
@@ -113,7 +115,8 @@ Use **Check saved file** if this copy should carry saved observations.
 The backend tests in `test_walkthrough_example.py` validate exact mappings and
 the canonical preview snapshot without Lean; its live tests build the source and
 sibling project, verify the external-path refusal, then independently check
-claims using the identical dependency copied inside the walkthrough project. Live tests require the
+claims using the verified dependency prepared by `vendor` inside the walkthrough
+project. Live tests require the
 project's supported toolchain and sandbox. A future toolchain change must update
 both example pins from `project_inspection.TOOLCHAIN` and rerun the live tests.
 
