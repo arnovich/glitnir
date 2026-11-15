@@ -158,13 +158,11 @@ the statement with the project's text:
   expects. It knows only the
   declarations that start a line (not structure fields, constructors or
   `alias`es): for such a name, find its declaration and qualify it yourself.
-- A name the project reaches through `open` is not accepted: its exact text
-  would not elaborate in the walkthrough, which opens nothing. To tell, read
-  the `open` lines of the file that declares the theorem and find where the
-  name is declared. A name declared under an enclosing namespace is qualified
-  as above; one declared only under an opened namespace is reached through
-  `open`. If both declare it, the text cannot tell which Lean takes, so do not
-  restate it.
+- Names reached through `open` require care. A copied simple source open is
+  supported only with matching context as described in
+  [section-variables.md](section-variables.md). Otherwise qualify the declaration;
+  do not invent a new open in the notebook. Namespace qualification still follows
+  the source, and relative opens are unsupported for copied contexts.
 - Cite a `theorem` or `lemma` whose proof uses no `sorry`, `admit` or `stop`.
   A claim citing an `axiom`, a `def` or another declaration, or a theorem whose
   own proof text contains `sorry`, `admit` or `stop` (outside comments and
@@ -175,14 +173,18 @@ the statement with the project's text:
 - Writing an `abbrev` alias in place of what the project wrote, or unfolding
   one, differs textually and is reported as a mismatch. Restate the theorem's
   own declared type.
-- A theorem that depends on section `variable`s cannot be compared, and a claim
-  citing it is an error. Explain it in prose and cite it by name.
+- Implicit section type variables can be copied into a dedicated section, along
+  with the source's universe declarations and simple opens. The contexts must
+  match in order, including unused type variables; Lean selects parameters.
+  See [section-variables.md](section-variables.md) for the real ETH example.
+  Section term/instance variables, `include`, `omit`, shadowing and more complex
+  context remain unsupported and must be explained in prose.
 - Forward explicit `( )` and strict-implicit `⦃ ⦄` binders by name, in
   declaration order: `exact Project.result (n := n) (h := h)`. Keep the
   original header, qualifying project names as usual. Every such binder must
   be forwarded unchanged; positional arguments, specialization and extra tactics
   are rejected. Implicit `{ }` and instance `[ ]` binders remain inferred.
-  Anonymous or duplicate binder names and section-variable context remain
+  Anonymous or duplicate binder names remain
   unsupported: explain those declarations in prose. A `∀` after the type colon
   remains part of the statement and requires no forwarding. Always elaborate and
   independently check the wrapper; textual comparison is not a proof checker.
@@ -199,14 +201,14 @@ the statement with the project's text:
   the same proposition and can be, such as the trusted statement file's
   version, listed as another `lean` entry of the node. Otherwise explain the
   theorem in prose and cite it by its full name, without a claim. This is
-  expected, sometimes for most of a project: statements about programs in a
-  project that opens its machine namespace, for example, are reached through
-  `open` and stay prose.
+  expected for unsupported contexts; matching simple machine-namespace opens
+  can now be copied as described in the section-variable recipe.
 
-The notebook defines and opens nothing. Each line is blank, inside a `/-! -/`
+The notebook adds no definitions or unrelated opens. Each line is blank, inside a `/-! -/`
 prose block, a `/-- -/` docstring or a `/- -/` comment, a `--` comment, or one
 of these at column 0: `import <module>`, `namespace <name>`, `section` or
-`section <name>`, `end` or `end <name>`, `#print axioms <name>`, or a claim
+`section <name>`, `end` or `end <name>`, `#print axioms <name>`, matched
+`variable`/`universe`/simple `open` context commands, or a claim
 (`theorem` or `lemma`, with any modifiers but no attributes), whose header
 lines and single `exact` line are indented under it. A claim with attributes,
 such as `@[simp]` or `@[instance]`, is reported: they change how the claims
@@ -214,7 +216,7 @@ after it elaborate. Only a `--` comment may follow the one module of an
 `import`, the one name of a `#print axioms` or `namespace`, or the keyword of
 `section` or `end` and its optional name, because Lean reads any further word
 as a command of its own: `section #exit` would stop Lean before the claims. `check` reports every
-other line: any other command (`open`, `variable`, `def`, `example`,
+other line: any unmatched context or other command (`def`, `example`,
 `notation`, `export`, `alias`, `set_option`, `#eval`, a lone attribute line and
 so on), any other indented code, and code after a comment's closing `-/` on the
 same line. Such commands
@@ -224,7 +226,7 @@ own, such as `namespace OddSumsWalkthrough`, so their names cannot clash with
 the project's; `check` reports a walkthrough namespace in which the project
 declares names, and a claim whose statement names another claim.
 
-The text check does not see either side's wider context, such as an `open` or
+The text check tracks the supported section context, but does not reconstruct all wider context, such as
 notation elsewhere in the project's file or what the notebook's imports bring
 into scope. It is the main automatic guard, because originals are usually
 unbuilt and on another Lean version, but it is not a proof. Only a Glitnir check

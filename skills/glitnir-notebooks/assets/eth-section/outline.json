@@ -1,0 +1,39 @@
+{
+  "format": "glitnir.walkthrough-outline/v1",
+  "title": "From padding to counted steps",
+  "project": {
+    "root": "../formal-math/eth",
+    "repository": "https://github.com/anthropics/formal-math",
+    "path": "eth",
+    "commit": "16a5ce41304fcdaea4e0be7c132e1c361dc26da5",
+    "toolchain": "leanprover/lean4:v4.33.1",
+    "trusted": null
+  },
+  "sources": [
+    {
+      "kind": "other",
+      "url": "https://github.com/anthropics/formal-math/blob/16a5ce41304fcdaea4e0be7c132e1c361dc26da5/eth/proof/rates/PiecesCounted/PadThen.lean#L68",
+      "title": "Padding-to-counted-operations proof",
+      "version": "16a5ce41304fcdaea4e0be7c132e1c361dc26da5"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "padding",
+      "label": "Padding machine run",
+      "kind": "theorem",
+      "statement": "N a + 1 machine transitions with state bound S.",
+      "idea": "Specialize the remaining-padding invariant to j = 0.",
+      "uses": [],
+      "claim": "padding_runs",
+      "lean": [
+        {
+          "name": "PiecesCounted.padThen_runs",
+          "file": "proof/rates/PiecesCounted/PadThen.lean",
+          "line": 70,
+          "type": "[HasSize α] [HasSize β] (N : α → ℕ) (f : α × List Unit → β) (a : α) {S : ℕ} (h1 : size a + size (N a) + (2 * N a + 1) + 1 ≤ S) (h2 : size (f (a, List.replicate (N a) ())) + 1 ≤ S) : (padThen N f).Runs a (N a + 1) S (f (a, List.replicate (N a) ()))"
+        }
+      ]
+    }
+  ]
+}
