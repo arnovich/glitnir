@@ -29,7 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Collection, Literal, NamedTuple, Sequence
 
@@ -325,6 +325,7 @@ class Declaration:
     keyword: str = ""  # theorem, lemma, def, axiom, ...
     gap: str = ""  # `sorry`, `admit` or `stop` if its text uses one outside comments
     protected: bool = False  # a short name never resolves to it
+    context: tuple[str, ...] = ()  # active source context, outermost first
 
 
 def _collapse(text: str) -> str:
@@ -439,6 +440,7 @@ def declarations(root: Path, file: str) -> list[Declaration]:
     frames: list[tuple[str, tuple[str, ...]]] = []
     scoped_vars: list[bool] = []
     file_vars = False
+    context: list[tuple[int, str]] = []
     found: list[Declaration] = []
     depth = 0
     for index, line in enumerate(lines):
@@ -446,7 +448,7 @@ def declarations(root: Path, file: str) -> list[Declaration]:
         while line.startswith("/-") or (depth and line):
             depth, end = _comment_end(line, 0 if depth else 2, depth or 1)
             line = "" if depth else line[end:].lstrip()
-        if not line:
+        if not line.strip():
             continue
         match = _NAMESPACE_RE.match(line)
         if match:
@@ -472,12 +474,18 @@ def declarations(root: Path, file: str) -> list[Declaration]:
             keep = max(len(frames) - closing, 0)
             del frames[keep:]
             del scoped_vars[keep:]
+            context[:] = [(level, text) for level, text in context if level <= keep]
             continue
-        if _VARIABLE_RE.match(line):
-            if scoped_vars:
-                scoped_vars[-1] = True
-            else:
-                file_vars = True
+        if line.split()[0] in ("variable", "universe", "open", "include", "omit"):
+            command = _collapse(
+                _code_only("\n".join([line, *_continuation(lines, index)]))
+            )
+            context.append((len(frames), command))
+            if _VARIABLE_RE.match(line):
+                if scoped_vars:
+                    scoped_vars[-1] = True
+                else:
+                    file_vars = True
             continue
         match = _DECL_RE.match(line)
         if not match:
@@ -507,6 +515,7 @@ def declarations(root: Path, file: str) -> list[Declaration]:
                     "\n".join([match.group("rest"), *_body(lines, code, index)])
                 ),
                 "protected" in match.group("modifiers").split(),
+                tuple(text for _, text in context),
             )
         )
     return found
@@ -1136,6 +1145,7 @@ class Claim(NamedTuple):
     header: str
     tail: str  # the text after the header
     attributed: bool  # written after attributes such as `@[simp]`
+    context: tuple[str, ...] = ()
 
 
 _ONLY = "walkthrough must contain only imports, prose, namespaces and claims"
@@ -1152,6 +1162,7 @@ class _Scan:
     claims: list[Claim]
     stray: list[tuple[int, str]]  # line number and first word of disallowed code
     namespaces: list[tuple[int, str]]  # line number and full namespace opened
+    context: list[tuple[int, str]]
 
 
 def _after_comment(number: int, rest: str, scan: _Scan) -> None:
@@ -1185,8 +1196,12 @@ def _one_name(words: list[str], size: int) -> str:
 
 def _command(number: int, line: str, frames: list[str], scan: _Scan) -> None:
     """Check one column-0 line that is not a claim, tracking namespaces."""
-    words = line.split("--", 1)[0].split()
+    line = line.split("--", 1)[0]
+    words = line.split()
     first = words[0]
+    if first in ("variable", "universe", "open") and _supported_context(line):
+        scan.context.append((len(frames), line.split("--", 1)[0]))
+        return
     if first == "import" or words[:2] == ["#print", "axioms"]:
         word = _one_name(words, 1 if first == "import" else 2)
         if word:
@@ -1208,6 +1223,9 @@ def _command(number: int, line: str, frames: list[str], scan: _Scan) -> None:
                 len(_components(words[1])) if words[1:] and frames[-1:] != [""] else 1
             )
             del frames[max(len(frames) - count, 0) :]
+            scan.context[:] = [
+                (depth, text) for depth, text in scan.context if depth <= len(frames)
+            ]
         return
     rest = line[_PREFIX_RE.match(line).end() :].split()  # type: ignore[union-attr]
     word = rest[0] if rest else first
@@ -1225,7 +1243,7 @@ def _scan_notebook(text: str) -> _Scan:
     belong to it. Anything else is recorded, as is code after a `-/`.
     """
     lines = text.splitlines()
-    scan = _Scan([], [], [])
+    scan = _Scan([], [], [], [])
     frames: list[str] = []
     in_comment = False
     index = 0
@@ -1262,6 +1280,7 @@ def _scan_notebook(text: str) -> _Scan:
                     header,
                     tail,
                     bool(match.group("attributes")),
+                    tuple(text for _, text in scan.context),
                 )
             )
             index += len(following)
@@ -1319,7 +1338,7 @@ def check_notebook(
     claim_names = {claim.name for _, claims in scanned for claim in claims}
     written: dict[str, Path] = {}
     for notebook, claims in scanned:
-        for name, header, tail, attributed in claims:
+        for name, header, tail, attributed, context in claims:
             if name in written:
                 problems.append(
                     _error(f"claim {name} is in both {written[name]} and {notebook}")
@@ -1337,7 +1356,9 @@ def check_notebook(
                 )
                 continue
             problems.extend(_claim_names_written(name, header, claim_names))
-            problems.extend(_check_claim(root, names, nodes, name, header, tail))
+            problems.extend(
+                _check_claim(root, names, nodes, name, header, tail, context)
+            )
     for claim, item in nodes.items():
         if claim not in written:
             problems.append(
@@ -1374,6 +1395,7 @@ def _check_claim(
     name: str,
     header: str,
     tail: str,
+    context: tuple[str, ...] = (),
 ) -> list[Problem]:
     """Check one claim's shape, its node and its statement."""
     exact = _EXACT_RE.fullmatch(tail)
@@ -1391,8 +1413,59 @@ def _check_claim(
             _error(f"claim {name}: {target} is not a lean name of node {item['id']}")
         ]
     return _compare_claim(
-        root, names, name, header, target, entries[0], exact.group("arguments")
+        root, names, name, header, target, entries[0], exact.group("arguments"), context
     )
+
+
+def _supported_context(text: str) -> bool:
+    """Recognize the conservative context copied by section-type wrappers.
+
+    Reuse the existing token/group scanner. Term and instance section variables,
+    include/omit, scoped opens, renaming, and command-local context stay refused.
+    """
+    tokens = _tokens(text)
+    if not tokens:
+        return False
+    if tokens[0] in ("universe", "open"):
+        if tokens[0] == "open" and len(tokens) != 2:
+            return False
+        return len(tokens) > 1 and all(
+            _is_name(name) and name not in _KEYWORDS and name != "_"
+            for name in tokens[1:]
+        )
+    if tokens[0] != "variable":
+        return False
+    index = 1
+    seen: set[str] = set()
+    while index < len(tokens):
+        if tokens[index] != "{":
+            return False
+        end = _group_end(tokens, index)
+        names = _group_binders(tokens, index, True)
+        if (
+            not names
+            or any(name == "_" or name in seen or name in _KEYWORDS for name in names)
+            or len(set(names)) != len(names)
+        ):
+            return False
+        seen.update(names)
+        start_type = index + len(names) + 2
+        if tokens[index + len(names) + 1] != ":" or tokens[end - 1] != "}":
+            return False
+        type_tokens = tokens[start_type : end - 1]
+        if not type_tokens or type_tokens[0] not in ("Type", "Sort"):
+            return False
+        if len(type_tokens) > 2 or (
+            len(type_tokens) == 2
+            and not (
+                _is_atom(type_tokens[1])
+                and type_tokens[1] not in _KEYWORDS
+                and type_tokens[1] != "_"
+            )
+        ):
+            return False
+        index = end
+    return index > 1
 
 
 def takes_explicit_arguments(header: str) -> bool:
@@ -1453,6 +1526,7 @@ def _compare_claim(
     target: str,
     entry: dict[str, Any],
     arguments: str = "",
+    context: tuple[str, ...] = (),
 ) -> list[Problem]:
     """Compare one claim's header with the declaration it cites."""
     known, protected = names.known, names.protected
@@ -1475,13 +1549,51 @@ def _compare_claim(
     gap = next((d.gap for d in found if d.gap), "")
     if gap:
         return [_error(f"claim {claim} cites {target}, whose proof contains {gap}")]
-    if any(d.variables for d in found):
-        return [
-            _error(
-                f"claim {claim} cites {target}, which depends on section "
-                "variables; restate it in prose instead"
-            )
-        ]
+    for declaration in found:
+        if declaration.variables or context:
+            for command in declaration.context:
+                words = command.split()
+                if (
+                    words[:1] == ["open"]
+                    and len(words) == 2
+                    and resolve(
+                        words[1], declaration.namespaces, _project_namespaces(known)
+                    )
+                    != words[1]
+                ):
+                    return [
+                        _error(
+                            f"claim {claim}: relative open in section context "
+                            "is unsupported"
+                        )
+                    ]
+            if not all(_supported_context(text) for text in declaration.context) or [
+                _tokens(text) for text in context
+            ] != [_tokens(text) for text in declaration.context]:
+                return [
+                    _error(
+                        f"claim {claim} cites {target}, which depends on "
+                        "section variables "
+                        "or opens: section context differs or is unsupported; copy the "
+                        "source's implicit type variables, universes and simple opens "
+                        "inside a dedicated section"
+                    )
+                ]
+            context_names = [
+                name
+                for text in context
+                if text.startswith("variable ")
+                for name in bound_names(text.removeprefix("variable "))
+            ]
+            if len(set(context_names)) != len(context_names) or set(
+                context_names
+            ) & bound_names(declaration.type):
+                return [
+                    _error(
+                        f"claim {claim}: section context shadows a binder; "
+                        "explain it in prose"
+                    )
+                ]
     for declaration in found:
         expected = forwarded_arguments(declaration.type)
         if expected is None or _tokens(arguments) != _tokens(expected):
@@ -1494,6 +1606,14 @@ def _compare_claim(
                     "or explain it in prose"
                 )
             ]
+    context_header = " ".join(
+        text.removeprefix("variable ")
+        for text in context
+        if text.startswith("variable ")
+    )
+    if context_header:
+        header = context_header + " " + header
+        found = [replace(d, type=context_header + " " + d.type) for d in found]
     ambiguous = sorted(
         {
             name

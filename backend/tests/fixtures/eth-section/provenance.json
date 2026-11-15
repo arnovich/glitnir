@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/anthropics/formal-math",
+  "commit": "16a5ce41304fcdaea4e0be7c132e1c361dc26da5",
+  "path": "eth/proof/rates/PiecesCounted/PadThen.lean",
+  "sha256": "d785587b0b43ea7a7c15398f845c832adfddba4a99001d1d848861c018a59032",
+  "license": "Apache-2.0",
+  "purpose": "Exact source fixture for text/context validation; imports are not bundled and this fixture alone is not a Lean build."
+}

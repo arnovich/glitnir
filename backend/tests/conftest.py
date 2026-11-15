@@ -1565,3 +1565,49 @@ def binder_wrapper_project(tmp_path: Path) -> Path:
         "end Walkthrough\n"
     )
     return root
+
+
+@pytest.fixture
+def section_wrapper_project(tmp_path: Path, request) -> Path:
+    """Provide real Lean declarations with scoped and unused type parameters."""
+    from glitnir.lean.project_inspection import TOOLCHAIN
+
+    universes = getattr(request, "param", False)
+    root = tmp_path / ("section-universes" if universes else "section-wrappers")
+    root.mkdir()
+    (root / "lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (root / "source").mkdir()
+    (root / "source/lean-toolchain").write_text(TOOLCHAIN + "\n")
+    (root / "lakefile.toml").write_text(
+        'name = "section_wrappers"\n'
+        'defaultTargets = ["Source", "Walkthrough"]\n'
+        '[[lean_lib]]\nname = "Source"\nsrcDir = "source"\n'
+        '[[lean_lib]]\nname = "Walkthrough"\n'
+    )
+    (root / "source/Source.lean").write_text(
+        "namespace Source\nsection\nvariable {α β : Type}\n"
+        "theorem map_length (f : α → β) (xs : List α) : "
+        "(xs.map f).length = xs.length := by simp\n"
+        "section\nvariable {γ : Type}\n"
+        "theorem refl (x : α) : x = x := rfl\nend\nend\n"
+        "theorem plain : True := trivial\nend Source\n"
+    )
+    (root / "Walkthrough.lean").write_text(
+        "import Source\nnamespace Tutorial\nsection\n"
+        "variable {α β : Type}\n"
+        "theorem map_length (f : α → β) (xs : List α) : "
+        "(xs.map f).length = xs.length := by\n"
+        "  exact Source.map_length (f := f) (xs := xs)\n"
+        "section\nvariable {γ : Type}\n"
+        "theorem refl (x : α) : x = x := by\n  exact Source.refl (x := x)\nend\nend\n"
+        "theorem plain : True := by\n  exact Source.plain\nend Tutorial\n"
+    )
+    if universes:
+        for path in (root / "source/Source.lean", root / "Walkthrough.lean"):
+            text = path.read_text().replace("Type", "Type u")
+            text = text.replace("namespace Source\n", "namespace Source\nuniverse u\n")
+            text = text.replace(
+                "namespace Tutorial\n", "namespace Tutorial\nuniverse u\n"
+            )
+            path.write_text(text)
+    return root

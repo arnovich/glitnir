@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from glitnir.lean.project_checking import check_project
 from glitnir.lean.project_inspection import TOOLCHAIN
 
@@ -169,3 +171,82 @@ def test_live_named_binder_wrappers(
     claims = {claim["name"]: claim for claim in result["theorems"]}
     assert len(claims) == 8
     assert all(claim["status"] == "checked" for claim in claims.values()), result
+
+
+@pytest.mark.parametrize("section_wrapper_project", [False, True], indirect=True)
+def test_live_section_type_wrappers(
+    section_wrapper_project: Path, project_toolchain: Path
+) -> None:
+    """Replay section parameters using Lean, including unused types and scope exit."""
+    import importlib.util
+    import json
+
+    script = EXAMPLE.parents[1] / "scripts/walkthrough.py"
+    spec = importlib.util.spec_from_file_location("section_walkthrough", script)
+    assert spec and spec.loader
+    helper = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = helper
+    spec.loader.exec_module(helper)
+    root = section_wrapper_project
+    declarations = helper.declarations(root / "source", "Source.lean")
+    outline = {
+        "format": helper.FORMAT,
+        "title": "Section wrapper regression",
+        "project": {
+            "root": "source",
+            "commit": "abc1234",
+            "toolchain": TOOLCHAIN,
+            "trusted": None,
+        },
+        "sources": [{"kind": "other", "path": "Source.lean"}],
+        "nodes": [
+            {
+                "id": d.name.split(".")[-1],
+                "claim": d.name.split(".")[-1],
+                "label": d.name,
+                "kind": "theorem",
+                "statement": d.type,
+                "idea": "Reuse the original theorem in identical section context.",
+                "uses": [],
+                "lean": [
+                    {"name": d.name, "file": d.file, "line": d.line, "type": d.type}
+                ],
+            }
+            for d in declarations
+        ],
+    }
+    (root / "outline.json").write_text(json.dumps(outline))
+    subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(script),
+            "check",
+            str(root / "outline.json"),
+            "--notebook",
+            str(root / "Walkthrough.lean"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    subprocess.run(
+        [str(project_toolchain / "bin/lake"), "--keep-toolchain", "build"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        timeout=180,
+        env={**os.environ, "LEAN_SYSROOT": str(project_toolchain)},
+    )
+    if root.name == "section-universes":
+        # The independent reader does not accept explicit universe commands.
+        # This parameter verifies source matching and real Lean elaboration only.
+        return
+    source = root / "Walkthrough.lean"
+    result = check_project(
+        source, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+    )
+    assert result["status"] == "checked_snapshot", result
+    assert len(result["theorems"]) == 3, result
+    assert all(claim["status"] == "checked" for claim in result["theorems"]), result

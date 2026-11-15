@@ -713,7 +713,7 @@ ONLY = "walkthrough must contain only imports, prose, namespaces and claims"
 @pytest.mark.parametrize(
     "line, word",
     [
-        ("open Real", "open"),
+        ("open scoped Real", "open"),
         ("variable (n : Nat)", "variable"),
         ("def x := 1", "def"),
         ("@[simp] def x := 1", "def"),
@@ -1037,7 +1037,7 @@ def test_each_notebook_must_not_define_or_open(tmp_path: Path) -> None:
         tmp_path, data, claim_text("ca", "cb"), "open Real\n" + claim_text("cc")
     )
     assert result.returncode == 1
-    assert "Part1.lean" in result.stdout and "line 1: open" in result.stdout
+    assert "claim cc" in result.stdout and "section context" in result.stdout
 
 
 def qualified_project(tmp_path: Path) -> str:
@@ -1821,3 +1821,154 @@ def test_provenance_hash_cannot_be_redirected_by_a_branch(tmp_path: Path) -> Non
         "--require-provenance",
     )
     assert result.returncode == 1 and "source differs" in result.stdout
+
+
+def test_copied_section_type_variables_allow_a_real_wrapper(tmp_path: Path) -> None:
+    """Reproduce the implicit type context used by ETH's padThen theorems."""
+    commit = make_project(tmp_path)
+    (tmp_path / "proj/Section.lean").write_text(
+        "namespace Original\nvariable {α β : Type} -- source types\n"
+        "theorem keep (f : α → β) (a : α) : f a = f a := rfl\nend Original\n"
+    )
+    data = lean_outline(
+        commit,
+        entry(
+            name="Original.keep",
+            file="Section.lean",
+            line=3,
+            type="(f : α → β) (a : α) : f a = f a",
+        ),
+    )
+    data["nodes"][0]["claim"] = "c"
+    text = (
+        "section\nvariable {α β : Type}\n"
+        "theorem c (f : α → β) (a : α) : f a = f a := by\n"
+        "  exact Original.keep (f := f) (a := a)\nend\n"
+    )
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 0, result.stdout
+    for wrong in (
+        text.replace("{α β : Type}", "{α β : Prop}"),
+        text.replace("variable {α β : Type}\n", ""),
+        text.replace("section\n", "section\nvariable {γ : Type}\n"),
+    ):
+        result = notebook_run(tmp_path, data, wrong)
+        assert result.returncode == 1 and "section context" in result.stdout
+
+
+def test_real_eth_padding_wrapper_matches_original_section(tmp_path: Path) -> None:
+    """Check the real source excerpt, preserving its implicit type context."""
+    import hashlib
+
+    source = Path(__file__).parent / "fixtures/eth-section/PadThen.lean"
+    provenance = json.loads(source.with_name("provenance.json").read_text())
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == provenance["sha256"]
+    project = tmp_path / "proj"
+    project.mkdir()
+    data = json.loads(
+        (SCRIPT.parents[1] / "assets/eth-section/outline.json").read_text()
+    )
+    data["project"]["root"] = str(project)
+    source_entry = data["nodes"][0]["lean"][0]
+    copied = project / source_entry["file"]
+    copied.parent.mkdir(parents=True)
+    shutil.copyfile(source, copied)
+    (project / "lean-toolchain").write_text("leanprover/lean4:v4.33.1\n")
+    script = load_script()
+    declaration = next(
+        d
+        for d in script.declarations(project, source_entry["file"])
+        if d.name == source_entry["name"]
+    )
+    assert declaration.context == ("open Groundwork", "variable {α β : Type}")
+    text = (
+        SCRIPT.parents[1] / "assets/eth-section/PadThenWalkthrough.lean"
+    ).read_text()
+    result = notebook_run(tmp_path, data, text)
+    assert result.returncode == 0, result.stdout
+    result = notebook_run(tmp_path, data, text.replace("variable {α β : Type}\n", ""))
+    assert result.returncode == 1 and "section context" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "directive", ["include h", "omit h", "open scoped BigOperators"]
+)
+def test_unsupported_source_context_still_refuses_wrappers(
+    tmp_path: Path, directive: str
+) -> None:
+    """Do not silently drop commands that affect assumptions or elaboration."""
+    commit = make_project(tmp_path)
+    (tmp_path / "proj/Section.lean").write_text(
+        f"variable {{α : Type}}\n{directive}\ntheorem t (x : α) : x = x := rfl\n"
+    )
+    data = lean_outline(
+        commit, entry(name="t", file="Section.lean", line=3, type="(x : α) : x = x")
+    )
+    data["nodes"][0]["claim"] = "c"
+    result = notebook_run(
+        tmp_path,
+        data,
+        "variable {α : Type}\ntheorem c (x : α) : x = x := by\n  exact t (x := x)\n",
+    )
+    assert result.returncode == 1 and "section context" in result.stdout
+
+
+def test_section_context_restores_after_nested_end(tmp_path: Path) -> None:
+    """A nested variable must not leak into a later sibling theorem."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "S.lean").write_text(
+        "universe u\nnamespace A\nvariable {α : Type u}\nsection inner\n"
+        "variable {β : Type}\ntheorem inner (x : β) : x = x := rfl\nend inner\n"
+        "theorem outer (x : α) : x = x := rfl\nend A\n"
+        "theorem plain : True := trivial\n"
+    )
+    script = load_script()
+    found = {d.name: d.context for d in script.declarations(project, "S.lean")}
+    assert found["A.inner"] == (
+        "universe u",
+        "variable {α : Type u}",
+        "variable {β : Type}",
+    )
+    assert found["A.outer"] == ("universe u", "variable {α : Type u}")
+    assert found["plain"] == ("universe u",)
+    scan = script._scan_notebook((project / "S.lean").read_text())
+    assert [claim.context for claim in scan.claims] == list(found.values())
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "variable {α : Type} #exit",
+        "variable {α α : Type}",
+        "variable [Inhabited α]",
+        "variable (n : Nat)",
+        "variable {n : Nat}",
+        "open A in",
+        "open A hiding x",
+        "universe u #exit",
+        "variable {α : Type} (h : False)",
+    ],
+)
+def test_section_context_does_not_admit_other_commands(command: str) -> None:
+    """The context allowlist cannot hide extra commands or new hypotheses."""
+    assert not load_script()._supported_context(command)
+
+
+def test_whitespace_only_source_lines_do_not_break_context(tmp_path: Path) -> None:
+    """Whitespace inside a section is not a context command."""
+    (tmp_path / "S.lean").write_text(
+        "variable {α : Type}\n  \n\t\ntheorem t (x : α) : x = x := rfl\n"
+    )
+    found = load_script().declarations(tmp_path, "S.lean")
+    assert found[0].context == ("variable {α : Type}",)
+
+
+def test_multiline_variable_comment_keeps_following_type_group(tmp_path: Path) -> None:
+    """An inline comment ends at its original newline, not the command end."""
+    (tmp_path / "S.lean").write_text(
+        "variable {α : Type} -- note\n  {β : Type}\n"
+        "theorem t (f : α → β) (x : α) : f x = f x := rfl\n"
+    )
+    found = load_script().declarations(tmp_path, "S.lean")
+    assert found[0].context == ("variable {α : Type} {β : Type}",)

@@ -43,7 +43,8 @@ appropriate for this small proof; depth is not a quality score.
 `Counter.ticks_step (n : Nat)` has a claim card that forwards its round
 argument unchanged: `exact Counter.ticks_step (n := n)`. All three cards
 restate their original theorem headers. Implicit and instance binders can still
-be inferred; unsupported section-variable context remains prose-only.
+be inferred. For implicit section type variables, see the real
+[ETH example](section-variables.md); other section contexts remain prose-only.
 
 ## Reproduce the validation
 

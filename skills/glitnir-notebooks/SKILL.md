@@ -174,7 +174,9 @@ Follow [references/walkthroughs.md](references/walkthroughs.md) step by step,
 both to write a walkthrough and to extend one. It includes a reader brief,
 feasibility preflight and source-only route. Read
 [references/worked-example.md](references/worked-example.md) for a complete
-small example and its validation commands. Write the outline as
+small example and its validation commands. For a theorem using implicit section
+type variables, read [references/section-variables.md](references/section-variables.md),
+which follows a real ETH proof. Write the outline as
 [references/walkthrough-outline.md](references/walkthrough-outline.md)
 describes. Ask before building the original or downloading a paper. Never
 describe a claim as checked unless a Glitnir check of the walkthrough reported
