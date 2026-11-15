@@ -22,6 +22,10 @@ def main() -> None:
     try:
         if os.getppid() != specification["parent"]:
             return
+        if "cgroup" in specification:
+            (Path(specification["cgroup"]) / "cgroup.procs").write_text(
+                str(os.getpid())
+            )
         process = subprocess.Popen(specification["command"], stdin=subprocess.DEVNULL)
         while process.poll() is None:
             if os.getppid() != specification["parent"]:

@@ -1,6 +1,9 @@
 """A computation worker invokes the native checker only for matching inputs."""
 
+import json
 import threading
+
+import pytest
 
 from glitnir.compute.protocol import make_request
 from glitnir.compute.worker import execute
@@ -319,3 +322,65 @@ def test_live_dynamic_worker_preserves_custom_toolchain_location(
         ("result", "checked")
     ], result
     assert result.get("withheld") is None, result
+
+
+def test_exit_receipt_is_sealed_after_cleanup_before_http(
+    dynamic_worker_case, tmp_path, monkeypatch
+):
+    worker, _, _, request = dynamic_worker_case
+    events = []
+    binding = {"worker_id": worker.identity, "lease": "a" * 64}
+    job = {"id": request["request_id"], "request": request}
+
+    class Group:
+        def stop(self):
+            events.append("empty")
+
+        def receipt(self, source):
+            assert events == ["empty"]
+            return {"source_sha256": source, "empty": True}
+
+    def execute(stop):
+        worker._exit_context = (Group(), tmp_path, binding, job)
+        return True
+
+    def post(method, path, body):
+        assert events == ["empty"]
+        assert json.loads((tmp_path / "worker-exit.json").read_text()) == body
+        assert path.endswith("/stopped") and body["lease"] == binding["lease"]
+        events.append("post")
+        raise ValueError("lost reply")
+
+    monkeypatch.setattr(worker, "_run_once", execute)
+    monkeypatch.setattr(worker.client, "request", post)
+    with pytest.raises(ValueError, match="lost reply"):
+        worker.run_once(threading.Event())
+    assert events == ["empty", "post"]
+    assert (tmp_path / "worker-exit.json").is_file()
+
+
+def test_unconfirmed_cgroup_exit_never_sends_receipt(
+    dynamic_worker_case, tmp_path, monkeypatch
+):
+    worker, _, _, request = dynamic_worker_case
+
+    class Group:
+        def stop(self):
+            raise TimeoutError("still populated")
+
+    def execute(stop):
+        worker._exit_context = (
+            Group(),
+            tmp_path,
+            {},
+            {"id": request["request_id"], "request": request},
+        )
+        return True
+
+    monkeypatch.setattr(worker, "_run_once", execute)
+    monkeypatch.setattr(
+        worker.client, "request", lambda *a: pytest.fail("Unverified exit posted")
+    )
+    with pytest.raises(TimeoutError):
+        worker.run_once(threading.Event())
+    assert not (tmp_path / "worker-exit.json").exists()

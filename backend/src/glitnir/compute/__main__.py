@@ -87,10 +87,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     worker.add_argument("--cache-max-entries", type=int, default=4)
     worker.add_argument("--cache-max-bytes", type=int, default=64 * 1024**3)
     worker.add_argument("--journal", type=Path, required=True)
+    worker.add_argument(
+        "--cgroup-root",
+        type=Path,
+        help="Delegated Linux service cgroup for verified job exit",
+    )
     worker.add_argument("--max-seconds", type=int, default=1800)
     worker.add_argument("--max-memory-mb", type=int, default=DEFAULT_MEMORY_LIMIT_MB)
     recovery = commands.add_parser("retry-completion")
     recovery.add_argument("journal", type=Path)
+    for name in ("retry-exit", "recover-exit"):
+        exit_recovery = commands.add_parser(name)
+        exit_recovery.add_argument("journal", type=Path)
     child = commands.add_parser("execute", help=argparse.SUPPRESS)
     for name in ("prepared", "request", "output", "scratch"):
         child.add_argument("--" + name, type=Path, required=True)
@@ -184,6 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         args.journal / project,
                         recipes=selected,
                         cache=cache,
+                        containment_root=args.cgroup_root,
                         max_seconds=args.max_seconds,
                         max_memory_mb=args.max_memory_mb,
                     )
@@ -215,9 +224,44 @@ def main(argv: Sequence[str] | None = None) -> int:
                 on_ready=lambda value: print(json.dumps(value), flush=True),
             )
             return 0
-        if args.command == "retry-completion":
+        if args.command in {"retry-completion", "retry-exit", "recover-exit"}:
             journal = json.loads((args.journal / "lease.json").read_text())
-            completion = json.loads((args.journal / "completion.json").read_text())
+            is_exit = args.command in {"retry-exit", "recover-exit"}
+            if (
+                args.command == "recover-exit"
+                and not (args.journal / "worker-exit.json").exists()
+            ):
+                from glitnir.compute.containment import recover_receipt
+
+                intent = json.loads((args.journal / "exit-intent.json").read_text())
+                if intent["job_id"] != journal["job"]["id"] or any(
+                    intent.get(key) != journal.get(key)
+                    for key in ("worker_id", "lease")
+                ):
+                    raise ValueError("Exit intent differs from the original lease")
+                if (
+                    journal.get("url") != client.settings.url.rstrip("/")
+                    or journal.get("project") != client.settings.project
+                ):
+                    raise ValueError(
+                        "Worker exit journal belongs to a different destination"
+                    )
+                value = {key: journal[key] for key in ("worker_id", "lease")}
+                value["receipt"] = recover_receipt(
+                    intent, journal["job"]["request"]["source_sha256"]
+                )
+                save_receipt(args.journal / "worker-exit.json", value)
+                descriptor = os.open(args.journal, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            completion = json.loads(
+                (
+                    args.journal
+                    / ("worker-exit.json" if is_exit else "completion.json")
+                ).read_text()
+            )
             if (
                 journal.get("url") != client.settings.url.rstrip("/")
                 or journal.get("project") != client.settings.project
@@ -233,7 +277,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ):
                 raise ValueError("Completion does not match its original worker lease")
             value = client.request(
-                "POST", f"/jobs/{request['request_id']}/complete", completion
+                "POST",
+                f"/jobs/{request['request_id']}/"
+                + ("stopped" if is_exit else "complete"),
+                completion,
             )
             print(json.dumps(value))
             return 0
@@ -242,6 +289,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 client,
                 args.prepared,
                 args.journal,
+                containment_root=args.cgroup_root,
                 max_seconds=args.max_seconds,
                 max_memory_mb=args.max_memory_mb,
             ).run(stop)

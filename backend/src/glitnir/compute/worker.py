@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from glitnir.compute.client import Client, save_receipt
+from glitnir.compute.containment import JobGroup
 from glitnir.compute.environments import EnvironmentCache, Recipe
 from glitnir.compute.protocol import (
     checker_digest,
@@ -88,10 +89,15 @@ class Worker:
         *,
         recipes: list[Recipe] | None = None,
         cache: EnvironmentCache | None = None,
+        containment_root: Path | None = None,
         max_seconds: int = 1800,
         max_memory_mb: int = DEFAULT_MEMORY_LIMIT_MB,
     ) -> None:
         """Bind a serial worker to one prepared project and private journal."""
+        self.containment_root = containment_root
+        self._exit_context: (
+            tuple[JobGroup, Path, dict[str, Any], dict[str, Any]] | None
+        ) = None
         self._lean_threads = lean_threads()
         if (
             (prepared is None and not recipes)
@@ -134,6 +140,27 @@ class Worker:
         self.client.request("POST", "/workers", self.capabilities)
 
     def run_once(self, stop: threading.Event) -> bool:
+        """Publish exact-lease exit evidence only after all job processes are gone."""
+        self._exit_context = None
+        try:
+            return self._run_once(stop)
+        finally:
+            if self._exit_context is not None:
+                group, directory, binding, job = self._exit_context
+                group.stop()
+                receipt = {
+                    **binding,
+                    "receipt": group.receipt(job["request"]["source_sha256"]),
+                }
+                save_receipt(directory / "worker-exit.json", receipt)
+                descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                self.client.request("POST", f"/jobs/{job['id']}/stopped", receipt)
+
+    def _run_once(self, stop: threading.Event) -> bool:
         """Process at most one lease; cancellation or network loss stops computation."""
         hints = (
             {"ready_environments": self.cache.ready(list(self.recipes.values()))}
@@ -146,6 +173,44 @@ class Worker:
         job, lease = leased["job"], leased["lease"]
         request = job["request"]
         binding = {"worker_id": self.identity, "lease": lease}
+        # No rerun after an uncertain/crashed invocation: retain its original directory.
+        directory = self.journal / str(uuid4())
+        directory.mkdir(mode=0o700)
+        payload, output = directory / "request.json", directory / "result.json"
+        save_receipt(payload, request)
+        binding = {"worker_id": self.identity, "lease": lease}
+        save_receipt(
+            directory / "lease.json",
+            {
+                "url": self.client.settings.url.rstrip("/"),
+                "project": self.client.settings.project,
+                "job": job,
+                **binding,
+            },
+        )
+        group = (
+            JobGroup(self.containment_root, job["id"])
+            if self.containment_root
+            else None
+        )
+        if group is not None:
+            save_receipt(
+                directory / "exit-intent.json",
+                {
+                    "boot_id": group.boot,
+                    "host_id": group.host,
+                    "cgroup": str(group.path),
+                    "job_id": job["id"],
+                    **binding,
+                },
+            )
+            for sealed in (directory, self.journal):
+                descriptor = os.open(sealed, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            self._exit_context = (group, directory, binding, job)
         try:
             validate_request(request)
             if (
@@ -170,21 +235,6 @@ class Worker:
                 },
             )
             return True
-        # No rerun after an uncertain/crashed invocation: retain its original directory.
-        directory = self.journal / str(uuid4())
-        directory.mkdir(mode=0o700)
-        payload, output = directory / "request.json", directory / "result.json"
-        save_receipt(payload, request)
-        binding = {"worker_id": self.identity, "lease": lease}
-        save_receipt(
-            directory / "lease.json",
-            {
-                "url": self.client.settings.url.rstrip("/"),
-                "project": self.client.settings.project,
-                "job": job,
-                **binding,
-            },
-        )
         remaining = max(0, job["deadline"] - time.time())
         deadline = time.monotonic() + min(remaining, request["timeout_seconds"])
         environment = {
@@ -329,6 +379,7 @@ class Worker:
                 {
                     "command": command,
                     "parent": os.getpid(),
+                    **({"cgroup": str(group.path)} if group is not None else {}),
                     "result": str(command_result),
                 },
             )
@@ -370,7 +421,11 @@ class Worker:
                             "Computation command failed; see worker journal"
                         )
                 finally:
-                    _stop(process)
+                    try:
+                        _stop(process)
+                    finally:
+                        if group is not None:
+                            group.stop()
                 log.seek(0)
                 data = log.read(10_000_001)
                 if len(data) > 10_000_000:
