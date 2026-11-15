@@ -65,26 +65,34 @@ controls and any reported resource usage. On an older or unsupported server,
 request tracking still works and the panel explains that results are unavailable.
 Background polling runs only while the extension is active, not as a system service.
 
-### Scoped launch setup (preflight only)
+### Scoped swarm launch
 
-The request panel can review one administrator-prepared external team and compute
-environment through Taskvalet's `taskvalet.notebook-launch/v1` contract. Use **Set
-launch credential** for a request-scoped `campaign_client` key, then **Check launch
-readiness**. The extension stores this key in VS Code SecretStorage separately
-from submission/compute credentials, bound to provider, HTTPS origin, project and
-request. Keys are never put in the webview, request journal, settings or logs.
-An expired/revoked key can be replaced explicitly; this does not rotate a campaign.
+Use **Set launch credential** for the administrator-prepared request scope, then
+**Check launch readiness**. The panel displays the fixed team, environment,
+wall-time/worker limits, spending ceiling and concrete blockers. A compatible
+Taskvalet server must verify the exact supported host and its lifecycle evidence
+before it issues an executable preview. Compute readiness alone cannot enable it.
 
-This increment does not enable live launch. The panel reports the fixed team,
-environment, wall-time/parallelism limits, observed compute capacity and blockers;
-**Launch swarm** remains unavailable. The current external participant host lacks
-verified live transport/lifecycle support. Compute readiness or run contact alone
-does not establish that support. The server also refuses launch, so changing the
-webview cannot bypass the gate. No owner credential is needed or accepted here.
+**Launch swarm** asks for explicit confirmation and rechecks saved source,
+destination and workspace trust. A durable intent is stored before the request.
+Opening the panel, Jobs tracking and **Recover status** never launch work. If an
+attempt is uncertain, **Retry saved launch** requires confirmation and retains the
+same preview/campaign identity. Expired or cancelled host lifetimes require fresh
+operator preparation and a new request; they are never automatically retargeted.
 
-Existing request submission, Jobs tracking and attributed results review continue
-independently. Readiness checks start no work and are never run automatically.
-An older server without this contract cannot provide launch setup; retain the
-saved request and use the existing board workflow. Future launch admission needs
-its own reviewed preview/recovery, scoped compute-target enforcement and verified
-remote-stop contract. A stop request must not be presented as confirmed cleanup.
+**Stop swarm** records cancellation. Execution and cleanup are displayed separately;
+unknown or pending cleanup must not be interpreted as confirmed process exit.
+The host's independent guardian observes cancellation even if its controller is
+blocked in a native tool. Actual provider/worker cleanup needs verified receipts.
+
+Launch keys remain in VS Code SecretStorage, separate from handoff/compute keys.
+The original key is also retained under its immutable server scope, so another
+window replacing setup cannot erase recovery authority. No key enters the webview,
+settings, request/intent journal or logs. A missing original key may be restored
+when recovering status; it is validated against the saved scope before storage.
+
+This source increment does not provision or qualify a live host, issue production
+keys, deploy Taskvalet or run a paid model. Installed Linux/provider/worker lifecycle
+qualification is a rollout gate. Matching backend and plugin artifacts are required
+for the optional launch-control interface. Existing Jobs and results review remain
+independent; research never changes Lean source or proof status automatically.

@@ -15,7 +15,8 @@ class HandoffProvider:
     The host owns confirmation and durable storage before submission.
     Optional status reads an existing request without launching or changing work.
     Optional launch_review inspects launch prerequisites using a separate credential;
-    it must never admit work.
+    it must never admit work. Optional launch_control executes only explicit host
+    decisions against a durable reviewed intent; status must remain read-only.
     """
 
     name: str
@@ -24,6 +25,7 @@ class HandoffProvider:
     submit: Callable[[dict[str, Any], str], dict[str, Any]]
     status: Callable[[dict[str, Any], str], dict[str, Any]] | None = None
     launch_review: Callable[[dict[str, Any], str], dict[str, Any]] | None = None
+    launch_control: Callable[[dict[str, Any], str], dict[str, Any]] | None = None
 
 
 def load_handoffs() -> dict[str, HandoffProvider]:
@@ -42,6 +44,10 @@ def load_handoffs() -> dict[str, HandoffProvider]:
                 or (
                     provider.launch_review is not None
                     and not callable(provider.launch_review)
+                )
+                or (
+                    provider.launch_control is not None
+                    and not callable(provider.launch_control)
                 )
                 or provider.name in found
             ):

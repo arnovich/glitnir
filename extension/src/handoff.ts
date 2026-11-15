@@ -6,7 +6,7 @@ import {EnvironmentSetup} from './setup';
 import {HandoffJournal} from './handoff-journal';
 import {HandoffAction, HandoffReview, HandoffReviewPanel, ResearchResults} from './handoff-panel';
 
-interface Provider {name: string; label: string; supportsStatus?: boolean; supportsLaunchReview?: boolean}
+interface Provider {name: string; label: string; supportsStatus?: boolean; supportsLaunchReview?: boolean; supportsLaunchControl?: boolean}
 interface Pending {notebookPath?: string; provider: Provider; python: string; scope: string; payload: any; review?: HandoffReview}
 interface Submitted {pending: Pending; receipt: any}
 
@@ -46,6 +46,12 @@ export function handoffScope(provider: string, server: string, project: string):
 export function launchScope(provider: string, server: string, project: string, task: string): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(task)) throw new Error('Invalid saved request.');
   return 'glitnir.launch:' + JSON.stringify([handoffScope(provider, server, project), task]);
+}
+
+/** Retain launch authority by immutable server scope even when another window changes setup. */
+export function launchCredentialScope(scope: string, identity: string): string {
+  if (!/^[a-f0-9-]{36}$/.test(identity)) throw new Error('Invalid launch credential scope.');
+  return scope + ':credential:' + identity;
 }
 
 /** Optional installed-provider handoffs; opening the editor never sends a request. */
@@ -104,25 +110,67 @@ export class NotebookHandoff {
   private showRequest(review: HandoffReview, saved?: {pending: Pending; id?: string; receipt?: any},
     providerLabel = saved?.pending.provider.label, canRefresh = saved?.pending.provider.supportsStatus === true, prepare?: (objective: string) => Promise<{pending: Pending; token: string} | undefined>): void {
     let pending = saved?.pending, id = saved?.id, receipt = saved?.receipt;
-    const panel = new HandoffReviewPanel({...review, providerLabel, canRefresh, phase: receipt ? 'submitted' : id ? 'uncertain' : 'review', stage: receipt?.stage, task: receipt?.task, checkedAt: receipt?.checkedAt, results: receipt?.results, freshness: receipt?.freshness, reviewed: !!receipt?.results?.digest && receipt.reviewedDigest === receipt.results.digest, error: receipt?.error, canLaunchReview: pending?.provider.supportsLaunchReview === true, launch: receipt?.launch}, async (action: HandoffAction, objective: string) => {
+    const panel = new HandoffReviewPanel({...review, providerLabel, canRefresh, phase: receipt ? 'submitted' : id ? 'uncertain' : 'review', stage: receipt?.stage, task: receipt?.task, checkedAt: receipt?.checkedAt, results: receipt?.results, freshness: receipt?.freshness, reviewed: !!receipt?.results?.digest && receipt.reviewedDigest === receipt.results.digest, error: receipt?.error, canLaunchReview: pending?.provider.supportsLaunchReview === true, canLaunchControl: receipt?.launch?.controlSupported === true || pending?.provider.supportsLaunchControl === true, launch: receipt?.launch}, async (action: HandoffAction, objective: string) => {
       if (this.busy) return;
       this.busy = true;
       try {
         this.trusted();
-        if ((action === 'launchReview' || action === 'launchCredential') && pending && receipt && id && pending.provider.supportsLaunchReview) {
+        if (['launchReview', 'launchCredential', 'launchStart', 'launchRetry', 'launchStatus', 'launchStop'].includes(action) && pending && receipt && id && pending.provider.supportsLaunchReview) {
+          const installed: Provider[] = await this.run(pending.python, {action: 'list'});
+          const capability = installed.find(provider => provider.name === pending!.provider.name);
+          const controls = capability?.supportsLaunchControl === true;
+          if (['launchStart', 'launchRetry', 'launchStatus', 'launchStop'].includes(action) && !controls) throw new Error('The installed handoff provider does not support launch controls.');
+          panel.update({canLaunchControl: controls});
+          if ((action === 'launchCredential' || action === 'launchReview') && receipt.launch?.intent) throw new Error('Recover or stop the original launch intent before changing its setup.');
+          const durable = (await this.journal.submitted()).find(record => record.id === id)?.receipt.launch;
+          if (durable?.intent) {receipt = {...receipt, launch: durable}; panel.update({launch: durable});}
+          if ((action === 'launchCredential' || action === 'launchReview') && receipt.launch?.intent) throw new Error('Recover or stop the original launch intent before changing its setup.');
           const scope = launchScope(pending.provider.name, pending.payload.server, pending.payload.project, receipt.task);
-          let token = action === 'launchCredential' ? undefined : await this.context.secrets.get(scope);
+          const original = receipt.launch?.intent?.scope_id;
+          let token = action === 'launchCredential' ? undefined : await this.context.secrets.get(original ? launchCredentialScope(scope, original) : scope);
           if (!token) {
             token = await vscode.window.showInputBox({title: `Request-scoped launch credential for ${review.server} / ${review.project} / ${receipt.task}`, prompt: 'Use the administrator-provisioned campaign credential, separate from your notebook submission key.', password: true, ignoreFocusOut: true});
             if (!token || panel.closed) return;
             if (token.length > 256 || /\s/.test(token)) throw new Error('Invalid launch credential.');
             this.trusted();
-            await this.context.secrets.store(scope, token);
+            if (original) {
+              await this.run(pending.python, {action: 'launch_control', provider: pending.provider.name,
+                payload: {operation: 'status', request: pending.payload, task: receipt.task, launch: receipt.launch.intent}, token});
+              this.trusted();
+              await this.context.secrets.store(launchCredentialScope(scope, original), token);
+            } else await this.context.secrets.store(scope, token);
           }
           if (action === 'launchCredential') {receipt = {...receipt, launch: undefined}; await this.journal.saveLaunch(id, undefined); panel.update({launch: undefined, error: undefined}); return;}
           this.trusted();
-          const launch = await this.run(pending.python, {action: 'launch_review', provider: pending.provider.name, payload: {request: pending.payload, task: receipt.task}, token});
-          receipt = {...receipt, launch: {...launch, checkedAt: new Date().toLocaleString()}};
+          let launch;
+          if (action === 'launchReview') {
+            launch = await this.run(pending.python, {action: 'launch_review', provider: pending.provider.name, payload: {request: pending.payload, task: receipt.task}, token});
+          } else {
+            const previous = receipt.launch;
+            if (!previous?.scope_id) throw new Error('Check launch readiness with this credential first.');
+            if (action === 'launchStart' || action === 'launchRetry') {
+              const retry = action === 'launchRetry';
+              if ((!retry && (!previous.ready || previous.intent || previous.blockers?.length)) || (retry && !previous.intent) || !previous.preview_id || previous.preview_expires_at <= Date.now()/1000) throw new Error('The executable preview is unavailable or expired. Recover its status or stop this attempt; prepare a new request for another host lifetime.');
+              await this.verifyLaunchSource(pending);
+              const choice = await vscode.window.showWarningMessage('Launch this swarm?', {modal: true, detail: `${previous.team} · ${previous.environment}\n${previous.max_seconds} seconds · up to ${previous.max_workers} workers\nSpending ceiling: $${(previous.budget_micro_usd / 1000000).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6})} USD\n${review.server} / ${review.project}`}, 'Launch swarm');
+              if (choice !== 'Launch swarm' || panel.closed) return;
+              await this.verifyLaunchSource(pending);
+              if (await this.context.secrets.get(original ? launchCredentialScope(scope, original) : scope) !== token) throw new Error('Launch credential changed; check readiness again.');
+              const pinnedSecret = launchCredentialScope(scope, previous.scope_id);
+              const pinned = await this.context.secrets.get(pinnedSecret);
+              if (pinned && pinned !== token) throw new Error('Original launch authority differs; preserve it for recovery.');
+              if (!pinned) await this.context.secrets.store(pinnedSecret, token);
+              const intent = previous.intent ?? {scope_id: previous.scope_id, preview_id: previous.preview_id, snapshot: previous};
+              if (!retry && !await this.journal.beginLaunch(id, intent)) throw new Error('A launch intent already exists. Recover its status; no new launch was sent.');
+              receipt = {...receipt, launch: {...previous, intent, ready: false, status: 'admission_unknown', controlSupported: true}};
+              await this.journal.saveLaunch(id, receipt.launch);
+              panel.update({launch: receipt.launch});
+            }
+            this.trusted();
+            launch = {...receipt.launch, ...await this.run(pending.python, {action: 'launch_control', provider: pending.provider.name,
+              payload: {operation: (action === 'launchStart' || action === 'launchRetry') ? 'start' : action === 'launchStop' ? 'stop' : 'status', request: pending.payload, task: receipt.task, launch: receipt.launch.intent ?? receipt.launch}, token})};
+          }
+          receipt = {...receipt, launch: {...launch, controlSupported: controls, checkedAt: new Date().toLocaleString()}};
           await this.journal.saveLaunch(id, receipt.launch);
           panel.update({launch: receipt.launch, error: undefined});
           return;
@@ -258,6 +306,20 @@ export class NotebookHandoff {
     const name = selected.provider.name;
     const scope = handoffScope(name, config.get<string>(name + 'Server', ''), config.get<string>(name + 'Project', ''));
     await this.token(scope, true);
+  }
+
+  /** Recheck the saved source, editor buffer and destination immediately before paid admission. */
+  private async verifyLaunchSource(pending: Pending): Promise<void> {
+    this.trusted();
+    if (!pending.notebookPath || !pending.review) throw new Error('The original notebook source is unavailable for launch review.');
+    const uri = vscode.Uri.file(pending.notebookPath);
+    const source = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+    const editor = vscode.workspace.textDocuments.find(document => document.uri.fsPath === pending.notebookPath);
+    const config = vscode.workspace.getConfiguration('glitnir', uri);
+    if (source !== pending.review.source || (editor && (editor.isDirty || editor.getText() !== source))
+        || createHash('sha256').update(source).digest('hex') !== pending.payload.source_sha256
+        || handoffScope(pending.provider.name, config.get<string>(pending.provider.name + 'Server', ''), config.get<string>(pending.provider.name + 'Project', '')) !== pending.scope)
+      throw new Error('Notebook source or destination changed; submit and review a new request before launching.');
   }
 
   private async readStatus(pending: Pending, receipt: any, token: string): Promise<any> {

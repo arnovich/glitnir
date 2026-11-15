@@ -21,12 +21,19 @@ def main() -> None:
                         "label": p.label,
                         "supportsStatus": p.status is not None,
                         "supportsLaunchReview": p.launch_review is not None,
+                        "supportsLaunchControl": p.launch_control is not None,
                     }
                     for p in providers.values()
                 ]
             else:
                 provider = providers[request["provider"]]
-                if action not in {"prepare", "submit", "status", "launch_review"}:
+                if action not in {
+                    "prepare",
+                    "submit",
+                    "status",
+                    "launch_review",
+                    "launch_control",
+                }:
                     raise ValueError("Unsupported handoff action")
                 callback = getattr(provider, action)
                 if callback is None:

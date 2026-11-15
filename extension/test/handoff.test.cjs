@@ -371,3 +371,53 @@ test('independent readiness and clear survive a status writer paused after its f
   assert.equal((await new HandoffJournal(root).submitted())[0].receipt.launch,undefined);
  } finally {await rm(root,{recursive:true,force:true});}
 });
+
+test('paid intent precedes dispatch and reload recovery never repeats Start', async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'handoff-paid-'));
+ try {
+  const source='theorem t : True := by trivial\n';
+  const provider={name:'taskvalet',label:'Taskvalet',supportsLaunchReview:true,supportsLaunchControl:true};
+  const vscode={Uri:{file:p=>({fsPath:p})},workspace:{isTrusted:true,textDocuments:[],fs:{readFile:async()=>Buffer.from(source)},getConfiguration:()=>({get:key=>key==='taskvaletServer'?'https://tasks.example':'lab'})},window:{showWarningMessage:async()=> 'Launch swarm'}};
+  const loaded=load(vscode);const journal=new HandoffJournal(path.join(root,'notebook-handoffs'));
+  const pending={notebookPath:'/saved/A.lean',provider,python:'python',scope:loaded.handoffScope('taskvalet','https://tasks.example','lab'),payload:{server:'https://tasks.example',project:'lab',source_sha256:require('node:crypto').createHash('sha256').update(source).digest('hex')},review:{notebook:'A.lean',source,objective:'Explore',server:'https://tasks.example',project:'lab'}};
+  const id=await journal.persist(pending);await journal.finish(id,{task:'001-request',stage:'new'});
+  const preview={team:'Prepared',environment:'lean-project',max_seconds:300,max_workers:2,budget_micro_usd:1000000,ready:true,blockers:[],scope_id:'08942b8e-3657-4531-b42f-dbe6989b936b',preview_id:'f34734b0-7e3d-4726-a329-122a74f0dab8',preview_expires_at:Date.now()/1000+60,controlSupported:true};
+  await journal.saveLaunch(id,preview);
+  const operations=[];const secrets=new Map([[loaded.launchScope('taskvalet','https://tasks.example','lab','001-request'),'original-key']]);
+  const context={globalStorageUri:{fsPath:root},secrets:{get:async key=>secrets.get(key),store:async(key,value)=>secrets.set(key,value)}};
+  const runner=async(python,request)=>{
+   if(request.action==='list')return [provider];
+   operations.push(request.payload.operation);assert.equal(request.token,'original-key');
+   assert.equal((await journal.submitted())[0].receipt.launch.intent.preview_id,preview.preview_id);
+   if(request.payload.operation==='start')throw new Error('Lost reply');
+   return {status:'not_started',cleanup:'not_started',ready:false};
+  };
+  const first=new loaded.NotebookHandoff(context,{},runner);await first.openRequest('handoff:'+id);
+  const stale=new loaded.NotebookHandoff(context,{},runner);await stale.openRequest('handoff:'+id);
+  await loaded.panels[0].action('launchStart','');
+  assert.deepEqual(operations,['start']);
+  await loaded.panels[1].action('launchCredential','');
+  assert.match(loaded.panels[1].state.error,/original launch intent/);
+  secrets.set(loaded.launchScope('taskvalet','https://tasks.example','lab','001-request'),'replacement-key');
+  await journal.saveLaunch(id,undefined); // stale writer cannot erase immutable intent/snapshot
+  const second=new loaded.NotebookHandoff(context,{},runner);await second.openRequest('handoff:'+id);
+  assert.deepEqual(operations,['start']);assert.equal(loaded.panels[2].state.launch.ready,false);
+  await loaded.panels[2].action('launchStatus','');assert.deepEqual(operations,['start','status']);
+  await loaded.panels[2].action('launchStart','');assert.deepEqual(operations,['start','status']);
+  await loaded.panels[2].action('launchRetry','');assert.deepEqual(operations,['start','status','start']);
+ } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('competing windows can persist only one fully written launch intent',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'handoff-intent-'));
+ try {
+  const a=new HandoffJournal(root), b=new HandoffJournal(root);
+  const id=await a.persist({request:'one'});await a.finish(id,{task:'one'});
+  const intent={scope_id:'08942b8e-3657-4531-b42f-dbe6989b936b',preview_id:'f34734b0-7e3d-4726-a329-122a74f0dab8'};
+  const outcomes=await Promise.all([a.beginLaunch(id,intent),b.beginLaunch(id,intent)]);
+  assert.equal(outcomes.filter(Boolean).length,1);
+  await a.saveLaunch(id,{ready:true});
+  assert.deepEqual((await b.submitted())[0].receipt.launch.intent,intent);
+  assert.equal((await b.submitted())[0].receipt.launch.ready,false);
+ } finally {await rm(root,{recursive:true,force:true});}
+});
