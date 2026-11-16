@@ -53,3 +53,18 @@ test('launch setup shows fixed policy and blockers without enabling paid work',(
  d.querySelector('#launchReview').click();assert.equal(messages.at(-1).action,'launchReview');
  dom.window.close();
 });
+
+test('executable launch requires a preview and offers explicit status recovery and stop',()=>{
+ const messages=[];const dom=new JSDOM(load().handoffHtml(),{runScripts:'dangerously',beforeParse(w){w.acquireVsCodeApi=()=>({postMessage:m=>messages.push(m)});}});
+ const state={phase:'submitted',canLaunchReview:true,canLaunchControl:true,launch:{team:'Prepared',team_version:1,environment:'lean-project',max_seconds:300,max_workers:2,compute_available:1,ready:true,status:'not_started',blockers:[],scope_id:'scope',preview_id:'preview',preview_expires_at:Date.now()/1000+60,budget_micro_usd:1000000}};
+ dom.window.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'state',state}}));
+ const d=dom.window.document;assert.equal(d.querySelector('#launch-start').disabled,false);
+ d.querySelector('#launch-start').click();assert.equal(messages.at(-1).action,'launchStart');
+ state.launch={...state.launch,intent:{preview_id:'preview',scope_id:'scope'},ready:false,status:'unknown',cleanup:'unknown'};
+ dom.window.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'state',state}}));
+ assert.equal(d.querySelector('#launch-start').disabled,true);
+ d.querySelector('#launchStatus').click();assert.equal(messages.at(-1).action,'launchStatus');
+ d.querySelector('#launchStop').click();assert.equal(messages.at(-1).action,'launchStop');
+ assert.match(d.querySelector('#launch-state').textContent,/unknown/i);
+ dom.window.close();
+});

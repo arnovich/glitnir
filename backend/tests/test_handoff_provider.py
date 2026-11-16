@@ -36,6 +36,7 @@ def test_handoff_discovery_advertises_optional_status(monkeypatch, capsys):
             "label": "Send notebook",
             "supportsStatus": False,
             "supportsLaunchReview": False,
+            "supportsLaunchControl": False,
         }
     ]
 

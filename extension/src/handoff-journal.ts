@@ -1,5 +1,5 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {mkdir, readFile, readdir, rename, writeFile} from 'node:fs/promises';
+import {link, mkdir, open, readFile, readdir, rename, unlink, writeFile} from 'node:fs/promises';
 import * as path from 'node:path';
 
 /** Each request owns its file, so separate editor windows cannot erase one another. */
@@ -43,6 +43,8 @@ export class HandoffJournal<T> {
       catch (error: any) { if (error.code !== 'ENOENT') throw error; }
       try { receipt.launch = JSON.parse(await readFile(path.join(this.directory, id + '.launch'), 'utf8')) ?? undefined; }
       catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+      try { const intent = JSON.parse(await readFile(path.join(this.directory, id + '.launch-intent'), 'utf8')); receipt.launch = {...intent.snapshot, ...(receipt.launch?.scope_id === intent.scope_id ? receipt.launch : {}), scope_id: intent.scope_id, preview_id: intent.preview_id, intent, ready: false, controlSupported: true}; }
+      catch (error: any) { if (error.code !== 'ENOENT') throw error; }
       found.push({id, value: JSON.parse(request), receipt});
     }
     return found;
@@ -54,6 +56,22 @@ export class HandoffJournal<T> {
     await writeFile(temporary, JSON.stringify(value ?? null), {flag: 'wx', mode: 0o600});
     await rename(temporary, path.join(this.directory, id + '.launch'));
   }
+  /** Persist one paid-launch intent before dispatch; competing windows only recover. */
+  async beginLaunch(id: string, intent: {scope_id: string; preview_id: string; snapshot?: object}): Promise<boolean> {
+    if (![id, intent.scope_id, intent.preview_id].every(value => /^[a-f0-9-]{36}$/.test(value))) throw new Error('Invalid launch identity.');
+    const destination = path.join(this.directory, id + '.launch-intent');
+    const temporary = path.join(this.directory, id + '.' + randomUUID() + '.intent-writing');
+    const file = await open(temporary, 'wx', 0o600);
+    try { await file.writeFile(JSON.stringify(intent)); await file.sync(); }
+    finally { await file.close(); }
+    try { await link(temporary, destination); }
+    catch (error: any) { if (error.code === 'EEXIST') return false; throw error; }
+    finally { await unlink(temporary); }
+    const directory = await open(this.directory, 'r');
+    try { await directory.sync(); } finally { await directory.close(); }
+    return true;
+  }
+
   /** Keep local review independent of in-flight status receipt replacements. */
   async markReviewed(id: string, digest: string): Promise<void> {
     if (!/^[a-f0-9-]{36}$/.test(id) || typeof digest !== 'string' || digest.length > 512) throw new Error('Invalid review identity.');

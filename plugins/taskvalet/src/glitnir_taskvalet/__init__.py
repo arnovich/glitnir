@@ -1,4 +1,4 @@
-"""Source-bound Taskvalet requests; no campaign launch authority."""
+"""Source-bound Taskvalet requests and separately scoped explicit launch controls."""
 
 import hashlib
 import json
@@ -435,14 +435,31 @@ def launch_review(value: dict[str, Any], token: str) -> dict[str, Any]:
     task = value["task"]
     if not isinstance(task, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task):
         raise ValueError("Invalid saved request")
-    response = _request(
-        server,
-        project,
-        token,
-        "POST",
-        f"/api/v1/projects/{project}/notebook-launch/preview",
-        {},
-    )
+    route = f"/api/v1/projects/{project}/notebook-launch"
+    response = _request(server, project, token, "GET", route)
+    _launch_binding(response, value)
+    if response.get("campaign_id") or response.get("status") == "cancelled":
+        return {
+            **launch_control(
+                {
+                    **value,
+                    "operation": "status",
+                    "launch": {"scope_id": response["scope_id"]},
+                },
+                token,
+            ),
+            "team": "Prepared team",
+            "team_version": response["team_version"],
+            "environment": response["environment"],
+            "max_seconds": response["max_seconds"],
+            "max_workers": response["max_workers"],
+            "budget_micro_usd": response.get("budget_micro_usd"),
+            "compute_available": None,
+            "blockers": [
+                "This scope already has a launch decision. Recover status or stop it."
+            ],
+        }
+    response = _request(server, project, token, "POST", route + "/preview", {})
     if (
         response.get("format") != "taskvalet.notebook-launch/v1"
         or response.get("task") != task
@@ -470,9 +487,31 @@ def launch_review(value: dict[str, Any], token: str) -> dict[str, Any]:
         type(available) is not int or not 0 <= available <= 1000
     ):
         raise ValueError("Invalid compute readiness")
-    # This host implements review only. Even a future server cannot silently
-    # upgrade a saved request into execution authority or a paid launch.
+    ready = response.get("ready") is True
+    executable: dict[str, Any] = {"scope_id": str(uuid.UUID(response["scope_id"]))}
+    if ready:
+        import math
+
+        budget, expires = response.get("budget_micro_usd"), response.get(
+            "preview_expires_at"
+        )
+        if (
+            blockers
+            or type(budget) is not int
+            or not 0 < budget <= 10**15
+            or isinstance(expires, bool)
+            or not isinstance(expires, (int, float))
+            or not math.isfinite(expires)
+        ):
+            raise ValueError("Invalid executable launch limits")
+        executable = {
+            "scope_id": str(uuid.UUID(response["scope_id"])),
+            "preview_id": str(uuid.UUID(response["preview_id"])),
+            "preview_expires_at": expires,
+            "budget_micro_usd": budget,
+        }
     return {
+        **executable,
         **{
             key: response[key]
             for key in (
@@ -485,8 +524,88 @@ def launch_review(value: dict[str, Any], token: str) -> dict[str, Any]:
             )
         },
         "compute_available": available,
+        "ready": ready,
+        "blockers": blockers,
+    }
+
+
+def _launch_binding(response: dict[str, Any], value: dict[str, Any]) -> None:
+    """Bind every observation to the saved request, independently of editor state."""
+    saved = value["request"]
+    if (
+        response.get("format") != "taskvalet.notebook-launch/v1"
+        or response.get("task") != value["task"]
+        or response.get("source_sha256") != saved["source_sha256"]
+        or response.get("storage_id") != saved["storage_id"]
+        or response.get("context_sha256")
+        != hashlib.sha256(saved["command"]["text"].strip().encode()).hexdigest()
+    ):
+        raise ValueError("Launch scope binding differs from this notebook request")
+
+
+def launch_control(value: dict[str, Any], token: str) -> dict[str, Any]:
+    """Execute only explicit start/stop; status recovery never reissues admission."""
+    server, project = _destination(value["request"])
+    operation = value["operation"]
+    if operation not in {"start", "status", "stop"}:
+        raise ValueError("Unknown launch operation")
+    route = f"/api/v1/projects/{project}/notebook-launch"
+    response = _request(server, project, token, "GET", route)
+    _launch_binding(response, value)
+    saved = value["launch"]
+    scope = str(uuid.UUID(saved["scope_id"]))
+    if response.get("scope_id") != scope:
+        raise ValueError(
+            "Launch credential scope changed; preserve the original intent"
+        )
+    if operation != "status":
+        body = (
+            {"preview_id": str(uuid.UUID(saved["preview_id"]))}
+            if operation == "start"
+            else {}
+        )
+        response = _request(
+            server, project, token, "POST", route + "/" + operation, body
+        )
+        if (
+            response.get("scope_id") != scope
+            or response.get("task") != value["task"]
+            or response.get("format") != "taskvalet.notebook-launch/v1"
+        ):
+            raise ValueError("Launch receipt scope changed")
+        if operation == "start":
+            _launch_binding(response, value)
+    if response.get("status") not in {
+        "not_started",
+        "admission_unknown",
+        "admitted",
+        "running",
+        "stopping",
+        "stopped",
+        "failed",
+        "cancelled",
+        "unknown",
+        "cleanup_pending",
+    }:
+        raise ValueError("Unknown launch status")
+    if response.get("cleanup") not in {"not_started", "pending", "complete", "unknown"}:
+        raise ValueError("Unknown cleanup status")
+    campaign = response.get("campaign_id")
+    if campaign is not None:
+        campaign = str(uuid.UUID(campaign))
+    exposure = response.get("exposure_micro_usd")
+    if exposure is not None and (
+        type(exposure) is not int or not 0 <= exposure <= 10**15
+    ):
+        raise ValueError("Invalid launch cost observation")
+    return {
+        "scope_id": scope,
+        "campaign_id": campaign,
         "ready": False,
-        "blockers": blockers or ["Live launch is not supported by this client."],
+        "status": response["status"],
+        "cleanup": response["cleanup"],
+        "can_stop": response.get("can_stop") is True,
+        "exposure_micro_usd": exposure,
     }
 
 
@@ -494,6 +613,12 @@ def providers() -> list[HandoffProvider]:
     """Register the optional Taskvalet handoff with Glitnir."""
     return [
         HandoffProvider(
-            "taskvalet", "Send to Taskvalet", prepare, submit, status, launch_review
+            "taskvalet",
+            "Send to Taskvalet",
+            prepare,
+            submit,
+            status,
+            launch_review,
+            launch_control,
         )
     ]
