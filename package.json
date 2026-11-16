@@ -2,7 +2,7 @@
   "name": "glitnir",
   "displayName": "Glitnir \u2014 Lean Notebooks",
   "description": "Read, explore and check Lean notebooks beside their source.",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "publisher": "gimle",
   "license": "MIT",
   "icon": "extension/icon/glitnir-128.png",
@@ -117,6 +117,21 @@
       {
         "command": "glitnir.clearTaskvaletCredential",
         "title": "Clear Taskvalet Credential",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.sendNotebook",
+        "title": "Send Notebook\u2026",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.recoverNotebookHandoff",
+        "title": "Recover Notebook Handoff\u2026",
+        "category": "Glitnir"
+      },
+      {
+        "command": "glitnir.setHandoffCredential",
+        "title": "Set Notebook Handoff Credential\u2026",
         "category": "Glitnir"
       }
     ],

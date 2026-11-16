@@ -51,3 +51,6 @@
 /* A linked notebook is read-only: its review, proof steps and editing stay with its own preview. */
 .glitnir-linked-view .review-nav,
 .glitnir-linked-view #open-source { display: none; }
+
+/* Linked notebooks are read inside another notebook’s host-bound preview. */
+.glitnir-linked-view #send-taskvalet { display: none; }

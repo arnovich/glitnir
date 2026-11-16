@@ -125,7 +125,7 @@ test('preview tabs deduplicate, restrict dirty-file checks and reject injected r
   try { extension = require('../../dist/extension'); } finally { Module._load = load; }
   const positions = new Map();
   const workspaceState = {get: key => positions.get(key), update: (key, value) => positions.set(key, value)};
-  extension.activate({workspaceState, subscriptions: [], extensionUri: file(path.resolve(__dirname, '../..'))});
+  extension.activate({workspaceState, globalStorageUri: file(path.join(path.dirname(fixture), "handoff-state")), subscriptions: [], extensionUri: file(path.resolve(__dirname, '../..'))});
   const open = commands.get('glitnir.openPreview');
   const temporary = mkdtempSync(path.join(tmpdir(), 'glitnir-symlink-test-'));
   try {
