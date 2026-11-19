@@ -55,6 +55,12 @@ Configuration that needs subprocesses remains unavailable on macOS.
 - Put prose in column-zero `/-! … -/` blocks. Use Markdown headings and `$…$`
   or `$$…$$` for mathematics. Explain assumptions and distinguish proved facts
   from intuition and future goals.
+- For important definitions and theorems, write a readable mathematical
+  statement in the adjacent docstring, using LaTeX where helpful. Preserve the
+  Lean statement's assumptions, quantifiers and scope; use the declaration's
+  name when referring to it from longer prose. Handwritten mathematics is an
+  explanation, not an independently checked translation. Glitnir renders
+  KaTeX-compatible mathematics, not arbitrary LaTeX documents.
 - Keep imports at the start. Use ordinary Lean definitions and namespaces;
   `/-- … -/` docstrings explain definitions and claims.
 - Preserve ordinary Lean theorem syntax and namespaces. Use named theorems
@@ -88,7 +94,7 @@ Any syntax that cannot be represented safely should remain visible as source.
 Do not silently drop declarations or rewrite complex Lean syntax just to render
 it. Report parser limitations separately from Lean errors.
 
-## Write an expandable argument
+## Write a layered, expandable argument
 
 For longer arguments, lead with the result, its scope and a short proof strategy.
 Organize the explanation around meaningful intermediate conclusions. For each
@@ -96,6 +102,12 @@ step, explain the assumptions it uses, what it establishes, and how that advance
 the enclosing argument. Extract named lemmas when they clarify the mathematics;
 avoid splitting a proof merely to create more sections. Preserve theorem
 statements and check any refactoring in Lean.
+
+Write each reading level as a coherent account: the closed overview states
+what is established and under which assumptions; the next level explains why;
+deeper levels supply calculations and supporting lemmas. Keep essential scope,
+limitations and unfinished steps visible in summaries. Avoid summaries such as
+"Details below" that force the reader to expand merely to understand the claim.
 
 Glitnir supports opt-in collapsible sections in prose comments:
 
@@ -123,13 +135,24 @@ short and self-contained, with important assumptions or limitations visible.
 Place detailed reasoning in later paragraphs and the supporting declarations
 below them. No closing marker, HTML or change to Lean syntax is needed.
 
+The notebook's **Show through** controls use the nesting of these folded
+sections: **Level 1 · Overview** closes them all; **Level 2** opens outer
+sections while leaving their children closed; further levels open deeper
+sections. **All levels** opens every section. These reading levels count folded
+ancestors, not the number of `#` characters; skipping a heading rank does not
+create an extra reading level. Ordinary headings remain expanded. Readers can
+expand individual branches independently; the controls then reflect the current
+folds, showing **Custom depth** when no preset matches. Source/proof folds remain
+independent. No new level directive or paragraph syntax is required.
+
 The renderer counts descendant claim observations on the closed section; these
 counts are not a verification of the explanation or a combined proof verdict.
 The Lean source/proof within each card remains separately expandable. Static
 exports retain expandable sections but start them open. Older renderers show the
 marker literally and all content expanded; folding requires a supporting Glitnir
-runtime. Inspect both the closed overview and expanded reasoning, and check that
-outline/claim navigation reveals the intended step. Do not describe an informal
+runtime. Validate the closed overview, each available reading level and
+**All levels**, checking that summaries remain coherent and outline/claim
+navigation reveals the intended step. Do not describe an informal
 bridge as checked merely because nearby lemmas are checked.
 
 ## Metadata, links and optional features

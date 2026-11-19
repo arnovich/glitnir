@@ -868,3 +868,7 @@ button.file.help-icon{width:auto;height:auto;border:0;border-radius:3px;padding:
 .hoare-triple code { overflow-wrap: anywhere; }
 .hoare-rule { width: 100%; border-bottom: 1px solid var(--ink); text-align: end; padding-bottom: .2rem; font-size: 12px; }
 .hoare-view .derivation-details .hoare-triple { justify-content: start; margin-bottom: .5rem; }
+
+/* Reading depth changes only opt-in sections; exact Lean folds stay independent. */
+.reading-depth{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 20px;font:12px var(--sans)}
+.reading-depth button[aria-pressed="true"]{background:var(--blue);color:var(--on-accent);border-color:var(--blue)}

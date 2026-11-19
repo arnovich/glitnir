@@ -99,7 +99,54 @@ theorem hello : True := by
 
 Use `$…$` for inline mathematics and `$$…$$` for displayed equations. Headings
 structure the notebook. Add ` {fold}` to a heading to make its section
-collapsible, with the first paragraph as its visible summary.
+collapsible, with the first paragraph as its visible summary. Put readable
+mathematical statements alongside important Lean definitions and theorems,
+preserving their assumptions and quantifiers. Mathematics uses KaTeX-compatible
+LaTeX; handwritten prose and formulas are explanatory, not checked translations.
+
+### Reading levels
+
+Use headings of levels 2–6 with `{fold}` to build nested explanations:
+
+```lean
+/-!
+## Main result {fold}
+
+Under the stated assumptions, every trajectory stays bounded.
+
+### Why it works {fold}
+
+Energy cannot increase, which confines the trajectory.
+
+#### The calculation {fold}
+
+Expand the derivative and establish its sign here.
+-/
+```
+
+A section includes subsequent prose and Lean declarations up to the next heading
+of equal or higher rank. The first paragraph is its visible summary. Make each
+level a coherent account, keeping essential assumptions and limitations in the
+summary and placing detailed reasoning in later paragraphs or nested sections.
+
+The **Show through** controls appear above notebooks with folded sections:
+
+- **Level 1 · Overview** is the initial view: all folded sections are closed.
+- **Level 2** opens outer sections, revealing their details and child summaries.
+  Further levels open progressively deeper sections.
+- **All levels** opens every section. Lean source/proof folds stay independent.
+
+Reading levels count nested folded sections, not heading numbers. An ordinary
+heading stays expanded; jumping from `##` to `####` creates no extra reading
+level. Click a section summary to open or close just that branch. The controls
+reflect the resulting folds, with **Custom depth** when no preset matches.
+Navigation to a hidden claim or section opens its ancestors.
+
+Depth choices and individual folds survive saved-file refreshes and view switches
+within the preview, independently for each linked notebook. Newly added sections
+follow that notebook's last chosen depth (or Overview if none was chosen).
+Reopening the preview starts at Overview. Static HTML exports start with all
+sections open and retain native section folding; they have no depth toolbar.
 
 An image on its own line, `![Caption](assets/figure.png)`, embeds a local image
 from the notebook's `assets/` folder. `[Next](Next.lean)` links to a sibling
