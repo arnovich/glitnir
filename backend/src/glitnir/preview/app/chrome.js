@@ -546,12 +546,55 @@
     renderConnection();
   }
 
+  // Depth counts collapsible ancestors, not Markdown heading numbers. Keep the
+  // chosen default for new saved sections, with individual folds overriding it.
+  const readingDepths = new Map();
+  const readingNotebookKey = () => JSON.stringify([UI.data.source_path || UI.data.preview?.project?.root || '', UI.data.file, linkedPath() || '']);
+  const readingSections = () => [...$('doc').querySelectorAll('details.proof-section')];
+  function renderReadingDepth() {
+    const control = $('reading-depth'), sections = readingSections();
+    control.hidden = UI.mode !== 'doc' || heldRendering() || !sections.length;
+    if (control.hidden) return;
+    const max = Math.max(...sections.map(section => Number(section.dataset.sectionDepth)));
+    if (control.dataset.maxDepth !== String(max)) {
+      const focused = control.contains(document.activeElement) ? document.activeElement.dataset.readingDepth : null;
+      control.dataset.maxDepth = String(max);
+      control.innerHTML = '<span>Show through</span>' + Array.from({length: max}, (_, i) =>
+        `<button type="button" class="secondary" data-reading-depth="${i + 1}" aria-controls="doc">Level ${i + 1}${i === 0 ? ' · Overview' : ''}</button>`).join('')
+        + '<button type="button" class="secondary" data-reading-depth="all" aria-controls="doc">All levels</button><span class="small muted" id="reading-depth-state"></span>';
+      if (focused) (control.querySelector(`[data-reading-depth="${focused}"]`) || control.querySelector('button')).focus({preventScroll: true});
+    }
+    let matched = false;
+    for (const button of control.querySelectorAll('[data-reading-depth]')) {
+      const depth = button.dataset.readingDepth === 'all' ? Infinity : Number(button.dataset.readingDepth);
+      const selected = sections.every(section => section.open === (Number(section.dataset.sectionDepth) < depth));
+      button.setAttribute('aria-pressed', String(selected));
+      matched ||= selected;
+    }
+    $('reading-depth-state').textContent = matched ? '' : 'Custom depth';
+  }
+  $('reading-depth').addEventListener('click', event => {
+    const button = event.target.closest('[data-reading-depth]');
+    if (!button || heldRendering()) return;
+    const depth = button.dataset.readingDepth === 'all' ? Infinity : Number(button.dataset.readingDepth);
+    readingDepths.set($('doc').dataset.readingNotebook, depth);
+    for (const section of readingSections()) section.open = Number(section.dataset.sectionDepth) < depth;
+    saveReadingFolds();
+    renderReadingDepth();
+  });
+  let readingDepthUpdate = null;
+  $('doc').addEventListener('toggle', event => {
+    if (!event.target.matches('details.proof-section') || readingDepthUpdate !== null) return;
+    // Bulk expansion and refresh queue a native toggle for every section.
+    readingDepthUpdate = setTimeout(() => { readingDepthUpdate = null; renderReadingDepth(); }, 0);
+  }, true);
+
   // Source-based identities survive line shifts; occurrences distinguish
   // identical declarations in different scopes. No source is interpreted here.
   function readingDetails() {
     const counts = new Map();
     return [$('doc'), $('insp'), $('diagram-dialog'), $('graph-view')].filter(Boolean).flatMap(root => [...root.querySelectorAll('details[data-fold-key]')].map(fold => {
-      const identity = JSON.stringify([root.id, fold.dataset.foldKey]);
+      const identity = JSON.stringify([root.id, root.id === 'doc' ? root.dataset.readingNotebook : '', fold.dataset.foldKey]);
       const occurrence = counts.get(identity) || 0;
       counts.set(identity, occurrence + 1);
       return {fold, key: JSON.stringify([identity, occurrence])};
@@ -570,6 +613,7 @@
   function restoreReadingFolds(focus) {
     for (const {fold, key} of readingDetails()) {
       if (readingFolds.has(key)) fold.open = readingFolds.get(key);
+      else if (fold.matches('#doc details.proof-section')) fold.open = Number(fold.dataset.sectionDepth) < (readingDepths.get($('doc').dataset.readingNotebook) ?? 1);
       if (key === focus) fold.querySelector('summary').focus({preventScroll: true});
     }
   }
@@ -611,7 +655,10 @@
     const resultFocus = results?.contains(document.activeElement);
     const resultsState = results ? {key: results.dataset.goalKey, top: results.scrollTop, left: results.scrollLeft, focused: document.activeElement === results} : null;
     if (!inspectorOnly && !heldRendering()) {
-      if (UI.mode === 'doc') renderDoc();
+      if (UI.mode === 'doc') {
+        $('doc').dataset.readingNotebook = readingNotebookKey();
+        renderDoc();
+      }
       else if (UI.mode === 'source') renderSource();
       else renderProofGraph({openClaimGraph, openExplore});
     }
@@ -619,6 +666,7 @@
     if (!inspectorOnly) renderChrome();
     renderDiagramDialog();
     restoreReadingFolds(foldFocus);
+    renderReadingDepth();
     if (graphNotesFocus && UI.mode === 'graph' && !$('graph-view').querySelector('.proof-graph-notes')) {
       ($('graph-view').querySelector('[data-act="graph-detail-picker"]') || document.querySelector('[data-mode="graph"]')).focus({preventScroll: true});
     }

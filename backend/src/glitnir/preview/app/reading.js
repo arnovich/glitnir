@@ -551,6 +551,7 @@
         if (heading.dataset.sectionFold) {
           const section = document.createElement('details');
           section.className = 'proof-section';
+          section.dataset.sectionDepth = String(stack.length + 1);
           section.dataset.foldKey = 'section:' + JSON.stringify([...stack.map(s => s.title), heading.dataset.heading]);
           section.open = staticPage;
           const summary = document.createElement('summary');

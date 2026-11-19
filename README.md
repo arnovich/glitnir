@@ -160,10 +160,14 @@ cells:
 - **Claims** are named `theorem` or `lemma` declarations, rendered with the
   statement and proof shown separately and the check status alongside. A
   docstring (`/-- … -/`) right above a definition or claim becomes its
-  description. `sorry` marks unfinished work and is never reported as a success.
+  description. Use readable LaTeX statements alongside important declarations,
+  preserving their assumptions and quantifiers. `sorry` marks unfinished work and is never reported as a success.
 - **Sections** come from Markdown headings of level 2 to 6 in prose cells. Add
   ` {fold}` at the end of a heading to make its section collapsible, with the
-  first paragraph as the summary.
+  first paragraph as the summary. Nest sections for overview, reasoning and
+  detailed calculations. **Show through** selects a reading level, from
+  **Level 1 · Overview** to **All levels**; individual branches can still be
+  expanded independently.
 - **Images and links:** a prose line that is only `![caption](assets/figure.png)`
   shows that file from the `assets/` folder beside the notebook, and
   `[Basics](Basics.lean)` links to a sibling notebook. Standard emphasis,

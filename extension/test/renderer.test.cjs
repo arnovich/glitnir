@@ -2743,6 +2743,109 @@ test('proof outline folds nested sections, keeps summaries and every claim statu
   } finally { window.close(); }
 });
 
+test('reading depth presets preserve local overrides, refresh state and source folds', async () => {
+  const snapshot = outlineSnapshot();
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    const folds = () => [...d.querySelectorAll('#doc details.proof-section')];
+    const choose = value => d.querySelector(`#reading-depth [data-reading-depth="${value}"]`).click();
+    assert.equal(d.getElementById('reading-depth').hidden, false);
+    assert.equal(d.querySelector('[data-reading-depth="1"]').getAttribute('aria-pressed'), 'true');
+    choose('2');
+    assert.deepEqual(folds().map(f => f.open), [true, false, false]);
+    const source = d.querySelector('#doc details.def-lean');
+    source.open = true;
+    choose('all');
+    assert.ok(folds().every(f => f.open));
+    assert.equal(source.open, true);
+    folds()[1].querySelector('summary').click();
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(d.querySelector('#reading-depth [aria-pressed="true"]'), null, 'a locally changed view is custom');
+    await window.glitnirPoll();
+    assert.deepEqual(folds().map(f => f.open), [true, false, true]);
+    choose('1');
+    assert.ok(folds().every(f => !f.open));
+    assert.equal(d.querySelector('#doc details.def-lean').open, true, 'source is independent');
+    window.HTMLElement.prototype.scrollIntoView = function() {};
+    d.querySelector('#outline [data-act="goto"][data-id="step1"]').click();
+    assert.deepEqual(folds().map(f => f.open), [true, true, false], 'navigation reveals its branch');
+    d.querySelector('[data-mode="source"]').click();
+    assert.equal(d.getElementById('reading-depth').hidden, true);
+    d.querySelector('[data-mode="doc"]').click();
+    assert.equal(d.getElementById('reading-depth').hidden, false);
+    assert.deepEqual(folds().map(f => f.open), [true, true, false]);
+  } finally { window.close(); }
+});
+
+test('reading depths count nested folds rather than heading numbers and follow new saved sections', async () => {
+  const snapshot = outlineSnapshot();
+  snapshot.cells[0].markdown = snapshot.cells[0].markdown.replace('## Main', '### Main').replace('### Local', '###### Local');
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document;
+    d.querySelector('[data-reading-depth="2"]').focus();
+    d.querySelector('[data-reading-depth="2"]').click();
+    assert.deepEqual([...d.querySelectorAll('#doc .proof-section')].map(f => f.open), [true, false, true]);
+    await window.glitnirPoll();
+    assert.equal(d.activeElement.dataset.readingDepth, '2');
+    snapshot.cells.at(-1).markdown += '\n\n## Added {fold}\n\nNew summary.\n\nNew detail.';
+    snapshot.sha256 = 'b'.repeat(64);
+    await window.glitnirPoll();
+    assert.equal([...d.querySelectorAll('#doc .proof-section')].at(-1).open, true);
+    assert.equal(d.querySelector('[data-reading-depth="3"]'), null, 'skipped heading numbers add no artificial depth');
+  } finally { window.close(); }
+});
+
+test('reading depth choices are isolated between linked notebooks with identical headings', async () => {
+  const main = outlineSnapshot(), linked = {...outlineSnapshot(), file: 'Other.lean'};
+  const window = await renderSnapshot(main, {onLinked: () => ({json: linked})});
+  window.scrollTo = () => {};
+  try {
+    const d = window.document, w = window.glitnirWorkbench;
+    const states = () => [...d.querySelectorAll('#doc .proof-section')].map(f => f.open);
+    d.querySelector('[data-reading-depth="all"]').click();
+    w.openNotebook('Other.lean');
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(w.UI.data.file, 'Other.lean');
+    assert.deepEqual(states(), [false, false, false]);
+    d.querySelector('[data-reading-depth="2"]').click();
+    w.showNotebookAt(0);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(states(), [true, true, true]);
+    w.showNotebookAt(1);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(states(), [true, false, false]);
+  } finally { window.close(); }
+});
+
+test('bulk reading depth changes coalesce native toggle updates', async () => {
+  const snapshot = outlineSnapshot();
+  snapshot.cells = [{...snapshot.cells[0], markdown: Array.from({length: 100}, (_, i) => `## Step ${i} {fold}\n\nSummary ${i}.\n\nDetail ${i}.`).join('\n\n')}];
+  snapshot.claims = [];
+  const window = await renderSnapshot(snapshot);
+  try {
+    const d = window.document, doc = d.getElementById('doc');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const query = doc.querySelectorAll.bind(doc);
+    let scans = 0;
+    doc.querySelectorAll = selector => { if (selector === 'details.proof-section') scans++; return query(selector); };
+    d.querySelector('[data-reading-depth="all"]').click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.ok(scans <= 4, `bulk expansion should batch control updates, observed ${scans} scans`);
+    assert.ok([...query('details.proof-section')].every(section => section.open));
+    assert.equal(d.querySelector('[data-reading-depth="all"]').getAttribute('aria-pressed'), 'true');
+  } finally { window.close(); }
+});
+
+test('reading depth controls are absent without opt-in sections', async () => {
+  const snapshot = outlineSnapshot();
+  for (const cell of snapshot.cells) if (cell.markdown) cell.markdown = cell.markdown.replaceAll(' {fold}', '');
+  const window = await renderSnapshot(snapshot);
+  try { assert.equal(window.document.getElementById('reading-depth').hidden, true); }
+  finally { window.close(); }
+});
+
 test('proof outline navigation opens ancestors and retains independent folds and focus after refresh', async () => {
   const snapshot = outlineSnapshot();
   const window = await renderSnapshot(snapshot);
