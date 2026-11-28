@@ -4,7 +4,7 @@
   const workbench = window.glitnirWorkbench;
   const {$, DECLARATION, HOST, UI, checking, claim, decisionHTML, directiveNotes, esc, evidenceHTML, icon,
     inlineHTML, leanCellHTML, leanHTML, linkedPath, markdown, needsDecider, needsProvider, nonClaimsHTML,
-    projectCardsHTML, projectClaimHTML, projectEvidence, refresh, showNotebookAt, sourceDirectivesHTML,
+    projectCardsHTML, projectClaimHTML, projectEvidence, recorded, refresh, showNotebookAt, sourceDirectivesHTML,
     statusOf, summariesOf, title, toneOf, useHTML, viewHTML, walkthroughMessage, walkthroughUnchecked, withheldBannerHTML} = workbench;
   // Defined by a later file and bound when it loads: nothing may call one while the page is still loading.
   const refutationHTML = (...a) => workbench.refutationHTML(...a);
@@ -496,6 +496,47 @@
     return (UI.data.views || []).filter(v => v.cell === cell.index && !placed.has(v.line)).sort((a, b) => a.line - b.line).map(v => viewHTML(cell, v.line)).join('');
   }
 
+  function explanationCardsHTML(cell, staticPage = false) {
+    const authored = (UI.data.explanations || []).filter(item => item.cell === cell.index);
+    if (!authored.length) return '';
+    const trace = !staticPage && !linkedPath() && !recorded() && workbench.currentGoalTrace?.();
+    const observed = trace?.status === 'ready' ? trace.explanations || [] : [];
+    const ranges = staticPage ? new Map() : sourceClaimRanges(UI.data.cells);
+    return `<section class="cell explanation-list" aria-label="Authored proof explanations">${authored.map(item => {
+      const group = observed.find(value => value.authored_id === item.authored_id
+        && value.markdown === item.markdown && value.range?.start?.line === item.line);
+      const node = group?.parent == null ? null : trace.nodes?.[group.parent];
+      const context = node && node.kind === 'Glitnir.explain' && node.start === group.start
+        && node.end === group.end && node.declaration === group.declaration ? node : null;
+      const claimName = [...ranges].find(([, range]) => range.start <= item.line && item.line <= range.end)?.[0];
+      const canInspect = !staticPage && claimName && !linkedPath() && !recorded()
+        && !workbench.leanOff() && !walkthroughUnchecked();
+      const busy = document.body.classList.contains('unsaved-lean') || workbench.checkBusy()
+        || UI.checkRequested || UI.inspecting || UI.goals?.starting || UI.goals?.trace?.status === 'running';
+      const after = context?.after || [];
+      const before = context?.before || [];
+      const introduced = context?.introduced_local;
+      const source = lineLinkHTML(item.line, item.line, false, '', staticPage);
+      const attempt = !linkedPath() && !recorded() && UI.goals?.trace?.source_sha256 === UI.data.sha256 ? UI.goals.trace : null;
+      const refreshNeeded = attempt?.status === 'partial' || attempt?.status === 'unavailable'
+        || (trace?.status === 'ready' && !context);
+      const state = context ? 'Lean goal observation · check status unchanged'
+        : attempt?.status === 'running' ? 'Recording Lean context…'
+        : attempt?.status === 'partial' ? 'Lean recording incomplete · see proof steps'
+        : attempt?.status === 'unavailable' ? 'Lean context unavailable · see proof steps'
+        : trace?.status === 'ready' ? 'No matching Lean explanation recorded · see proof steps'
+        : 'Authored explanation · Lean context not recorded';
+      return `<article class="explanation-card" data-tone="muted">
+        <div class="explanation-head"><span class="tag">Proof explanation</span>${source}</div>
+        <div class="explanation-prose">${markdown(item.markdown, `explanation-${cell.index}-${item.line}`)}</div>
+        <p class="small muted explanation-state">${state}</p>
+        ${introduced ? `<div class="explanation-local"><span class="goal-detail-label">Local proposition introduced in this step</span><pre class="goal">${esc(introduced.name)} : ${esc(introduced.type)}</pre></div>` : ''}
+        ${context ? `<details class="explanation-goals"><summary>Goals before and after this step</summary><div class="explanation-goal-pair"><div><h6>Before</h6>${workbench.goalBlocksHTML(before, '<p class="small muted">No goal recorded.</p>')}</div><div><h6>After</h6>${workbench.goalBlocksHTML(after, '<p class="small muted">No goals remain.</p>')}</div></div></details>` : ''}
+        ${canInspect && !context ? `<button type="button" class="secondary" data-act="goal" data-id="${esc(claimName)}"${refreshNeeded ? ' data-refresh="true"' : ''}${busy ? ' disabled title="Save edits and wait for the current Lean run to finish."' : ''}>${refreshNeeded ? 'Refresh Lean context' : 'Record Lean context'}</button>` : ''}
+      </article>`;
+    }).join('')}</section>`;
+  }
+
   function cellView(cell, staticPage = false, scopes = new Map()) {
     if (cell.kind === 'prose') {
       const html = markdown(cell.markdown, `notebook-heading-${cell.index}`);
@@ -505,12 +546,12 @@
     if (cell.kind === 'source' && !cell.text.trim()) return '';
     if (cell.kind === 'source' && cell.claim) {
       const saved = (UI.data.project_claims || []).find(c => c.name === cell.claim);
-      if (saved) return projectClaimHTML(cell, saved, scopes.get(cell.index), staticPage) + sourceDirectivesHTML(cell) + projectViewsHTML(cell) + projectCardsHTML(cell, staticPage);
+      if (saved) return projectClaimHTML(cell, saved, scopes.get(cell.index), staticPage) + explanationCardsHTML(cell, staticPage) + sourceDirectivesHTML(cell) + projectViewsHTML(cell) + projectCardsHTML(cell, staticPage);
     }
     if (cell.kind === 'source') {
       const {html, placed} = projectSourceHTML(cell, scopes.get(cell.index), staticPage);
       const notes = nonClaimsHTML(cell) + sourceDirectivesHTML(cell, placed);
-      return html + (notes ? `<div class="cell project-notes">${notes}</div>` : '') + projectViewsHTML(cell, placed) + projectCardsHTML(cell, staticPage, placed);
+      return html + explanationCardsHTML(cell, staticPage) + (notes ? `<div class="cell project-notes">${notes}</div>` : '') + projectViewsHTML(cell, placed) + projectCardsHTML(cell, staticPage, placed);
     }
     if (cell.kind === 'lean') return leanCellHTML(cell, scopes.get(cell.index), staticPage);
     const c = claim(cell.id);

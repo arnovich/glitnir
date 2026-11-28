@@ -1,0 +1,6 @@
+name = "glitnir_extension"
+version = "0.1.0"
+defaultTargets = ["Glitnir"]
+
+[[lean_lib]]
+name = "Glitnir"

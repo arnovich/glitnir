@@ -62,6 +62,7 @@ from glitnir.preview.cards import (
     with_saved_decisions,
     with_saved_evidence,
 )
+from glitnir.preview.explanations import Explanation, project_explanations
 from glitnir.preview.linked import LEAN_NAME, Reference, sibling_references
 from glitnir.preview.walkthrough import WalkthroughMap, load_walkthrough
 from glitnir.providers import HoareProof, Providers
@@ -83,6 +84,7 @@ class Cell(TypedDict):
     id: NotRequired[str]
     index: NotRequired[int]
     claim: NotRequired[str]
+    authored_claim: NotRequired[str]
 
 
 class CheckState(TypedDict):
@@ -185,6 +187,7 @@ class Snapshot(TypedDict):
     sha256: str
     preview: PreviewInfo
     cells: list[Cell]
+    explanations: list[Explanation]
     claims: list[Any]
     project_claims: list[ClaimView]
     hoare_proofs: NotRequired[dict[str, HoareProof]]
@@ -408,19 +411,20 @@ def split_cells(text: str) -> tuple[list[Cell], str | None]:
                     }
                 )
             prose = cell.kind is CellKind.PROSE
-            cells.append(
-                {
-                    "kind": "prose" if prose else "source",
-                    "start": start + 1,
-                    "end": end,
-                    "text": "".join(lines[start:end]),
-                    "markdown": (
-                        cell.text.strip().removeprefix("/-!").removesuffix("-/").strip()
-                        if prose
-                        else ""
-                    ),
-                }
-            )
+            entry: Cell = {
+                "kind": "prose" if prose else "source",
+                "start": start + 1,
+                "end": end,
+                "text": "".join(lines[start:end]),
+                "markdown": (
+                    cell.text.strip().removeprefix("/-!").removesuffix("-/").strip()
+                    if prose
+                    else ""
+                ),
+            }
+            if cell.claim is not None:
+                entry["authored_claim"] = cell.claim.name
+            cells.append(entry)
             cursor = end
         if cursor < len(lines):
             cells.append(
@@ -659,6 +663,7 @@ def build_snapshot(
             "lean": lean_support(project),
         },
         "cells": entries,
+        "explanations": project_explanations(text, entries),
         "claims": [],
         "project_claims": project_claims,
         "project_non_claims": project_non_claims,

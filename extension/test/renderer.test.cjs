@@ -144,6 +144,63 @@ async function renderSnapshot(snapshot, {katex = false, onPoll, onMessage, onVie
   return window;
 }
 
+test('authored explanations remain readable and gain only current observed goals', async () => {
+  const sha = 'a'.repeat(64);
+  const source = 'theorem t (P Q : Prop) (p : P) (h : P → Q) : Q := by\n  explain "derive-q" "Obtain **Q** from P." =>\n    have q : Q := h p\n    exact q\n';
+  const snapshot = {file: 'Annotated.lean', sha256: sha, preview: {mode: 'project', notice: 'Saved-source preview.', project: {kind: 'lake'}, lean: {supported: true, message: ''}}, checking: [], check_errors: {}, reading: false,
+    cells: [{index: 0, id: 'cell-0', kind: 'source', claim: 't', start: 1, end: 4, text: source}],
+    explanations: [{authored_id: 'derive-q', markdown: 'Obtain **Q** from P.', line: 2, cell: 0}],
+    claims: [], project_claims: [], project_non_claims: [], project_withheld: null, views: [], evidence: [], decisions: [], links: [], references: [], revisions: [], assets: []};
+  const trace = {id: 'observation-1', status: 'ready', source_sha256: sha, nodes: [{id: 0, start: 71, end: 160, range: {start: {line: 2, character: 2}, end: {line: 4, character: 11}}, parent: null, kind: 'Glitnir.explain', text: 'explain', declaration: 't', introduced_local: {name: 'q', type: 'Q'}, before: ['P Q : Prop\np : P\nh : P → Q\n⊢ Q'], after: ['P Q : Prop\np : P\nh : P → Q\nq : Q\n⊢ Q']}],
+    explanations: [{authored_id: 'derive-q', markdown: 'Obtain **Q** from P.', declaration: 't', parent: 0, start: 71, end: 160, range: {start: {line: 2, character: 2}, end: {line: 4, character: 11}}}], errors: [], warnings: []};
+  const window = await renderSnapshot(snapshot, {onProof: message => message.path === '/api/proof/start' ? trace : {status: 'idle', nodes: []}});
+  try {
+    const doc = window.document.getElementById('doc');
+    assert.match(doc.querySelector('.explanation-prose').textContent, /Obtain Q from P/);
+    assert.match(doc.querySelector('.explanation-state').textContent, /Authored explanation/);
+    assert.equal(doc.querySelector('.explanation-local'), null);
+    let button = doc.querySelector('.explanation-card [data-act="goal"]');
+    assert.equal(button.dataset.id, 't');
+    window.document.body.classList.add('unsaved-lean');
+    window.glitnirWorkbench.renderDoc();
+    assert.equal(doc.querySelector('.explanation-card [data-act="goal"]').disabled, true);
+    window.document.body.classList.remove('unsaved-lean');
+    window.glitnirWorkbench.renderDoc();
+    button = doc.querySelector('.explanation-card [data-act="goal"]');
+    button.click();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.match(doc.querySelector('.explanation-state').textContent, /goal observation/, JSON.stringify(window.glitnirWorkbench.UI.goals));
+    assert.match(doc.querySelector('.explanation-local').textContent, /q : Q/);
+    assert.match(doc.querySelector('.explanation-goals').textContent, /Before.*After/s);
+    const html = await window.glitnirExport({content: doc, title: 'Annotated', file: 'Annotated.lean', sha256: sha, css: ''});
+    const exported = new JSDOM(html);
+    try {
+      assert.match(exported.window.document.querySelector('.explanation-prose').textContent, /Obtain Q from P/);
+      assert.equal(exported.window.document.querySelector('.explanation-local'), null);
+      assert.match(exported.window.document.querySelector('.explanation-state').textContent, /context not recorded in this export/);
+    } finally { exported.window.close(); }
+    // Even identical saved bytes in a linked notebook cannot reuse the main
+    // notebook's in-memory observation.
+    window.glitnirWorkbench.UI.trail[1] = 'Linked.lean';
+    window.glitnirWorkbench.UI.at = 1;
+    window.glitnirWorkbench.renderDoc();
+    assert.equal(doc.querySelector('.explanation-local'), null);
+    assert.match(doc.querySelector('.explanation-state').textContent, /Authored explanation/);
+  } finally { window.close(); }
+});
+
+test('an explanation in a namespace selects its qualified theorem', async () => {
+  const source = 'namespace N\ntheorem t : True := by\n  explain "step" "Explain the step." =>\n    trivial\nend N\n';
+  const snapshot = {file: 'Namespaced.lean', sha256: 'b'.repeat(64), preview: {mode: 'project', notice: '', project: {kind: 'loose'}, lean: {supported: true, message: ''}}, checking: [], check_errors: {}, reading: false,
+    cells: [{index: 0, id: 'cell-0', kind: 'source', start: 1, end: 5, text: source}],
+    explanations: [{authored_id: 'step', markdown: 'Explain the step.', line: 3, cell: 0}],
+    claims: [], project_claims: [], project_non_claims: [], project_withheld: null, views: [], evidence: [], decisions: [], links: [], references: [], revisions: [], assets: []};
+  const window = await renderSnapshot(snapshot);
+  try {
+    assert.equal(window.document.querySelector('.explanation-card [data-act="goal"]').dataset.id, 'N.t');
+  } finally { window.close(); }
+});
+
 test('a linked project claim shows round decisions and exact evidence without changing proof status', async () => {
   const sha = 'a'.repeat(64), context = 'c'.repeat(64);
   const binding = {claim: 'Lab.target', project: 'lab', problem: '00000000-0000-4000-8000-000000000003', problem_version: 1, declaration: 'Lab.target', type: 'True', context_sha256: context, source_sha256: sha, environment: {fingerprint: 'e'.repeat(64), check: 'f'.repeat(64), toolchain: 'leanprover/lean4:v4.35.0'}, axiom_policy: [], stale_reasons: []};

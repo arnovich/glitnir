@@ -45,6 +45,11 @@
     const roots = sourceBody ? [body, sourceBody] : [body];
     const all = selector => roots.flatMap(root => [...root.querySelectorAll(selector)]);
 
+    // The pilot's trace lives only in preview memory; an export keeps its
+    // authored prose, never an unbound goal observation.
+    all('.explanation-local,.explanation-goals').forEach(el => el.remove());
+    for (const state of all('.explanation-state')) state.textContent = 'Authored explanation · Lean context not recorded in this export';
+
     // Drop actions with their contextual instructions, keeping claim references.
     for (const image of all('img[data-act="image-expand"]')) {
       for (const name of ['role', 'tabindex', 'data-act', 'aria-label', 'title']) image.removeAttribute(name);

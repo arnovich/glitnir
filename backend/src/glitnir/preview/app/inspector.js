@@ -360,5 +360,5 @@
     const trace = UI.goals?.previous;
     return UI.goals?.environment === environmentEpoch() && reusable(trace, UI.data?.sha256) ? trace : null;
   }
-  Object.assign(workbench, {proofProgressHTML, cancelGoals, inspectGoals, selectGoalStep, editGoalSource, proofScope, refutationHTML, renderInspector, proofGoalsHTML, goalBlocksHTML, goalSourceHTML});
+  Object.assign(workbench, {proofProgressHTML, cancelGoals, inspectGoals, selectGoalStep, editGoalSource, proofScope, refutationHTML, renderInspector, proofGoalsHTML, goalBlocksHTML, goalSourceHTML, currentGoalTrace});
 })();

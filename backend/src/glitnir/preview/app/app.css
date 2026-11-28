@@ -173,6 +173,19 @@ h1{font:600 30px/1.25 var(--sans);margin:0 0 6px;letter-spacing:-.5px;text-wrap:
 .chips-row{display:none}
 .cell{position:relative;scroll-margin-top:12px}
 .cell+.cell{margin-top:18px}
+.explanation-list{display:grid;gap:12px;margin:16px 0}
+.explanation-card{border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:6px;padding:12px 14px;background:var(--paper)}
+.explanation-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.explanation-head .tag{color:var(--blue)}
+.explanation-prose{font-size:15px;line-height:1.6;margin-top:8px}
+.explanation-prose p{margin:0 0 8px}.explanation-prose p:last-child{margin-bottom:0}
+.explanation-state{margin:8px 0;color:var(--muted)}
+.explanation-local{padding:9px 11px;background:var(--chrome);border-radius:4px;margin:10px 0}
+.explanation-local pre{white-space:pre-wrap;margin:5px 0 0}
+.explanation-goals{margin-top:10px}.explanation-goals summary{cursor:pointer;color:var(--blue)}
+.explanation-goal-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;padding-top:10px}
+.explanation-goal-pair h6{margin:0 0 6px;font-size:12px}.explanation-goal-pair .goal-block{margin-bottom:8px}
+.explanation-card>button{margin-top:8px}
 .cell-tools{position:absolute;right:0;top:-15px;z-index:2;display:flex;gap:2px;opacity:0;transition:opacity .15s}
 .cell:hover>.cell-tools,.cell:focus-within>.cell-tools{opacity:1}
 .cell-tools button{padding:3px 7px;font-size:11px;color:var(--muted);background:var(--paper);border-color:var(--border)}

@@ -8,6 +8,120 @@ import pytest
 from glitnir.lean.proof_trace import _validate_trace
 
 
+def test_trace_keeps_validated_explanations_with_source_ranges():
+    """Authored prose has its own bounded source anchor and tactic parent."""
+    source = 'theorem t : True := by\n  explain "go" "λ" =>\n    trivial\n'
+    data = source.encode()
+    start = data.index(b"explain")
+    end = data.index(b"trivial") + len(b"trivial")
+    answer = _validate_trace(
+        {
+            "nodes": [
+                {
+                    "start": start,
+                    "end": end,
+                    "parent": None,
+                    "before": ["⊢ True"],
+                    "after": [],
+                    "declaration": "t",
+                    "kind": "Glitnir.explain",
+                    "introduced_local": {"name": "h", "type": "True"},
+                }
+            ],
+            "explanations": [
+                {
+                    "start": start,
+                    "end": end,
+                    "parent": 0,
+                    "authored_id": "go",
+                    "markdown": "λ",
+                    "declaration": "t",
+                }
+            ],
+            "errors": [],
+            "warnings": [],
+        },
+        source,
+    )
+    assert answer["explanations"] == [
+        {
+            "start": start,
+            "end": end,
+            "parent": 0,
+            "authored_id": "go",
+            "markdown": "λ",
+            "declaration": "t",
+            "range": {
+                "start": {"line": 2, "character": 2},
+                "end": {"line": 3, "character": 11},
+            },
+        }
+    ]
+    assert answer["nodes"][0]["introduced_local"] == {"name": "h", "type": "True"}
+
+
+def test_explanation_requires_exact_annotation_tactic_parent():
+    """An enclosing tactic cannot lend its goals to a tagged explanation."""
+    source = 'explain "step" "Text" => trivial'
+    for kind, end in [
+        ("Lean.Parser.Tactic.tacticSeq", len(source)),
+        ("Glitnir.explain", len(source) - 1),
+    ]:
+        with pytest.raises(ValueError, match="escapes its parent"):
+            _validate_trace(
+                {
+                    "nodes": [
+                        {
+                            "start": 0,
+                            "end": end,
+                            "parent": None,
+                            "before": [],
+                            "after": [],
+                            "declaration": "t",
+                            "kind": kind,
+                        }
+                    ],
+                    "explanations": [
+                        {
+                            "start": 0,
+                            "end": len(source),
+                            "parent": 0,
+                            "authored_id": "step",
+                            "markdown": "Text",
+                            "declaration": "t",
+                        }
+                    ],
+                    "errors": [],
+                    "warnings": [],
+                },
+                source,
+            )
+
+
+@pytest.mark.parametrize("parent,authored_id", [(4, "go"), (0, "")])
+def test_trace_rejects_malformed_explanation(parent, authored_id):
+    """A bad parent or empty ID cannot enter the preview contract."""
+    with pytest.raises(ValueError, match="explanation"):
+        _validate_trace(
+            {
+                "nodes": [],
+                "explanations": [
+                    {
+                        "start": 0,
+                        "end": 1,
+                        "parent": parent,
+                        "authored_id": authored_id,
+                        "markdown": "text",
+                        "declaration": "t",
+                    }
+                ],
+                "errors": [],
+                "warnings": [],
+            },
+            "x",
+        )
+
+
 @pytest.mark.parametrize("after_ids", [["a", "b"], ["a", "a"]])
 def test_trace_keeps_each_tactics_own_goals_and_unicode_ranges(after_ids):
     """A closed branch never replaces another node's before state."""

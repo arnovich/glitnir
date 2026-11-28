@@ -95,6 +95,9 @@ def _validate_trace(value: Any, source: str) -> dict[str, Any]:
         raise ValueError("Malformed proof trace.")
     if len(value["nodes"]) > MAX_NODES:
         raise ValueError("Proof trace exceeds its node limit.")
+    raw_explanations = value.get("explanations", [])
+    if not isinstance(raw_explanations, list) or len(raw_explanations) > MAX_NODES:
+        raise ValueError("Malformed proof trace explanations.")
     data = source.encode()
     nodes: list[dict[str, Any]] = []
 
@@ -130,6 +133,23 @@ def _validate_trace(value: Any, source: str) -> dict[str, Any]:
         ):
             raise ValueError("Tactic range escapes its parent.")
         before, after = _texts(node.get("before")), _texts(node.get("after"))
+        introduced_local = node.get("introduced_local")
+        if introduced_local is not None:
+            if (
+                not isinstance(introduced_local, dict)
+                or not isinstance(introduced_local.get("name"), str)
+                or not introduced_local["name"]
+                or len(introduced_local["name"].encode()) > 128
+                or not isinstance(introduced_local.get("type"), str)
+                or not introduced_local["type"]
+                or len(introduced_local["type"].encode()) > 20_000
+                or node["kind"] != "Glitnir.explain"
+            ):
+                raise ValueError("Malformed introduced local proposition.")
+            reserve(
+                len(introduced_local["name"].encode())
+                + len(introduced_local["type"].encode())
+            )
         reserve(
             end
             - start
@@ -154,13 +174,64 @@ def _validate_trace(value: Any, source: str) -> dict[str, Any]:
                 "after": after,
                 "declaration": node["declaration"],
                 "kind": node["kind"],
+                **(
+                    {"introduced_local": introduced_local}
+                    if introduced_local is not None
+                    else {}
+                ),
                 **identities,
+            }
+        )
+    explanations: list[dict[str, Any]] = []
+    for item in raw_explanations:
+        if not isinstance(item, dict):
+            raise ValueError("Malformed proof trace explanation.")
+        start, end, parent = (item.get(key) for key in ("start", "end", "parent"))
+        authored_id, markdown, declaration = (
+            item.get(key) for key in ("authored_id", "markdown", "declaration")
+        )
+        if (
+            type(start) is not int
+            or type(end) is not int
+            or not 0 <= start < end <= len(data)
+            or type(parent) is not int
+            or not 0 <= parent < len(nodes)
+            or not isinstance(authored_id, str)
+            or not authored_id
+            or len(authored_id.encode()) > 128
+            or not isinstance(markdown, str)
+            or len(markdown.encode()) > 20_000
+            or not isinstance(declaration, str)
+        ):
+            raise ValueError("Invalid proof trace explanation.")
+        if not (
+            nodes[parent]["start"] == start
+            and nodes[parent]["end"] == end
+            and nodes[parent]["declaration"] == declaration
+            and nodes[parent]["kind"] == "Glitnir.explain"
+        ):
+            raise ValueError("Proof trace explanation escapes its parent.")
+        try:
+            data[start:end].decode()
+        except UnicodeDecodeError as error:
+            raise ValueError("Invalid proof trace explanation UTF-8 range.") from error
+        reserve(end - start + len(authored_id.encode()) + len(markdown.encode()))
+        explanations.append(
+            {
+                "start": start,
+                "end": end,
+                "parent": parent,
+                "authored_id": authored_id,
+                "markdown": markdown,
+                "declaration": declaration,
             }
         )
     # Scan source once, even when thousands of nodes occur near its end.
     positions = {}
     previous, line, character = 0, 1, 0
-    for offset in sorted({n[key] for n in nodes for key in ("start", "end")}):
+    for offset in sorted(
+        {n[key] for n in [*nodes, *explanations] for key in ("start", "end")}
+    ):
         segment = data[previous:offset]
         line += segment.count(b"\n")
         last_newline = segment.rfind(b"\n")
@@ -172,9 +243,14 @@ def _validate_trace(value: Any, source: str) -> dict[str, Any]:
             character += len(segment.decode().encode("utf-16-le")) // 2
         positions[offset] = {"line": line, "character": character}
         previous = offset
-    for node in nodes:
+    for node in [*nodes, *explanations]:
         node["range"] = {key: positions[node[key]] for key in ("start", "end")}
-    return {"nodes": nodes, "errors": errors, "warnings": warnings}
+    return {
+        "nodes": nodes,
+        "explanations": explanations,
+        "errors": errors,
+        "warnings": warnings,
+    }
 
 
 def _absolute_setup(setup: dict[str, Any], project: Path | None) -> dict[str, Any]:
